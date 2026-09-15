@@ -1,9 +1,15 @@
 import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, okJson, fail, expandHome } from "./util.js";
+import {
+  isToolchainFailure,
+  resolveOperationToolchain,
+  toolchainProvenance,
+  toolchainProvenanceLine,
+  verifyOperationOverride,
+  type OperationToolchain,
+} from "./toolchain.js";
 
 /**
  * bundle_content_diff — a DETERMINISTIC content-change signal for .bundle files. The bundle FILE is
@@ -13,13 +19,18 @@ import { run, okJson, fail, expandHome } from "./util.js";
  * edit actually changed the bake (vs editor_project_diff's editor-cache md5).
  */
 
-function resolveSpatialbundle(): string | null {
-  const cands = [
-    process.env.PICO_SPATIALBUNDLE,
-    path.join(os.homedir(), "Library/PICO/sdk/0.13/editor/spatialbundle/spatialbundle"),
-  ].filter(Boolean) as string[];
-  for (const c of cands) if (fs.existsSync(c)) return c;
-  return null;
+/**
+ * Both sides of the diff are inspected with the SAME binary from ONE selection — a fingerprint
+ * compared across two different packers would report content changes that are really tool
+ * changes. The hardcoded 0.13 fallback this replaces could differ from the packer that produced
+ * either bundle.
+ */
+async function packerToolchain(): Promise<OperationToolchain | { error: string }> {
+  const prepared = resolveOperationToolchain({ required: ["packer"], primary: "packer", allowBinaryOverride: true });
+  if (isToolchainFailure(prepared)) return { error: `${prepared.code}: ${prepared.detail}` };
+  const verified = await verifyOperationOverride(prepared);
+  if (isToolchainFailure(verified)) return { error: `${verified.code}: ${verified.detail}` };
+  return verified;
 }
 
 interface Info { exportVersion: string | null; modelCount: number | null; assetCount: number | null; fingerprint: string[]; raw: string; }
@@ -72,8 +83,9 @@ export function registerBundleDiffTools(server: McpServer) {
       },
     },
     async ({ bundleA, bundleB, maxLines }) => {
-      const sb = resolveSpatialbundle();
-      if (!sb) return fail("spatialbundle binary not found (set PICO_SPATIALBUNDLE or install under ~/Library/PICO/sdk/0.13/editor).");
+      const ctx = await packerToolchain();
+      if ("error" in ctx) return fail(`bundle_content_diff: ${ctx.error}`);
+      const sb = ctx.bin;
       const a = await bundleInfo(sb, expandHome(bundleA));
       const b = await bundleInfo(sb, expandHome(bundleB));
       if ("error" in a) return fail(`bundleA: ${a.error}`);
@@ -90,6 +102,8 @@ export function registerBundleDiffTools(server: McpServer) {
           fingerprintLines: { a: a.fingerprint.length, b: b.fingerprint.length },
         },
         exportVersion: { a: a.exportVersion, b: b.exportVersion },
+        ...toolchainProvenance(ctx),
+        inspectedWith: toolchainProvenanceLine(ctx),
         added: added.slice(0, cap),
         removed: removed.slice(0, cap),
         ...(added.length > cap || removed.length > cap ? { truncated: { added: added.length, removed: removed.length } } : {}),

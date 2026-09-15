@@ -4,21 +4,41 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { expandHome, fail, ok, okJson, run, tail } from "./util.js";
-import { pickVersion, resolveToolsRoot } from "./toolchain.js";
+import {
+  ANDROID_PROJECT_ROOT_DESCRIPTION,
+  isToolchainFailure,
+  resolveOperationToolchain,
+  toolchainProvenance,
+  toolchainProvenanceLine,
+  verifyOperationOverride,
+  type OperationToolchain,
+} from "./toolchain.js";
 
 export const BUNDLE_CACHE_NOTE =
   "Baking leaves generated assets/BundleCache/ content; exclude BundleCache from APK assets with androidResources.ignoreAssetsPattern and add app/src/main/assets/BundleCache/ to .gitignore.";
 
-function getSpatialbundle(toolsVersion?: string): { bin: string; version: string } | { error: string } {
-  const { root } = resolveToolsRoot();
-  const sel = pickVersion(root, toolsVersion, "editor");
-  if (!sel?.spatialbundle) return { error: `No spatialbundle binary found under ${root} (version ${toolsVersion ?? "any"})` };
-  return { bin: sel.spatialbundle, version: sel.version };
+/**
+ * One structural selection per operation, with the explicit $PICO_SPATIALBUNDLE override
+ * identified by its bytes rather than by its filename. Every stage of the operation runs the
+ * `bin` this returns; nothing re-resolves halfway through.
+ */
+async function packerToolchain(opts: { toolsVersion?: string; androidProjectRoot?: string }): Promise<OperationToolchain | { error: string }> {
+  const prepared = resolveOperationToolchain({
+    androidProjectRoot: opts.androidProjectRoot,
+    toolsVersion: opts.toolsVersion,
+    required: ["packer"],
+    primary: "packer",
+    allowBinaryOverride: true,
+  });
+  if (isToolchainFailure(prepared)) return { error: `${prepared.code}: ${prepared.detail}` };
+  const verified = await verifyOperationOverride(prepared);
+  if (isToolchainFailure(verified)) return { error: `${verified.code}: ${verified.detail}` };
+  return verified;
 }
 
 /** Bake one textured model into a .bundle via spatialbundle. Exported so import_model_catalog can batch it. */
 export async function bakeTexturedModel(opts: { modelPath: string; outBundle: string; compressTextures?: string; toolsVersion?: string }): Promise<any> {
-  const sb = getSpatialbundle(opts.toolsVersion);
+  const sb = await packerToolchain(opts);
   if ("error" in sb) return { error: sb.error };
   const src = expandHome(opts.modelPath);
   if (!fs.existsSync(src)) return { error: `No such model: ${src}` };
@@ -54,6 +74,7 @@ export async function bakeTexturedModel(opts: { modelPath: string; outBundle: st
     hasMaterial,
     rendersTextured: hasTexture && hasMaterial,
     loadSnippet: `val bundle = AssetBundle.load("asset://${path.basename(out)}")\nval entity = Entity.loadSuspend("${modelName}", bundle)`,
+    ...toolchainProvenance(sb),
     note: `${hasTexture && hasMaterial ? "Texture + material baked." : "WARNING: no texture/material asset detected — model may have had no material."} ${BUNDLE_CACHE_NOTE}`,
   };
 }
@@ -77,10 +98,11 @@ export function registerBundleTools(server: McpServer) {
         incremental: z.boolean().default(false),
         extraArgs: z.array(z.string()).default([]).describe("Additional raw spatialbundle pack flags"),
         toolsVersion: z.string().optional(),
+        androidProjectRoot: z.string().optional().describe(ANDROID_PROJECT_ROOT_DESCRIPTION),
       },
     },
-    async ({ sceneDir, output, projectDir, formats, compressTextures, forceBuild, incremental, extraArgs, toolsVersion }) => {
-      const sb = getSpatialbundle(toolsVersion);
+    async ({ sceneDir, output, projectDir, formats, compressTextures, forceBuild, incremental, extraArgs, toolsVersion, androidProjectRoot }) => {
+      const sb = await packerToolchain({ toolsVersion, androidProjectRoot });
       if ("error" in sb) return fail(sb.error);
       const out = expandHome(output);
       fs.mkdirSync(path.dirname(out), { recursive: true });
@@ -100,7 +122,7 @@ export function registerBundleTools(server: McpServer) {
         );
       }
       const size = fs.statSync(out).size;
-      return ok(`Bundle written: ${out} (${(size / 1024 / 1024).toFixed(2)} MB, spatialbundle ${sb.version})\n${tail(combined, 30)}`);
+      return ok(`Bundle written: ${out} (${(size / 1024 / 1024).toFixed(2)} MB)\nPacked with ${toolchainProvenanceLine(sb)}\n${tail(combined, 30)}`);
     },
   );
 
@@ -116,7 +138,7 @@ export function registerBundleTools(server: McpServer) {
       },
     },
     async ({ bundlePath, details, toolsVersion }) => {
-      const sb = getSpatialbundle(toolsVersion);
+      const sb = await packerToolchain({ toolsVersion });
       if ("error" in sb) return fail(sb.error);
       const p = expandHome(bundlePath);
       if (!fs.existsSync(p)) return fail(`No such file: ${p}`);
@@ -212,7 +234,7 @@ export function registerBundleTools(server: McpServer) {
       inputSchema: { toolsVersion: z.string().optional() },
     },
     async ({ toolsVersion }) => {
-      const sb = getSpatialbundle(toolsVersion);
+      const sb = await packerToolchain({ toolsVersion });
       if ("error" in sb) return fail(sb.error);
       const usdDir = path.join(path.dirname(sb.bin), "usd");
       const out: string[] = [];

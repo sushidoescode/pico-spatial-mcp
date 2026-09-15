@@ -1,9 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, okJson, fail, expandHome, tail } from "./util.js";
+import {
+  isToolchainFailure,
+  resolveOperationToolchain,
+  toolchainProvenance,
+  toolchainProvenanceLine,
+  verifyOperationOverride,
+  type OperationToolchain,
+} from "./toolchain.js";
 
 /**
  * editor_export_bundle — editor-parity bake: pack a scene dir to a .bundle via `spatialbundle` (the
@@ -16,10 +23,18 @@ import { run, okJson, fail, expandHome, tail } from "./util.js";
  * (assert_scene), and appearance is a capture_frame/verify check — not proven by the bake alone.
  */
 
-function resolveSpatialbundle(): string | null {
-  const c = [process.env.PICO_SPATIALBUNDLE, path.join(os.homedir(), "Library/PICO/sdk/0.13/editor/spatialbundle/spatialbundle")].filter(Boolean) as string[];
-  for (const x of c) if (fs.existsSync(x)) return x;
-  return null;
+/**
+ * One selection for the whole bake. This used to try $PICO_SPATIALBUNDLE and then a hardcoded
+ * 0.13 path — a version nothing else in the server selects, so a host running 6.x would either
+ * report "not found" or silently bake with a stale packer. The override still wins when it is
+ * set, but it is now identified by its bytes rather than trusted by filename.
+ */
+async function packerToolchain(): Promise<OperationToolchain | { error: string }> {
+  const prepared = resolveOperationToolchain({ required: ["packer"], primary: "packer", allowBinaryOverride: true });
+  if (isToolchainFailure(prepared)) return { error: `${prepared.code}: ${prepared.detail}` };
+  const verified = await verifyOperationOverride(prepared);
+  if (isToolchainFailure(verified)) return { error: `${verified.code}: ${verified.detail}` };
+  return verified;
 }
 
 export function registerEditorExportTools(server: McpServer) {
@@ -38,8 +53,9 @@ export function registerEditorExportTools(server: McpServer) {
       },
     },
     async ({ sceneDir, outBundle, projectDir, formats, compressTextures, assertPhysics }) => {
-      const sb = resolveSpatialbundle();
-      if (!sb) return fail("spatialbundle not found (set PICO_SPATIALBUNDLE).");
+      const ctx = await packerToolchain();
+      if ("error" in ctx) return fail(`editor_export_bundle: ${ctx.error}`);
+      const sb = ctx.bin;
       const src = expandHome(sceneDir);
       const out = expandHome(outBundle);
       if (!fs.existsSync(src)) return fail(`sceneDir not found: ${src}`);
@@ -71,6 +87,8 @@ export function registerEditorExportTools(server: McpServer) {
         physicsCooked,
         physicsMaterialCooked: (byType["physicsmaterial"] ?? 0) > 0,
         timelineCooked: (byType["timeline"] ?? 0) > 0,
+        ...toolchainProvenance(ctx),
+        packedWith: toolchainProvenanceLine(ctx),
         note: "Editor-parity bake via spatialbundle. Cooked physics (collisionshape+physicsmaterial) is decode-verified — it's what raw USD lacks at runtime. Confirm rayCast HIT via assert_scene/logcat, and appearance via capture_frame/verify. Bundle md5 is non-deterministic; use bundle_content_diff for content changes.",
       });
     },

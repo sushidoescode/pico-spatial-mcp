@@ -98,7 +98,7 @@ test("every contract failure code is reachable with its documented trigger", () 
       "unavailable/unsupported-default-root",
     ],
     ["required names no components", { required: [] }, io, "unavailable", "unavailable/required-empty"],
-    ["required names something outside TOOL_COMPONENTS", { required: ["editor"] }, io, "unavailable", "unavailable/component-unknown"],
+    ["required names something outside TOOL_COMPONENTS", { required: ["spatialbundle"] }, io, "unavailable", "unavailable/component-unknown"],
   ];
   for (const [trigger, request, triggerIO, status, code] of rows) {
     const sel = resolveToolchain(request, triggerIO);
@@ -645,7 +645,9 @@ test("an empty required set is rejected, never answered with a constant identity
 
 test("an out-of-union component is a structured result, not a TypeError", () => {
   const io = briefIO();
-  for (const bogus of [["editor"], ["packer", "spatialbundle"], [""], [null], [42], ["PACKER"]]) {
+  // NOTE (S2): "editor" became a real component when editorPaths started requesting the payload
+  // it actually launches, so the out-of-union example here is a name that is still not one.
+  for (const bogus of [["spatialbundle"], ["packer", "scenepreview"], [""], [null], [42], ["PACKER"]]) {
     let sel;
     assert.doesNotThrow(() => {
       sel = resolveToolchain({ required: bogus }, io);
@@ -653,8 +655,8 @@ test("an out-of-union component is a structured result, not a TypeError", () => 
     assert.equal(sel.status, "unavailable", JSON.stringify(bogus));
     assert.equal(sel.code, "unavailable/component-unknown", JSON.stringify(bogus));
   }
-  assert.match(resolveToolchain({ required: ["editor"] }, io).detail, /"editor"/);
-  assert.match(resolveToolchain({ required: ["editor"] }, io).detail, /adb, emulator, packer, proto/);
+  assert.match(resolveToolchain({ required: ["spatialbundle"] }, io).detail, /"spatialbundle"/);
+  assert.match(resolveToolchain({ required: ["spatialbundle"] }, io).detail, /adb, editor, emulator, packer, proto/);
   assert.equal(resolveToolchain({ required: ["packer", "packer"] }, io).version, "6.1", "duplicates are deduplicated, not rejected");
 });
 
@@ -783,4 +785,73 @@ test("legacy adapters are component-aware and keep their shape", (t) => {
       else process.env.PICO_HOME = savedHome;
     }
   });
+});
+
+// ------------------------------------------------------- the editor component (added in S2)
+
+test("the editor component resolves the macOS app bundle, not the packer beside it", () => {
+  const io = toolchainIOFromTree({
+    platform: "darwin",
+    home: "/fixture",
+    env: {},
+    files: {
+      "/sdk/6.1/editor/spatialbundle/spatialbundle": { bytes: "packer", executable: true },
+      "/sdk/6.1/editor/Spatial Editor.app/Contents/MacOS/Spatial Editor": { bytes: "editor-app", executable: true },
+    },
+  });
+  const both = resolveToolchain({ toolsRoot: "/sdk", required: ["packer", "editor"] }, io);
+  assert.equal(both.status, "ok");
+  assert.equal(both.files.packer.path, "/sdk/6.1/editor/spatialbundle/spatialbundle");
+  assert.equal(both.files.editor.path, "/sdk/6.1/editor/Spatial Editor.app/Contents/MacOS/Spatial Editor");
+  assert.notEqual(both.files.packer.sha256, both.files.editor.sha256, "two different payloads, two identities");
+});
+
+test("an editor payload that is not executable does not satisfy the editor component", () => {
+  const io = toolchainIOFromTree({
+    platform: "darwin",
+    home: "/fixture",
+    env: {},
+    files: { "/sdk/6.1/editor/Spatial Editor.app/Contents/MacOS/Spatial Editor": { bytes: "editor-app" } },
+  });
+  const sel = resolveToolchain({ toolsRoot: "/sdk", required: ["editor"] }, io);
+  assert.equal(sel.status, "unavailable");
+  assert.equal(sel.code, "unavailable/component-missing");
+});
+
+test("editor and packer can select different versions, and never mix within one request", () => {
+  const io = toolchainIOFromTree({
+    platform: "darwin",
+    home: "/fixture",
+    env: {},
+    files: {
+      "/sdk/6.0/editor/spatialbundle/spatialbundle": { bytes: "p0", executable: true },
+      "/sdk/6.0/editor/Spatial Editor.app/Contents/MacOS/Spatial Editor": { bytes: "e0", executable: true },
+      "/sdk/6.1/editor/spatialbundle/spatialbundle": { bytes: "p1", executable: true },
+    },
+  });
+  assert.equal(resolveToolchain({ toolsRoot: "/sdk", required: ["packer"] }, io).version, "6.1");
+  assert.equal(resolveToolchain({ toolsRoot: "/sdk", required: ["editor"] }, io).version, "6.0");
+  const combined = resolveToolchain({ toolsRoot: "/sdk", required: ["packer", "editor"] }, io);
+  assert.equal(combined.version, "6.0", "a combined request cannot straddle two installations");
+});
+
+test("the editor component is not published off macOS and probes nothing there", () => {
+  for (const platform of ["linux", "win32", "freebsd"]) {
+    const io = toolchainIOFromTree({
+      platform,
+      home: platform === "win32" ? "C:\\Users\\dev" : "/home/dev",
+      env: {},
+      files: platform === "win32"
+        ? { "C:\\sdk\\6.1\\editor\\spatialbundle\\spatialbundle.exe": { bytes: "p", executable: true } }
+        : { "/sdk/6.1/editor/spatialbundle/spatialbundle": { bytes: "p", executable: true } },
+    });
+    const root = platform === "win32" ? "C:\\sdk" : "/sdk";
+    const before = io.reads.length;
+    const sel = resolveToolchain({ toolsRoot: root, required: ["editor"] }, io);
+    assert.equal(sel.status, "unavailable", platform);
+    assert.equal(sel.code, "unavailable/component-unsupported-platform", platform);
+    assert.equal(io.reads.length, before, `${platform}: an unsupported component probes nothing`);
+    // The packer still resolves on the same host, so this is a component gate, not a platform gate.
+    assert.equal(resolveToolchain({ toolsRoot: root, required: ["packer"] }, io).status, "ok", platform);
+  }
 });

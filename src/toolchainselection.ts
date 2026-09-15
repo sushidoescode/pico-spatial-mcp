@@ -29,17 +29,20 @@ import path from "node:path";
  * | `required` names no components                        | `unavailable/required-empty`       |
  * | `required` names something outside `TOOL_COMPONENTS`  | `unavailable/component-unknown`    |
  * | No `io` passed and no host implementation registered  | `unavailable/io-unavailable`       |
+ * | A required component is not published for this platform | `unavailable/component-unsupported-platform` |
  *
- * The last four rows are additions to the codes listed in the task brief, not
+ * The last five rows are additions to the codes listed in the task brief, not
  * changes to them. A project file declaring two different tool roots is exactly
  * as unusable as a request that contradicts its own pin; and a request naming no
  * components, or a component that does not exist, must not be answerable — an
  * empty `required` is vacuously satisfiable by any directory and would hand every
  * root and version the same identity (the digest of the empty string), which is
- * precisely the collision `identity` exists to make impossible.
+ * precisely the collision `identity` exists to make impossible. The last row
+ * exists because `editor` is published only as a macOS application bundle: a
+ * Linux/Windows host is not a broken install, so it must not be reported as one.
  */
 
-export type ToolComponent = "packer" | "emulator" | "adb" | "proto";
+export type ToolComponent = "packer" | "emulator" | "adb" | "proto" | "editor";
 export type RootSource = "explicit" | "local.properties" | "PICO_HOME" | "default";
 
 export interface ToolchainRequest {
@@ -86,7 +89,7 @@ export interface ToolchainIO {
 type PathApi = typeof path.win32;
 
 /** Components in the sorted order used for identity material and diagnostics. */
-export const TOOL_COMPONENTS: readonly ToolComponent[] = ["adb", "emulator", "packer", "proto"];
+export const TOOL_COMPONENTS: readonly ToolComponent[] = ["adb", "editor", "emulator", "packer", "proto"];
 
 /** The selection property an Android project may use to override the tools root. */
 export const TOOLS_DIR_PROPERTY = "spatial.tools.dir";
@@ -102,6 +105,10 @@ interface ComponentLayout {
   /** Base name of an executable payload, or null for a fixed data file. */
   executableBase: "adb" | "emulator" | "spatialbundle" | null;
   fixedName?: string;
+  /** A fixed-name payload that must be executable rather than merely readable. */
+  fixedIsExecutable?: boolean;
+  /** Platforms this component is published for. Absent means every platform. */
+  platforms?: readonly NodeJS.Platform[];
 }
 
 const COMPONENT_LAYOUT: Record<ToolComponent, ComponentLayout> = {
@@ -109,7 +116,22 @@ const COMPONENT_LAYOUT: Record<ToolComponent, ComponentLayout> = {
   emulator: { dir: ["emulator"], executableBase: "emulator" },
   packer: { dir: ["editor", "spatialbundle"], executableBase: "spatialbundle" },
   proto: { dir: ["emulator", "lib"], executableBase: null, fixedName: "emulator_controller.proto" },
+  // The GUI/headless Spatial Editor, which is NOT the packer: `editor/spatialbundle/spatialbundle`
+  // and `editor/Spatial Editor.app/.../Spatial Editor` are different binaries under a shared
+  // parent directory, and asking for one while launching the other is the defect this row removes.
+  editor: {
+    dir: ["editor", "Spatial Editor.app", "Contents", "MacOS"],
+    executableBase: null,
+    fixedName: "Spatial Editor",
+    fixedIsExecutable: true,
+    platforms: ["darwin"],
+  },
 };
+
+function componentSupportsPlatform(component: ToolComponent, platform: NodeJS.Platform): boolean {
+  const layout = COMPONENT_LAYOUT[component] as ComponentLayout | undefined;
+  return !layout?.platforms || layout.platforms.includes(platform);
+}
 
 /**
  * Candidate file names for a tool, in probe order. Windows ships the same
@@ -367,13 +389,15 @@ export interface InstallationScan {
 function componentFile(versionDir: string, component: ToolComponent, io: ToolchainIO, P: PathApi): string | null {
   const layout = COMPONENT_LAYOUT[component] as ComponentLayout | undefined;
   if (!layout) return null; // scanInstallations is exported; never dereference an unknown key
+  if (!componentSupportsPlatform(component, io.platform)) return null;
   const dir = P.join(versionDir, ...layout.dir);
   const names = layout.executableBase
     ? executableNames(layout.executableBase, io.platform)
     : [layout.fixedName!];
+  const mustExecute = Boolean(layout.executableBase) || Boolean(layout.fixedIsExecutable);
   for (const name of names) {
     const file = P.join(dir, name);
-    if (layout.executableBase ? io.executable(file) : io.read(file) !== null) return file;
+    if (mustExecute ? io.executable(file) : io.read(file) !== null) return file;
   }
   return null;
 }
@@ -484,6 +508,15 @@ export function selectInstallation(request: ToolchainRequest, io: ToolchainIO): 
     return unavailable(
       "unavailable/required-empty",
       `A toolchain request must name at least one required component (${TOOL_COMPONENTS.join(", ")}); an empty request matches any directory and identifies nothing`,
+    );
+  }
+  // A component PICO does not publish for this platform is not a broken install, and reporting it
+  // as component-missing would name an expected path that never exists anywhere on this host.
+  const unsupported = required.filter((component) => !componentSupportsPlatform(component, io.platform));
+  if (unsupported.length) {
+    return unavailable(
+      "unavailable/component-unsupported-platform",
+      `Toolchain component(s) ${unsupported.join(", ")} are not published for platform ${io.platform}`,
     );
   }
 

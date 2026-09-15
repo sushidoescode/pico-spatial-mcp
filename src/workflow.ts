@@ -4,7 +4,17 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { expandHome, fail, image, ok, okJson, run, runBinary, sleep, tail, type RunResult } from "./util.js";
-import { gradleEnv, pickVersion, resolveToolsRoot } from "./toolchain.js";
+import {
+  gradleEnv,
+  isToolchainFailure,
+  resolveOperationToolchain,
+  toolchainProvenance,
+  toolchainProvenanceLine,
+  verifyOperationOverride,
+  type OperationToolchain,
+  type ToolComponent,
+  ANDROID_PROJECT_ROOT_DESCRIPTION,
+} from "./toolchain.js";
 import { adb, adbPath, resolveSerial } from "./adb.js";
 import { buildCapabilityMatrix } from "./capability.js";
 
@@ -82,6 +92,104 @@ export function analyzePackageRuntimeLogs(pidLog: string, globalLog: string, pac
   return { rendered, crashes: [...new Set(crashes.filter(Boolean))] };
 }
 
+/**
+ * Everything a scene operation's stages need, injected so a test can capture the exact argv each
+ * stage ran without spawning anything.
+ */
+export interface ScenePackDeps {
+  /** The ONE selection this operation resolved. No stage below re-resolves it. */
+  toolchain: OperationToolchain;
+  run: (bin: string, args: string[], opts: { timeoutMs: number }) => Promise<RunResult>;
+  exists: (p: string) => boolean;
+  mkdirp: (p: string) => void;
+  sizeBytes: (p: string) => number;
+}
+
+export interface ScenePackResult {
+  bundle: string;
+  sizeMB: number;
+  /** Combined stdout of the inspect stage. */
+  info: string;
+  models: string | null;
+  assets: string | null;
+}
+
+/**
+ * Pack a scene directory and then inspect the bundle it produced.
+ *
+ * Both stages run `deps.toolchain.bin`. That is the whole point of taking the selection as a
+ * parameter: an operation that re-resolved between stages could pack with one installation and
+ * inspect with another, and report the second one's numbers as if they described the first.
+ */
+export async function packAndInspectScene(
+  deps: ScenePackDeps,
+  opts: { sceneDir: string; projectDir?: string; outBundle: string; details?: boolean },
+): Promise<ScenePackResult | { error: string }> {
+  const bin = deps.toolchain.bin;
+  deps.mkdirp(path.dirname(opts.outBundle));
+  const packArgs = ["pack", "-s", opts.sceneDir, "-o", opts.outBundle, "--formats", "usda", "--override-output", "--force-build"];
+  if (opts.projectDir) packArgs.push("-p", opts.projectDir);
+  const pack = await deps.run(bin, packArgs, { timeoutMs: 600_000 });
+  if (pack.code !== 0 || !deps.exists(opts.outBundle)) {
+    return { error: tail(pack.stdout + pack.stderr, 40) };
+  }
+  const infoArgs = ["info", "--input", opts.outBundle];
+  if (opts.details) infoArgs.push("--details");
+  const info = await deps.run(bin, infoArgs, { timeoutMs: 60_000 });
+  return {
+    bundle: opts.outBundle,
+    sizeMB: Number((deps.sizeBytes(opts.outBundle) / 1024 / 1024).toFixed(2)),
+    info: info.stdout,
+    models: info.stdout.match(/Model Count:\s*(\d+)/)?.[1] ?? null,
+    assets: info.stdout.match(/Asset Count:\s*(\d+)/)?.[1] ?? null,
+  };
+}
+
+/** The host-backed stage runner. Tests pass their own; nothing here is reachable from a fixture. */
+export function hostScenePackDeps(toolchain: OperationToolchain): ScenePackDeps {
+  return {
+    toolchain,
+    run: (bin, args, opts) => run(bin, args, opts),
+    exists: (p) => fs.existsSync(p),
+    mkdirp: (p) => { fs.mkdirSync(p, { recursive: true }); },
+    sizeBytes: (p) => fs.statSync(p).size,
+  };
+}
+
+/**
+ * Resolve ONE component-valid selection for a scene operation, before any stage runs.
+ *
+ * When the operation will also deploy through ScenePreview it asks for the editor payload in the
+ * SAME request, so the packer and the ScenePreview APK cannot come from different installations.
+ * The editor is a *preference*, not a precondition: ScenePreview may already be installed on the
+ * device, and refusing to pack because the host's editor app bundle is gone would be a worse
+ * answer than packing and letting the deploy stage skip the install (which it already did when
+ * the APK was missing). The fallback happens here, before stage 1 — never between stages.
+ */
+export async function resolveSceneToolchain(
+  opts: { toolsVersion?: string; androidProjectRoot?: string; needEditor?: boolean },
+  resolve: typeof resolveOperationToolchain = resolveOperationToolchain,
+  probe?: Parameters<typeof verifyOperationOverride>[1],
+): Promise<OperationToolchain | { error: string }> {
+  const base = {
+    androidProjectRoot: opts.androidProjectRoot,
+    toolsVersion: opts.toolsVersion,
+    primary: "packer" as ToolComponent,
+    allowBinaryOverride: true,
+  };
+  const settle = async (prepared: OperationToolchain): Promise<OperationToolchain | { error: string }> => {
+    const verified = await verifyOperationOverride(prepared, probe);
+    return isToolchainFailure(verified) ? { error: `${verified.code}: ${verified.detail}` } : verified;
+  };
+  if (opts.needEditor) {
+    const withEditor = resolve({ ...base, required: ["packer", "editor"] });
+    if (!isToolchainFailure(withEditor)) return settle(withEditor);
+  }
+  const packerOnly = resolve({ ...base, required: ["packer"] });
+  if (isToolchainFailure(packerOnly)) return { error: `${packerOnly.code}: ${packerOnly.detail}` };
+  return settle(packerOnly);
+}
+
 export function registerWorkflowTools(server: McpServer) {
   server.registerTool(
     "iterate_scene",
@@ -95,37 +203,40 @@ export function registerWorkflowTools(server: McpServer) {
         serial: z.string().optional(),
         deploy: z.boolean().default(true).describe("Deploy to ScenePreview + screenshot (false = compile/inspect only)"),
         toolsVersion: z.string().optional(),
+        androidProjectRoot: z.string().optional().describe(ANDROID_PROJECT_ROOT_DESCRIPTION),
       },
     },
-    async ({ sceneDir, projectDir, workName, serial, deploy, toolsVersion }) => {
-      const { root } = resolveToolsRoot();
-      const sel = pickVersion(root, toolsVersion, "editor");
-      if (!sel?.spatialbundle) return fail(`No spatialbundle found under ${root}`);
-      const report: any = { steps: [] };
+    async ({ sceneDir, projectDir, workName, serial, deploy, toolsVersion, androidProjectRoot }) => {
+      // ONE selection for the whole operation. Deployment needs the editor payload too, so it is
+      // part of the SAME request: the packer and the ScenePreview APK cannot come from different
+      // installations, and no stage below resolves anything again.
+      const ctx = await resolveSceneToolchain({ toolsVersion, androidProjectRoot, needEditor: deploy });
+      if ("error" in ctx) return fail(`iterate_scene: ${ctx.error}`);
+      const report: any = { steps: [], ...toolchainProvenance(ctx) };
 
       // 1. pack — output to the project build dir (or a temp dir) to keep Sources/ clean
       const buildDir = projectDir ? path.join(expandHome(projectDir), "build", "spatial") : path.join(os.tmpdir(), "pico-mcp", "iterate");
-      fs.mkdirSync(buildDir, { recursive: true });
       const outBundle = path.join(buildDir, `${workName}.bundle`);
-      const packArgs = ["pack", "-s", expandHome(sceneDir), "-o", outBundle, "--formats", "usda", "--override-output", "--force-build"];
-      if (projectDir) packArgs.push("-p", expandHome(projectDir));
-      const pack = await run(sel.spatialbundle, packArgs, { timeoutMs: 600_000 });
-      if (pack.code !== 0 || !fs.existsSync(outBundle)) {
+      const packed = await packAndInspectScene(hostScenePackDeps(ctx), {
+        sceneDir: expandHome(sceneDir),
+        projectDir: projectDir ? expandHome(projectDir) : undefined,
+        outBundle,
+      });
+      if ("error" in packed) {
         report.steps.push({ pack: "FAILED" });
-        return fail(`iterate_scene: pack failed.\n${tail(pack.stdout + pack.stderr, 40)}`);
+        return fail(`iterate_scene: pack failed with ${toolchainProvenanceLine(ctx)}.\n${packed.error}`);
       }
-      report.steps.push({ pack: "ok", bundle: outBundle, sizeMB: Number((fs.statSync(outBundle).size / 1024 / 1024).toFixed(2)) });
+      report.steps.push({ pack: "ok", bundle: packed.bundle, sizeMB: packed.sizeMB });
 
-      // 2. inspect
-      const info = await run(sel.spatialbundle, ["info", "--input", outBundle], { timeoutMs: 60_000 });
-      const modelMatch = info.stdout.match(/Model Count:\s*(\d+)/);
-      const assetMatch = info.stdout.match(/Asset Count:\s*(\d+)/);
-      report.steps.push({ inspect: "ok", models: modelMatch?.[1] ?? "?", assets: assetMatch?.[1] ?? "?" });
+      // 2. inspect (same binary, same selection)
+      const modelMatch = packed.models;
+      const assetMatch = packed.assets;
+      report.steps.push({ inspect: "ok", models: modelMatch ?? "?", assets: assetMatch ?? "?" });
 
       if (!deploy) {
         const m = buildCapabilityMatrix(workName, [
           { name: "scene packs to .bundle", status: "structural", evidence: "spatialbundle pack ok" },
-          { name: "bundle has geometry", status: "structural", evidence: `models=${modelMatch?.[1] ?? "?"} assets=${assetMatch?.[1] ?? "?"}` },
+          { name: "bundle has geometry", status: "structural", evidence: `models=${modelMatch ?? "?"} assets=${assetMatch ?? "?"}` },
         ]);
         return ok(JSON.stringify(report, null, 2) + "\n\n" + m.markdown);
       }
@@ -134,15 +245,16 @@ export function registerWorkflowTools(server: McpServer) {
       const s = await resolveSerial(serial);
       const PKG = "com.pico.spatial.editor.scenepreview";
       const filesDir = `/storage/emulated/0/Android/data/${PKG}/files`;
-      const macosDir = path.join(root, sel.version, "editor", "Spatial Editor.app", "Contents", "MacOS");
-      const apk = path.join(macosDir, "scene_preview", "ScenePreview.apk");
+      // The ScenePreview APK rides inside the SAME selection's editor payload.
+      const editorBin = ctx.selection?.files.editor?.path ?? null;
+      const apk = editorBin ? path.join(path.dirname(editorBin), "scene_preview", "ScenePreview.apk") : "";
       const present = await adb(["-s", s, "shell", "pm", "path", PKG]);
-      if (!/package:/.test(present.stdout) && fs.existsSync(apk)) {
+      if (!/package:/.test(present.stdout) && apk && fs.existsSync(apk)) {
         await adb(["-s", s, "install", "-r", apk], 180_000);
       }
-      const remote = `${filesDir}/${path.basename(outBundle)}`;
+      const remote = `${filesDir}/${path.basename(packed.bundle)}`;
       await adb(["-s", s, "shell", "mkdir", "-p", filesDir]);
-      await adb(["-s", s, "push", outBundle, remote], 300_000);
+      await adb(["-s", s, "push", packed.bundle, remote], 300_000);
       const sceneName = workName;
       await adb(["-s", s, "shell", "am", "start", "-n", `${PKG}/.platform.LaunchActivity`, "--es", "sceneName", sceneName, "--es", "previewConfig", "{}", "--ef", "cameraHeightOffset", "0"]);
       await sleep(2500);
@@ -154,7 +266,7 @@ export function registerWorkflowTools(server: McpServer) {
 
       const m = buildCapabilityMatrix(workName, [
         { name: "scene packs to .bundle", status: "structural", evidence: "spatialbundle pack ok" },
-        { name: "bundle has geometry", status: "structural", evidence: `models=${modelMatch?.[1] ?? "?"} assets=${assetMatch?.[1] ?? "?"}` },
+        { name: "bundle has geometry", status: "structural", evidence: `models=${modelMatch ?? "?"} assets=${assetMatch ?? "?"}` },
         { name: "ScenePreview loads the scene", status: logErr ? "structural" : "logcat_asserted", evidence: logErr ? `load warning: ${logErr.trim().slice(0, 120)}` : "no load error in logcat" },
         { name: "visual appearance correct", status: "structural", evidence: "frame captured + RETURNED — LOOK (ScenePreview is a free-cam diorama); appearance NOT auto-verified" },
       ]);
@@ -179,22 +291,23 @@ export function registerWorkflowTools(server: McpServer) {
         expectMeshNames: z.array(z.string()).default([]).describe("Mesh/asset names that must appear in the bundle"),
         minMeshes: z.number().int().optional().describe("Fail if fewer than this many mesh assets"),
         toolsVersion: z.string().optional(),
+        androidProjectRoot: z.string().optional().describe(ANDROID_PROJECT_ROOT_DESCRIPTION),
       },
     },
-    async ({ sceneDir, projectDir, expectMeshNames, minMeshes, toolsVersion }) => {
-      const { root } = resolveToolsRoot();
-      const sel = pickVersion(root, toolsVersion, "editor");
-      if (!sel?.spatialbundle) return fail(`No spatialbundle found under ${root}`);
+    async ({ sceneDir, projectDir, expectMeshNames, minMeshes, toolsVersion, androidProjectRoot }) => {
+      const ctx = await resolveSceneToolchain({ toolsVersion, androidProjectRoot });
+      if ("error" in ctx) return fail(`verify_scene: ${ctx.error}`);
       const outBundle = path.join(os.tmpdir(), "pico-mcp", `verify-${Date.now()}.bundle`);
-      fs.mkdirSync(path.dirname(outBundle), { recursive: true });
-      const packArgs = ["pack", "-s", expandHome(sceneDir), "-o", outBundle, "--formats", "usda", "--override-output", "--force-build"];
-      if (projectDir) packArgs.push("-p", expandHome(projectDir));
-      const pack = await run(sel.spatialbundle, packArgs, { timeoutMs: 600_000 });
-      if (pack.code !== 0 || !fs.existsSync(outBundle)) {
-        return fail(`verify_scene: compile FAILED.\n${tail(pack.stdout + pack.stderr, 40)}`);
+      const packed = await packAndInspectScene(hostScenePackDeps(ctx), {
+        sceneDir: expandHome(sceneDir),
+        projectDir: projectDir ? expandHome(projectDir) : undefined,
+        outBundle,
+        details: true,
+      });
+      if ("error" in packed) {
+        return fail(`verify_scene: compile FAILED with ${toolchainProvenanceLine(ctx)}.\n${packed.error}`);
       }
-      const info = await run(sel.spatialbundle, ["info", "--input", outBundle, "--details"], { timeoutMs: 60_000 });
-      const txt = info.stdout;
+      const txt = packed.info;
       const num = (re: RegExp) => Number(txt.match(re)?.[1] ?? 0);
       const meshNames = [...txt.matchAll(/Asset Name:\s*(.+?)\s*\n\s*Asset Type:\s*mesh/g)].map((m) => m[1].trim());
       const result = {
@@ -205,7 +318,8 @@ export function registerWorkflowTools(server: McpServer) {
         textureAssets: (txt.match(/Asset Type:\s*texture/g) || []).length,
         materialAssets: (txt.match(/Asset Type:\s*materialinstance/g) || []).length,
         meshNames: [...new Set(meshNames)],
-        bundleSizeMB: Number((fs.statSync(outBundle).size / 1024 / 1024).toFixed(2)),
+        bundleSizeMB: packed.sizeMB,
+        ...toolchainProvenance(ctx),
       };
       const problems: string[] = [];
       for (const want of expectMeshNames) if (!meshNames.some((n) => n.includes(want))) problems.push(`expected mesh '${want}' not found`);

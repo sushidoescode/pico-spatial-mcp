@@ -23,7 +23,11 @@ let failures = 0;
 // CI runners have no PICO SDK/emulator payload — with SMOKE_SDK_OPTIONAL=1, checks that fail
 // ONLY because the local toolchain is absent count as SKIP (environmental), not FAIL (code).
 const SDK_OPTIONAL = !!process.env.SMOKE_SDK_OPTIONAL;
-const ENV_MISS = /No (spatialbundle binary|emulator payload) found under/;
+// S2: the packer consumers now fail with the toolchain resolver's structured code instead of a
+// hand-written sentence, so this matcher names the codes that mean "this host has no PICO
+// toolchain". Caller-error codes (override-*, android-project-*) are deliberately NOT listed —
+// those are real failures even on a machine with no SDK.
+const ENV_MISS = /No (spatialbundle binary|emulator payload) found under|unavailable\/(component-missing|root-unavailable|version-missing|unsupported-default-root|component-unsupported-platform)/;
 const show = (name, res) => {
   const text = res.content
     .map((c) => (c.type === "text" ? c.text : `[${c.type} ${c.data ? Math.round(c.data.length * 0.75) + " bytes" : ""}]`))

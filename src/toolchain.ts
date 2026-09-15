@@ -1,19 +1,34 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expandHome, run } from "./util.js";
 import {
   compareVersions,
+  isVersionToken,
   registerDefaultToolchainIO,
   resolveRootCandidate,
   resolveToolchain,
   scanInstallations,
   selectInstallation,
+  type FileIdentity,
   type InstallationScan,
+  type SelectedToolchain,
   type ToolComponent,
   type ToolchainIO,
   type ToolchainRequest,
   type ToolchainSelection,
+  type UnusableToolchain,
+} from "./toolchainselection.js";
+
+export type {
+  FileIdentity,
+  SelectedToolchain,
+  ToolComponent,
+  ToolchainIO,
+  ToolchainRequest,
+  ToolchainSelection,
+  UnusableToolchain,
 } from "./toolchainselection.js";
 
 /**
@@ -73,6 +88,225 @@ registerDefaultToolchainIO(hostToolchainIO);
  */
 export function resolveHostToolchain(request: ToolchainRequest): ToolchainSelection {
   return resolveToolchain(request, hostToolchainIO());
+}
+
+// ------------------------------------------------------- operation-scoped selection
+//
+// What a pack/launch operation resolves ONCE and then hands to every one of its stages.
+// Re-resolving per stage is how a two-stage operation ended up packing with one install and
+// inspecting with another; the object below is the thing that gets passed down instead.
+
+/** The explicit $PICO_SPATIALBUNDLE binary, identified by its bytes rather than its filename. */
+export interface BinaryOverride {
+  file: FileIdentity;
+  /** Only ever set by an actual bounded `--version` probe during packing; never guessed. */
+  reportedVersion: string | null;
+}
+
+export interface OperationToolchainRequest extends ToolchainRequest {
+  /** The component whose executable this operation runs. Must also appear in `required`. */
+  primary: ToolComponent;
+  /** Honour $PICO_SPATIALBUNDLE as an explicit packer override (packer operations only). */
+  allowBinaryOverride?: boolean;
+}
+
+export interface OperationToolchain {
+  /** The component-valid host selection, or null when an explicit override carries the operation. */
+  selection: SelectedToolchain | null;
+  /** Why no selection was available, when an override is carrying the operation regardless. */
+  selectionUnavailable: UnusableToolchain | null;
+  /** $PICO_SPATIALBUNDLE, identity-disclosed. Structural inspection NEVER launches it. */
+  binaryOverride: BinaryOverride | null;
+  /** The absolute executable this operation will run for `component`. */
+  bin: string;
+  component: ToolComponent;
+  /** The explicit version pin this operation was asked for, if any. */
+  pinnedVersion: string | null;
+}
+
+/** The shared tool-schema description, so every operation documents this input identically. */
+export const ANDROID_PROJECT_ROOT_DESCRIPTION =
+  "Android project root (the directory holding settings.gradle/build.gradle). Used ONLY to read spatial.tools.dir from its local.properties when selecting the toolchain — it is NOT the .spatialproject directory (see projectDir).";
+
+/** Files whose presence makes a directory a readable Android project root. */
+export const ANDROID_PROJECT_MARKERS: readonly string[] = [
+  "settings.gradle.kts",
+  "settings.gradle",
+  "build.gradle.kts",
+  "build.gradle",
+];
+
+export function isToolchainFailure(value: unknown): value is UnusableToolchain {
+  return typeof value === "object" && value !== null
+    && (value as { status?: unknown }).status !== "ok"
+    && typeof (value as { code?: unknown }).code === "string";
+}
+
+function unusable(code: string, detail: string): UnusableToolchain {
+  return { status: "unavailable", code, detail };
+}
+
+/**
+ * Structural, process-free preparation of one operation's toolchain: validate any supplied
+ * Android project root, resolve the component-valid selection, and identify an explicit
+ * $PICO_SPATIALBUNDLE override by reading its bytes. Nothing here is executed — the override's
+ * version is only ever established inside the operation's own bounded probe boundary
+ * (see `verifyOperationOverride`).
+ */
+export function resolveOperationToolchain(
+  request: OperationToolchainRequest,
+  io: ToolchainIO = hostToolchainIO(),
+): OperationToolchain | UnusableToolchain {
+  // A supplied Android project root is a claim about a directory; check it before packing
+  // anything, so a typo does not surface minutes later as an opaque packer failure.
+  if (request.androidProjectRoot !== undefined) {
+    const declared = request.androidProjectRoot.trim();
+    if (!declared) {
+      return unusable("unavailable/android-project-unreadable", "androidProjectRoot was supplied but empty");
+    }
+    const P = io.platform === "win32" ? path.win32 : path.posix;
+    const present = ANDROID_PROJECT_MARKERS.filter((marker) => io.read(P.join(declared, marker)) !== null);
+    if (present.length === 0) {
+      return unusable(
+        "unavailable/android-project-unreadable",
+        `androidProjectRoot ${declared} carries no readable Android project metadata (expected one of ${ANDROID_PROJECT_MARKERS.join(", ")} at that root)`,
+      );
+    }
+  }
+
+  const pinnedVersion = (request.toolsVersion || request.projectToolsVersion || "") || null;
+
+  let binaryOverride: BinaryOverride | null = null;
+  if (request.allowBinaryOverride && request.primary === "packer") {
+    const declared = (io.env.PICO_SPATIALBUNDLE ?? "").trim();
+    if (declared) {
+      if (!io.executable(declared)) {
+        return unusable(
+          "unavailable/override-unusable",
+          `$PICO_SPATIALBUNDLE=${declared} is not an executable file; unset it or point it at a runnable spatialbundle binary`,
+        );
+      }
+      const bytes = io.read(declared);
+      if (!bytes) {
+        return unusable(
+          "unavailable/override-unusable",
+          `$PICO_SPATIALBUNDLE=${declared} could not be read to establish its identity`,
+        );
+      }
+      binaryOverride = {
+        file: { path: declared, sha256: createHash("sha256").update(bytes).digest("hex") },
+        reportedVersion: null,
+      };
+    }
+  }
+
+  const selected = resolveToolchain(
+    {
+      androidProjectRoot: request.androidProjectRoot,
+      toolsRoot: request.toolsRoot,
+      toolsVersion: request.toolsVersion,
+      projectToolsVersion: request.projectToolsVersion,
+      required: request.required,
+    },
+    io,
+  );
+  if (selected.status !== "ok") {
+    // An explicit override is the caller telling us which binary to run; it carries the
+    // operation even when the host has no installed toolchain at all (the behaviour the
+    // hardcoded 0.13 fallback used to provide, minus the invented path).
+    if (!binaryOverride) return selected;
+    return {
+      selection: null,
+      selectionUnavailable: selected,
+      binaryOverride,
+      bin: binaryOverride.file.path,
+      component: request.primary,
+      pinnedVersion,
+    };
+  }
+
+  const file = selected.files[request.primary];
+  if (!file) {
+    return unusable(
+      "unavailable/component-missing",
+      `Selected toolchain ${selected.version} did not carry the operation's primary component ${request.primary}; list it in 'required'`,
+    );
+  }
+  return {
+    selection: selected,
+    selectionUnavailable: null,
+    binaryOverride,
+    bin: binaryOverride ? binaryOverride.file.path : file.path,
+    component: request.primary,
+    pinnedVersion,
+  };
+}
+
+/** First dotted numeric run in a tool's version output. Never derived from a filename. */
+export function extractReportedVersion(output: string): string | null {
+  return output.match(/\d+(?:\.\d+)+/)?.[0] ?? null;
+}
+
+/** A pin matches a reported version when every component the pin names agrees. */
+export function reportedVersionMatchesPin(pin: string, reported: string): boolean {
+  if (!isVersionToken(pin)) return false;
+  const wanted = pin.split(".").map(Number);
+  const actual = reported.split(".").map(Number);
+  return wanted.every((part, index) => part === (actual[index] ?? Number.NaN));
+}
+
+export type OverrideVersionProbe = (bin: string) => Promise<string>;
+
+const defaultOverrideProbe: OverrideVersionProbe = async (bin) => {
+  const r = await run(bin, ["--version"], { timeoutMs: 15_000 });
+  return r.code === 0 ? `${r.stdout}\n${r.stderr}` : "";
+};
+
+/**
+ * Inside the operation's own bounded boundary: when an explicit version pin AND an explicit
+ * binary override are both present, the override must prove it is that version. An
+ * unprobeable override is `override-version-unverified`; a disagreeing one is
+ * `override-version-conflict`. With no pin nothing is launched and `reportedVersion` stays null.
+ */
+export async function verifyOperationOverride(
+  context: OperationToolchain,
+  probe: OverrideVersionProbe = defaultOverrideProbe,
+): Promise<OperationToolchain | UnusableToolchain> {
+  const override = context.binaryOverride;
+  if (!override || !context.pinnedVersion) return context;
+  const reported = extractReportedVersion(await probe(override.file.path));
+  if (!reported) {
+    return unusable(
+      "unavailable/override-version-unverified",
+      `$PICO_SPATIALBUNDLE=${override.file.path} was pinned to version ${context.pinnedVersion} but reported no version of its own; a binary's version is never inferred from its filename`,
+    );
+  }
+  if (!reportedVersionMatchesPin(context.pinnedVersion, reported)) {
+    return unusable(
+      "unavailable/override-version-conflict",
+      `$PICO_SPATIALBUNDLE=${override.file.path} reports version ${reported}, which contradicts the requested pin ${context.pinnedVersion}`,
+    );
+  }
+  return { ...context, binaryOverride: { ...override, reportedVersion: reported } };
+}
+
+/** The provenance every pack/launch result discloses: what was selected, and what actually ran. */
+export function toolchainProvenance(context: OperationToolchain): Record<string, unknown> {
+  return {
+    toolchain: context.selection,
+    ...(context.selection ? {} : { toolchainUnavailable: context.selectionUnavailable }),
+    ...(context.binaryOverride ? { binaryOverride: context.binaryOverride } : {}),
+  };
+}
+
+/** One line naming the exact binary an operation ran and where it came from. */
+export function toolchainProvenanceLine(context: OperationToolchain): string {
+  if (context.binaryOverride) {
+    const version = context.binaryOverride.reportedVersion ?? "version not probed";
+    return `${context.component} from $PICO_SPATIALBUNDLE ${context.binaryOverride.file.path} (${version}, sha256 ${context.binaryOverride.file.sha256.slice(0, 12)})`;
+  }
+  const selection = context.selection!;
+  return `${context.component} ${selection.version} from ${selection.rootSource} ${selection.root} (toolchain ${selection.identity.slice(0, 12)})`;
 }
 
 export interface ToolsRoot {

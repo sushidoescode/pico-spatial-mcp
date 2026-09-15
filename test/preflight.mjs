@@ -385,5 +385,90 @@ else fail(`preflight_env cached managed-store contract broken: ${JSON.stringify(
 fs.rmSync(emptyManaged.root, { recursive: true, force: true });
 fs.rmSync(cachedManaged.root, { recursive: true, force: true });
 
+// ===========================================================================================
+// Task S2 block — the pico-sdk row comes from the injected structural toolchain selection.
+// (Appended as one delimited block; the CLI track appends its own after this one.)
+// ===========================================================================================
+{
+  // The brief's regression, verbatim: a host whose selection is 6.1 must not be described
+  // through the legacy hardcoded 0.13 directory.
+  const checks = runPreflightChecks({...healthyIO, toolchainInspection:{
+    status:"ok", root:"/sdk", rootSource:"PICO_HOME", version:"6.1",
+    reason:"newest-usable", files:{packer:{path:"/sdk/6.1/packer",sha256:"a".repeat(64)}}, identity:"b".repeat(64)
+  }});
+  const row = checks.find((x) => x.name === "pico-sdk");
+  if (row && row.status === "pass" && /6\.1/.test(row.detail) && !/0\.13/.test(row.detail)) {
+    ok("pico-sdk row reports the SELECTED version, not the legacy 0.13 directory");
+  } else {
+    fail(`pico-sdk row did not report the injected 6.1 selection: ${JSON.stringify(row)}`);
+  }
+  if (row && /PICO_HOME/.test(row.detail)) ok("pico-sdk row names the selected root source");
+  else fail(`pico-sdk row does not name the root source: ${JSON.stringify(row)}`);
+}
+
+{
+  // An existing (empty) 0.13 directory used to be the whole check. statMtimeMs() returning a
+  // number for EVERY path is exactly that machine; an unavailable selection must still fail.
+  const checks = runPreflightChecks({...healthyIO, toolchainInspection:{
+    status:"unavailable", code:"unavailable/component-missing",
+    detail:"No toolchain under /fake-home/Library/PICO/sdk provides every required component (packer); inspected 0.13",
+  }});
+  const row = checks.find((x) => x.name === "pico-sdk");
+  if (row && row.status === "fail" && /component-missing/.test(row.detail) && typeof row.fix === "string" && row.fix.length > 10) {
+    ok("an empty 0.13 directory no longer makes an unavailable selection pass");
+  } else {
+    fail(`unavailable selection did not fail the pico-sdk row: ${JSON.stringify(row)}`);
+  }
+}
+
+{
+  // Split install: the packer is 6.1 and the emulator payload is 6.0. Each component reports its
+  // OWN version instead of the pair collapsing to one "unavailable".
+  const checks = runPreflightChecks({...healthyIO,
+    toolchainInspection:{
+      status:"ok", root:"/sdk", rootSource:"local.properties", version:"6.1", reason:"newest-usable",
+      files:{packer:{path:"/sdk/6.1/editor/spatialbundle/spatialbundle",sha256:"c".repeat(64)}}, identity:"d".repeat(64),
+    },
+    emulatorInspection:{
+      status:"ok", root:"/sdk", rootSource:"local.properties", version:"6.0", reason:"newest-usable",
+      files:{emulator:{path:"/sdk/6.0/emulator/emulator",sha256:"e".repeat(64)}}, identity:"f".repeat(64),
+    },
+  });
+  const row = checks.find((x) => x.name === "pico-sdk");
+  if (row && row.status === "pass" && /packer 6\.1/.test(row.detail) && /emulator 6\.0/.test(row.detail)) {
+    ok("pico-sdk row reports packer and emulator versions separately");
+  } else {
+    fail(`split 6.1/6.0 install was not reported per component: ${JSON.stringify(row)}`);
+  }
+}
+
+{
+  // A packer-only host is still buildable; the missing emulator payload is disclosed, not hidden.
+  const checks = runPreflightChecks({...healthyIO,
+    toolchainInspection:{
+      status:"ok", root:"/sdk", rootSource:"PICO_HOME", version:"6.1", reason:"newest-usable",
+      files:{packer:{path:"/sdk/6.1/editor/spatialbundle/spatialbundle",sha256:"c".repeat(64)}}, identity:"d".repeat(64),
+    },
+    emulatorInspection:{ status:"unavailable", code:"unavailable/component-missing", detail:"no emulator payload under /sdk" },
+  });
+  const row = checks.find((x) => x.name === "pico-sdk");
+  if (row && row.status === "pass" && /packer 6\.1/.test(row.detail) && /emulator unavailable/.test(row.detail)) {
+    ok("pico-sdk row discloses a missing emulator payload without failing the build SDK");
+  } else {
+    fail(`packer-only host mis-reported: ${JSON.stringify(row)}`);
+  }
+}
+
+{
+  // Fixtures that describe no structural inspection get an honest "unknown", never a pass and
+  // never a silent 0.13 claim.
+  const row = runPreflightChecks(healthyIO).find((x) => x.name === "pico-sdk");
+  if (row && row.status === "unknown" && !/0\.13/.test(row.detail) && typeof row.fix === "string" && row.fix.length > 10) {
+    ok("pico-sdk row is unknown (not pass) when no structural selection was supplied");
+  } else {
+    fail(`pico-sdk row without an inspection is wrong: ${JSON.stringify(row)}`);
+  }
+}
+
 console.log(`\nPreflight test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);
