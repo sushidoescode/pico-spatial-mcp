@@ -129,7 +129,16 @@ export type CoverageInput = {
   monitoredSec?: number | null;
 };
 
-function deriveCoverage(input: CoverageInput): ObservationCoverage["coverage"] {
+/**
+ * Whether the captured stream is whole. The `outputComplete` INPUT answers only "the capture cap
+ * retained everything the child wrote"; a watchdog kill cut the stream mid-flight no matter what
+ * the cap did, so the emitted record reports that as incomplete output.
+ */
+function observedOutputComplete(input: CoverageInput): boolean {
+  return input.outputComplete && input.endedBy !== "watchdog";
+}
+
+function deriveCoverage(input: CoverageInput, outputComplete: boolean): ObservationCoverage["coverage"] {
   // A spawn or guard error observed nothing: there is no window to grade.
   if (input.endedBy === "error") return "unknown";
   const reachedRequestedWindow = input.elapsedSec >= input.requestedDurationSec;
@@ -139,25 +148,34 @@ function deriveCoverage(input: CoverageInput): ObservationCoverage["coverage"] {
     // reaching the requested wall-clock window bounds our observation but not the CLI's monitoring.
     return reachedRequestedWindow ? "partial" : "unknown";
   }
-  if (!input.outputComplete) return "partial";
+  if (!outputComplete) return "partial";
   if (input.exitCode !== null && input.exitCode !== 0) return "partial";
-  // `cli-exit` under a native timeout means the CLI returned before its own deadline.
-  return reachedRequestedWindow && input.endedBy !== "cli-exit" ? "complete" : "partial";
+  // Only the CLI ending the window ITSELF can be complete.
+  //
+  // `cli-exit` under a native timeout means the CLI returned before its own deadline. And a
+  // `watchdog` end is the WEAKEST evidence, not the strongest: the child blew past the deadline we
+  // handed it by the entire grace and had to be killed, so it never performed the end-of-window log
+  // collection WATCH050 charges to that same deadline — and a killed child has no exit code, so the
+  // nonzero-exit guard above never fires for it. Grading that `complete` would produce the
+  // strongest verdict from the weakest evidence, and would contradict the non-native branch, which
+  // caps the identical kill at `partial`.
+  return reachedRequestedWindow && input.endedBy === "native-duration" ? "complete" : "partial";
 }
 
 /**
  * Grade one bounded observation. `complete` requires all three: the CLI was given the window
- * natively, it ran to the end of that window (its own duration, or our watchdog firing no earlier
- * than the requested seconds), and the captured output is whole.
+ * natively, it ended that window itself (`native-duration`) rather than being killed, and the
+ * captured output is whole. A watchdog kill is never complete on either line.
  */
 export function assessCoverage(input: CoverageInput): ObservationCoverage {
+  const outputComplete = observedOutputComplete(input);
   return {
     requestedDurationSec: input.requestedDurationSec,
     elapsedSec: input.elapsedSec,
     monitoredSec: input.monitoredSec ?? null,
     endedBy: input.endedBy,
-    coverage: deriveCoverage(input),
-    outputComplete: input.outputComplete,
+    coverage: deriveCoverage(input, outputComplete),
+    outputComplete,
   };
 }
 
@@ -166,14 +184,19 @@ export function describeCoverage(coverage: ObservationCoverage, nativeTimeoutSup
   const window = `${coverage.elapsedSec}s observed of a ${coverage.requestedDurationSec}s request`;
   switch (coverage.coverage) {
     case "complete":
-      return `complete: ${window}; the CLI was given the window with --monitor-timeout and it ran to the end (${coverage.endedBy}) with whole output. `
+      // Only reachable for `native-duration`: the CLI ended its own window and exited on its own.
+      return `complete: ${window}; the CLI was given the window with --monitor-timeout and ended it itself (${coverage.endedBy}) with whole output. `
         + MONITORED_WINDOW_UNAVAILABLE;
     case "partial":
       return `partial: ${window}, ended by ${coverage.endedBy}`
-        + (coverage.outputComplete ? "" : ", and the captured output was truncated")
-        + (nativeTimeoutSupported
-          ? ". The window was cut short, so the unobserved remainder is unknown."
-          : ". This CLI line has no duration flag, so the window was never handed to it and its own monitoring bound is a constant this wrapper did not set.")
+        + (coverage.endedBy === "watchdog"
+          ? ", so this wrapper killed a child that had not settled: the CLI never ended the window itself, and its end-of-window log collection never ran"
+          : coverage.outputComplete ? "" : ", and the captured output was truncated")
+        + (coverage.endedBy === "watchdog"
+          ? ". A killed child is the weakest evidence there is; silence here says nothing about what the CLI did or did not see."
+          : nativeTimeoutSupported
+            ? ". The window was cut short, so the unobserved remainder is unknown."
+            : ". This CLI line has no duration flag, so the window was never handed to it and its own monitoring bound is a constant this wrapper did not set.")
         + " " + MONITORED_WINDOW_UNAVAILABLE;
     default:
       return `unknown: ${window}, ended by ${coverage.endedBy}`
@@ -188,7 +211,8 @@ export type WatchAssessment = "crash-indicated" | "no-crash-detected" | "inconcl
 
 /**
  * The honest verdict line. A quiet window is only a no-crash answer when the window was fully
- * covered AND the scanned log was whole; otherwise silence is inconclusive, never success.
+ * covered AND the scanned log was whole; otherwise silence is inconclusive, never success. Since a
+ * watchdog kill can never reach `complete` (assessCoverage), a killed child is always inconclusive.
  */
 export function watchAssessment(input: {
   indicators: readonly string[];

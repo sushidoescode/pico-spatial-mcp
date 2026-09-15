@@ -155,9 +155,13 @@ test("ObservationCoverage carries exactly the declared fields", () => {
 
 test("assessCoverage never calls an early or unbounded window complete", () => {
   const base = { requestedDurationSec: 60, nativeTimeoutSupported: true, exitCode: 0, outputComplete: true, monitoredSec: null };
-  // Native timeout + the CLI's own duration + complete output is the only `complete` shape.
+  // Native timeout + the CLI ending the window ITSELF + complete output is the only `complete` shape.
   assert.equal(assessCoverage({ ...base, elapsedSec: 60, endedBy: "native-duration" }).coverage, "complete");
-  assert.equal(assessCoverage({ ...base, elapsedSec: 80, endedBy: "watchdog", exitCode: null }).coverage, "complete");
+  // A watchdog kill is the weakest evidence, not the strongest: the child blew past the deadline we
+  // gave it by the whole grace and was killed, so it never ran its end-of-window log collection.
+  const killed = assessCoverage({ ...base, elapsedSec: 80, endedBy: "watchdog", exitCode: null });
+  assert.equal(killed.coverage, "partial");
+  assert.equal(killed.outputComplete, false, "a SIGKILL cuts the stream whatever the capture cap did");
   // Early exit inside a native window is partial: we know exactly how short it was.
   assert.equal(assessCoverage({ ...base, elapsedSec: 1, endedBy: "cli-exit" }).coverage, "partial");
   // Truncated output can never be complete.
@@ -246,9 +250,27 @@ test("a stuck child is killed by the documented watchdog and reports observed el
   assert.equal(seen.timeoutMs, 80_000);
   assert.equal(result.watchedSec, 80);
   assert.equal(result.observation.endedBy, "watchdog");
-  assert.equal(result.observation.coverage, "complete");
+  assert.equal(result.observation.coverage, "partial");
   assert.match(result.endedBy, /^duration-cap/);
-  assert.equal(result.assessment, "no-crash-detected");
+  assert.equal(result.assessment, "inconclusive");
+});
+
+test("a watchdog-killed silent child is never graded complete or no-crash-detected", async () => {
+  // The worst case the old model got backwards: a child on a line that WAS given --monitor-timeout,
+  // which wrote nothing at all, blew through its own deadline plus the entire grace, and had to be
+  // SIGTERM/SIGKILLed. Strongest verdict from the weakest evidence.
+  const { result } = await observe({ mode: "hang", elapsedSec: 80, realTimeoutMs: 700 });
+  assert.equal(result.nativeTimeoutSupported, true);
+  assert.equal(result.observation.endedBy, "watchdog");
+  assert.equal(result.observation.coverage, "partial");
+  assert.notEqual(result.observation.coverage, "complete");
+  assert.equal(result.observation.outputComplete, false, "the kill cut the stream");
+  assert.equal(result.crashIndicated, false);
+  assert.equal(result.assessment, "inconclusive");
+  assert.notEqual(result.assessment, "no-crash-detected");
+  assert.equal(result.outputTail, "(no output during the window)");
+  assert.doesNotMatch(result.coverageNote, /ran to the end/);
+  assert.match(result.coverageNote, /never ended the window itself|end-of-window log collection/);
 });
 
 test("a stuck child without a native timeout can only be partial coverage", async () => {

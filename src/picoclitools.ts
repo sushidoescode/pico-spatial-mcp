@@ -332,7 +332,7 @@ export function registerPicoCliTools(server: McpServer) {
         "returned as picoCli provenance. HONESTY: " + WATCH_HONESTY,
       // Typed contract (2026-07-28 revision lane): the shared CLI-wrapper core + the watch fields.
       outputSchema: z.object({
-        status: z.enum(["ok", "failed", "unavailable"]).describe("ok = the window ran (a watchdog kill is the healthy end of a stuck child); failed = the CLI exited non-zero early, or its capability evidence refuses the route; unavailable = pico-cli absent/unusable."),
+        status: z.enum(["ok", "failed", "unavailable"]).describe("ok = the window ran and is reported (a watchdog kill of a stuck child is reported here too, but it is never graded observation.coverage:'complete'); failed = the CLI exited non-zero early, or its capability evidence refuses the route; unavailable = pico-cli absent/unusable."),
         ...cliWrapperContractShape,
         packageName: z.string().optional(),
         watchedSec: z.number().optional().describe("OBSERVED elapsed seconds from a monotonic clock. MEANING CHANGED (C3): this was previously the REQUESTED window; it is now what was actually observed, and it can be far shorter."),
