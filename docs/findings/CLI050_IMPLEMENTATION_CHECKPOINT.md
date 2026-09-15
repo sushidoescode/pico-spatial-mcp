@@ -8,8 +8,9 @@ spec: [CLI_050_SDK61_EVOLUTION_HANDOFF_2026-09-15.md](../CLI_050_SDK61_EVOLUTION
 **This is a compatibility checkpoint, not an acceptance.** Nineteen tasks made this server's CLI
 routes, SDK selection and release machinery correct against pico-cli 0.5 and Spatial SDK 6.1 *as
 declared*. No 0.5.0 command ran through this host's managed CLI, no emulator or device was used for
-verification, and **not one frame was captured or looked at**. The strongest evidence class earned
-anywhere in this checkpoint is `host-executed`.
+verification, and **no frame was captured as evidence or looked at; the only frames produced were
+the accidental RED-run captures recorded under Negative evidence, neither inspected nor retained**.
+The strongest evidence class earned anywhere in this checkpoint is `host-executed`.
 
 Where a claim's strength is not obvious it is labelled with its evidence class, and the sections
 that exist to state strength — the class table below, the capability matrix, the battery results,
@@ -60,8 +61,16 @@ these are compatibility-affecting behavior changes, and hosts install by version
 - `scaffold_spatial_app` refuses without a usable packer.
 - An explicit `PICO_ADB` that names no file **fails closed** instead of being silently ignored.
 - `verify_pico_apk` / `pico_verify_app`, `capture_frame`, `capture_record` and (this task)
-  `watch_crash` require an explicit target; there is no default serial.
-- The build script, smoke, `--publish` semantics and the gate inventory all changed.
+  `watch_crash` require an explicit target; there is no default serial. Since the fix wave the
+  target is required in the **input schema** of `watch_crash`, `verify_pico_apk` and
+  `capture_record`, so a client that omits it gets a protocol validation error rather than a
+  typed refusal.
+- `install_editor_palette` selects the editor bundle it modifies through the toolchain selection
+  (fix wave) instead of re-signing a hardcoded `~/Library/PICO/sdk/0.13` bundle; an explicit
+  `editorApp` still wins.
+- The build script, smoke, `--publish` semantics and the gate inventory all changed, and (fix
+  wave) every `fixture`/`installed-artifact` gate child runs under `PICO_ADB=/fixture/no/such/adb`
+  unless the caller set one.
 
 A major is the conservative signal. The word "validated" is deliberately absent from the release
 commit subject: fixture gates do not validate native behavior.
@@ -123,6 +132,28 @@ controller scratch).
 | Release guard | `test/docsmeta.mjs` now fails when `package-lock.json`'s two version fields disagree with `package.json`. |
 | Release metadata | 38.0.0 applied through the guarded `npm version --no-git-tag-version`; `npm run sync:meta` stamped eight manifest sites; `sync-metadata --check` reports zero stale sites. |
 
+### What the fix wave changed (final whole-branch review → FIX1)
+
+The final whole-branch review found no Critical, nine Important and seven Minor items; all
+were dispositioned by the controller and implemented in one wave on top of `8ef62e4`. Everything
+here is `source-inspected` / `fixture-tested` / `host-executed`; nothing native or visual.
+
+| Item | Change | Commit |
+|---|---|---|
+| Hermeticity barrier enforced | `FIXTURE_NO_ADB` and `gateChildEnv` in `scripts/gate-inventory.mjs`; `run-gate` applies the literal to every `fixture`/`installed-artifact` child unless the caller set `PICO_ADB` (caller value wins; `native-contract` untouched; `process.env` never written); `gates.yml` carries it at workflow level; seven unit tests through the injected `spawnChild` | `35d6f07` |
+| Call-only door fixtures cannot spawn the inner server | `doorCallRaw` refuses with a fixture error naming the missing `callRaw` seam and the two raw-lane doors before any `inner()` call; the mirror case (`dependencies.call` ignored beside `callRaw`) documented in the same comment; `test/doors.mjs` drives `pico_look` and `pico_verify_app` on a call-only server under a stub `PICO_ADB` | `7297f68` |
+| Targets required in the schema | `verify_pico_apk.serial` and `capture_record.device` are `z.string()`; handlers keep the whitespace refusal; tests assert the registered schema and the whitespace case; `capture_record`'s description states `status` grades the call and `media` is the separate validation verdict (`unvalidated` = not inspected) — no behavior change | `9b384bb` |
+| `install_editor_palette` selects | per-call `resolveOperationToolchain({ required: ["editor"], primary: "editor" })`; an explicit `editorApp` wins as an explicit path; the selection layer's `unavailable/*` failure is returned verbatim; every result discloses the bundle and its provenance; consumer test against an in-memory tree only, never a real bundle | `48aebc9` |
+| Knowledge remedy wording; adb scope comment | both `describePicoCliEnvironmentFailure` sites in `src/knowledge.ts` pass `KNOWLEDGE_OPERATION`, so an environment-classed knowledge refusal is no longer worded as a profiler-payload problem; `src/adb.ts` documents that the bundled adb resolves from the host tools root with no project root and that preflight's `adbInspection` agrees | `ba07103` |
+| Documentary truth | `AGENTS.md` bootstrap sentence (identity-driven rebuild) and the pin sentence; `.claude/rules/release-invariants.md` (wholesale publication) and `.claude/rules/src-runtime.md` (selection + residual literals); this document's I2/I3/I4/I6/I7 corrections and the log-tracking sentences; `CHANGELOG.md` 38.0.0 section; S6 `REVIEW.md` rows 1 and 8 scoped, with a dated correction | the wave's `docs:` commit |
+| Distributable republished from the final tree | see "Step 6 — the distributable" below; F1's artifact left byte-identical and labeled superseded | the wave's evidence commit |
+
+Reviewer items deliberately NOT changed in code (disclosed instead): the `emulator-5554` defaults
+of `perf_diagnose`/`pico_perf` and `perf_trace record`, the emulator-family defaults kept by
+design, `check_toolchain_updates`'s 0.13 reads, the nine doors that bypass the injection seam, the
+`capture_frame` output naming, `[M11]`'s empty `/tmp/pico-render/`, and the duplicate
+`gates.yml:166` step — all in the known-gaps table below.
+
 ## Exact commands and results
 
 Every command below ran in this worktree with **`PICO_ADB=/fixture/no/such/adb` exported** — a
@@ -168,8 +199,9 @@ npm run test:docsmeta                   exit 0, 26 pass / 0 fail
 ### Step 4 — the lock-version guard, then 38.0.0
 
 RED, with `package-lock.json`'s `packages[""].version` deliberately set to `0.0.0-deliberate-mismatch`
-(log retained at `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/docsmeta-lockversion-RED.log`,
-untracked because the repository gitignores `*.log`):
+(log retained at `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/docsmeta-lockversion-RED.log`;
+tracked — force-added past the repository's `*.log` ignore in commit `8ef62e4`, as the audit
+evidence directory's logs are):
 
 ```
   ok   package-lock.json version carries version 37.0.0
@@ -219,7 +251,7 @@ BATTERY FAIL  52/55 passed; 3 failed:
 `installed-artifact` gate runs on any OS, and only a `native-contract` gate assigned to another OS
 is skipped. This host is macOS and both native-contract gates are macOS-assigned, so all 55 ran.
 The aggregate log is `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/battery-38.0.0.log`
-(453 kB, untracked — the repository gitignores `*.log`).
+(453 kB; tracked — force-added past the repository's `*.log` ignore in commit `8ef62e4`).
 
 Three gates the brief asked to be inspected **before** running, and what they actually did here:
 
@@ -534,9 +566,18 @@ rather than declared: `test/emulator.mjs`'s boot fixture (see step 5 above). It 
 device — its own fake `adb` was first on `PATH` — but it would have inherited a host `PICO_ADB`, and
 "first on PATH" is not a barrier anyone can rely on. It now declares its adb explicitly.
 
-**The rule this leaves behind:** pin `PICO_ADB` to a nonexistent path for every suite run, and treat
-a failure under the pin as a fixture finding to repair — never as a reason to unpin. A fixture
-should *name* the tools it uses, rather than arranging for the right one to be found.
+**The rule this leaves behind — enforced since the fix wave (commit `35d6f07`), not remembered:**
+`scripts/run-gate.mjs` spawns every `fixture` and `installed-artifact` gate child with
+`PICO_ADB=/fixture/no/such/adb` (`FIXTURE_NO_ADB` in `scripts/gate-inventory.mjs`) unless the
+caller set one — a caller-set value always wins, `native-contract` gates get no default, and
+`process.env` is never written — and `.github/workflows/gates.yml` carries the same literal at
+workflow level, which also covers its one raw `node --test test/homeenvironmenthost.mjs` step.
+`npm run <gate>` and `node scripts/run-battery.mjs` therefore carry the barrier themselves (the
+fix wave's battery ran WITHOUT the export, with a marker-writing tripwire `adb` first on `PATH`,
+and the marker was never written — see the fix-wave section). A direct `node --test test/<file>.mjs`
+invocation still gets nothing from either and must export it. The rest of the rule stands: treat a
+failure under the pin as a fixture finding to repair — never as a reason to unpin — and make a
+fixture *name* the tools it uses rather than arranging for the right one to be found.
 
 
 
@@ -561,10 +602,51 @@ should *name* the tools it uses, rather than arranging for the right one to be f
 | `capture_canonical` / `pico_look` keep the `emulator-5554` default and the fixed `/tmp/pico-render/canonical.png` path | Ruled for this checkpoint: `pico_look` is *by design* the emulator LOOK door with no inputs. The mutable canonical path is a known immutability gap — two `pico_look` calls overwrite each other's frame. The ledger's looked-byte hash check still protects claims, because `record_verification` re-captures and demands byte equality. Closing it means giving `pico_look` a target and a run-unique path, i.e. a second breaking change. |
 | `capture_record`'s parameter is `device`, not `serial` | Deliberate. `capture_frame`, `verify_pico_apk` and `watch_crash` use `serial`/`device` inconsistently; renaming `capture_record`'s would be a second break in one release for no behavioral gain. Its **requirement** is what changed. |
 | `watch_crash`'s numbers are fixture-derived | `watchedSec`, `observation.coverage` and `assessment` are exercised only against fake children and a scripted monotonic clock. **No watch has ever run against a real `pico-cli` line or a real device**, so no observed-vs-requested number here is evidence about CLI behavior. On 0.4.x the CLI's internal bound cannot be set at all, so coverage there is capped at partial/unknown by construction. |
-| `verify_pico_apk` and `capture_record` still mark their target **optional in the schema** while the prose says REQUIRED | Both handlers refuse without it, so behavior is correct; the schema is just the softer of the two statements, and a client sees the refusal as a typed result rather than a protocol validation error. `watch_crash` was tightened to `z.string()` in this round and is the model: required in the schema, with the handler's refusal still covering the empty / whitespace-only string a schema cannot reject. The other two are a one-line change each, left for whoever owns the next surface sweep. |
+| ~~`verify_pico_apk` and `capture_record` still mark their target optional in the schema while the prose says REQUIRED~~ — **closed in the fix wave** (commit `9b384bb`) | `serial` (`verify_pico_apk`) and `device` (`capture_record`) are now `z.string()`, required in the schema exactly as `watch_crash` is, with each handler's own refusal kept as defense in depth for the empty / whitespace-only string a schema cannot reject; the refusal tests assert the registered schema and the whitespace case. `pico_verify_app` already declared `serial` required and so mirrors the inner contract; no door forwards `capture_record`. Every existing caller in `test/` already passed the target. |
+| `perf_diagnose` (and therefore the `pico_perf` door) and `perf_trace record` still default `device` to **`emulator-5554`** | `src/perfcli.ts:74` (`DEFAULT_PERF_DEVICE`) and `:631` (`opts.device ?? DEFAULT_PERF_DEVICE`); `src/perftrace.ts:589` (`device ?? "emulator-5554"`); the `pico_perf` door (`src/doors.ts`, DOOR 7) takes only `packageName` and `durationSec`, so it cannot even name a device. The explicit-target ruling was applied to the four observation tools and `watch_crash`, not to the perf lanes, and the "Why 38.0.0" list above is correctly scoped to the tools that changed — this row exists so nobody reads it as covering perf. Applying the same refusal here is a further contract break with no plan task; deferred to the next surface sweep. **Disclosed, not changed.** |
+| Emulator-family tools keep the emulator default **by design** | `docs/DEVICE_VERIFICATION.md` §6 ("Serial support") records the routing, and it is unchanged at 38.0.0: `verify_baseline`, `verify_visual` and `capture_canonical` accept a serial but default to the emulator; `capture_canonical`/`pico_look` are the no-input LOOK door (first row of this table); `logcat`, `assert_logcat`, `app_broadcast` and the basic adb tools resolve the sole connected device when no serial is passed; `screenrecord`, `wait_for_log`, `check_crash` and `ui_dump` accept a serial through the agent-loop adb path. None of these is covered by the explicit-target ruling. |
+| Nine doors bypass the injection seam entirely | `pico_scan_world`, `pico_place`, `pico_measure`, `pico_perf`, `pico_sdk`, `pico_doctor`, `pico_capabilities`, `pico_fix` and `pico_next` call `inner()` directly instead of `doorCall`, so `registerDoorTools(server, dependencies)` cannot redirect them and a fixture server that drives one of them spawns the real inner full-surface server. The fix wave (commit `7297f68`) closed the raw lane — `pico_look` and `pico_verify_app` on a call-only fixture now refuse at the seam — which was the reviewed finding; these nine are pre-existing and outside it. Every test that drives them today does so over the real inner transport with `PICO_ADB` pinned to a stub (`test/doors.mjs`'s e2e block, `[M11]`). Next surface sweep. |
+| `check_toolchain_updates` (`src/toolchainwatch.ts:22,27`) reads the **0.13** emulator `package.xml` and editor `version` file directly | An informational reporter comparing installed versions against PICO's release feed: it selects nothing and launches nothing, but on a host without a 0.13 payload its "installed" columns are empty rather than the selected 6.1 versions, and on a host with both it reports the legacy ones. Never routed through the S1/S2 selection and covered by no S6 row (corrected in `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/sdk61-selection/REVIEW.md`). Not migrated — no plan task; next surface sweep. |
+| Residual `0.13` literals in `src/` | 134 matches at the fix wave (`grep -n '0\.13' src/*.ts`), every one enumerated with a disposition in the subsection below. Two are executed paths (`toolchainwatch.ts`, the row above), one is a retained last-candidate path (`preflight.ts` `LEGACY_SDK_ADB`), one is a default vault workspace label (`vault.ts`), one is remedy text (`diagnose.ts`); the rest are version-label examples, provenance references to the 0.13.3 declarations, or numeric coincidences. `install_editor_palette`'s executed path was removed in the fix wave (commit `48aebc9`). |
 | `docs/claims/claims.json` was not annotated | Its `attestation` for P21 describes the removed `status=ok`/`processAlive`/`crashed` shape and the logcat clear. The file is **generated** from the trust ledgers by `generate_claims_page`, not hand-maintained, and the attestation is a verbatim historical record. Hand-editing it would rewrite history *and* be overwritten on the next regeneration. It is already a month stale (see `test:claims` above). Correction lands when the page is next regenerated on the ledger-owning machine — and that regeneration must be made with the Mission Replay question settled first. |
-| `gates.yml` has one raw step the inventory cannot see | The macOS lane runs `node --test test/homeenvironmenthost.mjs` directly rather than through a named gate, so `AGENTS.md`'s "one inventory owns every gate command" is true of every *named* gate but not of that line. |
+| `gates.yml` has one raw step the inventory cannot see | The macOS lane runs `node --test test/homeenvironmenthost.mjs` directly rather than through a named gate, so `AGENTS.md`'s "one inventory owns every gate command" is true of every *named* gate but not of that line — and the same file already runs inside `test:bridge` on the Linux lane, so the macOS step is a duplicate invocation the inventory's duplicate check cannot see. Left as is (disclosed); since the fix wave the workflow-level `env: PICO_ADB` covers that raw step, which `run-gate` cannot. |
+| `capture_frame` writes under `~/.pico-mcp/cli/observations/capture-frame/` | Naming only: the frame is an adb observation, not a CLI one, yet it lives under the CLI observation root (`src/capture.ts:18`). Run-unique and immutable as required; the directory name is left alone rather than moving an evidence root in a fix wave. |
+| `[M11]` leaves an empty `/tmp/pico-render/` on the host | `scripts/verify-tarball.mjs`'s installed-doors canary drives `pico_look`, whose `capture_canonical` keeps the fixed `/tmp/pico-render/canonical.png` path (first row of this table); the stub adb fails the screencap, so only the empty directory remains. Harmless. The I1 minor that expected this to disappear assumed C6 would move the canonical path; the later ruling kept it, so the premise — not the canary — was wrong. |
 | **`test:claims` reads host state as if it were repository state** | Its snapshot-freshness assertion regenerates from `~/.pico-mcp/ledgers`, so it passes in CI (no corpus → self-skip) and fails on any maintainer machine whose ledgers moved since the tracked snapshot was generated — independently of what that maintainer changed. **Open item: make `test:claims` hermetic against a fixture ledger**, so the gate tests the generator and the tracked snapshot rather than the developer's private corpus. Until then it is red on this host by ruling (see the battery section), and `docs/claims/claims.json` stays untouched. |
+
+### Residual `0.13` literals in `src/`
+
+`grep -n '0\.13' src/*.ts` at the fix wave: **134 matches**, every one listed. Dispositions:
+**by design** (a label, a last-resort candidate or an example the code is meant to carry);
+**informational** (prose naming the SDK revision a fact was read from, or a comment about the
+removed fallback — nothing is resolved from it); **not a version** (a numeric coincidence);
+**migrate next sweep** (an executed legacy path).
+
+| File | Lines | What the literal is | Disposition |
+|---|---|---|---|
+| `toolchainwatch.ts` | 22, 27 | executed paths: `~/Library/PICO/sdk/0.13/emulator/package.xml` and `…/0.13/editor/Spatial Editor.app/Contents/MacOS/version` | **migrate next sweep** (known-gaps row above) |
+| `toolchainwatch.ts` | 24 | `"0.13.x"` fallback string for an unparseable revision | informational (same reporter) |
+| `toolchainwatch.ts` | 88 | comment: `<latest>` lagged `<release>` (0.12.2 vs 0.13.3) | informational |
+| `preflight.ts` | 188 | `LEGACY_SDK_ADB`, the pre-selection bundled-adb path kept as the LAST candidate of the doctor's adb row | by design (disclosed under "Legacy adb paths" below; pinned by the S6 preflight test) |
+| `preflight.ts` | 269 | the `"legacy 0.13 platform-tools"` source label for that candidate | by design |
+| `preflight.ts` | 186, 246, 378, 379 | comments describing the legacy candidate and the removed hardcoded-directory check | informational |
+| `vault.ts` | 518 | default vault workspace `<tools root>/0.13/agent-vault` when `$PICO_AGENT_VAULT` is unset | by design: a version LABEL selecting a workspace; every answer is labeled with the revision its `package.xml` declares |
+| `vault.ts` | 544, 1108 | `'0.13'` as an example version label in error text and the `sdkVersion` description | by design (example) |
+| `vault.ts` | 902, 1105 | `DEFAULT_VAULT_SDK_VERSION = "0.13.3"` and the `vault_api` description naming the 0.13.3 default declarations | by design (the default vault's declared revision, disclosed in the tool's own text) |
+| `vault.ts` | 30, 31, 528 | comments | informational |
+| `vaultdiff.ts` | 169, 176, 211 | `'0.13'` as an example version label | by design (example) |
+| `vaultdiff.ts` | 16, 18 | comments | informational |
+| `diagnose.ts` | 277 | remedy text naming `ANDROID_SDK_ROOT=~/Library/PICO/sdk/0.13/emulator/system-images` | informational, and currently TRUE of `scripts/restart-emulator.sh` (`DEFAULT_EMU_ROOT=~/Library/PICO/sdk/0.13/emulator`, AVD `PICO_0.13`); the script is itself a next-sweep item |
+| `doors.ts` | 569 | `'0.13'` as an example vault label | by design (example) |
+| `doors.ts` | 564 | `pico_sdk` description: "by default the HISTORICAL 0.13.3 declarations" | informational (true of the default vault) |
+| `index.ts` | 189 | `toolsVersion` example `'0.13'` | by design (example) |
+| `unitygen.ts` | 14, 167, 194 | "structural ceiling on emulator 0.13.x" | informational (a dated, measured ceiling) |
+| `editorpalette.ts` | 30, 31 | header comment recording the constant the fix wave removed | informational |
+| `adb.ts` | 15, 16, 17 | header comment recording the per-consumer 0.13 path S4 removed | informational |
+| `bundlediff.ts` 23; `editorexport.ts` 26; `toolchain.ts` 216; `declarationcontext.ts` 13, 47 | comments about the removed packer fallback and the 0.13.3 vault payload | informational |
+| `assets.ts` 187, 230, 378; `inspection.ts` 425; `splatanalyze.ts` 16, 226; `environment.ts` 6, 9, 228; `worldenv.ts` 199; `collider.ts` 7, 18; `grpc.ts` 266, 356, 404; `eye.ts` 310, 314 | "PICO 0.13" / "emulator 0.13.1" / "the CURRENT 0.13 toolchain": prose naming the emulator or SDK build a measurement was made on | informational (dated measurement provenance) |
+| `agentbridge.ts` 2057; `anim.ts` 8; `appspec.ts` 259, 263; `attachmentpanel.ts` 12, 27, 234, 310, 323; `bundlelease.ts` 18, 23, 24, 29, 30, 165; `capabilities.ts` 55, 56, 59, 62; `compiler.ts` 255; `components.ts` 371, 459; `containers.ts` 14, 68, 332, 346; `databinding.ts` 8, 29; `display.ts` 8; `ecssystem.ts` 13, 51, 289; `editorcomponents.ts` 14, 26; `editorproject.ts` 14; `events.ts` 13; `interactables.ts` 23; `interaction.ts` 8, 31; `layout.ts` 8, 26; `lint.ts` 343, 347, 526, 549, 560; `media.ts` 8; `panelcompose.ts` 23, 56, 63; `physics.ts` 22; `richness.ts` 9, 26; `router.ts` 8, 21; `sense.ts` 543; `skeletal.ts` 14, 15, 240; `spatialaudio.ts` 10, 13, 39, 69; `spatialgestures.ts` 92, 94; `subwindow.ts` 129, 163, 165; `swan.ts` 50; `tappable.ts` 20 | "SDK 0.13.3" / "0.13.3 sources jars" / "0.13.4 editor binary": the provenance of a declaration, KDoc line or sample a generator was grounded in | informational — labels of what was READ, never paths; each stays until the same fact is re-verified against 6.1 declarations (the vault / compatibility-index work) |
+| `missiontable.ts` 252, 253; `setdressing.ts` 42, 68; `splatanalyze.ts` 331; `web3d.ts` 24; `webbridge.ts` 6 | `-0.13f` coordinates, `[0.13, 0.88, 1]` colours, `0.35,0.13` geometry radii, `v10.13` | not a version |
 
 ### Deferred minors
 
@@ -579,7 +661,7 @@ tagged `minor (deferred)` against its task. The ones with real consequence:
   filesystems (every CI and dev host here). A stale receipt without its artifact reports the failure
   without naming the artifact that did land.
 - **Build.** A successful publication can still exit 1 if backup removal fails; orphan detection is
-  `.js`-only; `npm run build` never cleans `dist/`.
+  `.js`-only.
 - **Retention.** Capability, observation and perf run directories are never pruned, and each perf run
   now also stores a copy of its report.
 - **Rediscovery cost.** After one failed knowledge discovery, every knowledge call repeats the

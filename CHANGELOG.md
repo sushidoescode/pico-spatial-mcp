@@ -29,6 +29,64 @@ Versions here key the plugin manifests (`/plugin update` uses them as its cache 
   declarations are rejected as non-convergent. The `0.02 m` translation threshold remains
   experimental, and quaternion telemetry still has no invented gate.
 
+## 38.0.0 — 2026-09-15
+
+The Unreleased entries above accumulated on main after 37.0.0 and ship with 38.0.0 as they stand.
+Everything below is a compatibility-affecting change from the pico-cli 0.5 / Spatial SDK 6.1
+checkpoint, [docs/findings/CLI050_IMPLEMENTATION_CHECKPOINT.md](docs/findings/CLI050_IMPLEMENTATION_CHECKPOINT.md).
+That checkpoint is fixture- and host-executed evidence, not a native, visual or cross-platform
+acceptance, and the same limit applies to every line here.
+
+- **Knowledge argv is version-dependent.** The knowledge child launches `knowledge server` on
+  pico-cli 0.5.x and `mcp dev-knowledge` on 0.4.x, selected per resolved version from retained
+  help evidence; the 0.5.0 knowledge server's own data gap (it execs an external `graphify serve`)
+  is reported as that server's, not as an MCP failure. An environment-classed knowledge refusal is
+  worded for the knowledge operation, no longer as a profiler-payload problem.
+- **`watch_crash` reports the observed window, not the requested one.** `watchedSec` is the
+  elapsed time from a monotonic clock; new `observation`, `coverage` (`complete` / `partial` /
+  `unknown`) and `assessment` fields, and `no-crash-detected` requires complete coverage AND a
+  complete log scan. `device` is REQUIRED — in the input schema, not only in prose — with no
+  default serial.
+- **`perf_diagnose` (and the `pico_perf` door) dispatches `perf live run`** from capability
+  evidence instead of `perf monitor run`, which 0.5.0's router rejects; a new result shape with
+  measurement/capability semantics, and a SKIP / INSUFFICIENT_DATA report grades `missing`, never
+  a passing budget.
+- **Doors forward inner errors with `isError: true`.** `pico_look` reports a capture failure as an
+  error instead of `{status:"ok"}`, and concurrent first door calls share one inner server. A test
+  server injected with only a domain-lane `call` now refuses the two raw-lane doors (`pico_look`,
+  `pico_verify_app`) instead of spawning the real inner server.
+- **`verify_pico_apk` / `pico_verify_app` observe an explicitly named device.** New result shape
+  (identity, capture provenance, a PID-scoped log, an immutable run directory — a structural
+  observation, never a receipt); `serial` is REQUIRED in the input schema with no hardcoded
+  emulator; the tool force-stops only the package it installs, never clears the global logcat,
+  and never stops a foreign app.
+- **`capture_frame` and `capture_record` require an explicit target** (`serial`; `device`,
+  REQUIRED in the input schema) and write run-unique outputs under the observation root instead of
+  a fixed shared path. `capture_record`'s description now states that `status` grades the recording
+  call while `media` is the separate validation verdict (`unvalidated` = not inspected).
+- **`scaffold_spatial_app` refuses without a usable packer** instead of scaffolding blind, and
+  preserves a project's declared BOM byte-for-byte.
+- **An explicit `PICO_ADB` that names no usable file fails closed** with a structured error in
+  every adb consumer; nothing falls through to a PATH or bundled candidate. adb resolves lazily,
+  never at module load.
+- **Component-valid toolchain selection.** Packer, emulator, adb, proto and editor are selected
+  from one installation per operation (explicit root, then `spatial.tools.dir`, then `$PICO_HOME`,
+  then the platform default) with structured `unavailable/*` and `ambiguous/*` failures and
+  explicit provenance when a binary override is honoured. `install_editor_palette` now selects the
+  editor bundle the same way (an explicit `editorApp` still wins) instead of re-signing a
+  hardcoded 0.13 path.
+- **The build script is source-bound.** `npm run build` publishes `dist/` wholesale through a
+  staging rename and emits `dist/build-receipt.json`; `run-gate` refuses a gate whose `dist/` is
+  stale; the plugin bootstrap rebuilds on source and dependency identity; smoke is hermetic; one
+  inventory (`scripts/gate-inventory.mjs`) owns every gate and its CI lane; and every
+  fixture/installed-artifact gate child runs under `PICO_ADB=/fixture/no/such/adb` unless the
+  caller set one.
+- **`--publish` is add-only.** `scripts/verify-tarball.mjs --publish <file>` takes a file path,
+  refuses to replace an existing artifact or receipt, and never prunes a directory.
+- **Shipped payload.** `data/sdk-compatibility` ships (a home-path-redacted derivative of
+  `docs/SDK_6_0_0_DRIFT.md`, recorded as such), and vault lookups headline `target-verified` only
+  on verified matches with explicit provenance.
+
 ## 37.0.0 — 2026-08-14
 
 - **Managed registry-latest pico-cli is now the default.** The first real CLI-backed operation

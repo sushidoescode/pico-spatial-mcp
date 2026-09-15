@@ -42,5 +42,15 @@ certifying a stale number as clean.
 embed absolute author paths, which verify-tarball scans for. Deletion actually happens in
 `scripts/prepack-clean.mjs`.
 
-**`npm run build` never cleans `dist/`,** and verify-tarball derives the shipped payload from every
-`dist/*.js` including orphans left by deleted sources.
+**`npm run build` publishes `dist/` wholesale, so an orphan cannot outlive the build that deleted
+its source — but verify-tarball still derives the shipped payload from whatever `dist/*.js` it
+finds.** `scripts/build-source.mjs` compiles into an owned staging tree and `publishStaging` swaps
+it in synchronously: the previous `dist/` is renamed to a backup, the staging tree is renamed to
+`dist/`, and the backup is removed (a failed rename puts the backup back and names it). A `.js`
+left by a deleted source therefore disappears with the tree it lived in; nothing accumulates.
+`dist/build-receipt.json` binds that output to the source identity that produced it, `run-gate`
+refuses any `fixture`/`installed-artifact` gate — `test:tarball` included — whose receipt is
+stale, and verify-tarball's `[M9]` check reads the receipt out of the *packed* copy, so the payload
+it derives from `dist/*.js` (`[M1]`, the sibling directories the built modules cite) is the one
+the receipt names. Invoke `scripts/verify-tarball.mjs` directly against an unbuilt or hand-edited
+`dist/`, bypassing `run-gate`, and its derived payload is exactly as wrong as that directory.

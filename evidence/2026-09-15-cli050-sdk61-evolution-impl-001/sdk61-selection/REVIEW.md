@@ -73,7 +73,7 @@ A passing row names the exact test that proves it. Suite names alone are not evi
 
 | # | Capability | Class | Result | Exact test |
 | --- | --- | --- | --- | --- |
-| 1 | **Structural 6.1 selection** — on a host carrying BOTH a 0.13 and a 6.1 install, every packer/editor consumer runs the 6.1 payload | structural (in-memory fixture) | PASS | `S6 matrix: every packer/editor consumer runs the SELECTED 6.1 binary on a host that also carries 0.13` (`test/toolchain-consumers.mjs`) |
+| 1 | **Structural 6.1 selection** — on a host carrying BOTH a 0.13 and a 6.1 install, every consumer routed through `prepareOperationToolchain`/`resolveOperationToolchain` (the set `test/toolchain-consumers.mjs` enumerates — not every tool in the server; see the correction below) runs the 6.1 payload | structural (in-memory fixture) | PASS | `S6 matrix: every packer/editor consumer runs the SELECTED 6.1 binary on a host that also carries 0.13` (`test/toolchain-consumers.mjs`) |
 | 2 | **Explicit-component refusal** — a missing root, a missing component, an uninstalled pin and a platform-unpublished component each fail as themselves and carry no binary | structural (in-memory fixture) | PASS | `S6 matrix: failed and missing selections are reported as themselves, never degraded to another binary` (`test/toolchain-consumers.mjs`) |
 | 3 | **Project-BOM preservation** — a project's declared BOM is read, never rewritten, and never rounded from a dynamic version; no read path writes to a project tree | structural (temp-filesystem fixture) | PASS | `combined fixture: selected tools 6.1, project BOM 6.0.0, vault revision 0.13.3 and a dynamic-BOM project are four independent facts` (`test/declarationcontext.mjs`); generation side proved separately by `generation preserves the project BOM byte-for-byte while recording the 6.1 selection` (`test/projectgen.mjs`) |
 | 4 | **Cache replacement** — adb and the emulator proto schema follow the selected installation inside one process; an explicit adb override fails closed with nothing else probed | structural (in-memory fixture + temp proto tree) | PASS | `S6 matrix: adb and the emulator proto schema follow the selected installation; adb resolution spawns nothing` (`test/toolchain-consumers.mjs`) |
@@ -81,7 +81,7 @@ A passing row names the exact test that proves it. Suite names alone are not evi
 | 6 | **Target-matched authority** — an accepted mapping requires exact provenance, and does not outlive a changed or missing packaged basis | structural (temp-filesystem fixture) | PASS **at unit level only** | `a previously accepted mapping does not survive a changed or missing packaged basis, and comes back only when the exact bytes do` (`test/declarationcontext-installed.mjs`) |
 | 6b | **Target-matched authority through a tool surface** | — | **UNREACHABLE TODAY, BY DESIGN** | No tool path can produce it: `vault_api` and `preflight_lint` read the project with `readProjectSdkIdentity(projectRoot)` and never accept caller-supplied `resolvedArtifacts`, so every tool-level context is `historical`/`unknown` (S5 concern 1). Row 6 is proven with SDK-owned objects, not through a door. |
 | 7 | **CLI boundary** — a fabricated `{cliVersion, workspaceRoot, fingerprint}` hint selects only what is READ; the revision and the fingerprint come from local bytes, a hint-shaped identity is refused, and an unsupported transport stays `unavailable` | structural (in-memory fixture) | PASS | `a fabricated CLI version/fingerprint hint never becomes authority: only the local bytes decide, and an unsupported transport stays unavailable` (`test/declarationcontext.mjs`) |
-| 8 | **Platform fixture — darwin** | structural (in-memory fixture) | PASS, **fixture-only** | `S6 matrix: every packer/editor consumer runs the SELECTED 6.1 binary on a host that also carries 0.13` (`test/toolchain-consumers.mjs`) |
+| 8 | **Platform fixture — darwin** — the same consumer set as row 1 (those routed through `prepareOperationToolchain`/`resolveOperationToolchain`), not the whole server | structural (in-memory fixture) | PASS, **fixture-only** | `S6 matrix: every packer/editor consumer runs the SELECTED 6.1 binary on a host that also carries 0.13` (`test/toolchain-consumers.mjs`) |
 | 9 | **Platform fixture — win32** (`.exe` payloads, drive root, editor refused) | structural (in-memory fixture) | PASS, **fixture-only** | `S6 matrix: the same mixed host on win32 and linux FIXTURES selects the 6.1 payload published for that platform` (`test/toolchain-consumers.mjs`); depth in `an explicit Windows drive root selects .exe payloads` (`test/toolchain-resolution.mjs`) |
 | 10 | **Platform fixture — linux** (bare names, explicit root, editor refused) | structural (in-memory fixture) | PASS, **fixture-only** | same test as row 9; depth in `an explicit Linux root works even though Linux has no documented default` and `platforms with no verified default root never invent one` (`test/toolchain-resolution.mjs`) |
 | 11 | **Payload discovery** — the packaged reviewed index and every referenced record/basis byte are present and hash-identical after relocation, and the installed module resolves them from its own URL | structural (temp-filesystem fixture) | PASS | `the canary verifies the packaged index and every referenced byte, resolving from packageRoot and never from the working directory` and `the relocated package loads its historical references through its own module URL, with no docs/ or test/ present` (`test/declarationcontext-installed.mjs`) |
@@ -192,3 +192,23 @@ Loader and canary were widened minimally and additively: `derivedFrom` is tolera
 and `verifySdkCompatibilityPayload` keep verifying packaged bytes against the entry's own `sha256`
 and never resolve `derivedFrom.path`, which names a file no installed package contains.
 S6's installed lifecycle suite passes unchanged (8/8), which is the backwards-compatibility proof.
+
+---
+
+## Correction (2026-09-15, final review)
+
+Rows 1 and 8 originally read "every packer/editor consumer runs the 6.1 payload". That was true of
+the consumers the named test enumerates — the set routed through `prepareOperationToolchain` /
+`resolveOperationToolchain` — and not of the whole server, and the two rows now say so. Two tools
+were outside that set when this note was written and were covered by no row here:
+`install_editor_palette` (`src/editorpalette.ts`) launched, modified and re-signed
+`~/Library/PICO/sdk/0.13/editor/Spatial Editor.app` from a module-scope constant unless the caller
+passed `editorApp`, and `check_toolchain_updates` (`src/toolchainwatch.ts`) reads the 0.13 emulator
+`package.xml` and the 0.13 editor `version` file directly. The final whole-branch review of the
+38.0.0 branch found both. `install_editor_palette` was migrated to the same `editor`-component
+selection in the fix wave and is now in the enumerated set (`S6 matrix (fix wave):
+install_editor_palette …` in `test/toolchain-consumers.mjs`, proven against an in-memory tree only,
+never a real bundle); `check_toolchain_updates` still reads the 0.13 paths and is disclosed as an
+open item in `docs/findings/CLI050_IMPLEMENTATION_CHECKPOINT.md`. Nothing else in this note was
+changed: the commands, counts and mutation results above are as recorded on 2026-09-15 for the
+source SHA in the header, and this paragraph is a dated narrative correction, not a re-run.

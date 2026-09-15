@@ -5,16 +5,28 @@ paths:
 
 # Runtime traps in src/
 
-**Two mechanisms disagree about which SDK version is in play.** `src/toolchain.ts` `pickVersion()`
-resolves the *newest* version directory under `~/Library/PICO/sdk`, while the literal `0.13` path
-segment is hardcoded at roughly 32 sites — including `verifyapk`, `perfprobe`, `hybridbuild`,
-`fleetbuild`, `editorexport`, `editorpalette`, `toolchainwatch`, the agent vault in `vault.ts`, and
-`preflight.ts`'s `PICO_HOME + "/0.13"`. With SDK 6.0 installed, half the tools follow the newest
-tree while adb, spatialbundle export, the editor palette, the watcher and the vault keep looking in
-a 0.13 tree that may not exist. The symptom is incoherent rather than broken: `preflight_env`
-reports "no PICO SDK payload" while `validate_toolchain` reports a healthy toolchain. The escape
-hatches are per-lane env vars (`PICO_ADB`, `PICO_SPATIALBUNDLE`, `PICO_AGENT_VAULT`), not one
-global.
+**One selection decides which SDK version is in play; the `0.13` literals that remain are labels,
+not lookups.** `src/toolchainselection.ts` performs component-valid selection (packer, emulator,
+adb, proto, editor) from one tools root — explicit `toolsRoot`, then a project's
+`spatial.tools.dir`, then `$PICO_HOME`, then the macOS default — and every pack/launch/editor
+operation resolves ONCE per call through `resolveOperationToolchain` / `prepareOperationToolchain`
+in `src/toolchain.ts` (`test/toolchain-consumers.mjs` enumerates the consumers;
+`install_editor_palette` joined that set in the 38.0.0 fix wave after re-signing a hardcoded 0.13
+bundle from a module-scope constant). adb is one chain in `src/adb.ts`: an explicit `$PICO_ADB`
+fails closed, then PATH, then the selected installation's bundled adb — never a hardcoded version
+directory. What still names `0.13` in `src/` (134 matches at the fix wave; the complete list with
+a disposition each is in `docs/findings/CLI050_IMPLEMENTATION_CHECKPOINT.md`):
+`src/toolchainwatch.ts` (`check_toolchain_updates` reads the 0.13 emulator `package.xml` and the
+0.13 editor `version` file — an informational reporter that selects and launches nothing; migrate
+next sweep), `src/preflight.ts`'s `LEGACY_SDK_ADB` (kept as the LAST candidate of the doctor's adb
+row, pinned by an S6 test), `src/vault.ts`'s default vault workspace `<tools root>/0.13/agent-vault`
+(a version LABEL selecting a workspace, overridable by `$PICO_AGENT_VAULT`; every answer is
+labeled with the revision its `package.xml` declares), `src/diagnose.ts:277`'s remedy text naming
+the 0.13 emulator system-images root that `scripts/restart-emulator.sh` really does default to,
+`'0.13'` as an example version label in tool schemas and error text, and a hundred-odd `0.13.3`
+provenance references in tool descriptions and comments naming the SDK revision a fact was read
+from. The escape hatches are still per-lane env vars (`PICO_ADB`, `PICO_SPATIALBUNDLE`,
+`PICO_AGENT_VAULT`), not one global.
 
 **`PICO_MCP_SURFACE` does not inherit into spawned children.** The MCP SDK spawns with a whitelist
 env, so every self-spawn must pin the surface explicitly — `src/doors.ts`, `fleetbuild.ts`,

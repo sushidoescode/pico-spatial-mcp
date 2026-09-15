@@ -26,8 +26,10 @@ static or dynamic import specifier starting `../dist/`
 (`grep -lE '(from|import\()[[:space:]]*"\.\./dist/' test/*.mjs | wc -l`);
 `dist/` is gitignored and there is no `pretest` hook. Edit `src/`, run a test, and you get
 byte-identical output because the test never saw your change. **Run `npm run build` first, every
-time.** Same trap in plugin form: `scripts/plugin-bootstrap.mjs` only builds when `dist/index.js`
-is *absent*, so a host serves a stale server forever across restarts.
+time.** The plugin form closes the same trap by itself: `scripts/plugin-bootstrap.mjs` decides
+from its build and dependency receipts — the identity of the sources and the lockfile the output
+was built from, not whether `dist/index.js` happens to exist — and rebuilds a host plugin cache
+whose source moved before it starts the server.
 
 **A release is a version bump — there is no `npm publish`.** No publish step and no release
 workflow exists. Hosts install from GitHub, and `/plugin update` keys off the version in the
@@ -53,7 +55,12 @@ every step really ran.
 **One inventory owns every gate command and its CI lane.** `scripts/gate-inventory.mjs` holds
 `GATES`; each `test:*`/`smoke` script is only `node scripts/run-gate.mjs <name>`, and `run-gate`
 refuses a gate whose `dist/` is stale before spawning anything — except the two `native-contract`
-shell gates, which compile native sources and never load `dist/`. `validateGateInventory` is what
+shell gates, which compile native sources and never load `dist/`. `run-gate` also spawns every
+`fixture`/`installed-artifact` gate child with `PICO_ADB=/fixture/no/such/adb` unless the caller
+set one (`FIXTURE_NO_ADB` in the inventory; `src/adb.ts` refuses an explicit adb that names no
+file and probes nothing else, so a suite that still reaches adb fails loudly instead of touching a
+device), and `gates.yml` pins the same value at workflow level — a direct
+`node --test test/<file>.mjs` gets neither, so export it yourself. `validateGateInventory` is what
 `test:lint` and `test:distribution-adoption` check, and the published counts are derived from it —
 so a gate that no lane runs (`test:runrevision` was exactly that, four revision suites regressing
 invisibly) now fails a gate instead of a doc. Adding one is three edits: an entry, a one-line
