@@ -25,6 +25,10 @@ export const BACKUP_PREFIX = ".dist-backup-";
 const DEFAULT_WAIT_MS = 30_000;
 const POLL_MS = 50;
 const COMPILE_TIMEOUT_MS = 10 * 60 * 1000;
+const TERMINATE_GRACE_MS = 200;
+
+/** Blocking sleeps live on their own word, as in src/runlocks.ts. */
+const SYNC_WAIT_WORD = new Int32Array(new SharedArrayBuffer(4));
 
 const INTERRUPT_SIGNALS = ["SIGINT", "SIGTERM"];
 
@@ -156,6 +160,9 @@ function raiseDefaultSignal(signal) {
  */
 export function handleInterrupt(signal, { raise = raiseDefaultSignal } = {}) {
   for (const record of [...ACTIVE_LEASES.values()]) {
+    // Stop the compiler FIRST. Deleting the staging tree out from under a process that is still
+    // writing into it just means the process re-creates it after we are gone.
+    record.abort?.abort();
     // Every in-flight staging tree, not just the newest: one lease can have several.
     for (const target of [...record.live]) {
       if (!path.basename(target).startsWith(STAGING_PREFIX)) continue;
@@ -215,7 +222,7 @@ export async function withSourceSetup({ root, owner, waitMs = DEFAULT_WAIT_MS, c
   }
 
   const lease = Object.freeze({ kind: "pico-source-setup-owner" });
-  const held = { checkout, lockPath, token, live: new Set(), chain: Promise.resolve() };
+  const held = { checkout, lockPath, token, live: new Set(), chain: Promise.resolve(), abort: null };
   ACTIVE_LEASES.set(lease, held);
   armInterruptCleanup();
   try {
@@ -232,14 +239,23 @@ export async function withSourceSetup({ root, owner, waitMs = DEFAULT_WAIT_MS, c
  * Run the checkout's own TypeScript, as a child of this exact Node binary, emitting into `outDir`.
  * Resolves only on exit 0; compiler diagnostics are forwarded to stderr.
  */
-export function runCompiler({ root, outDir, timeoutMs = COMPILE_TIMEOUT_MS, spawn = childProcess.spawn }) {
+export function runCompiler({
+  root,
+  outDir,
+  signal,
+  timeoutMs = COMPILE_TIMEOUT_MS,
+  terminateGraceMs = TERMINATE_GRACE_MS,
+  tscEntry,
+  spawn = childProcess.spawn,
+}) {
   const checkout = path.resolve(root);
-  const tscEntry = path.join(checkout, "node_modules", "typescript", "bin", "tsc");
-  if (!fs.existsSync(tscEntry)) {
-    return Promise.reject(new Error(`no typescript compiler at ${tscEntry}; run npm ci in ${checkout} first`));
+  const compilerEntry = tscEntry ?? path.join(checkout, "node_modules", "typescript", "bin", "tsc");
+  if (!fs.existsSync(compilerEntry)) {
+    return Promise.reject(new Error(`no typescript compiler at ${compilerEntry}; run npm ci in ${checkout} first`));
   }
+  if (signal?.aborted) return Promise.reject(interruptedError());
 
-  const args = [tscEntry, "-p", path.join(checkout, "tsconfig.json"), "--outDir", outDir];
+  const args = [compilerEntry, "-p", path.join(checkout, "tsconfig.json"), "--outDir", outDir];
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, args, { cwd: checkout, shell: false, stdio: ["ignore", "pipe", "pipe"] });
     let settled = false;
@@ -247,21 +263,48 @@ export function runCompiler({ root, outDir, timeoutMs = COMPILE_TIMEOUT_MS, spaw
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       if (error) reject(error); else resolve();
     };
     const timer = setTimeout(() => {
-      try { child.kill("SIGKILL"); } catch {}
+      stopChildSync(child, terminateGraceMs);
       finish(new Error(`the TypeScript compiler did not finish within ${timeoutMs}ms`));
     }, timeoutMs);
+    function onAbort() {
+      stopChildSync(child, terminateGraceMs);
+      finish(interruptedError());
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     child.stdout?.on("data", (chunk) => process.stderr.write(chunk));
     child.stderr?.on("data", (chunk) => process.stderr.write(chunk));
     child.on("error", (error) => finish(error));
-    child.on("close", (code, signal) => {
+    child.on("close", (code, signal_) => {
       if (code === 0) finish();
-      else finish(new Error(`the TypeScript compiler exited with ${signal ? `signal ${signal}` : `code ${code}`}`));
+      else finish(new Error(`the TypeScript compiler exited with ${signal_ ? `signal ${signal_}` : `code ${code}`}`));
     });
   });
+}
+
+function interruptedError() {
+  return new Error("the build was interrupted; the TypeScript compiler was stopped");
+}
+
+/**
+ * Stop the compiler, synchronously, before the caller deletes the tree it is writing into.
+ *
+ * Synchronous on purpose: this runs from a signal handler that re-raises immediately afterwards,
+ * so an awaited exit would never get a turn on the event loop. Polling for the pid to disappear
+ * would not work either — a killed child stays a zombie until libuv reaps it, and libuv needs the
+ * very event loop this is blocking. So the guarantee comes from the kernel rather than a poll:
+ * SIGTERM for a courtesy grace, then SIGKILL, which cannot be caught, blocked or ignored. Once it
+ * is delivered the compiler runs no further instructions and cannot re-create the staging tree.
+ */
+function stopChildSync(child, graceMs = TERMINATE_GRACE_MS) {
+  if (!child?.pid) return;
+  try { child.kill("SIGTERM"); } catch {}
+  if (graceMs > 0) Atomics.wait(SYNC_WAIT_WORD, 0, 0, graceMs);
+  try { child.kill("SIGKILL"); } catch {}
 }
 
 /**
@@ -330,10 +373,12 @@ async function compileAndPublish(held, compile) {
 
   const staging = path.join(checkout, scratchName(STAGING_PREFIX));
   const before = inputIdentity(checkout);
+  const abort = new AbortController();
   live.add(staging);
+  held.abort = abort;
   try {
     fs.mkdirSync(staging, { recursive: true });
-    await compile({ root: checkout, outDir: staging });
+    await compile({ root: checkout, outDir: staging, signal: abort.signal });
 
     const after = inputIdentity(checkout);
     if (after.sha256 !== before.sha256) {
@@ -343,6 +388,7 @@ async function compileAndPublish(held, compile) {
     publishStaging(checkout, staging, live);
   } finally {
     live.delete(staging);
+    if (held.abort === abort) held.abort = null;
     // Cleanup is best-effort reporting: it must never mask the failure that brought us here.
     try {
       if (fs.existsSync(staging)) removeOwnedScratch(checkout, staging, STAGING_PREFIX);

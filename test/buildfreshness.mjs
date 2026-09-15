@@ -637,3 +637,84 @@ test("the sweep spares staging an active build is using", async () => {
   assert.equal(verifyBuild(root).current, true);
   assert.deepEqual(fs.readdirSync(root).filter((name) => name.startsWith(".dist-")), []);
 });
+
+test("an interrupt aborts the compiler before it removes the staging tree", async () => {
+  const root = createCheckout();
+  let observed;
+
+  await assert.rejects(
+    buildSource({
+      root,
+      runCompiler: async ({ outDir, signal }) => {
+        assert.equal(signal.aborted, false, "the compiler was handed an already-aborted signal");
+        fs.writeFileSync(path.join(outDir, "index.js"), "half-written output\n");
+        // Deleting the tree before the compiler is told to stop is the bug this guards: record
+        // what the disk looked like at the moment the abort landed.
+        let stagingAtAbort = null;
+        signal.addEventListener("abort", () => { stagingAtAbort = fs.existsSync(outDir); });
+
+        handleInterrupt("SIGINT", { raise: () => {} });
+
+        observed = { stagingAtAbort, aborted: signal.aborted, stagingAfter: fs.existsSync(outDir) };
+        throw new Error("interrupted");
+      },
+    }),
+    /interrupted/,
+  );
+
+  assert.equal(observed.aborted, true, "the compiler was never told to stop");
+  assert.equal(observed.stagingAtAbort, true, "the staging tree was removed before the compiler was aborted");
+  assert.equal(observed.stagingAfter, false, "the staging tree was left behind");
+  assert.deepEqual(fs.readdirSync(root).filter((name) => name.startsWith(".dist-") || name === LOCK_NAME), []);
+});
+
+test("an interrupt stops the production compiler's child process", async (t) => {
+  const root = createCheckout();
+  const pidPath = path.join(root, "compiler.pid");
+  // Stands in for tsc: announces its pid, then keeps writing into outDir for far longer than the
+  // test lives. If the handler does not stop it, it re-creates the staging tree it was deleted.
+  const sleeper = path.join(root, "sleeper.mjs");
+  fs.writeFileSync(sleeper, [
+    'import fs from "node:fs";',
+    'const outDir = process.argv[process.argv.indexOf("--outDir") + 1];',
+    'fs.mkdirSync(outDir, { recursive: true });',
+    `fs.writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));`,
+    'setInterval(() => { fs.mkdirSync(outDir, { recursive: true }); fs.writeFileSync(`${outDir}/index.js`, "late\\n"); }, 20);',
+  ].join("\n"));
+
+  const alive = (pid) => {
+    try { process.kill(pid, 0); return true; }
+    catch (error) { return error.code === "EPERM"; }
+  };
+
+  const build = buildSource({ root, runCompiler: (options) => runCompiler({ ...options, tscEntry: sleeper }) });
+  const deadline = Date.now() + 5_000;
+  while (!fs.existsSync(pidPath) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(fs.existsSync(pidPath), true, "the stand-in compiler never started");
+  const compilerPid = Number(fs.readFileSync(pidPath, "utf8"));
+  assert.ok(compilerPid > 0);
+  // If the behaviour under test regresses, this child outlives the run and keeps the test runner
+  // alive forever. A hang is a far worse failure report than an assertion, so reap it regardless.
+  t.after(() => { try { process.kill(compilerPid, "SIGKILL"); } catch {} });
+
+  handleInterrupt("SIGTERM", { raise: () => {} });
+  // Bounded on purpose. If the compiler is never stopped it never exits, so this promise never
+  // settles — and an un-awaitable build must be reported as a failed assertion, not as a runner
+  // that hangs until CI times out.
+  const outcome = await Promise.race([
+    build.then(() => "the build resolved despite being interrupted", (error) => `rejected: ${error.message}`),
+    new Promise((resolve) => setTimeout(() => resolve("the build never settled after the interrupt"), 10_000)),
+  ]);
+  assert.match(outcome, /^rejected: .*interrupted/, outcome);
+
+  // SIGKILL stops it from executing instantly, but the pid lingers as a zombie until libuv reaps
+  // it, so poll for the entry to disappear rather than assuming the reap has already happened.
+  const reaped = Date.now() + 3_000;
+  while (alive(compilerPid) && Date.now() < reaped) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(alive(compilerPid), false, `compiler pid ${compilerPid} outlived the interrupt`);
+
+  // The stand-in rewrites its outDir every 20ms, so a quarter second of silence means it is gone.
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.deepEqual(fs.readdirSync(root).filter((name) => name.startsWith(".dist-")), []);
+  assert.equal(fs.existsSync(path.join(root, LOCK_NAME)), false);
+});
