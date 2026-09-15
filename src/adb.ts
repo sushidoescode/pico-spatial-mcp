@@ -148,6 +148,9 @@ export function resolveAdbExecutable(io: AdbIO = hostAdbIO()): AdbResolution {
       source: winner.source,
       identity: {
         path: winner.path,
+        // An executable this process may run but not READ (X_OK without R_OK) is not a refusal —
+        // it still runs. Its bytes are simply not evidence, and an empty digest says so rather
+        // than claiming a hash. `path` is what distinguishes two such candidates.
         sha256: bytes ? crypto.createHash("sha256").update(bytes).digest("hex") : "",
       },
     };

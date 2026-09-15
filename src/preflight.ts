@@ -87,6 +87,10 @@ export function defaultIO(): PreflightIO {
     toolchainInspection: resolveHostToolchain({ required: ["packer"] }),
     emulatorInspection: resolveHostToolchain({ required: ["emulator"] }),
     adbInspection: resolveHostToolchain({ required: ["adb"] }),
+    // The two environment values the adb and jdk rows read, captured HERE rather than inside the
+    // rows, so a row can never report this process's environment while answering about another.
+    adbOverride: process.env.PICO_ADB ?? null,
+    javaHomeEnv: process.env.JAVA_HOME ?? null,
   };
 }
 

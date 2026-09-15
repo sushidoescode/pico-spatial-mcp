@@ -26,6 +26,9 @@
 export class IdentityCache<T> {
   private key: string | null = null;
   private value: T | undefined = undefined;
+  // Presence is its own flag rather than `value !== undefined`, so a value that IS `undefined`
+  // still counts as published instead of silently missing on every call.
+  private loaded = false;
 
   /** The cached value for `key`, loading (and publishing) it when the identity has changed. */
   get(key: string, load: () => T): T {
@@ -38,22 +41,23 @@ export class IdentityCache<T> {
    * `cacheable` returning false leaves the cache empty so the next call retries.
    */
   getOr<U extends T>(key: string, load: () => U, cacheable: (value: U) => boolean): U {
-    if (this.key === key && this.value !== undefined) return this.value as U;
+    if (this.loaded && this.key === key) return this.value as U;
     // Evict first: a loader that throws must not leave the PREVIOUS key's value reachable under
     // a key it does not belong to, and must not leave this key pointing at stale bytes.
-    this.key = null;
-    this.value = undefined;
-    const loaded = load();
-    if (cacheable(loaded)) {
+    this.clear();
+    const value = load();
+    if (cacheable(value)) {
       this.key = key;
-      this.value = loaded;
+      this.value = value;
+      this.loaded = true;
     }
-    return loaded;
+    return value;
   }
 
   /** Drop the entry. Tests use this to prove a cache miss; production rarely needs it. */
   clear(): void {
     this.key = null;
     this.value = undefined;
+    this.loaded = false;
   }
 }
