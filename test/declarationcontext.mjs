@@ -858,3 +858,157 @@ test("a missing or invalid packaged index is reported distinctly from an index t
   assert.equal(noTarget.context.status, "historical");
 });
 
+
+// ═══ 7. Task S6 — one host, four version facts, and the CLI boundary ═══════════════════════════
+// A real machine carries several SDK version facts at once and NONE of them may be derived from
+// another: the SELECTED host tools (6.1 here), an application's declared BOM (6.0.0 for project A,
+// dynamic for project B), the materialized vault's declared package revision (0.13.3) and whether
+// any reviewed record links them (nothing does). §7 reads each from its own bytes, proves no read
+// path writes to a project, and proves the CLI adapter's hints select what is READ and never
+// supply the identity, the revision or the verdict.
+const { macSdkTree, toolchainIOFromTree } = await import("./helpers/toolchain-fixture.mjs");
+const { resolveToolchain } = await import("../dist/toolchainselection.js");
+
+/** The skeleton's settings + catalog form (appskeleton/gradle/libs.versions.toml), on disk. */
+const SKELETON_SETTINGS = 'rootProject.name = "fixture"\ninclude(":app")\n';
+const projectBom600 = project({ "settings.gradle.kts": SKELETON_SETTINGS, "gradle/libs.versions.toml": catalog("6.0.0") });
+const projectBomDynamic = project({ "settings.gradle.kts": SKELETON_SETTINGS, "gradle/libs.versions.toml": catalog("6.0.+") });
+
+test("combined fixture: selected tools 6.1, project BOM 6.0.0, vault revision 0.13.3 and a dynamic-BOM project are four independent facts", () => {
+  // 1. the host's SELECTED tools. Both 6.0 and 6.1 are installed; the selection is 6.1 and it is
+  //    a fact about the TOOLS — it says nothing about any application's BOM.
+  const toolsIO = toolchainIOFromTree({
+    platform: "darwin",
+    home: "/fixture",
+    env: {},
+    files: macSdkTree({
+      "6.0": { packer: "packer-6.0", emulator: "emulator-6.0", adb: "adb-6.0", proto: "proto-6.0" },
+      "6.1": { packer: "packer-6.1", emulator: "emulator-6.1", adb: "adb-6.1", proto: "proto-6.1" },
+    }),
+  });
+  const tools = resolveToolchain({ required: ["packer"] }, toolsIO);
+  assert.equal(tools.status, "ok");
+  assert.equal(tools.version, "6.1");
+
+  // 2 + 3. the two applications, read statically from their own declaration bytes.
+  const beforeA = hashTree(projectBom600);
+  const beforeB = hashTree(projectBomDynamic);
+  const targetA = readProjectSdkIdentity(projectBom600);
+  const targetB = readProjectSdkIdentity(projectBomDynamic);
+  assert.equal(targetA.declaredBom, "6.0.0");
+  assert.equal(targetA.status, "declared");
+  assert.equal(targetB.declaredBom, null, "a dynamic BOM is never rounded to a literal version");
+  assert.equal(targetB.status, "unknown");
+  assert.notEqual(targetA.projectRoot, targetB.projectRoot);
+  assert.notEqual(targetA.fingerprint, targetB.fingerprint);
+
+  // 4. the vault: a HISTORICAL 0.13.3 installation. The revision comes from package.xml.
+  const io = ioFor(specFor({ records: [] }));
+  const read = readDeclarationIdentity(VAULT, io);
+  assert.equal(read.status, "ok");
+  assert.equal(read.identity.packageRevision, "0.13.3");
+  assert.equal(read.identity.authority, "declarations");
+
+  // Four facts, three distinct version strings: no two of them were inferred from each other.
+  assert.equal(new Set([tools.version, targetA.declaredBom, read.identity.packageRevision]).size, 3);
+  assert.deepEqual(
+    { toolchain: tools.version, declaredBomA: targetA.declaredBom, declaredBomB: targetB.declaredBom, vaultPackageRevision: read.identity.packageRevision },
+    { toolchain: "6.1", declaredBomA: "6.0.0", declaredBomB: null, vaultPackageRevision: "0.13.3" },
+  );
+
+  // 5. compatibility: the PACKAGED reviewed index lists no records, so nothing links them.
+  assert.deepEqual(indexedRecordPaths(io), []);
+  const packaged = readCompatibilityIndex(hostDeclarationIO());
+  assert.equal(packaged.status, "ok");
+  assert.deepEqual(packaged.index.records, []);
+  for (const target of [targetA, targetB]) {
+    const loaded = loadVerifiedCompatibilityEvidence(indexedRecordPaths(io), read.identity, target, io);
+    assert.deepEqual(loaded.accepted, []);
+    const context = resolveDeclarationContext(read.identity, target, loaded.accepted);
+    assert.equal(context.status, "unknown");
+    assert.deepEqual(context.evidencePaths, []);
+    assert.deepEqual(context.verifiedSymbols, []);
+  }
+  // …and with no project at all the same declarations are HISTORICAL, never target authority.
+  assert.equal(resolveDeclarationContext(read.identity, null, []).status, "historical");
+
+  // 6. no target authority WITHOUT matching evidence: a reviewed record that really exists, is
+  //    really indexed and really verifies its own bytes still grants nothing to a project it was
+  //    not measured against (its targetBom is 9.9.9). Both refusal shapes are asserted: a
+  //    declared-only identity never establishes a target artifact set at all, and a RESOLVED
+  //    identity whose BOM differs is refused on the mismatch itself.
+  const reviewed = scenario();
+  const declaredOnly = loadVerifiedCompatibilityEvidence([RECORD_PATH], reviewed.source, targetA, reviewed.io);
+  assert.deepEqual(declaredOnly.accepted, []);
+  assert.deepEqual(codesOf(declaredOnly), ["target-unresolved"]);
+
+  const resolvedA = readProjectSdkIdentity(projectBom600, {
+    resolvedArtifacts: [{ coordinate: TARGET61_COORD, sha256: TARGET61_SHA }, { coordinate: APP_COORD, sha256: APP_SHA }],
+  });
+  assert.equal(resolvedA.status, "resolved");
+  assert.equal(resolvedA.declaredBom, "6.0.0");
+  const loadedMismatch = loadVerifiedCompatibilityEvidence([RECORD_PATH], reviewed.source, resolvedA, reviewed.io);
+  assert.deepEqual(loadedMismatch.accepted, []);
+  assert.deepEqual(codesOf(loadedMismatch), ["context-mismatch"]);
+  assert.match(loadedMismatch.rejected[0].detail, /record targets BOM 9\.9\.9 but project .* declares 6\.0\.0/);
+  const mismatchContext = resolveDeclarationContext(reviewed.source, resolvedA, loadedMismatch.accepted);
+  assert.equal(mismatchContext.status, "unknown");
+  assert.deepEqual(mismatchContext.verifiedSymbols, []);
+
+  // 7. nothing on either project was written by any read path.
+  assert.equal(hashTree(projectBom600), beforeA, "project A was written to during a read");
+  assert.equal(hashTree(projectBomDynamic), beforeB, "project B was written to during a read");
+});
+
+test("a fabricated CLI version/fingerprint hint never becomes authority: only the local bytes decide, and an unsupported transport stays unavailable", () => {
+  // The CLI adapter plan: the knowledge adapter supplies root/workspace HINTS only. This fixture
+  // simulates it handing the SDK a {cliVersion, workspaceRoot, fingerprint} tuple that claims a
+  // 6.1.0 vault. The SDK still calls readDeclarationIdentity and then
+  // loadVerifiedCompatibilityEvidence, and owns both answers.
+  const hint = Object.freeze({
+    cliVersion: "0.5.0",
+    workspaceRoot: VAULT,
+    fingerprint: "f".repeat(64),
+    packageRevision: "6.1.0",
+  });
+  const { source, io } = scenario();
+
+  // (a) the hint SELECTS a root; it never supplies what is read from it.
+  const read = readDeclarationIdentity(hint.workspaceRoot, io);
+  assert.equal(read.status, "ok");
+  assert.equal(read.identity.root, VAULT);
+  assert.equal(read.identity.packageRevision, "0.13.3", "the revision comes from package.xml, not from the hint");
+  assert.notEqual(read.identity.fingerprint, hint.fingerprint);
+  assert.equal(read.identity.fingerprint, source.fingerprint, "the same bytes produce the same fingerprint");
+
+  // (b) an identity carrying the hinted revision and fingerprint is refused even though every
+  //     other field is copied from a genuine read: authority lives on the reader's own object.
+  const forged = { ...read.identity, packageRevision: hint.packageRevision, fingerprint: hint.fingerprint };
+  const loadedForged = loadVerifiedCompatibilityEvidence([RECORD_PATH], forged, identityA, io);
+  assert.deepEqual(loadedForged.accepted, []);
+  assert.deepEqual(codesOf(loadedForged), ["context-mismatch"]);
+  assert.throws(() => resolveDeclarationContext(forged, identityA, []), TypeError);
+
+  // (c) a reviewed record that CLAIMS the hinted revision is measured against the bytes that are
+  //     actually there, and refused.
+  const claimsHint = scenario({ packageRevision: hint.packageRevision });
+  const loadedClaim = loadVerifiedCompatibilityEvidence([RECORD_PATH], claimsHint.source, identityA, claimsHint.io);
+  assert.deepEqual(loadedClaim.accepted, []);
+  assert.deepEqual(codesOf(loadedClaim), ["context-mismatch"]);
+
+  // (d) the genuine tuple still verifies, so (b) and (c) are refusals rather than a dead fixture.
+  const loadedGenuine = loadVerifiedCompatibilityEvidence([RECORD_PATH], source, identityA, io);
+  assert.equal(loadedGenuine.accepted.length, 1);
+  assert.equal(loadedGenuine.accepted[0].packageRevision, "0.13.3");
+
+  // (e) an unsupported transport — a workspace the CLI can name but this process cannot read as a
+  //     declaration root — stays UNAVAILABLE. It never degrades to historical and is never filled
+  //     in from the hint.
+  for (const root of ["/cli-workspace-over-an-unsupported-transport", `${VAULT}/knowledge`]) {
+    const refused = readDeclarationIdentity(root, io);
+    assert.equal(refused.status, "unavailable", `${root} must not read as a declaration root`);
+    assert.ok(["root-unavailable", "declarations-missing"].includes(refused.code), refused.code);
+    assert.ok(refused.detail.includes(io.realpath(root) ?? root), refused.detail);
+    assert.ok(!refused.detail.includes(hint.packageRevision), "an unavailable root must not echo the hinted revision");
+  }
+});

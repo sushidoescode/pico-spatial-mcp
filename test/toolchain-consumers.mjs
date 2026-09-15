@@ -673,3 +673,422 @@ test("the extracted helper still performs BOTH halves for every packer wrapper",
   const missing = await prepareOperationToolchain({ ...request, toolsVersion: "9.9" }, { io, probe: async () => "" });
   assert.match(missing.error ?? "", /^unavailable\/[a-z-]+: /);
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Task S6 — the operation matrix.
+//
+// Every row below runs on ONE host that carries BOTH a legacy 0.13 payload and a 6.1 payload, so
+// a fallback to the legacy location would silently succeed instead of failing loudly. Each row
+// asserts the same three things: the operation uses the SELECTED 6.1 identity, the captured
+// runner/exec log contains no legacy launch (no 0.13 packer path, no `which`/`command -v` lookup,
+// and no bare `adb` once an explicit override is set), and a failed or missing selection is
+// reported as itself rather than degraded to some other binary.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+import os from "node:os";
+const { resolveToolchain } = await import("../dist/toolchainselection.js");
+const { runPreflightChecks } = await import("../dist/preflight.js");
+const { adbExecutable, clearAdbResolutionCache, resolveAdbExecutable } = await import("../dist/adb.js");
+const { clearProtoCache, loadProto } = await import("../dist/grpc.js");
+const { registerVaultTools } = await import("../dist/vault.js");
+const { registerLintTools } = await import("../dist/lint.js");
+
+const S6_ROOT = "/sdk";
+const S6_PACKER = "/sdk/6.1/editor/spatialbundle/spatialbundle";
+const S6_EDITOR = "/sdk/6.1/editor/Spatial Editor.app/Contents/MacOS/Spatial Editor";
+const S6_ADB = "/sdk/6.1/emulator/system-images/platform-tools/adb";
+const S6_LEGACY_PACKER = "/sdk/0.13/editor/spatialbundle/spatialbundle";
+const S6_LEGACY_ADB = "/sdk/0.13/emulator/system-images/platform-tools/adb";
+
+/** A host carrying a complete 0.13 install AND a complete 6.1 install under one root. */
+function mixedHostFiles(extra = {}) {
+  const files = {};
+  for (const version of ["0.13", "6.1"]) {
+    files[`${S6_ROOT}/${version}/editor/spatialbundle/spatialbundle`] = { bytes: `packer-${version}`, executable: true };
+    files[`${S6_ROOT}/${version}/editor/Spatial Editor.app/Contents/MacOS/Spatial Editor`] = { bytes: `editor-${version}`, executable: true };
+    files[`${S6_ROOT}/${version}/emulator/emulator`] = { bytes: `emulator-${version}`, executable: true };
+    files[`${S6_ROOT}/${version}/emulator/system-images/platform-tools/adb`] = { bytes: `adb-${version}`, executable: true };
+    files[`${S6_ROOT}/${version}/emulator/lib/emulator_controller.proto`] = { bytes: `proto-${version}` };
+  }
+  return { ...files, ...extra };
+}
+
+const mixedHostIO = (env = { PICO_HOME: S6_ROOT }, extra = {}) =>
+  toolchainIOFromTree({ platform: "darwin", home: "/fixture", env, files: mixedHostFiles(extra) });
+
+/** A launch log entry that would mean a legacy fallback ran. */
+const LEGACY_LAUNCH = /\/0\.13\/|(?:^|\s)which(?:\s|$)|command -v|(?:^|\s)where(?:\s|$)/;
+
+test("S6 matrix: every packer/editor consumer runs the SELECTED 6.1 binary on a host that also carries 0.13", async () => {
+  const io = mixedHostIO();
+  const probe = { calls: 0, fn: async () => { probe.calls += 1; return "spatialbundle 6.1.0"; } };
+  const bound = (request) => resolveOperationToolchain(request, io);
+
+  const rows = [
+    ["resolveOperationToolchain — the structural base every consumer shares", async () => bound({ required: ["packer"], primary: "packer" })],
+    ["packerToolchain — inspect_bundle / bake_textured_model", async () => packerToolchain({}, io, probe.fn)],
+    ["resolveSchemaToolchain — scene_schemas (a data lookup, never a launch)", async () => resolveSchemaToolchain({}, io, probe.fn)],
+    ["resolveSceneToolchain — iterate_scene (packer only)", async () => resolveSceneToolchain({}, bound, probe.fn)],
+    ["resolveSceneToolchain — deploying scene operation (packer + editor)", async () => resolveSceneToolchain({ needEditor: true }, bound, probe.fn)],
+    // editor_export_bundle and bundle_diff hold no injectable seam of their own: both build the
+    // SAME request and hand it to the shared helper (pinned by source text below), so the helper
+    // under that exact request is the honest row for them.
+    ["prepareOperationToolchain — editor_export_bundle / bundle_diff request", async () =>
+      prepareOperationToolchain({ required: ["packer"], primary: "packer", allowBinaryOverride: true }, { io, probe: probe.fn })],
+  ];
+
+  for (const [name, run] of rows) {
+    const ctx = await run();
+    assert.ok(!("error" in ctx) && !isToolchainFailure(ctx), `${name}: ${JSON.stringify(ctx)}`);
+    assert.equal(ctx.bin, S6_PACKER, `${name} must run the selected 6.1 packer`);
+    assert.equal(ctx.selection.version, "6.1", name);
+    assert.equal(ctx.selection.root, S6_ROOT, name);
+    assert.equal(ctx.selection.rootSource, "PICO_HOME", name);
+    assert.equal(ctx.selection.reason, "newest-usable", name);
+    assert.ok(!LEGACY_LAUNCH.test(ctx.bin), `${name} reached the legacy payload: ${ctx.bin}`);
+    assert.notEqual(ctx.bin, S6_LEGACY_PACKER, name);
+  }
+  assert.equal(probe.calls, 0, "no row launched a version probe: none of them carries a pin or an override");
+
+  // The editor component of the same installation, for the row that launches the app bundle.
+  const editor = resolveOperationToolchain({ required: ["packer", "editor"], primary: "editor" }, io);
+  assert.equal(editor.bin, S6_EDITOR);
+  assert.equal(editor.selection.version, "6.1");
+
+  // And the argv every stage actually runs, captured without spawning.
+  const runner = recordingRunner();
+  const { deps } = packDeps(await packerToolchain({}, io, probe.fn), runner);
+  const packed = await packAndInspectScene(deps, { sceneDir: "/work/Scenes", outBundle: "/out/matrix.bundle" });
+  assert.ok(!("error" in packed), JSON.stringify(packed));
+  assert.deepEqual([...new Set(runner.calls.map((c) => c.bin))], [S6_PACKER]);
+  for (const call of runner.calls) {
+    assert.ok(!LEGACY_LAUNCH.test([call.bin, ...call.args].join(" ")), `a legacy launch reached the runner: ${call.bin} ${call.args.join(" ")}`);
+  }
+  assert.equal(probe.calls, 0, "packing without a pin still launches no version probe");
+});
+
+test("S6 matrix: the preflight pico-sdk and adb rows read the selection, and their captured exec log launches nothing legacy", () => {
+  const io = mixedHostIO();
+  const inspections = {
+    toolchainInspection: resolveToolchain({ required: ["packer"] }, io),
+    emulatorInspection: resolveToolchain({ required: ["emulator"] }, io),
+    adbInspection: resolveToolchain({ required: ["adb"] }, io),
+  };
+  assert.equal(inspections.toolchainInspection.version, "6.1");
+
+  const preflightIO = (exec, extra = {}) => ({
+    nodeVersion: "v20.11.0",
+    exec,
+    readFile: () => null,
+    statMtimeMs: () => null,
+    now: () => 1_800_000_000_000,
+    home: "/fixture",
+    detectJavaHome: () => "/fixture/jbr/Contents/Home",
+    javaHomeEnv: "/fixture/jbr/Contents/Home",
+    adbOverride: null,
+    ...inspections,
+    ...extra,
+  });
+
+  // (a) no explicit override, nothing on PATH: the row lands on the SELECTED toolchain's bundled
+  //     adb and the legacy 0.13 location — still a last candidate — is never reached.
+  const calls = [];
+  const exec = (cmd, args) => {
+    calls.push([cmd, ...args].join(" "));
+    return { ok: cmd === S6_ADB, stdout: "Android Debug Bridge version 35.0.0", stderr: "" };
+  };
+  const checks = runPreflightChecks(preflightIO(exec));
+  const adbRow = checks.find((c) => c.name === "adb");
+  assert.equal(adbRow.status, "pass");
+  assert.ok(adbRow.detail.includes(S6_ADB), adbRow.detail);
+  assert.match(adbRow.detail, /bundled platform-tools of the selected 6\.1 toolchain/);
+  assert.ok(!calls.some((line) => LEGACY_LAUNCH.test(line)), calls.join(" | "));
+  assert.ok(!calls.some((line) => line.includes("0.13")), calls.join(" | "));
+
+  const sdkRow = checks.find((c) => c.name === "pico-sdk");
+  assert.equal(sdkRow.status, "pass");
+  assert.match(sdkRow.detail, /packer 6\.1 from PICO_HOME \/sdk/);
+  assert.match(sdkRow.detail, /emulator 6\.1/);
+  assert.ok(!/0\.13/.test(sdkRow.detail), sdkRow.detail);
+
+  // (b) an explicit $PICO_ADB that does not answer: the row FAILS closed and nothing else is
+  //     probed — no bare `adb`, no bundled candidate, no legacy path.
+  const pinnedCalls = [];
+  const pinnedExec = (cmd, args) => { pinnedCalls.push([cmd, ...args].join(" ")); return { ok: false, stdout: "", stderr: "not found" }; };
+  const pinnedRow = runPreflightChecks(preflightIO(pinnedExec, { adbOverride: "/opt/pinned/adb" })).find((c) => c.name === "adb");
+  assert.equal(pinnedRow.status, "fail");
+  assert.match(pinnedRow.detail, /nothing else was probed/);
+  const adbProbes = pinnedCalls.filter((line) => /adb/.test(line));
+  assert.deepEqual(adbProbes, ["/opt/pinned/adb version"]);
+  assert.ok(!pinnedCalls.some((line) => LEGACY_LAUNCH.test(line)), pinnedCalls.join(" | "));
+});
+
+test("S6 matrix: adb and the emulator proto schema follow the selected installation; adb resolution spawns nothing", (t) => {
+  // adb — both payloads installed, nothing on PATH.
+  const io = mixedHostIO({ PICO_HOME: S6_ROOT, PATH: "/usr/bin:/bin" });
+  clearAdbResolutionCache();
+  const resolved = resolveAdbExecutable(io);
+  assert.equal(resolved.status, "ok");
+  assert.equal(resolved.source, "bundled");
+  assert.equal(resolved.path, S6_ADB);
+  assert.notEqual(resolved.path, S6_LEGACY_ADB);
+  assert.ok(resolved.probed.every((p) => path.posix.isAbsolute(p)), `a bare name or shell lookup leaked into ${JSON.stringify(resolved.probed)}`);
+  assert.ok(!resolved.probed.some((p) => LEGACY_LAUNCH.test(p)), JSON.stringify(resolved.probed));
+  assert.equal(adbExecutable(io), S6_ADB);
+
+  // …and with an explicit override set, the bare `adb` last resort is never reached.
+  const pinned = mixedHostIO(
+    { PICO_ADB: "/opt/pinned/adb", PICO_HOME: S6_ROOT, PATH: "/usr/bin" },
+    { "/usr/bin/adb": { bytes: "path-adb", executable: true } },
+  );
+  clearAdbResolutionCache();
+  const refused = resolveAdbExecutable(pinned);
+  assert.equal(refused.status, "unavailable");
+  assert.deepEqual(refused.probed, ["/opt/pinned/adb"], "an explicit override fails closed; nothing else is probed");
+  assert.throws(() => adbExecutable(pinned), /PICO_ADB/);
+  clearAdbResolutionCache();
+
+  // proto — the schema cache is keyed on the SELECTED payload, so a 0.13 install beside 6.1 is
+  // never the answer and a second request for the other version is not served from the first.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico-s6-proto-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const writeProto = (version, extraRpc = "") => {
+    const libDir = path.join(root, version, "emulator", "lib");
+    fs.mkdirSync(libDir, { recursive: true });
+    fs.writeFileSync(path.join(root, version, "emulator", "emulator"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    fs.writeFileSync(path.join(libDir, "emulator_types.proto"), 'syntax = "proto3";\npackage android.emulation.control;\nmessage Empty {}\nmessage EmulatorStatus { string version = 1; }\n');
+    fs.writeFileSync(
+      path.join(libDir, "emulator_controller.proto"),
+      `syntax = "proto3";\npackage android.emulation.control;\nimport "emulator_types.proto";\nservice EmulatorController {\n  rpc getStatus (Empty) returns (EmulatorStatus) {}\n${extraRpc}}\n`,
+    );
+  };
+  writeProto("0.13");
+  writeProto("6.1", "  rpc sendXrHeadPose (Empty) returns (Empty) {}\n");
+
+  const priorHome = process.env.PICO_HOME;
+  process.env.PICO_HOME = root;
+  try {
+    clearProtoCache();
+    const selected = loadProto();
+    assert.ok(!("error" in selected), selected.error);
+    assert.ok(selected.protoPath.includes(`${path.sep}6.1${path.sep}`), `the default request served ${selected.protoPath}`);
+    const legacy = loadProto("0.13");
+    assert.ok(!("error" in legacy), legacy.error);
+    assert.ok(legacy.protoPath.includes(`${path.sep}0.13${path.sep}`), legacy.protoPath);
+    assert.notEqual(selected.protoPath, legacy.protoPath);
+    assert.ok(loadProto("6.1").protoPath.includes(`${path.sep}6.1${path.sep}`), "the 6.1 request was served the cached 0.13 schema");
+  } finally {
+    if (priorHome === undefined) delete process.env.PICO_HOME; else process.env.PICO_HOME = priorHome;
+    clearProtoCache();
+  }
+});
+
+test("S6 matrix: vault and lint answers follow the selected tools root and stay historical without reviewed evidence", async (t) => {
+  // A vault materialized under a version-labelled directory is still whatever package.xml says it
+  // is. Both labels below carry a 0.13.3 payload, so a consumer that read the LABEL would report
+  // "6.1" for one of them.
+  const toolsRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pico-s6-tools-"));
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "pico-s6-project-"));
+  t.after(() => { for (const d of [toolsRoot, projectDir]) fs.rmSync(d, { recursive: true, force: true }); });
+  const fixtureVault = path.join(repoRoot, "test", "fixtures", "agent-vault");
+  for (const label of ["0.13", "6.1"]) {
+    const vaultRoot = path.join(toolsRoot, label, "agent-vault");
+    const apiDir = path.join(vaultRoot, "knowledge", "api-reference");
+    fs.mkdirSync(apiDir, { recursive: true });
+    for (const f of fs.readdirSync(path.join(fixtureVault, "knowledge", "api-reference"))) {
+      fs.copyFileSync(path.join(fixtureVault, "knowledge", "api-reference", f), path.join(apiDir, f));
+    }
+    fs.writeFileSync(path.join(vaultRoot, "package.xml"), "<package><revision><major>0</major><minor>13</minor><micro>3</micro></revision></package>\n");
+  }
+  fs.mkdirSync(path.join(projectDir, "gradle"), { recursive: true });
+  fs.writeFileSync(path.join(projectDir, "gradle", "libs.versions.toml"), '[versions]\nbom = "6.0.0"\n\n[libraries]\nbom = { group = "com.pico.spatial", name = "bom", version.ref = "bom" }\n');
+
+  const priorHome = process.env.PICO_HOME;
+  const priorVault = process.env.PICO_AGENT_VAULT;
+  process.env.PICO_HOME = toolsRoot;
+  delete process.env.PICO_AGENT_VAULT;
+  try {
+    const vaultHandlers = {};
+    registerVaultTools({ registerTool: (name, _meta, fn) => { vaultHandlers[name] = fn; } });
+    const lintHandlers = {};
+    registerLintTools(
+      { registerTool: (name, _meta, fn) => { lintHandlers[name] = fn; } },
+      { call: async () => ({ status: "unavailable", action: "query_graph", error: "not exercised here" }) },
+    );
+
+    // vault_api, selecting the 6.1-labelled workspace under the SELECTED tools root.
+    const answer = JSON.parse((await vaultHandlers.vault_api({ symbol: "Entity", sdkVersion: "6.1", projectRoot: projectDir })).content[0].text);
+    assert.equal(answer.vaultSelection.root, path.join(toolsRoot, "6.1", "agent-vault"), JSON.stringify(answer.vaultSelection));
+    assert.equal(answer.vaultSelection.source, "version");
+    assert.equal(answer.vaultProvenance.packageRevision, "0.13.3", "a 6.1 DIRECTORY LABEL is not a 6.1 package revision");
+    assert.equal(answer.lookup, "historical");
+    assert.deepEqual(answer.verifiedMatches, []);
+    assert.deepEqual(answer.incompatibleMatches, []);
+    assert.equal(answer.target.declaredBom, "6.0.0");
+    assert.equal(answer.compatibilityIndex.status, "present");
+    assert.equal(answer.compatibilityIndex.records, 0);
+    assert.notEqual(answer.declarationContext.status, "target-compatible");
+
+    // preflight_lint's advisory vault block: the default vault root is derived from the SELECTED
+    // tools root, not from a hardcoded home location.
+    const lint = JSON.parse((await lintHandlers.preflight_lint({
+      content: "import com.pico.spatial.core.ecs.Entity\nval e = Entity()\n",
+      kind: "kotlin",
+      projectDir,
+    })).content[0].text);
+    assert.equal(lint.vault.status, "ok", JSON.stringify(lint.vault).slice(0, 300));
+    // declarationIdentity.root is the CANONICAL root the reader resolved, so compare canonically.
+    assert.equal(lint.vault.declarationIdentity.root, fs.realpathSync(path.join(toolsRoot, "0.13", "agent-vault")));
+    assert.equal(lint.vault.declarationIdentity.packageRevision, "0.13.3");
+    assert.equal(lint.vault.target.declaredBom, "6.0.0");
+    assert.equal(lint.vault.declarationContext.status, "unknown");
+    assert.equal(lint.vault.compatibilityIndex.status, "present");
+    assert.equal(lint.vault.compatibilityIndex.records, 0);
+    assert.equal(lint.clean, lint.violations.length === 0 && lint.counts.projectErrors === 0, "the vault linkage must not enter `clean`");
+  } finally {
+    if (priorHome === undefined) delete process.env.PICO_HOME; else process.env.PICO_HOME = priorHome;
+    if (priorVault !== undefined) process.env.PICO_AGENT_VAULT = priorVault;
+  }
+});
+
+test("S6 matrix: failed and missing selections are reported as themselves, never degraded to another binary", async () => {
+  const probe = async () => "spatialbundle 6.1.0";
+  const cases = [
+    {
+      name: "no installation at all",
+      io: toolchainIOFromTree({ platform: "darwin", home: "/fixture", env: { PICO_HOME: "/sdk" }, files: {} }),
+      request: { required: ["packer"], primary: "packer" },
+      code: /^unavailable\/root-unavailable$/,
+    },
+    {
+      name: "an installation with no packer payload",
+      io: toolchainIOFromTree({
+        platform: "darwin", home: "/fixture", env: { PICO_HOME: "/sdk" },
+        files: { "/sdk/6.1/emulator/emulator": { bytes: "emulator-only", executable: true } },
+      }),
+      request: { required: ["packer"], primary: "packer" },
+      code: /^unavailable\/component-missing$/,
+    },
+    {
+      name: "a pin that is not installed",
+      io: mixedHostIO(),
+      request: { toolsVersion: "9.9", required: ["packer"], primary: "packer" },
+      code: /^unavailable\/[a-z-]+$/,
+    },
+    {
+      name: "the editor component off macOS",
+      io: toolchainIOFromTree({
+        platform: "linux", home: "/fixture", env: { PICO_HOME: "/sdk" },
+        files: { "/sdk/6.1/editor/spatialbundle/spatialbundle": { bytes: "packer", executable: true } },
+      }),
+      request: { required: ["editor"], primary: "editor" },
+      code: /^unavailable\//,
+    },
+  ];
+
+  for (const { name, io, request, code } of cases) {
+    const structural = resolveOperationToolchain(request, io);
+    assert.ok(isToolchainFailure(structural), `${name}: expected a structured failure, got ${JSON.stringify(structural)}`);
+    assert.match(structural.code, code, name);
+    assert.ok(structural.detail.length > 10, `${name}: a refusal must say why`);
+    assert.ok(!("bin" in structural), `${name}: a failure must carry no binary to run`);
+
+    // The shared helper flattens it to the same `code: detail` shape, still with no binary.
+    const prepared = await prepareOperationToolchain({ ...request, allowBinaryOverride: true }, { io, probe });
+    assert.ok("error" in prepared, `${name}: ${JSON.stringify(prepared)}`);
+    assert.match(prepared.error, /^unavailable\/[a-z-]+: /, name);
+    assert.ok(!prepared.error.includes(S6_LEGACY_PACKER), `${name} named the legacy payload as a fallback`);
+  }
+
+  // An explicit override is the ONE thing that carries an operation past a missing selection, and
+  // it is disclosed rather than silently substituted.
+  const overrideIo = toolchainIOFromTree({
+    platform: "darwin", home: "/fixture",
+    env: { PICO_HOME: "/sdk", PICO_SPATIALBUNDLE: "/opt/custom/spatialbundle" },
+    files: { "/opt/custom/spatialbundle": { bytes: "override", executable: true } },
+  });
+  const carried = resolveOperationToolchain({ required: ["packer"], primary: "packer", allowBinaryOverride: true }, overrideIo);
+  assert.equal(carried.bin, "/opt/custom/spatialbundle");
+  assert.equal(carried.selection, null);
+  assert.equal(carried.selectionUnavailable.code, "unavailable/root-unavailable");
+  assert.equal(toolchainProvenance(carried).toolchain, null);
+});
+
+test("S6 matrix: the same mixed host on win32 and linux FIXTURES selects the 6.1 payload published for that platform", async () => {
+  // Fixture-only evidence. An in-memory tree proves the selection LOGIC is platform-correct; it
+  // is not a claim that this server has been run on Windows or Linux, and no native payload,
+  // process or path was touched here.
+  const probe = async () => "spatialbundle 6.1.0";
+
+  // win32: `.exe` payloads, a drive root, and a legacy 0.13 install beside the 6.1 one.
+  const winFiles = {};
+  for (const version of ["0.13", "6.1"]) {
+    winFiles[`C:\\sdk\\${version}\\editor\\spatialbundle\\spatialbundle.exe`] = { bytes: `packer-${version}`, executable: true };
+    winFiles[`C:\\sdk\\${version}\\emulator\\emulator.exe`] = { bytes: `emulator-${version}`, executable: true };
+    winFiles[`C:\\sdk\\${version}\\emulator\\system-images\\platform-tools\\adb.exe`] = { bytes: `adb-${version}`, executable: true };
+    winFiles[`C:\\sdk\\${version}\\emulator\\lib\\emulator_controller.proto`] = { bytes: `proto-${version}` };
+  }
+  const winIO = toolchainIOFromTree({ platform: "win32", home: "C:\\Users\\dev", env: { PICO_HOME: "C:\\sdk" }, files: winFiles });
+  const win = await packerToolchain({}, winIO, probe);
+  assert.ok(!("error" in win), JSON.stringify(win));
+  assert.equal(win.bin, "C:\\sdk\\6.1\\editor\\spatialbundle\\spatialbundle.exe");
+  assert.equal(win.selection.version, "6.1");
+  clearAdbResolutionCache();
+  const winAdb = resolveAdbExecutable(winIO);
+  assert.equal(winAdb.status, "ok");
+  assert.equal(winAdb.path, "C:\\sdk\\6.1\\emulator\\system-images\\platform-tools\\adb.exe");
+  // The macOS-only editor app bundle is not published for win32, and is refused rather than faked.
+  assert.ok(isToolchainFailure(resolveOperationToolchain({ required: ["editor"], primary: "editor" }, winIO)));
+  clearAdbResolutionCache();
+
+  // linux: bare names, an explicit root (Linux has no documented default root to invent).
+  const linuxFiles = {};
+  for (const version of ["0.13", "6.1"]) {
+    linuxFiles[`/opt/pico/${version}/editor/spatialbundle/spatialbundle`] = { bytes: `packer-${version}`, executable: true };
+    linuxFiles[`/opt/pico/${version}/emulator/emulator`] = { bytes: `emulator-${version}`, executable: true };
+    linuxFiles[`/opt/pico/${version}/emulator/system-images/platform-tools/adb`] = { bytes: `adb-${version}`, executable: true };
+    linuxFiles[`/opt/pico/${version}/emulator/lib/emulator_controller.proto`] = { bytes: `proto-${version}` };
+  }
+  const linuxIO = toolchainIOFromTree({ platform: "linux", home: "/home/dev", env: { PICO_HOME: "/opt/pico" }, files: linuxFiles });
+  const linux = await packerToolchain({}, linuxIO, probe);
+  assert.ok(!("error" in linux), JSON.stringify(linux));
+  assert.equal(linux.bin, "/opt/pico/6.1/editor/spatialbundle/spatialbundle");
+  assert.equal(linux.selection.version, "6.1");
+  clearAdbResolutionCache();
+  const linuxAdb = resolveAdbExecutable(linuxIO);
+  assert.equal(linuxAdb.status, "ok");
+  assert.equal(linuxAdb.path, "/opt/pico/6.1/emulator/system-images/platform-tools/adb");
+  assert.ok(isToolchainFailure(resolveOperationToolchain({ required: ["editor"], primary: "editor" }, linuxIO)));
+  clearAdbResolutionCache();
+});
+
+test("S6 matrix: the ONE legacy `which adb` probe left in the server is bounded to validate_toolchain and does not spread", () => {
+  // Honest scoping for the rows above. The matrix proves that the operations it exercises launch
+  // no legacy fallback; it does NOT claim the whole server is free of one. `validateToolchain`'s
+  // own `findAdb()` still shells out to `which adb` and then a version-joined platform-tools path,
+  // ignoring $PICO_ADB entirely — a deferred S4 item, not this task's to change. What must not
+  // happen is a SECOND consumer picking that habit back up, so the residue is pinned here by
+  // count and by location.
+  const offenders = [];
+  for (const name of fs.readdirSync(path.join(repoRoot, "src")).filter((n) => n.endsWith(".ts"))) {
+    const text = fs.readFileSync(path.join(repoRoot, "src", name), "utf8");
+    text.split("\n").forEach((line, i) => {
+      if (line.trimStart().startsWith("*") || line.trimStart().startsWith("//")) return;
+      if (/run\(\s*"which"\s*,\s*\[\s*"adb"/.test(line)) offenders.push(`${name}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(offenders, ["toolchain.ts:483"], "a `which adb` probe appeared outside validate_toolchain's findAdb()");
+
+  // …and it has exactly one caller, which is validate_toolchain's report.
+  const toolchainSource = fs.readFileSync(path.join(repoRoot, "src", "toolchain.ts"), "utf8");
+  const callSites = toolchainSource.split("\n").filter((line) => /\bfindAdb\(/.test(line) && !/export async function findAdb/.test(line));
+  assert.equal(callSites.length, 1, `findAdb() gained a caller: ${callSites.join(" | ")}`);
+  assert.match(callSites[0], /const adb = await findAdb\(root, sel\?\.version\)/);
+  // Nothing else may IMPORT it. (`src/preflight.ts` has a same-named local helper of its own; it
+  // walks io.exec over the selection-derived candidates and never shells out, so a name match
+  // there is not a use of this probe.)
+  const importers = fs.readdirSync(path.join(repoRoot, "src"))
+    .filter((n) => n.endsWith(".ts") && n !== "toolchain.ts")
+    .filter((n) => /import\s*\{[^}]*\bfindAdb\b[^}]*\}\s*from\s*"\.\/toolchain\.js"/s.test(fs.readFileSync(path.join(repoRoot, "src", n), "utf8")));
+  assert.deepEqual(importers, [], "no module outside src/toolchain.ts may reach the legacy adb probe");
+});
