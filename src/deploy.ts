@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, runBinary, okJson, fail, image, expandHome } from "./util.js";
 import { probeDeviceIdentity, selectPicoDevice } from "./swanparity.js";
 import { validateCaptureBuffer } from "./evidence.js";
+import { adbExecutable } from "./adb.js";
 
 /**
  * deploy_to_device — the PICO Swan (hardware) deploy+verify path. DORMANT until a Swan headset is
@@ -15,10 +15,10 @@ import { validateCaptureBuffer } from "./evidence.js";
  * A non-emulator serial is no longer trusted blindly. Every candidate is identity-probed; an
  * unrecognized identity is refused and multiple plausible PICO devices require an explicit serial.
  */
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools, identity-keyed so a replaced adb is observed without a restart. */
 function resolveAdb(): string {
-  const c = [process.env.PICO_ADB, path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb"), "/opt/homebrew/bin/adb", "adb"].filter(Boolean) as string[];
-  for (const x of c) if (x === "adb" || fs.existsSync(x)) return x;
-  return "adb";
+  return adbExecutable();
 }
 
 export function registerDeployTools(

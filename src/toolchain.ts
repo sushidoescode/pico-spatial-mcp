@@ -402,34 +402,43 @@ export function emulatorLibDir(root: string, version: string): string {
 }
 
 /**
- * Locate a JDK for Gradle. Order: $JAVA_HOME, Android Studio's bundled JBR
- * (the JDK Android devs already have), then /usr/libexec/java_home (macOS).
- * Gradle builds fail with "Unable to locate a Java Runtime" without this.
+ * Locate a JDK for Gradle. Order: $JAVA_HOME, then Android Studio's bundled JBR (the JDK Android
+ * devs already have) at the system, Preview and user-home locations. Gradle builds fail with
+ * "Unable to locate a Java Runtime" without this. There is no `/usr/libexec/java_home` fallback —
+ * an earlier comment promised one that was never implemented.
+ *
+ * Deliberately UNCACHED (Task S4). The previous `cachedJavaHome` memo answered "have I looked
+ * before?", so the first answer of a long-lived server survived every JDK change underneath it:
+ * an Android Studio update that replaces the bundled JBR, a `JAVA_HOME` export, a `chmod -x`, or
+ * an absent JDK later installed all kept reporting the stale first answer — including a cached
+ * `null` that made every subsequent Gradle build fail with a JDK that was by then present. The
+ * candidates are a handful of `access(X_OK)` calls, so revalidating them per call is cheaper than
+ * one wrong build.
+ *
+ * `io` is injected by tests and by callers that already hold a context; production passes none and
+ * gets the host environment. Nothing here executes Java or adds a PATH lookup.
  */
-let cachedJavaHome: string | null | undefined;
-export function detectJavaHome(): string | null {
-  if (cachedJavaHome !== undefined) return cachedJavaHome;
-  const isJdk = (home: string) => {
-    try {
-      fs.accessSync(path.join(home, "bin", "java"), fs.constants.X_OK);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  if (process.env.JAVA_HOME && isJdk(process.env.JAVA_HOME)) return (cachedJavaHome = process.env.JAVA_HOME);
+export function detectJavaHome(io: ToolchainIO = hostToolchainIO()): string | null {
+  const P = io.platform === "win32" ? path.win32 : path.posix;
+  const isJdk = (home: string) => io.executable(P.join(home, "bin", "java"));
+  const declared = io.env.JAVA_HOME;
+  if (declared && isJdk(declared)) return declared;
   const candidates = [
     "/Applications/Android Studio.app/Contents/jbr/Contents/Home",
     "/Applications/Android Studio Preview.app/Contents/jbr/Contents/Home",
-    expandHome("~/Applications/Android Studio.app/Contents/jbr/Contents/Home"),
+    P.join(io.home, "Applications/Android Studio.app/Contents/jbr/Contents/Home"),
   ];
-  for (const c of candidates) if (isJdk(c)) return (cachedJavaHome = c);
-  return (cachedJavaHome = null);
+  for (const c of candidates) if (isJdk(c)) return c;
+  return null;
 }
 
-/** Env for Gradle invocations — injects a detected JAVA_HOME when the host has none on PATH. */
-export function gradleEnv(): Record<string, string | undefined> {
-  const jh = detectJavaHome();
+/**
+ * Env for Gradle invocations — injects a detected JAVA_HOME when the host has none on PATH.
+ * Takes the SAME context as `detectJavaHome`, so the doctor's JDK row and the JDK a build
+ * actually receives can never be answers to two different questions.
+ */
+export function gradleEnv(io: ToolchainIO = hostToolchainIO()): Record<string, string | undefined> {
+  const jh = detectJavaHome(io);
   return jh ? { JAVA_HOME: jh } : {};
 }
 

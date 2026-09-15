@@ -47,6 +47,12 @@ export type PreflightIO = {
   /** Injected so a fixture can describe a machine WITHOUT a JDK; the default is the real resolver
    *  the Gradle lane uses, so this check can never disagree with whether builds actually work. */
   detectJavaHome: () => string | null;
+  /** The $JAVA_HOME of the SAME context `detectJavaHome` answered from, so the row's "declared vs
+   *  auto-detected" wording is a function of its input rather than of this host's environment.
+   *  Omitted means "use this process's environment", which is what production does. */
+  javaHomeEnv?: string | null;
+  /** The $PICO_ADB of the same context, for the identical reason. */
+  adbOverride?: string | null;
   /** Production's exact read-only managed inspection. Fixtures that exercise the legacy pure
    * command evaluator may omit it. */
   picoCliInspection?: PicoCliEnsureResult;
@@ -205,14 +211,28 @@ function picoSdkCheck(io: PreflightIO): CheckResult {
 }
 
 /**
- * PATH first, then the adb of the SELECTED toolchain, then the legacy hardcoded location. Every
- * candidate is still confirmed by actually running `adb version` — the structural selection
- * narrows where to look, it does not replace the native probe.
+ * The same precedence `src/adb.ts` runs — explicit $PICO_ADB, then PATH, then the adb of the
+ * SELECTED toolchain — with the legacy hardcoded location retained only as a LAST candidate so a
+ * host that really does carry a 0.13 payload keeps working. Every candidate is still confirmed by
+ * actually running `adb version`: the structural selection narrows where to look, it does not
+ * replace the native probe.
  */
 function adbCandidates(io: PreflightIO): string[] {
+  const override = (io.adbOverride ?? process.env.PICO_ADB ?? "").trim();
   const selected = io.adbInspection?.status === "ok" ? io.adbInspection.files.adb?.path : undefined;
   const legacy = LEGACY_SDK_ADB(io.home);
-  return [...new Set(["adb", ...(selected ? [selected] : []), legacy])];
+  return [...new Set([...(override ? [override] : []), "adb", ...(selected ? [selected] : []), legacy])];
+}
+
+/** Where a working candidate came from, so the row never implies the wrong provenance. */
+function adbSourceLabel(io: PreflightIO, candidate: string): string {
+  const override = (io.adbOverride ?? process.env.PICO_ADB ?? "").trim();
+  if (override && candidate === override) return "explicit $PICO_ADB";
+  if (candidate === "adb") return "PATH";
+  if (io.adbInspection?.status === "ok" && candidate === io.adbInspection.files.adb?.path) {
+    return `bundled platform-tools of the selected ${io.adbInspection.version} toolchain`;
+  }
+  return "legacy 0.13 platform-tools";
 }
 
 function findAdb(io: PreflightIO): string | null {
@@ -250,10 +270,15 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
     ? { name: "node", status: "pass", detail: io.nodeVersion, fix: null }
     : { name: "node", status: "fail", detail: `found ${io.nodeVersion}, need >=20`, fix: "Install Node 20 or newer (e.g. `brew install node@20`), then restart your MCP client so the server runs on it." });
 
-  // 2. adb
+  // 2. adb. An explicit $PICO_ADB that does NOT answer `adb version` must never be reported as
+  //    the answer — but it must not vanish either: a stale export silently replaced by a different
+  //    adb is exactly the provenance failure this row exists to surface, so the rejection is
+  //    disclosed beside the candidate that actually won.
   const adb = findAdb(io);
+  const declaredAdb = (io.adbOverride ?? process.env.PICO_ADB ?? "").trim();
+  const overrideNote = declaredAdb && adb !== declaredAdb ? ` ($PICO_ADB ${declaredAdb} did not answer \`adb version\` and was skipped)` : "";
   push(adb
-    ? { name: "adb", status: "pass", detail: adb, fix: null }
+    ? { name: "adb", status: "pass", detail: `${adb} (from ${adbSourceLabel(io, adb)})${overrideNote}`, fix: null }
     : { name: "adb", status: "fail", detail: `no adb on PATH and no bundled platform-tools (probed: ${adbCandidates(io).join(", ")})`, fix: "Install the PICO Spatial Plugin in Android Studio (it downloads the emulator payload, whose platform-tools carry adb) or add adb to PATH." });
 
   // 2b. PICO SDK payload. adb can be on PATH from an unrelated Android install, so a passing adb
@@ -273,8 +298,9 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   //     check was added to prevent, only inverted: a false "broken" instead of a false "healthy".
   //     If the build lane can find a JDK, this check must agree with it.
   const javaHome = io.detectJavaHome();
+  const declaredJavaHome = io.javaHomeEnv !== undefined ? io.javaHomeEnv : process.env.JAVA_HOME ?? null;
   push(javaHome
-    ? { name: "jdk", status: "pass", detail: process.env.JAVA_HOME === javaHome ? `JAVA_HOME=${javaHome}` : `${javaHome} (auto-detected; Gradle gets it injected)`, fix: null }
+    ? { name: "jdk", status: "pass", detail: declaredJavaHome === javaHome ? `JAVA_HOME=${javaHome}` : `${javaHome} (auto-detected; Gradle gets it injected)`, fix: null }
     : { name: "jdk", status: "fail", detail: "no JDK found (JAVA_HOME unset, none on PATH, no Android Studio JBR)", fix: "Install a JDK 17+ (Android Studio bundles one, or `brew install openjdk@17`) and set JAVA_HOME — Gradle APK builds fail without it." });
 
   // 2d. ImageMagick. Only the capture-analysis lane needs it, so this is a warn, not a fail.

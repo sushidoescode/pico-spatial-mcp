@@ -8,10 +8,14 @@ import { promisify } from "node:util";
 import { okJson } from "./util.js";
 import { buildLedger } from "./compiler.js";
 import { appSpecSchema } from "./appspec.js";
+import { adbExecutable } from "./adb.js";
 import { fileURLToPath } from "node:url";
 
 const run = promisify(execFile);
-const ADB = process.env.PICO_ADB ?? path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools. Resolved PER CALL (identity-keyed, so a hit costs a stat) rather
+ *  than frozen into a module constant at import time. */
+const ADB = () => adbExecutable();
 const JBR = "/Applications/Android Studio.app/Contents/jbr/Contents/Home";
 // v29.3: scaffold_spatial_app now generates from the packaged skeleton (no templateProject),
 // and the GameMenu bundle ships in the package — no machine-local paths in the hybrid lane.
@@ -112,18 +116,18 @@ export function registerHybridBuildTools(server: McpServer) {
         await run("./gradlew", [":app:assembleDebug", "-q"], { cwd: projectDir, env: envv, timeout: 480_000, maxBuffer: 32 * 1024 * 1024 });
         rec.built = true;
         const apk = path.join(projectDir, "app/build/outputs/apk/debug/app-debug.apk");
-        await run(ADB, ["-s", "emulator-5554", "install", "-r", apk], { timeout: 240_000 });
+        await run(ADB(), ["-s", "emulator-5554", "install", "-r", apk], { timeout: 240_000 });
         // launch scene, then control panel (each its own spatial surface)
-        await run(ADB, ["-s", "emulator-5554", "shell", "am", "start", "-S", "-n", `${packageName}/.platform.LaunchActivity`], { timeout: 30_000 });
+        await run(ADB(), ["-s", "emulator-5554", "shell", "am", "start", "-S", "-n", `${packageName}/.platform.LaunchActivity`], { timeout: 30_000 });
         rec.installed = true;
         await new Promise((r) => setTimeout(r, 12_000));
-        await run(ADB, ["-s", "emulator-5554", "shell", "am", "start", "-n", `${packageName}/${packageName}.content.WebControlPanelActivity`], { timeout: 30_000 });
+        await run(ADB(), ["-s", "emulator-5554", "shell", "am", "start", "-n", `${packageName}/${packageName}.content.WebControlPanelActivity`], { timeout: 30_000 });
         await new Promise((r) => setTimeout(r, 6_000));
         // 5. capture the composited workspace
         const shotDir = `/tmp/pico-render/hybrid/${dirName}`;
         fs.mkdirSync(shotDir, { recursive: true });
         const shot = path.join(shotDir, "workspace.png");
-        const png = await run(ADB, ["-s", "emulator-5554", "exec-out", "screencap", "-p"], { timeout: 30_000, encoding: "buffer" as any, maxBuffer: 32 * 1024 * 1024 });
+        const png = await run(ADB(), ["-s", "emulator-5554", "exec-out", "screencap", "-p"], { timeout: 30_000, encoding: "buffer" as any, maxBuffer: 32 * 1024 * 1024 });
         fs.writeFileSync(shot, png.stdout as any);
         rec.artifact = shot;
         const judged = await call("visual_judge", { imagePath: shot, claim: `[build_hybrid_experience] ${appName}: native scene + web control panel composited`, expect: { minObjects: 2, notMostlyBlack: true, ...(authoredColors.length ? { authoredColors } : {}) }, app: packageName, record: true, cClass: "C0_emulator" });

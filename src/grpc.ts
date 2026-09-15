@@ -8,6 +8,7 @@ import { z } from "zod";
 import { fail, image, ok, okJson } from "./util.js";
 import { emulatorLibDir, pickVersion, resolveToolsRoot } from "./toolchain.js";
 import { readDiscovery, type EmulatorDiscoveryRecord } from "./emulator.js";
+import { IdentityCache } from "./identitycache.js";
 
 /**
  * EXPERIMENTAL XR/gRPC layer.
@@ -26,33 +27,94 @@ interface LoadedProto {
   protoPath: string;
 }
 
-let loaded: LoadedProto | null = null;
+/**
+ * Task S4 — the schema cache is keyed on the SELECTED proto's bytes, not on "have I loaded one".
+ *
+ * The previous `if (loaded) return loaded` ran before the requested version was even looked at, so
+ * the first `loadProto()` of a process pinned the schema forever: a later `loadProto("6.1")`
+ * returned the 6.0 package definition it happened to load first, and a reinstalled emulator
+ * payload was invisible until the server restarted. A wrong schema does not fail loudly — it
+ * silently drops or misreads fields on the wire.
+ *
+ * The key covers the requested version label, the resolved proto path AND the content of every
+ * `.proto` reachable through transitive `import` statements inside the selected library directory,
+ * because those imported files define the message types the service signature is made of and can
+ * change without the top-level file changing a byte.
+ */
+const protoCache = new IdentityCache<LoadedProto | { error: string }>();
 
-function loadProto(toolsVersion?: string): LoadedProto | { error: string } {
-  if (loaded) return loaded;
+/** Tests only: prove a cache miss. */
+export function clearProtoCache(): void {
+  protoCache.clear();
+}
+
+const PROTO_IMPORT = /^\s*import\s+(?:public\s+|weak\s+)?"([^"]+)"\s*;/gm;
+
+/**
+ * Every `.proto` the selected schema is built from, as `relative path -> sha256` in sorted order.
+ * Bounded to `libDir` — this walks the installed emulator library, never the network and never a
+ * path that escapes the directory (`includeDirs` is that directory, so nothing outside it could
+ * have been resolved anyway). An import that cannot be read is recorded as `missing` rather than
+ * skipped, so a deleted dependency changes the key instead of silently matching the old one.
+ */
+function protoSchemaMaterial(libDir: string, protoPath: string): string {
+  const seen = new Map<string, string>();
+  const queue = [path.basename(protoPath)];
+  while (queue.length) {
+    const rel = queue.shift()!;
+    if (seen.has(rel)) continue;
+    const abs = path.resolve(libDir, rel);
+    if (path.relative(libDir, abs).startsWith("..")) {
+      seen.set(rel, "outside-library");
+      continue;
+    }
+    let bytes: Buffer;
+    try {
+      bytes = fs.readFileSync(abs);
+    } catch {
+      seen.set(rel, "missing");
+      continue;
+    }
+    seen.set(rel, crypto.createHash("sha256").update(bytes).digest("hex"));
+    const text = bytes.toString("utf8");
+    PROTO_IMPORT.lastIndex = 0;
+    for (let m = PROTO_IMPORT.exec(text); m; m = PROTO_IMPORT.exec(text)) queue.push(m[1]);
+  }
+  return [...seen.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([rel, digest]) => `${rel}\0${digest}`).join("\n");
+}
+
+export function loadProto(toolsVersion?: string): LoadedProto | { error: string } {
   const { root } = resolveToolsRoot();
   const sel = pickVersion(root, toolsVersion, "emulator");
   if (!sel) return { error: `No emulator payload found under ${root}` };
   const libDir = emulatorLibDir(root, sel.version);
   const protoPath = path.join(libDir, "emulator_controller.proto");
   if (!fs.existsSync(protoPath)) return { error: `emulator_controller.proto not found at ${protoPath}` };
-  try {
-    const pkgDef = protoLoader.loadSync(protoPath, {
-      keepCase: true,
-      longs: String,
-      enums: String,
-      defaults: true,
-      oneofs: true,
-      includeDirs: [libDir],
-    });
-    const pkg = grpc.loadPackageDefinition(pkgDef) as any;
-    const controllerCtor = pkg?.android?.emulation?.control?.EmulatorController;
-    if (!controllerCtor) return { error: "android.emulation.control.EmulatorController not found in loaded proto" };
-    loaded = { pkgDef, controllerCtor, protoPath };
-    return loaded;
-  } catch (e: any) {
-    return { error: `Failed to load proto: ${e.message}` };
-  }
+  const key = [toolsVersion ?? "", sel.version, protoPath, protoSchemaMaterial(libDir, protoPath)].join("\n");
+  return protoCache.getOr(
+    key,
+    (): LoadedProto | { error: string } => {
+      try {
+        const pkgDef = protoLoader.loadSync(protoPath, {
+          keepCase: true,
+          longs: String,
+          enums: String,
+          defaults: true,
+          oneofs: true,
+          includeDirs: [libDir],
+        });
+        const pkg = grpc.loadPackageDefinition(pkgDef) as any;
+        const controllerCtor = pkg?.android?.emulation?.control?.EmulatorController;
+        if (!controllerCtor) return { error: "android.emulation.control.EmulatorController not found in loaded proto" };
+        return { pkgDef, controllerCtor, protoPath };
+      } catch (e: any) {
+        return { error: `Failed to load proto: ${e.message}` };
+      }
+    },
+    // A failed load is never published: a malformed or half-written payload that is then repaired
+    // must load on the next call, without a restart.
+    (result) => !("error" in result),
+  );
 }
 
 export interface GrpcEndpointBinding {

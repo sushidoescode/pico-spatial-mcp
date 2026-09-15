@@ -1,13 +1,15 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import * as path from "node:path";
-import * as os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { okJson, sleep } from "./util.js";
+import { adbExecutable } from "./adb.js";
 
 const run = promisify(execFile);
-const ADB = process.env.PICO_ADB ?? path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools. Resolved PER CALL (identity-keyed, so a hit costs a stat) rather
+ *  than frozen into a module constant at import time. */
+const ADB = () => adbExecutable();
 const SERIAL = "emulator-5554";
 
 /**
@@ -80,7 +82,7 @@ export async function measurePerf(
 
   if (opts.resetFirst ?? true) {
     try {
-      await run(ADB, ["-s", SERIAL, "shell", "dumpsys", "gfxinfo", packageName, "reset"]);
+      await run(ADB(), ["-s", SERIAL, "shell", "dumpsys", "gfxinfo", packageName, "reset"]);
     } catch (e) {
       errors.push(`gfxinfo reset failed: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -90,7 +92,7 @@ export async function measurePerf(
 
   let gfx = "";
   try {
-    gfx = (await run(ADB, ["-s", SERIAL, "shell", "dumpsys", "gfxinfo", packageName])).stdout;
+    gfx = (await run(ADB(), ["-s", SERIAL, "shell", "dumpsys", "gfxinfo", packageName])).stdout;
   } catch (e) {
     errors.push(`gfxinfo read failed: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -105,7 +107,7 @@ export async function measurePerf(
 
   let totalPssMb: number | null = null;
   try {
-    const mem = (await run(ADB, ["-s", SERIAL, "shell", "dumpsys", "meminfo", packageName])).stdout;
+    const mem = (await run(ADB(), ["-s", SERIAL, "shell", "dumpsys", "meminfo", packageName])).stdout;
     totalPssMb = parseTotalPssMb(mem);
   } catch (e) {
     errors.push(`meminfo read failed: ${e instanceof Error ? e.message : String(e)}`);

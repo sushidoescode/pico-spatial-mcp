@@ -6,6 +6,7 @@ import { z } from "zod";
 import { okJson, run } from "./util.js";
 import { assertCanonicalAppKey, CANONICAL_APP_KEY_PATTERN, readLedger } from "./ledger.js";
 import { classifyDeviceIdentity, probeDeviceIdentity as probeRawDeviceIdentity } from "./deviceidentity.js";
+import { adbExecutable } from "./adb.js";
 export { classifyDeviceIdentity } from "./deviceidentity.js";
 
 /**
@@ -30,10 +31,10 @@ export { classifyDeviceIdentity } from "./deviceidentity.js";
  *    structurally reachable (and never reopened by a later run with weaker evidence).
  */
 
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools, identity-keyed so a replaced adb is observed without a restart. */
 function resolveAdb(): string {
-  const c = [process.env.PICO_ADB, path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb"), "/opt/homebrew/bin/adb", "adb"].filter(Boolean) as string[];
-  for (const x of c) if (x === "adb" || fs.existsSync(x)) return x;
-  return "adb";
+  return adbExecutable();
 }
 
 // The C1–C4 re-test catalogue: each headset-only capability, its emulator baseline, and the device test.

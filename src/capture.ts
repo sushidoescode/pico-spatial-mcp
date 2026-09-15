@@ -4,6 +4,7 @@ import os from "node:os";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, runBinary, image, fail, expandHome } from "./util.js";
+import { adbExecutable } from "./adb.js";
 
 /**
  * capture_frame — the VISUAL GROUND-TRUTH primitive. Grabs the emulator's rendered immersive frame
@@ -17,16 +18,7 @@ import { run, runBinary, image, fail, expandHome } from "./util.js";
  */
 
 function resolveAdb(): string {
-  const candidates = [
-    process.env.PICO_ADB,
-    path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb"),
-    "/opt/homebrew/bin/adb",
-    "adb",
-  ].filter(Boolean) as string[];
-  for (const c of candidates) {
-    if (c === "adb" || fs.existsSync(c)) return c;
-  }
-  return "adb";
+  return adbExecutable();
 }
 
 export function registerCaptureTools(server: McpServer) {

@@ -1,9 +1,11 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
+import { IdentityCache } from "./identitycache.js";
 
 /**
  * vault.ts — v14.6 the AGENT-VAULT SYMBOL INDEX + the preflight vault check.
@@ -29,8 +31,10 @@ import { okJson } from "./util.js";
  * have no declarations, only doc samples), so ui imports are skipped — validating them would
  * false-positive on every SpatialUI panel we emit.
  *
- * The index is memoized per vault root; parsing the 1.3MB api-reference takes ~50ms, so there is
- * deliberately NO disk cache (a cache adds a staleness bug class to save 50ms once per process).
+ * The index is memoized per vault root and keyed on that root's CONTENT (package metadata +
+ * declaration filenames and hashes), so a vault replaced in place is re-read rather than answered
+ * from the copy that was there at startup. Parsing the 1.3MB api-reference takes ~50ms, so there
+ * is deliberately NO disk cache (a cache adds a staleness bug class to save 50ms once per process).
  */
 
 export interface VaultParam {
@@ -451,47 +455,100 @@ export function parseVaultFile(text: string, fileName: string, out: VaultType[])
   }
 }
 
-// ── index loading (memoized per root; no disk cache — see header comment) ───────────────────────────────
+// ── index loading (keyed on the vault's CONTENT; no disk cache — see header comment) ────────────────────
 
-const memo = new Map<string, VaultIndex | null>();
+/**
+ * Task S4 — one IdentityCache per vault root, keyed on what that root actually holds.
+ *
+ * A vault root is a directory the CLI's utility payload materializes and REPLACES: `pico-cli
+ * setup` after an SDK upgrade rewrites `knowledge/api-reference/` in place. The previous memo was
+ * keyed on the root string alone, so the first successful load of a long-lived server answered
+ * every later query — an agent told to ground its Kotlin in "the authoritative declarations" was
+ * being handed the declarations of a vault that had already been replaced, with a file:line
+ * citation pointing into bytes that no longer existed. Keying on the canonical root, the package
+ * metadata and every declaration file's name + content makes a swap a cache miss.
+ *
+ * Still per-root rather than one global entry, because `vault_diff` deliberately loads two roots
+ * back to back and neither should evict the other. Absence is still never cached.
+ */
+const memo = new Map<string, IdentityCache<VaultIndex | null>>();
 
 export function defaultVaultRoot(): string {
   return process.env.PICO_AGENT_VAULT || path.join(os.homedir(), "Library", "PICO", "sdk", "0.13", "agent-vault");
 }
 
+const sha256 = (bytes: Buffer): string => crypto.createHash("sha256").update(bytes).digest("hex");
+
+/**
+ * The identity of a vault root: where it really is, what revision it declares, and the exact
+ * declaration files it carries. Reading the bytes is the same I/O the load performs anyway — the
+ * cache saves the parse, which is the expensive half.
+ */
+function vaultIdentity(root: string, apiDir: string, files: string[]): string {
+  let canonical: string;
+  try {
+    canonical = fs.realpathSync(root);
+  } catch {
+    canonical = path.resolve(root);
+  }
+  let metadata = "absent";
+  try {
+    metadata = sha256(fs.readFileSync(path.join(root, "package.xml")));
+  } catch {
+    /* package.xml is optional metadata; its ABSENCE is part of the identity too */
+  }
+  const declarations = [...files].sort().map((f) => {
+    try {
+      return `${f}\0${sha256(fs.readFileSync(path.join(apiDir, f)))}`;
+    } catch {
+      return `${f}\0unreadable`;
+    }
+  });
+  return [canonical, metadata, ...declarations].join("\n");
+}
+
 export function loadVaultIndex(vaultRoot?: string): VaultIndex | null {
   const root = vaultRoot ?? defaultVaultRoot();
-  if (memo.has(root)) return memo.get(root)!;
-  let index: VaultIndex | null = null;
+  const apiDir = path.join(root, "knowledge", "api-reference");
+  let files: string[];
   try {
-    const apiDir = path.join(root, "knowledge", "api-reference");
-    const files = fs.readdirSync(apiDir).filter((f) => f.endsWith(".md"));
-    if (files.length) {
-      const all: VaultType[] = [];
-      for (const f of files) parseVaultFile(fs.readFileSync(path.join(apiDir, f), "utf8"), f, all);
-      const packages = new Map<string, Map<string, VaultType>>();
-      for (const ty of all) {
-        let m = packages.get(ty.package);
-        if (!m) packages.set(ty.package, (m = new Map()));
-        m.set(ty.name, ty);
-      }
-      let sdkVersion: string | null = null;
-      try {
-        const xml = fs.readFileSync(path.join(root, "package.xml"), "utf8");
-        const rm = /<revision><major>(\d+)<\/major><minor>(\d+)<\/minor>(?:<micro>(\d+)<\/micro>)?/.exec(xml);
-        if (rm) sdkVersion = rm[3] !== undefined ? `${rm[1]}.${rm[2]}.${rm[3]}` : `${rm[1]}.${rm[2]}`;
-      } catch {
-        /* version is optional metadata */
-      }
-      index = { vaultRoot: root, sdkVersion, packages, typeCount: all.length, fileCount: files.length };
-    }
+    files = fs.readdirSync(apiDir).filter((f) => f.endsWith(".md"));
   } catch {
-    index = null;
+    return null;
   }
-  // memoize ONLY successful loads — a server started before utility provisioning must pick the vault
-  // up once it appears (the retry cost of an absent vault is a single failed readdirSync)
-  if (index) memo.set(root, index);
-  return index;
+  if (!files.length) return null;
+
+  let cache = memo.get(root);
+  if (!cache) memo.set(root, (cache = new IdentityCache<VaultIndex | null>()));
+  return cache.getOr(
+    vaultIdentity(root, apiDir, files),
+    (): VaultIndex | null => {
+      try {
+        const all: VaultType[] = [];
+        for (const f of files) parseVaultFile(fs.readFileSync(path.join(apiDir, f), "utf8"), f, all);
+        const packages = new Map<string, Map<string, VaultType>>();
+        for (const ty of all) {
+          let m = packages.get(ty.package);
+          if (!m) packages.set(ty.package, (m = new Map()));
+          m.set(ty.name, ty);
+        }
+        let sdkVersion: string | null = null;
+        try {
+          const xml = fs.readFileSync(path.join(root, "package.xml"), "utf8");
+          const rm = /<revision><major>(\d+)<\/major><minor>(\d+)<\/minor>(?:<micro>(\d+)<\/micro>)?/.exec(xml);
+          if (rm) sdkVersion = rm[3] !== undefined ? `${rm[1]}.${rm[2]}.${rm[3]}` : `${rm[1]}.${rm[2]}`;
+        } catch {
+          /* version is optional metadata */
+        }
+        return { vaultRoot: root, sdkVersion, packages, typeCount: all.length, fileCount: files.length };
+      } catch {
+        return null;
+      }
+    },
+    // memoize ONLY successful loads — a server started before utility provisioning must pick the
+    // vault up once it appears (the retry cost of an absent vault is a single failed readdirSync)
+    (index) => index !== null,
+  );
 }
 
 /**

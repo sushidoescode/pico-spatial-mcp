@@ -4,6 +4,7 @@ import os from "node:os";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, runBinary, image, fail, expandHome } from "./util.js";
+import { adbExecutable } from "./adb.js";
 
 /**
  * emulator_look — AIM the emulator's free camera, then capture, so an agent can VISUALLY verify a
@@ -15,15 +16,10 @@ import { run, runBinary, image, fail, expandHome } from "./util.js";
  * returns the image. Requires the controlling process to have macOS Accessibility (AXIsProcessTrusted).
  */
 
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools, identity-keyed so a replaced adb is observed without a restart. */
 export function resolveAdb(): string {
-  const c = [
-    process.env.PICO_ADB,
-    path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb"),
-    "/opt/homebrew/bin/adb",
-    "adb",
-  ].filter(Boolean) as string[];
-  for (const x of c) if (x === "adb" || fs.existsSync(x)) return x;
-  return "adb";
+  return adbExecutable();
 }
 
 // Finds the largest qemu window and posts a button-drag from its center by (dx,dy).

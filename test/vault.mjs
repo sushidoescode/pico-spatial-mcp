@@ -3,6 +3,8 @@
 // the REAL vault when present (skip-if-absent). Run: npm run test:vault
 import { loadVaultIndex, runVaultCheck, defaultVaultRoot, registerVaultTools } from "../dist/vault.js";
 import { registerDoorTools } from "../dist/doors.js";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -289,6 +291,60 @@ if (!real) {
   const splatImports = ["import com.pico.spatial.core.ecs.GaussianSplattingComponent", "import com.pico.spatial.core.ecs.resource.GaussianSplattingResource", "import com.pico.spatial.core.ecs.LoadType"].join("\n");
   assert(runVaultCheck(splatImports, real).length === 0, "REAL vault: splat-env imports clean (allowlist + LoadType)");
   console.log(`\n  info real vault: SDK ${real.sdkVersion}, ${real.typeCount} types across ${real.fileCount} package files`);
+}
+
+// ── Task S4: the index is keyed on the vault's CONTENT, not on its root string ────────────────
+// A vault root is a directory the CLI's utility payload materializes and later replaces. The old
+// memo keyed on the root string alone, so a vault swapped in place kept answering with the
+// declarations of the vault that was there when the server started — an agent grounding SDK 6.1
+// code against a 6.0 index it could not see.
+{
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "pico-s4-vault-"));
+  const apiDir = path.join(sandbox, "knowledge", "api-reference");
+  const declaration = (typeName, ctorArgs) =>
+    `# com.pico.spatial.core.ecs\n# ${typeName}\npackage com.pico.spatial.core.ecs {\n    class ${typeName} {\n        constructor (${ctorArgs});\n    }\n}\n`;
+  const declFile = path.join(apiDir, "com.pico.spatial.core.ecs.md");
+  const typeNames = (index) => [...(index?.packages.get("com.pico.spatial.core.ecs")?.keys() ?? [])].sort();
+
+  try {
+    // never cache absence: a vault materialized AFTER the first miss must be picked up
+    assert(loadVaultIndex(sandbox) === null, "S4: an absent vault is not an index");
+    fs.mkdirSync(apiDir, { recursive: true });
+    fs.writeFileSync(declFile, declaration("AlphaComponent", "value: Float"));
+    assert(
+      typeNames(loadVaultIndex(sandbox)).includes("AlphaComponent"),
+      "S4: a vault provisioned after an absent lookup is loaded without restarting",
+    );
+
+    // same-path replacement: new declarations at the same root are observed
+    fs.writeFileSync(declFile, declaration("BetaComponent", "value: Float, unit: Int"));
+    const replaced = typeNames(loadVaultIndex(sandbox));
+    assert(
+      replaced.includes("BetaComponent") && !replaced.includes("AlphaComponent"),
+      `S4: a vault replaced at the same path is re-read (got ${JSON.stringify(replaced)})`,
+    );
+
+    // an ADDED declaration file changes the index too (sorted filenames + content hashes)
+    fs.writeFileSync(path.join(apiDir, "com.pico.spatial.core.math.md"),
+      "# com.pico.spatial.core.math\n# Vector3\npackage com.pico.spatial.core.math {\n    class Vector3 {\n        constructor (x: Float);\n    }\n}\n");
+    assert(loadVaultIndex(sandbox)?.fileCount === 2, "S4: an added declaration file changes the index");
+
+    // package metadata is part of the key: a re-materialized vault's revision is not stale
+    fs.writeFileSync(path.join(sandbox, "package.xml"), "<x><revision><major>6</major><minor>0</minor><micro>0</micro></revision></x>");
+    assert(loadVaultIndex(sandbox)?.sdkVersion === "6.0.0", "S4: package.xml revision is read");
+    fs.writeFileSync(path.join(sandbox, "package.xml"), "<x><revision><major>6</major><minor>1</minor><micro>0</micro></revision></x>");
+    assert(loadVaultIndex(sandbox)?.sdkVersion === "6.1.0", "S4: a changed package.xml revision invalidates the cached index");
+
+    // removal: a successful entry must not survive its inputs
+    fs.rmSync(declFile);
+    fs.rmSync(path.join(apiDir, "com.pico.spatial.core.math.md"));
+    assert(loadVaultIndex(sandbox) === null, "S4: removing every declaration file removes the cached index");
+
+    // the fixture vault still loads beside the sandbox (per-root entries do not collide)
+    assert((loadVaultIndex(FIXTURE)?.typeCount ?? 0) > 0, "S4: a second root is unaffected by the first root's cache");
+  } finally {
+    fs.rmSync(sandbox, { recursive: true, force: true });
+  }
 }
 
 console.log(`\nVault test done. Failures: ${failures}`);

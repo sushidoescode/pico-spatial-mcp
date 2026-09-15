@@ -6,9 +6,10 @@ import * as os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { okJson } from "./util.js";
+import { adbExecutable } from "./adb.js";
 
 const run = promisify(execFile);
-const ADB = process.env.PICO_ADB ?? path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
+const ADB = adbExecutable();
 const SERIAL = "emulator-5554";
 export const VERIFY_APK_TEARDOWN_MS = 2_000;
 
