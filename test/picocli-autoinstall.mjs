@@ -19,7 +19,7 @@ import {
   runPicoCli,
   runPicoCliCommand,
 } from "../dist/picocli.js";
-import { describeIdentityDrift, sameCliCapabilityIdentity } from "../dist/clicapabilities.js";
+import { capabilityNeedsFreshDiscovery, describeIdentityDrift, sameCliCapabilityIdentity } from "../dist/clicapabilities.js";
 import {
   createManagedConvergenceWorker,
   createHarness,
@@ -2609,6 +2609,76 @@ test("per-operation capability discovery bound to package identity", { concurren
       assert.match(none.reason, /^no-discovery:/);
     } finally {
       delete process.env.FAKE_PICO_HELP_MAP;
+    }
+  });
+
+  await t.test("the knowledge consumer contract: per-line argv, cross-line refusal, and the fresh-discovery rule", async () => {
+    const harness050 = createHarness({ latestVersion: "0.5.0" });
+    withHelpMap(harness050, "0.5.0");
+    let target050;
+    try {
+      const managedRoot = path.join(harness050.root, "managed");
+      const io = createManagedIO(harness050);
+      const resolved = await resolveManagedPicoCli(resolveOptions(managedRoot), io);
+      assert.equal(resolved.status, "ok", JSON.stringify(resolved));
+      target050 = picoCliFromEnsure(resolved);
+      const knowledge = picoCliOperationCapability(target050, "knowledge-server");
+      assert.equal(knowledge.state, "supported", JSON.stringify(knowledge));
+      assert.deepEqual(knowledge.argvPrefix, ["knowledge", "server"]);
+      assert.ok(knowledge.evidence.length >= 1, JSON.stringify(knowledge));
+      assert.deepEqual(knowledge.evidence[0].argv, ["knowledge", "server", "--help"]);
+    } finally {
+      delete process.env.FAKE_PICO_HELP_MAP;
+    }
+
+    // A 0.4.4 package resolved into the same process never inherits the 0.5.0 answer, and vice
+    // versa: the capability identity has to match the target that is about to be dispatched.
+    const harness044 = createHarness({ latestVersion: "0.4.4" });
+    withHelpMap(harness044, "0.4.4");
+    try {
+      const managedRoot = path.join(harness044.root, "managed");
+      const resolved = await resolveManagedPicoCli(resolveOptions(managedRoot), createManagedIO(harness044));
+      assert.equal(resolved.status, "ok", JSON.stringify(resolved));
+      const target044 = picoCliFromEnsure(resolved);
+      assert.deepEqual(picoCliOperationCapability(target044, "knowledge-server").argvPrefix, ["mcp", "dev-knowledge"]);
+      assert.deepEqual(picoCliOperationCapability(target050, "knowledge-server").argvPrefix, ["knowledge", "server"]);
+
+      // The report is bound to its own target, so pointing a 0.4.4 report at a 0.5.0 identity is
+      // a stale identity, not a usable route.
+      const crossed = picoCliFromEnsure({
+        status: "ok", source: "external", policy: "external", action: "external",
+        path: resolved.path, version: "0.5.0", raw: "pico-cli/0.5.0",
+        latestVersion: null, checkedAt: null, freshness: "external", deprecatedAliases: [],
+        capabilities: resolved.capabilities,
+      });
+      const refused = picoCliOperationCapability(crossed, "knowledge-server");
+      assert.equal(refused.state, "unknown", JSON.stringify(refused));
+      assert.match(refused.reason, /^stale-identity:/);
+      assert.match(refused.reason, /version changed/);
+    } finally {
+      delete process.env.FAKE_PICO_HELP_MAP;
+    }
+
+    // Only "no usable evidence is bound to this target" justifies one fresh bounded discovery; a
+    // classified observation is evidence and must not be re-probed by every consumer call.
+    for (const reason of [
+      "no-discovery: no bounded discovery evidence is bound to this execution target; call ensure_pico_cli for fresh bounded discovery",
+      "stale-identity: the recorded capability identity does not match the resolved execution target (version changed)",
+      "evidence-missing: knowledge-server evidence bytes at /gone could not be read",
+      "evidence-mismatch: knowledge-server stdout bytes at /x no longer hash to the recorded value",
+      "report-inconsistent: knowledge-server is stored as supported but its retained bytes classify as unknown",
+    ]) {
+      assert.equal(capabilityNeedsFreshDiscovery(reason), true, reason);
+    }
+    for (const reason of [
+      "timed-out: `knowledge server --help` exceeded 300 ms",
+      "malformed-help: `knowledge server --help` exited 0 but printed no usage section",
+      "output-truncated: `knowledge server --help` exceeded the 65536-byte capture cap",
+      "incomplete: the bounded `knowledge server --help` probe did not complete",
+      "bounded: the 8-probe discovery budget was exhausted",
+      "generic-parent-help: no pico-cli usage line names `knowledge server`",
+    ]) {
+      assert.equal(capabilityNeedsFreshDiscovery(reason), false, reason);
     }
   });
 

@@ -9,7 +9,9 @@ import { okJson } from "./util.js";
 import {
   ensurePicoCli,
   classifyPicoCliFailure,
+  describePicoCliEnvironmentFailure,
   picoCliExecutionGuards,
+  picoCliOperationCapability,
   picoCliProvenance,
   picoCliFromEnsure,
   runPicoCliCommand,
@@ -18,10 +20,28 @@ import {
   type PicoCliFailureClass,
   type PicoCliProvenance,
 } from "./picocli.js";
+import {
+  capabilityNeedsFreshDiscovery,
+  cliOperationRoutes,
+  unknownCapability,
+  type CliOperation,
+  type OperationCapability,
+} from "./clicapabilities.js";
 
 export const DEFAULT_KNOWLEDGE_COMMAND = "pico-cli";
-// Managed pico-cli exposes the knowledge MCP server as `mcp dev-knowledge`.
-export const DEFAULT_KNOWLEDGE_ARGS = ["mcp", "dev-knowledge"] as const;
+const KNOWLEDGE_OPERATION: CliOperation = "knowledge-server";
+
+function knowledgeRouteFor(version: string): readonly string[] {
+  return cliOperationRoutes(version).find((route) => route.operation === KNOWLEDGE_OPERATION)?.argvPrefix ?? [];
+}
+
+/**
+ * Legacy default for an explicitly configured command/args pair: the 0.4.x knowledge route, taken
+ * from the capability route table so the argv lives in exactly one place. The managed transport
+ * never uses it — it dispatches the route the resolved CLI's own help evidence proves, which on
+ * the 0.5.x line is `knowledge server` (the spaced `mcp dev-knowledge` route was removed there).
+ */
+export const DEFAULT_KNOWLEDGE_ARGS: readonly string[] = knowledgeRouteFor("0.4.4");
 const DEFAULT_STARTUP_TIMEOUT_MS = 15_000;
 const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 const DEFAULT_RETIREMENT_TIMEOUT_MS = 5_000;
@@ -166,6 +186,17 @@ export const knowledgeInputSchema = z.discriminatedUnion("action", [
 
 export type KnowledgeInput = z.infer<typeof knowledgeInputSchema>;
 
+/** Why the managed transport refused to start a knowledge child, with the exact capability
+ * evidence behind the decision. Present only when no child was started. */
+export type KnowledgeTransportRefusal = {
+  operation: CliOperation;
+  state: OperationCapability["state"];
+  reason: string;
+  argvPrefix: string[] | null;
+  /** Absolute paths of the retained bounded-help bytes that produced `reason`. */
+  evidence: string[];
+};
+
 export type KnowledgeResult = (
   | {
       status: "ok";
@@ -195,6 +226,7 @@ export type KnowledgeResult = (
   outputTail?: string;
   outputTruncated?: boolean;
   lifecycleWarning?: string;
+  transport?: KnowledgeTransportRefusal;
 };
 
 export type KnowledgeBridgeOptions = {
@@ -261,6 +293,8 @@ type OwnedProcessIdentity = Pick<KnowledgeProcessIdentity, "pid" | "birthIdentit
 type KnowledgeSession = {
   generation: number;
   commandPath: string;
+  /** The exact argv this generation was spawned with; a different argv is a different identity. */
+  commandArgs: string[];
   cliVersion: string | null;
   client: Client;
   transport: KnowledgeStdioClientTransport;
@@ -867,12 +901,51 @@ async function retireKnowledgeGeneration(
   return finishRetirementValidation(session, deadlineMs, outcome);
 }
 
+/** Honest CLI failure class for a capability that cannot serve the knowledge route. The reason
+ * prefixes are the stable contract of `classifyHelpOutput`. */
+function capabilityFailureClass(capability: OperationCapability): PicoCliFailureClass {
+  if (/^utilities-not-installed:/.test(capability.reason)) return "setup-required";
+  if (/^environment:/.test(capability.reason)) return "environment";
+  if (/^unknown-command:/.test(capability.reason)) return "flag-or-version-drift";
+  return "cli-unusable";
+}
+
+function knowledgeTransportRefusal(capability: OperationCapability): KnowledgeTransportRefusal {
+  return {
+    operation: capability.operation,
+    state: capability.state,
+    reason: capability.reason,
+    argvPrefix: capability.argvPrefix ? [...capability.argvPrefix] : null,
+    evidence: capability.evidence.flatMap((observation) => [observation.stdoutPath, observation.stderrPath]),
+  };
+}
+
+type ManagedTransportResolution =
+  | {
+      status: "ok";
+      commandPath: string;
+      commandArgs: string[];
+      cliVersion: string | null;
+      executionTarget: PicoCliExecutionTarget;
+      provenance: PicoCliProvenance;
+    }
+  | { status: "unresolved"; note: string; failureClass?: PicoCliFailureClass }
+  | {
+      status: "refused";
+      note: string;
+      failureClass: PicoCliFailureClass;
+      provenance: PicoCliProvenance;
+      refusal: KnowledgeTransportRefusal;
+      setupCommand?: { path: string; args: string[] };
+    };
+
 export class KnowledgeBridge {
   private readonly command: string;
   private readonly args: string[];
   private readonly cwd?: string;
   private readonly env?: Record<string, string>;
   private readonly provisionDefaultPicoCli: boolean;
+  private readonly configuredArgs: boolean;
   private readonly startupTimeoutMs: number;
   private readonly callTimeoutMs: number;
   private readonly retirementTimeoutMs: number;
@@ -894,6 +967,9 @@ export class KnowledgeBridge {
     // Supplying a command is the injection/custom-command seam used by tests and alternate
     // providers. Only the production default pico-cli command participates in MCP provisioning.
     this.provisionDefaultPicoCli = options.command === undefined;
+    // Explicitly configured argv keeps its exact existing behavior: it is spawned as given and
+    // never replaced by, or checked against, the resolved CLI's capability evidence.
+    this.configuredArgs = options.args !== undefined;
     // Leave production env unresolved until spawn time so current host configuration reaches the
     // managed child. The command itself is always the resolved absolute managed path.
     this.env = options.env ? { ...productionKnowledgeEnvironment(), ...options.env } : undefined;
@@ -954,6 +1030,7 @@ export class KnowledgeBridge {
 
   private async ensureStarted(
     commandPath: string,
+    commandArgs: string[],
     cliVersion: string | null,
     executionTarget?: PicoCliExecutionTarget,
   ): Promise<KnowledgeSession> {
@@ -962,6 +1039,8 @@ export class KnowledgeBridge {
     }
     const sameIdentity = (session: KnowledgeSession) =>
       session.commandPath === commandPath
+      && session.commandArgs.length === commandArgs.length
+      && session.commandArgs.every((argument, index) => argument === commandArgs[index])
       && session.cliVersion === cliVersion
       && session.executionTarget?.source === executionTarget?.source;
     if (this.current && !this.current.fatal && !this.current.closed && sameIdentity(this.current)) return this.current;
@@ -985,7 +1064,7 @@ export class KnowledgeBridge {
     };
     const transport = new KnowledgeStdioClientTransport({
       command: commandPath,
-      args: this.args,
+      args: commandArgs,
       ...(this.cwd ? { cwd: this.cwd } : {}),
       env: childEnv,
       stderr: "pipe",
@@ -998,6 +1077,7 @@ export class KnowledgeBridge {
     const session: KnowledgeSession = {
       generation: ++this.generation,
       commandPath,
+      commandArgs: [...commandArgs],
       cliVersion,
       client,
       transport,
@@ -1094,6 +1174,82 @@ export class KnowledgeBridge {
     return startup;
   }
 
+  /**
+   * Resolve the managed CLI and the exact argv its own bounded help evidence proves for the
+   * knowledge MCP server. A child is started only for a `supported` capability whose whole
+   * recorded identity still matches the resolved execution target — `picoCliOperationCapability`
+   * re-derives that identity and re-verifies the retained help bytes on every call, so a replaced
+   * or updated package can never dispatch the previous line's route. Anything else is a structured
+   * refusal: no spawn, and no other command alias is attempted.
+   *
+   * `configuredArgv` is the explicit-configuration escape hatch: it is spawned exactly as given,
+   * without capability selection, which is the behavior such callers already had.
+   */
+  private async resolveManagedTransport(configuredArgv: string[] | null): Promise<ManagedTransportResolution> {
+    let ensured = await ensurePicoCli();
+    if (ensured.status !== "ok") {
+      return { status: "unresolved", note: ensured.note, ...(ensured.failureClass ? { failureClass: ensured.failureClass } : {}) };
+    }
+    let target = picoCliFromEnsure(ensured);
+    let capability = target && !configuredArgv ? picoCliOperationCapability(target, KNOWLEDGE_OPERATION) : null;
+    if (!target || (capability !== null && capability.state === "unknown" && capabilityNeedsFreshDiscovery(capability.reason))) {
+      // Starting the knowledge child is itself a real CLI-backed operation, so one bounded
+      // discovery is allowed here. It runs at most once per call, and only when no usable evidence
+      // is bound to this target; a classified `unknown` is evidence and is never re-probed.
+      const rediscovered = await ensurePicoCli({ forceRefresh: true });
+      if (rediscovered.status === "ok") {
+        const rediscoveredTarget = picoCliFromEnsure(rediscovered);
+        if (rediscoveredTarget) {
+          ensured = rediscovered;
+          target = rediscoveredTarget;
+          capability = configuredArgv ? null : picoCliOperationCapability(rediscoveredTarget, KNOWLEDGE_OPERATION);
+        }
+      } else if (!target) {
+        return {
+          status: "unresolved",
+          note: rediscovered.note,
+          ...(rediscovered.failureClass ? { failureClass: rediscovered.failureClass } : {}),
+        };
+      }
+    }
+    if (!target) {
+      return {
+        status: "unresolved",
+        note: `The resolved managed pico-cli at ${ensured.path} could not be bound to a validated execution target, so no knowledge server was started.`,
+        failureClass: "cli-unusable",
+      };
+    }
+    const provenance = picoCliProvenance(ensured);
+    if (configuredArgv) {
+      return { status: "ok", commandPath: ensured.path, commandArgs: [...configuredArgv], cliVersion: ensured.version, executionTarget: target, provenance };
+    }
+    if (!capability || capability.state !== "supported" || !capability.argvPrefix || capability.argvPrefix.length === 0) {
+      const refused = capability
+        ?? unknownCapability(KNOWLEDGE_OPERATION, "no-discovery: no knowledge-server capability was resolved for this execution target");
+      const failureClass = capabilityFailureClass(refused);
+      const environmentGuidance = failureClass === "environment" ? describePicoCliEnvironmentFailure(refused.reason, "") : null;
+      return {
+        status: "refused",
+        provenance,
+        failureClass,
+        refusal: knowledgeTransportRefusal(refused),
+        note: `knowledge transport unavailable: the resolved pico-cli ${ensured.version ?? "of unknown version"} at ${ensured.path} `
+          + `is not proven to expose the knowledge MCP server (${refused.state}: ${refused.reason}). `
+          + "No knowledge server was started and no command alias was retried."
+          + (environmentGuidance ? ` ${environmentGuidance}` : ""),
+        ...(failureClass === "setup-required" ? { setupCommand: { path: ensured.path, args: ["setup"] } } : {}),
+      };
+    }
+    return {
+      status: "ok",
+      commandPath: ensured.path,
+      commandArgs: [...capability.argvPrefix],
+      cliVersion: ensured.version,
+      executionTarget: target,
+      provenance,
+    };
+  }
+
   call(action: KnowledgeAction, input: unknown): Promise<KnowledgeResult> {
     let parsed: KnowledgeInput;
     try {
@@ -1121,27 +1277,31 @@ export class KnowledgeBridge {
         });
       try {
         let commandPath = this.command;
+        let commandArgs = [...this.args];
         let cliVersion: string | null = null;
         let executionTarget: PicoCliExecutionTarget | undefined;
         if (this.provisionDefaultPicoCli) {
-          const ensured = await ensurePicoCli();
-          if (ensured.status !== "ok") {
+          const resolution = await this.resolveManagedTransport(this.configuredArgs ? [...this.args] : null);
+          if (resolution.status !== "ok") {
+            if (resolution.status === "refused") provenance = resolution.provenance;
             if (this.current) await this.retire(this.current);
             if (this.starting) await this.retire(this.starting);
             return withProvenance({
               status: "unavailable",
               action: parsedAction,
-              error: ensured.note,
-              failureClass: ensured.failureClass,
+              error: resolution.note,
+              ...(resolution.failureClass ? { failureClass: resolution.failureClass } : {}),
+              ...(resolution.status === "refused" ? { transport: resolution.refusal } : {}),
+              ...(resolution.status === "refused" && resolution.setupCommand ? { setupCommand: resolution.setupCommand } : {}),
             });
           }
-          const ready = picoCliFromEnsure(ensured)!;
-          executionTarget = ready;
-          commandPath = ready.path;
-          cliVersion = ready.version;
-          provenance = picoCliProvenance(ensured);
+          executionTarget = resolution.executionTarget;
+          commandPath = resolution.commandPath;
+          commandArgs = resolution.commandArgs;
+          cliVersion = resolution.cliVersion;
+          provenance = resolution.provenance;
         }
-        session = await this.ensureStarted(commandPath, cliVersion, executionTarget);
+        session = await this.ensureStarted(commandPath, commandArgs, cliVersion, executionTarget);
         const response = await session.client.callTool(
           { name: parsedAction, arguments: argumentsForRemote },
           undefined,
@@ -1200,6 +1360,21 @@ export class KnowledgeBridge {
             error: SETUP_REQUIRED_NOTE,
             failureClass: "setup-required",
             setupCommand: { path: provenance.path, args: ["setup"] },
+            ...(startupStderr ? { outputTail: startupStderr } : {}),
+            ...(startupTruncated ? { outputTruncated: true } : {}),
+          });
+        }
+        const environmentGuidance = provenance && managedFailure === "environment"
+          ? describePicoCliEnvironmentFailure(startupStderr, errorMessage(error))
+          : null;
+        if (environmentGuidance) {
+          // The CLI read its environment before it could serve anything. The remedy names the
+          // variable it read; provisioning is a separate question this never prescribes.
+          return withProvenance({
+            status: "unavailable",
+            action: parsedAction,
+            error: environmentGuidance,
+            failureClass: "environment",
             ...(startupStderr ? { outputTail: startupStderr } : {}),
             ...(startupTruncated ? { outputTruncated: true } : {}),
           });

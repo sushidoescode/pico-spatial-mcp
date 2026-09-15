@@ -450,6 +450,17 @@ export function resolveOperationCapability(args: {
   return cloneCapability(record);
 }
 
+/** The `unknown` reasons that mean "no usable evidence is bound to this target" rather than "the
+ * evidence was read and could not be classified". Only these justify one fresh bounded discovery
+ * from a consumer that is already performing a real CLI-backed operation; a classified `unknown`
+ * (a timed-out probe, malformed help, an exhausted probe budget) *is* the evidence, and re-probing
+ * it on every call would turn one bounded discovery into an unbounded retry loop. */
+const FRESH_DISCOVERY_REASON_PATTERN = /^(?:no-discovery|stale-identity|evidence-missing|evidence-mismatch|report-inconsistent):/;
+
+export function capabilityNeedsFreshDiscovery(reason: string): boolean {
+  return FRESH_DISCOVERY_REASON_PATTERN.test(reason);
+}
+
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const CAPABILITY_STATES = new Set<OperationCapability["state"]>(["supported", "unavailable", "unknown"]);
 

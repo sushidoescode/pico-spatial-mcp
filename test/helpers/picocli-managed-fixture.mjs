@@ -77,15 +77,20 @@ if (role === "managed-cli") {
     if (replay) {
       if (replay.hang) { setInterval(() => {}, 1_000); await new Promise(() => {}); }
       if (replay.stdoutFile) process.stdout.write(fs.readFileSync(replay.stdoutFile));
+      if (typeof replay.stdout === "string") process.stdout.write(replay.stdout);
       if (replay.stderrFile) process.stderr.write(fs.readFileSync(replay.stderrFile));
+      if (typeof replay.stderr === "string") process.stderr.write(replay.stderr);
       process.exit(replay.code ?? 0);
     }
   }
   if (cliArgs.at(-1) === "--help") {
-    process.stdout.write("fixture help: " + cliArgs.join(" ") + "\\n");
+    // Fixture help (never real CLI bytes) shaped like a real child help: a usage line that names
+    // the probed route, so bounded capability discovery has something to classify. Tests that need
+    // a different classification supply FAKE_PICO_HELP_MAP with retained or inline bytes.
+    process.stdout.write("Usage:\\n  $ pico-cli " + cliArgs.slice(0, -1).join(" ") + " [options]\\n\\nfixture help: " + cliArgs.join(" ") + "\\n");
     process.exit(0);
   }
-  if (cliArgs.join(" ") === "mcp dev-knowledge") {
+  if (cliArgs.join(" ") === "mcp dev-knowledge" || cliArgs.join(" ") === "knowledge server") {
     await import(pathToFileURL(process.env.FAKE_KNOWLEDGE_SERVER).href);
     await new Promise(() => {});
   }
@@ -223,7 +228,7 @@ export function readLog(logPath) {
  * Fresh-process Task 4 fixture. It never mutates this test process's HOME/PATH and every npm/CLI
  * byte lives below one temporary root. Callers pass `env` to a newly spawned Node/MCP child.
  */
-export function createManagedRuntimeHarness({ latestVersion = "0.4.2", operationMode = "success" } = {}) {
+export function createManagedRuntimeHarness({ latestVersion = "0.4.2", operationMode = "success", helpMap = null } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico managed runtime "));
   tempRoots.push(root);
   const home = path.join(root, "home");
@@ -270,6 +275,11 @@ export function createManagedRuntimeHarness({ latestVersion = "0.4.2", operation
     FAKE_KNOWLEDGE_LOG: knowledgeLogPath,
     FAKE_KNOWLEDGE_SERVER: path.resolve("test", "fixtures", "fake-knowledge-server.mjs"),
   };
+  if (helpMap) {
+    const helpMapPath = path.join(root, "help-map.json");
+    fs.writeFileSync(helpMapPath, JSON.stringify(helpMap));
+    env.FAKE_PICO_HELP_MAP = helpMapPath;
+  }
   delete env.PICO_MCP_AUTOINSTALL_CLI;
   delete env.PICO_MCP_AUTOUPDATE_CLI;
   return {
