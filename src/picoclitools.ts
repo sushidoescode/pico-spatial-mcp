@@ -25,6 +25,7 @@ import {
   type CliRouteDurationFlag,
   type OperationCapability,
 } from "./clicapabilities.js";
+import { inspectMp4, sha256File } from "./artifactinspection.js";
 import {
   assessCoverage,
   classifyWatchEnd,
@@ -82,12 +83,74 @@ const SETUP_REQUIRED_NOTE =
   "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry.";
 
 const RECORD_HONESTY =
-  "The artifact is the file pulled by the official CLI; this tool checks only that it is a " +
-  "nonempty regular file, not that its container is valid. Its pixels prove nothing until LOOKED " +
+  "The artifact is the file pulled by the official CLI. This tool stat-checks it AND inspects its " +
+  "container: box structure, declared tracks, and the duration MEASURED from the file's own movie " +
+  "header. A returned duration is NOT a measurement — the CLI echoes the clamped request, so " +
+  "requestedDurationSec and measuredDurationSec are reported separately and may disagree. A " +
+  "container that will not parse is invalid media; when nothing could inspect the bytes the media " +
+  "is unvalidated, never a successful decode. Its pixels still prove nothing until LOOKED " +
   "at. Guest-side adb screenrecord and pico-cli capture record " +
   "yield empty/invalid files on this emulator display; the working macOS host-side recipe is " +
   "screencapture -V -l<windowId>. Evidence class: a capture artifact " +
   "that still requires a LOOK before any visual claim.";
+
+/** Bytes above this are hashed but not parsed: an unbounded read is not an inspection budget. */
+const MAX_RECORDING_INSPECT_BYTES = 256 * 1024 * 1024;
+
+export type RecordingInspection = {
+  media: "validated" | "unvalidated" | "invalid";
+  sha256: string | null;
+  bytes: number | null;
+  measuredDurationSec: number | null;
+  hasVideoTrack: boolean | null;
+  trackCount: number | null;
+  reason: string;
+};
+
+/**
+ * Inspect a pulled recording. `measuredDurationSec` comes from the file's own `mvhd`; the CLI's
+ * returned duration is the clamped REQUEST and is never treated as a measurement. When the bytes
+ * cannot be read or are too large to parse within budget the answer is `unvalidated` — explicitly
+ * "nothing checked this" — and never a successful decode.
+ */
+export function inspectRecordingArtifact(artifactPath: string): RecordingInspection {
+  const digest = sha256File(artifactPath);
+  if (digest.sha256 === null) {
+    return { media: "unvalidated", sha256: null, bytes: null, measuredDurationSec: null, hasVideoTrack: null, trackCount: null, reason: digest.reason };
+  }
+  if (digest.bytes > MAX_RECORDING_INSPECT_BYTES) {
+    return {
+      media: "unvalidated",
+      sha256: digest.sha256,
+      bytes: digest.bytes,
+      measuredDurationSec: null,
+      hasVideoTrack: null,
+      trackCount: null,
+      reason: `the recording is ${digest.bytes} bytes, above the ${MAX_RECORDING_INSPECT_BYTES}-byte container-inspection budget; it was hashed but not parsed`,
+    };
+  }
+  let bytes: Buffer;
+  try {
+    bytes = fs.readFileSync(artifactPath);
+  } catch (error: any) {
+    return { media: "unvalidated", sha256: digest.sha256, bytes: digest.bytes, measuredDurationSec: null, hasVideoTrack: null, trackCount: null, reason: `the recording could not be read for inspection: ${error?.message ?? String(error)}` };
+  }
+  const mp4 = inspectMp4(bytes);
+  if (!mp4.valid) {
+    return { media: "invalid", sha256: digest.sha256, bytes: digest.bytes, measuredDurationSec: null, hasVideoTrack: false, trackCount: null, reason: `the recording is not a parseable MP4/ISO-BMFF container: ${mp4.reason}` };
+  }
+  return {
+    media: "validated",
+    sha256: digest.sha256,
+    bytes: digest.bytes,
+    measuredDurationSec: mp4.durationSec,
+    hasVideoTrack: mp4.hasVideoTrack,
+    trackCount: mp4.trackCount,
+    reason: mp4.durationSec === null
+      ? "the container parsed but states no movie duration, so no duration was measured"
+      : `the container parsed; ${mp4.durationSec}s measured from its movie header, ${mp4.trackCount} track(s), video track ${mp4.hasVideoTrack ? "declared" : "absent"}`,
+  };
+}
 
 /** Best-effort crash-marker scan over watch-crash output. Named indicators, not a verdict. */
 export function scanForCrashIndicators(text: string): string[] {
@@ -413,7 +476,11 @@ export function registerPicoCliTools(server: McpServer) {
         artifact: z.string().optional().describe("The recording path. Its pixels prove nothing until LOOKED at."),
         artifactExists: z.boolean().optional(),
         artifactBytes: z.number().nullable().optional(),
-        durationSec: z.number().optional(),
+        durationSec: z.number().optional().describe("Deprecated alias of requestedDurationSec — the CLAMPED REQUEST, never a measurement."),
+        requestedDurationSec: z.number().optional().describe("What this wrapper asked the CLI for, after clamping to the 1-180s range."),
+        measuredDurationSec: z.number().nullable().optional().describe("Duration read from the recording's OWN movie header. null when the container states none or nothing could inspect it."),
+        media: z.enum(["validated", "unvalidated", "invalid"]).optional().describe("validated = the container parsed; invalid = it did not; unvalidated = nothing could inspect the bytes (never a successful decode)."),
+        artifactSha256: z.string().nullable().optional(),
         exitCode: z.number().nullable().optional(),
       }).passthrough(),
       inputSchema: {
@@ -468,6 +535,8 @@ export function registerPicoCliTools(server: McpServer) {
       // Exit 0 is not evidence the recording is a non-empty regular file — stat once and fail closed.
       const inspection = inspectPicoCliArtifact(artifact);
       const artifactOk = inspection.exists === true && inspection.regularFile && (inspection.bytes ?? 0) > 0;
+      // ...and a nonempty regular file is not evidence it is a recording. Inspect the container.
+      const media = artifactOk ? inspectRecordingArtifact(artifact) : null;
       const artifactFailure = inspection.statError
         ? `could not be stat-checked: ${inspection.statError}`
         : inspection.exists === false
@@ -475,17 +544,35 @@ export function registerPicoCliTools(server: McpServer) {
           : !inspection.regularFile
             ? "not a regular file"
             : "empty";
+      const mediaInvalid = media?.media === "invalid";
       return okJsonStructured({
-        status: artifactOk ? "ok" : "failed",
+        status: artifactOk && !mediaInvalid ? "ok" : "failed",
         artifact,
         ...(inspection.exists === null ? {} : { artifactExists: inspection.exists }),
         artifactBytes: inspection.bytes,
         durationSec: sec,
-        ...(artifactOk
+        requestedDurationSec: sec,
+        ...(media
+          ? {
+              media: media.media,
+              measuredDurationSec: media.measuredDurationSec,
+              artifactSha256: media.sha256,
+              hasVideoTrack: media.hasVideoTrack,
+              mediaNote: media.reason,
+              // The CLI's own returned duration is the clamped request; only measuredDurationSec is
+              // read from the file. They are reported side by side precisely so nobody conflates them.
+              durationNote: media.measuredDurationSec === null
+                ? `requested ${sec}s; the file states no measurable duration, so the request is the only number here and it is not evidence of length`
+                : `requested ${sec}s; the file's own movie header measures ${media.measuredDurationSec}s`,
+            }
+          : {}),
+        ...(artifactOk && !mediaInvalid
           ? {}
           : {
               failureClass: "runtime",
-              note: `pico-cli exited 0 but the recording at ${artifact} is ${artifactFailure} — treat as failed.`,
+              note: mediaInvalid
+                ? `pico-cli exited 0 and wrote ${inspection.bytes} bytes to ${artifact}, but ${media!.reason} — treat as failed.`
+                : `pico-cli exited 0 but the recording at ${artifact} is ${artifactFailure} — treat as failed.`,
               ...(inspection.statError ? { error: inspection.statError } : {}),
             }),
         ...(output ? { outputTail: tail(output, 12) } : {}),
