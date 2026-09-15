@@ -1,7 +1,10 @@
 // v5.1 fixture test: every retained-lessons rule must FIRE on its positive fixture
 // and STAY SILENT on its negative fixture. Run: npm run test:lint
 import fs from "node:fs";
-import { BUILTIN_RULES, runLint } from "../dist/lint.js";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { BUILTIN_RULES, registerLintTools, runLint } from "../dist/lint.js";
 
 let failures = 0;
 const fail = (msg) => { console.log(`  FAIL ${msg}`); failures++; };
@@ -121,6 +124,73 @@ if (nestedCommentedGotcha.some((v) => v.ruleId === "displayColor-flat-white")) {
   }
   if (!failures) {
     console.log(`\n  ok   published gate-battery size agrees across package.json, gates.yml, README.md, and docs/COLLABORATORS.md (${invocationCount} invocations / ${suiteCount} test: suites)`);
+  }
+}
+
+
+// ── Task S5: the advisory vault block carries explicit declaration authority; `clean` is untouched ──
+// A project root hint makes preflight_lint read the vault's declaration identity and the project's
+// declared identity (statically) and verify reviewed evidence between them. Without a verified
+// linkage the vault findings are HISTORICAL symbol lookups and are labeled so; `clean` still comes
+// from violations and project errors only.
+{
+  const handlers = {};
+  registerLintTools(
+    { registerTool: (name, _metadata, fn) => { handlers[name] = fn; } },
+    { call: async () => ({ status: "unavailable", action: "query_graph", error: "second opinion is not exercised here" }) },
+  );
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const FIXTURE = path.join(here, "fixtures", "agent-vault");
+  const lint = async (args) => JSON.parse((await handlers.preflight_lint(args)).content[0].text);
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "pico-s5-lint-project "));
+  const sandboxVault = fs.mkdtempSync(path.join(os.tmpdir(), "pico-s5-lint-vault-"));
+  const priorVault = process.env.PICO_AGENT_VAULT;
+  const noTargetValidation = (text) => !/is target-verified|target-compatible|validated against the project|validates the project/i.test(text ?? "");
+  try {
+    fs.mkdirSync(path.join(projectDir, "gradle"), { recursive: true });
+    fs.writeFileSync(path.join(projectDir, "gradle", "libs.versions.toml"), '[versions]\nbom = "6.1.0"\n\n[libraries]\nbom = { group = "com.pico.spatial", name = "bom", version.ref = "bom" }\n');
+    const apiDir = path.join(sandboxVault, "knowledge", "api-reference");
+    fs.mkdirSync(apiDir, { recursive: true });
+    for (const f of fs.readdirSync(path.join(FIXTURE, "knowledge", "api-reference"))) fs.copyFileSync(path.join(FIXTURE, "knowledge", "api-reference", f), path.join(apiDir, f));
+    fs.writeFileSync(path.join(sandboxVault, "package.xml"), "<package><revision><major>0</major><minor>13</minor><micro>3</micro></revision></package>\n");
+
+    const kotlinClean = "import com.pico.spatial.core.ecs.Entity\nval e = Entity()\n";
+    const kotlinUnknown = "import com.pico.spatial.core.ecs.FrobnicatorComponent\nval f = FrobnicatorComponent()\n";
+
+    // (a) fixture vault without package.xml: identity unavailable, findings still advisory, clean untouched
+    process.env.PICO_AGENT_VAULT = FIXTURE;
+    const noRevision = await lint({ content: kotlinUnknown, kind: "kotlin", projectDir });
+    if (noRevision.vault?.status === "ok" && noRevision.vault.findings.length === 1 && noRevision.vault.declarationIdentity?.status === "unavailable" && /package-xml/.test(noRevision.vault.declarationIdentity.code)) console.log("  ok   S5: vault findings stay advisory beside an unavailable declaration identity that names package.xml");
+    else fail(`S5: unavailable-identity vault block wrong: ${JSON.stringify(noRevision.vault).slice(0, 400)}`);
+    if (noRevision.vault?.target?.declaredBom === "6.1.0" && noRevision.vault.target.status === "declared") console.log("  ok   S5: the project identity is read from projectDir and reported in the advisory block");
+    else fail(`S5: target identity missing from the vault block: ${JSON.stringify(noRevision.vault?.target)}`);
+    if (noRevision.vault?.declarationContext?.status === "unavailable" && /HISTORICAL/.test(noRevision.vault.authorityNote) && /target linkage is unavailable/.test(noRevision.vault.authorityNote) && noTargetValidation(noRevision.vault.note) && noTargetValidation(noRevision.vault.authorityNote)) console.log("  ok   S5: unavailable linkage is stated without any target-validation wording");
+    else fail(`S5: linkage wording wrong: ${JSON.stringify({ context: noRevision.vault?.declarationContext, note: noRevision.vault?.note, authorityNote: noRevision.vault?.authorityNote })}`);
+    if (noRevision.clean === (noRevision.violations.length === 0 && noRevision.counts.projectErrors === 0)) console.log("  ok   S5: clean is derived from violations and project errors only (vault linkage does not enter)");
+    else fail(`S5: clean drifted: ${JSON.stringify({ clean: noRevision.clean, violations: noRevision.violations.length, projectErrors: noRevision.counts.projectErrors })}`);
+    const noProject = await lint({ content: kotlinUnknown, kind: "kotlin" });
+    if (noProject.clean === true && noProject.vault.findings.length === 1 && noProject.vault.target === null && noProject.vault.declarationContext?.status === "unavailable") console.log("  ok   S5: without a project hint an unknown-symbol finding still leaves clean true and reports no target");
+    else fail(`S5: no-project vault block wrong: ${JSON.stringify({ clean: noProject.clean, vault: noProject.vault }).slice(0, 400)}`);
+    const withViolation = await lint({ content: `${kotlinClean}entity.components.set(CollisionComponent())\n`, kind: "kotlin" });
+    if (withViolation.clean === false && withViolation.violations.length > 0) console.log("  ok   S5: a retained-lessons violation still makes clean false, independent of the vault block");
+    else fail(`S5: violation no longer gates clean: ${JSON.stringify({ clean: withViolation.clean, violations: withViolation.violations.length })}`);
+
+    // (b) a vault WITH package.xml: identity ok, 0.13.3 -> 6.1.0 linkage unknown, labeled historical
+    process.env.PICO_AGENT_VAULT = sandboxVault;
+    const declared = await lint({ content: kotlinClean, kind: "kotlin", projectDir });
+    if (declared.vault?.declarationIdentity?.status === "ok" && declared.vault.declarationIdentity.packageRevision === "0.13.3" && declared.vault.declarationContext?.status === "unknown") console.log("  ok   S5: a declared 0.13.3 vault against a 6.1.0 project reports unknown linkage");
+    else fail(`S5: declared vault linkage wrong: ${JSON.stringify({ identity: declared.vault?.declarationIdentity, context: declared.vault?.declarationContext })}`);
+    if (/HISTORICAL declaration lookups \(package revision 0\.13\.3\)/.test(declared.vault?.authorityNote) && /target linkage is unknown/.test(declared.vault.authorityNote) && /HISTORICAL agent-vault api-reference/.test(declared.vault.note) && noTargetValidation(declared.vault.note)) console.log("  ok   S5: the no-findings note calls the lookup historical, not a target SDK validation");
+    else fail(`S5: historical wording wrong: ${JSON.stringify({ note: declared.vault?.note, authorityNote: declared.vault?.authorityNote })}`);
+    if (JSON.stringify(declared.vault?.declarationContext?.rejected) === "[]" && JSON.stringify(declared.vault?.declarationContext?.verifiedSymbols) === "[]") console.log("  ok   S5: the packaged index has no records, so nothing is verified and nothing is rejected");
+    else fail(`S5: evidence lists wrong: ${JSON.stringify(declared.vault?.declarationContext)}`);
+    if (declared.clean === (declared.violations.length === 0 && declared.counts.projectErrors === 0)) console.log("  ok   S5: clean semantics unchanged with a declared vault and a project hint");
+    else fail("S5: clean drifted with a declared vault");
+  } finally {
+    if (priorVault === undefined) delete process.env.PICO_AGENT_VAULT;
+    else process.env.PICO_AGENT_VAULT = priorVault;
+    fs.rmSync(projectDir, { recursive: true, force: true });
+    fs.rmSync(sandboxVault, { recursive: true, force: true });
   }
 }
 

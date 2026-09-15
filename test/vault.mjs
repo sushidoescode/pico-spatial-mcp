@@ -347,5 +347,103 @@ if (!real) {
   }
 }
 
+// ── Task S5: declaration authority is explicit and versioned ─────────────────────────────────
+// The historical 0.13.3/6.0.0 disclosure assertions above are preserved as-is; these add the
+// target-specific provenance: every lookup names the package revision its vault DECLARES, a
+// project hint binds a target that is read (never asserted), a lookup without a reviewed
+// compatibility record is labeled historical/unknown and never reports target symbol absence,
+// version labels are bounded, and the public schemas take hints only.
+{
+  const handlers = {};
+  let metadata;
+  registerVaultTools({ registerTool: (name, toolMetadata, fn) => {
+    handlers[name] = fn;
+    if (name === "vault_api") metadata = toolMetadata;
+  } });
+  const call = async (args) => JSON.parse((await handlers.vault_api(args)).content[0].text);
+  const HINT_INPUTS = ["projectRoot", "recordPaths", "sdkVersion", "symbol", "vaultRoot"];
+
+  const inputs = Object.keys(metadata.inputSchema).sort();
+  assert(JSON.stringify(inputs) === JSON.stringify(HINT_INPUTS), `S5: vault_api accepts hint inputs only (got ${inputs.join(", ")})`);
+  for (const forbidden of ["declarationIdentity", "fingerprint", "compatible", "compatibility", "binding", "verdict", "identity"]) {
+    assert(!inputs.some((i) => i.toLowerCase().includes(forbidden)), `S5: vault_api schema has no ${forbidden} input`);
+  }
+  assert(/historical/i.test(metadata.description) && /projectRoot/.test(metadata.description) && /never assert/i.test(metadata.description), "S5: vault_api description labels the default lookup historical and says hints never assert a verdict");
+
+  // (a) the fixture vault carries declarations but no package.xml: identity unavailable, lookup historical
+  const priorVault = process.env.PICO_AGENT_VAULT;
+  process.env.PICO_AGENT_VAULT = FIXTURE;
+  try {
+    const found = await call({ symbol: "Entity" });
+    assert(found.status === "ok" && found.lookup === "historical", `S5: fixture lookup is labeled historical (got status=${found.status} lookup=${found.lookup})`);
+    assert(found.symbolAuthority === "unavailable", `S5: no package.xml -> symbol authority unavailable (got ${found.symbolAuthority})`);
+    assert(found.declarationIdentity?.status === "unavailable" && /package-xml/.test(found.declarationIdentity.code) && /package\.xml/.test(found.declarationIdentity.detail), `S5: unavailable identity names package.xml (got ${JSON.stringify(found.declarationIdentity)})`);
+    assert(found.vaultProvenance.declarationAuthority === "unavailable" && found.vaultProvenance.packageRevision === null, "S5: provenance reports no declared revision for the fixture");
+    assert(found.vaultSelection?.source === "env" && found.vaultSelection.root === FIXTURE, `S5: PICO_AGENT_VAULT selection is labeled env (got ${JSON.stringify(found.vaultSelection)})`);
+    assert(found.target === null && found.declarationContext?.status === "unavailable", "S5: no project hint -> no target; unavailable identity -> unavailable context");
+    assert(/HISTORICAL/.test(found.declarationContext.note) && /no target authority/.test(found.declarationContext.note), "S5: the context note says the lookup is historical with no target authority");
+    assertSdk6Provenance(found, "S5 historical fixture result");
+  } finally {
+    if (priorVault === undefined) delete process.env.PICO_AGENT_VAULT;
+    else process.env.PICO_AGENT_VAULT = priorVault;
+  }
+
+  // (b) a sandbox vault WITH package.xml and a project hint: identity ok, target read, linkage unknown
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "pico-s5-vault-"));
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "pico-s5-project "));
+  try {
+    const apiDir = path.join(sandbox, "knowledge", "api-reference");
+    fs.mkdirSync(apiDir, { recursive: true });
+    for (const f of fs.readdirSync(path.join(FIXTURE, "knowledge", "api-reference"))) fs.copyFileSync(path.join(FIXTURE, "knowledge", "api-reference", f), path.join(apiDir, f));
+    fs.writeFileSync(path.join(sandbox, "package.xml"), '<?xml version="1.0"?>\n<package><revision><major>0</major><minor>13</minor><micro>3</micro></revision></package>\n');
+    fs.mkdirSync(path.join(projectDir, "gradle"), { recursive: true });
+    fs.writeFileSync(path.join(projectDir, "gradle", "libs.versions.toml"), '[versions]\nbom = "6.1.0"\n\n[libraries]\nbom = { group = "com.pico.spatial", name = "bom", version.ref = "bom" }\n');
+
+    const bound = await call({ symbol: "Entity", vaultRoot: sandbox, projectRoot: projectDir });
+    assert(bound.status === "ok" && bound.vaultSelection.source === "explicit" && bound.vaultSelection.root === sandbox, `S5: explicit vaultRoot is an explicitly identified source (got ${JSON.stringify(bound.vaultSelection)})`);
+    assert(bound.declarationIdentity.status === "ok" && bound.declarationIdentity.packageRevision === "0.13.3" && bound.declarationIdentity.authority === "declarations", `S5: identity read from package.xml + api-reference (got ${JSON.stringify(bound.declarationIdentity)})`);
+    assert(bound.vaultProvenance.packageRevision === "0.13.3" && bound.vaultProvenance.declarationAuthority === "declarations", "S5: provenance carries the declared revision and authority");
+    assert(bound.target?.declaredBom === "6.1.0" && bound.target.status === "declared" && bound.target.projectRoot === fs.realpathSync(projectDir), `S5: the target identity is read from the project hint (got ${JSON.stringify(bound.target)})`);
+    assert(bound.declarationContext.status === "unknown" && bound.symbolAuthority === "unknown" && bound.lookup === "historical", `S5: 0.13.3 source -> 6.1.0 target with no reviewed record stays unknown and historical (got ${bound.declarationContext.status}/${bound.symbolAuthority}/${bound.lookup})`);
+    assert(/Target linkage UNKNOWN/.test(bound.declarationContext.note) && /historical 0\.13\.3 truth/.test(bound.declarationContext.note), `S5: unknown linkage is stated, not implied (got ${bound.declarationContext.note})`);
+    assert(JSON.stringify(bound.declarationContext.verifiedSymbols) === "[]" && JSON.stringify(bound.declarationContext.rejected) === "[]", "S5: nothing verified, nothing rejected — the packaged index has no records");
+
+    const missing = await call({ symbol: "DefinitelyMissingSdkType", vaultRoot: sandbox, projectRoot: projectDir });
+    assert(missing.status === "not-found" && missing.lookup === "historical", "S5: not-found stays a historical lookup");
+    assert(/package revision 0\.13\.3/.test(missing.note) && /says nothing about project/.test(missing.note) && /target linkage is unknown/.test(missing.note), `S5: an unverified target never has its symbol absence reported (got ${missing.note})`);
+
+    const claim = path.join(projectDir, "claims-compatible.json");
+    fs.writeFileSync(claim, JSON.stringify({ schemaVersion: 1, id: "caller-claim", verdict: "compatible", compatible: true, declarationFingerprint: bound.declarationIdentity.fingerprint }, null, 2));
+    const withClaim = await call({ symbol: "Entity", vaultRoot: sandbox, projectRoot: projectDir, recordPaths: [claim] });
+    assert(withClaim.declarationContext.status === "unknown" && withClaim.symbolAuthority === "unknown", "S5: a caller record path cannot add a trust anchor");
+    assert(withClaim.declarationContext.rejected?.[0]?.code === "record-not-reviewed" && withClaim.declarationContext.rejected[0].path === claim, `S5: the caller record is rejected as not reviewed (got ${JSON.stringify(withClaim.declarationContext.rejected)})`);
+
+    const noTarget = await call({ symbol: "Entity", vaultRoot: sandbox });
+    assert(noTarget.symbolAuthority === "historical" && noTarget.declarationContext.status === "historical" && noTarget.target === null, `S5: no project hint -> historical (got ${noTarget.symbolAuthority}/${noTarget.declarationContext?.status})`);
+    assert(/HISTORICAL lookup/.test(noTarget.declarationContext.note) && /pass projectRoot/.test(noTarget.declarationContext.note), "S5: the historical note explains how to bind a target");
+
+    const traversal = await call({ symbol: "Entity", sdkVersion: "../../../etc" });
+    assert(traversal.status === "unavailable" && traversal.code === "version-invalid", `S5: a traversal version label is refused (got ${traversal.status}/${traversal.code})`);
+    assert(!/etc\/agent-vault|etc\\agent-vault/.test(JSON.stringify(traversal)), "S5: the refused label is never joined into a path");
+    assert(/ensure_pico_cli/.test(traversal.note) && /returned absolute path/.test(traversal.note), "S5: version-invalid keeps the managed setup guidance");
+    assertSdk6Provenance(traversal, "S5 version-invalid result");
+    const spelled = await call({ symbol: "Entity", sdkVersion: "0.13.3.4" });
+    assert(spelled.status === "unavailable" && spelled.code === "version-invalid", "S5: a four-part label is not a numeric version token");
+    const relativeRoot = await call({ symbol: "Entity", vaultRoot: "../x" });
+    assert(relativeRoot.status === "unavailable" && relativeRoot.code === "root-invalid" && /ensure_pico_cli/.test(relativeRoot.note), `S5: a relative vaultRoot is refused rather than resolved against the working directory (got ${relativeRoot.status}/${relativeRoot.code})`);
+    assertSdk6Provenance(relativeRoot, "S5 root-invalid result");
+
+    // the door forwards the same hints and claims no authority of its own
+    const doorMetadata = {};
+    registerDoorTools({ registerTool: (name, toolMetadata) => { doorMetadata[name] = toolMetadata; } });
+    const doorInputs = Object.keys(doorMetadata.pico_sdk.inputSchema).sort();
+    assert(JSON.stringify(doorInputs) === JSON.stringify(HINT_INPUTS), `S5: pico_sdk forwards hint inputs only (got ${doorInputs.join(", ")})`);
+    assert(/historical/i.test(doorMetadata.pico_sdk.description) && /projectRoot/.test(doorMetadata.pico_sdk.description) && /0\.13\.3/.test(doorMetadata.pico_sdk.description) && /docs\/SDK_6_0_0_DRIFT\.md/.test(doorMetadata.pico_sdk.description), "S5: pico_sdk description labels the default historical, names the project hint, and keeps the historical disclosures");
+  } finally {
+    fs.rmSync(sandbox, { recursive: true, force: true });
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+}
+
 console.log(`\nVault test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

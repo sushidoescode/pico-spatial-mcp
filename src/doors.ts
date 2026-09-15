@@ -472,8 +472,14 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
 
   door(
     "pico_sdk",
-    "DOOR 8 — Look up the EXACT PICO Spatial SDK declaration (constructors with parameter order and unit docs, properties, enum values) from the official 0.13.3 agent-vault before writing SDK code. The app skeleton builds on SDK 6.0.0; consult docs/SDK_6_0_0_DRIFT.md for the measured near-zero public-API drift caveat. All-Float signatures compile silently with swapped args — check first.",
-    { symbol: z.string() },
+    "DOOR 8 — Look up the EXACT PICO Spatial SDK declaration (constructors with parameter order and unit docs, properties, enum values) from the locally materialized agent-vault before writing SDK code — by default the HISTORICAL 0.13.3 declarations, labeled with the package revision their package.xml declares. The app skeleton builds on SDK 6.0.0; docs/SDK_6_0_0_DRIFT.md records the measured near-zero public-API drift as historical evidence, not target authority. Pass projectRoot (optionally vaultRoot / sdkVersion / recordPaths) and the answer reports declarationIdentity, target and declarationContext — target-compatible only when a reviewed compatibility record verifies against the local vault bytes and that project's exact resolved SDK; otherwise unknown/historical, and it says so. Hints select what is read; nothing here accepts an identity, a fingerprint or a compatibility verdict from the caller. All-Float signatures compile silently with swapped args — check first.",
+    {
+      symbol: z.string(),
+      projectRoot: z.string().optional().describe("Android project root hint: its declared BOM/identity are read statically (never Gradle) and reviewed compatibility evidence is verified against it. Omit for a plain historical lookup."),
+      vaultRoot: z.string().optional().describe("Explicit agent-vault root — an explicitly identified source, not proof of target compatibility."),
+      sdkVersion: z.string().optional().describe("Numeric vault workspace label under the tools root (e.g. '0.13'); never a path."),
+      recordPaths: z.array(z.string()).optional().describe("Reviewed compatibility record paths to consider; only records in the packaged reviewed index can be accepted."),
+    },
     async (args) => {
       const { call } = await inner();
       return call("vault_api", args);
