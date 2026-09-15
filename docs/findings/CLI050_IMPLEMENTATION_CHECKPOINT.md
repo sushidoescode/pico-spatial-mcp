@@ -222,9 +222,20 @@ Three gates the brief asked to be inspected **before** running, and what they ac
 | `test:vcamreader-native` | `scripts/test-cmio-camera-reader.sh` likewise compiles, uses `--cmio-probe-only` read-only metadata enumeration against an unresolvable UID, and explicitly *skips its readback-block assertion if the reader turns out to be authorized*, "to stay device-free". No camera is opened. | **PASS (1.7 s)** — real compile. Not a skip. |
 | `test:provision` | `test/provision.mjs` part 2 bakes with the **real** spatialbundle when a local toolchain is present. Source read first: it writes one procedural USDA into a fresh `fs.mkdtempSync` directory, bakes `gem0.bundle` beside it, and removes the tree. It never touches a user project, a device or the emulator, so it was allowed to run. | **PASS (4.7 s)**, and it really baked: `ok bake smoke: gem0.bundle baked for real (3.4 KB, modelName=gem0)`. This gate is host-toolchain-dependent — on a machine without the SDK it self-SKIPs. |
 
-#### The three failures, each diagnosed rather than patched
+#### Where the three failures stand now
 
-**1. `test:claims` — FAIL. Pre-existing, host-state-dependent; not caused by this work; not fixable here.**
+The battery above is the single recorded run. Each failure was then diagnosed and dispositioned;
+only the three affected gates were re-run, not the whole battery.
+
+| Gate | Battery result | Disposition | Current |
+|---|---|---|---|
+| `test:emulator-restart` | FAIL | Fixture hermeticity finding — the boot fixture now names its own adb | **pass** (690 tests, 0 fail) |
+| `test:spatialui-adoption` | FAIL | Change-detection pin re-pinned to C4's reviewed bytes; every semantic assertion kept | **pass** (Failures: 0) |
+| `test:claims` | FAIL | **Fail by ruling** — regenerating would publish the paused Mission Replay app's claims | **still red on this host, deliberately** |
+
+#### The three failures, each diagnosed
+
+**1. `test:claims` — FAIL BY RULING. A host-state failure, left red on purpose.**
 
 ```
 FAIL tracked public claims snapshot is stale against the current effective ledger read
@@ -246,10 +257,17 @@ Eleven apps exist only in the live read (`com.example.claimsight`, `com.example.
 was last committed **2026-08-13** (`96c54a3`); the newest local ledger is **2026-09-14**. So this is a
 month of maintainer-machine ledger drift, not a regression from this checkpoint.
 
-It was **not** repaired, for two independent reasons: regenerating requires the
-`generate_claims_page` MCP tool (no MCP operation is in scope for this task), and the regeneration
-would fold **`com.picoagent.missionreplay`** — the explicitly paused application — into the public
-claims snapshot. Left red, recorded, and named in the open items.
+**Ruled: do not regenerate the claims page.** Regenerating requires the `generate_claims_page` MCP
+tool, and — the decisive reason — it would fold **`com.picoagent.missionreplay`**, the explicitly
+paused application, into the *public* claims snapshot. `docs/claims/claims.json` is therefore
+untouched, and this gate stays red on this host by decision rather than by omission.
+
+Note what the red actually means: **CI is unaffected**, because a clean checkout has no
+`~/.pico-mcp/ledgers` and the assertion skips itself. The gate only fails on a machine that owns a
+live ledger corpus — and it fails there for every maintainer whose ledgers have moved since the
+snapshot was last generated, regardless of what they changed. That is a gate reading host state as
+if it were repository state, which is the real defect; it is recorded in the open items as
+"make `test:claims` hermetic against a fixture ledger".
 
 **2. `test:emulator-restart` — FAIL under the pin, then FIXED.** A genuine hermeticity finding, and
 exactly the class the controller's pin ruling exists to expose.
@@ -273,7 +291,7 @@ Fixed by making the fixture name its own adb: the child env now declares `PICO_A
 npm run test:emulator-restart    exit 0   tests 690, pass 689, fail 0 (1 platform skip)
 ```
 
-**3. `test:spatialui-adoption` — FAIL. A genuine defect from earlier in this plan. NOT patched here.**
+**3. `test:spatialui-adoption` — FAIL, then RE-PINNED after review. Now green.**
 
 ```
 AssertionError: src/spatialbench.ts changed outside this task
@@ -287,12 +305,33 @@ change on the perf-axis fallback path, correct in itself — and did not update 
 therefore been red since `f41fb8e`, through the CLI merge, I1, C6 and `c40180b`, because no lane ran
 it in this session. Finding it is precisely what running the whole inventory is for.
 
-What was checked before deciding not to touch it: the guard's *substantive* invariants still hold —
-`BENCH_CORE` and `BENCH_MR` are byte-intact in `src/spatialbench.ts`, and the second protected file
-`briefs/calib.json` still matches its pin (`b9b76f5f…`). So the corpus was not inflated; only the
-byte pin is stale. Re-pinning a protection guard is exactly the move that guard exists to prevent,
-and it belongs to a reviewer of C4's touch of a protected file, not to this task. Recorded, not
-patched.
+The guard's *substantive* invariants all still hold, which is what decided the disposition. The
+sha256 at `test/spatialui-adoption.mjs:17` is a **change-detection** pin inherited from the
+historical adoption task; the assertions that carry the actual contract are separate and were
+re-checked, unchanged and passing:
+
+- `BENCH_CORE` and `BENCH_MR` membership (`:26–27`) — byte-intact in `src/spatialbench.ts`;
+- no `docs-adoption-workbench` reference inside `src/spatialbench.ts` (`:354`) — the assertion that
+  actually enforces "a repo-only recipe never inflates the benchmark corpus";
+- the second protected file, `briefs/calib.json`, still matches its own pin (`b9b76f5f…`).
+
+So the corpus was not touched; only the change-detector had not been told that C4's edit was
+reviewed. **Ruling: re-pin to the reviewed bytes, keep every semantic assertion unchanged.** The pin
+is now `0986672c…` with a comment above it citing `f41fb8e` and the C4 review, so the next person to
+hit this guard learns why the hash moved rather than re-deriving it.
+
+```
+npm run test:spatialui-adoption   exit 0   SpatialUI adoption test done. Failures: 0
+npm run test:bench                exit 0   SpatialBench test done. Failures: 0
+```
+
+`test:bench` was re-run alongside it because it is the other consumer of the scoring path C4
+changed; it is green, so the re-pin recorded a reviewed change rather than papering over a
+regression.
+
+The real lesson is about the gate, not the pin: this guard had been red since `f41fb8e` — through
+the CLI merge, I1, C6 and `c40180b` — because no lane ran it in this session. Running the whole
+inventory once is what surfaced it.
 
 
 
@@ -492,6 +531,7 @@ should *name* the tools it uses, rather than arranging for the right one to be f
 | `verify_pico_apk`'s inner `inputSchema` marks `serial` optional while its prose says REQUIRED | The handler refuses without it; the schema is the softer of the two statements. Cosmetic, recorded. |
 | `docs/claims/claims.json` was not annotated | Its `attestation` for P21 describes the removed `status=ok`/`processAlive`/`crashed` shape and the logcat clear. The file is **generated** from the trust ledgers by `generate_claims_page`, not hand-maintained, and the attestation is a verbatim historical record. Hand-editing it would rewrite history *and* be overwritten on the next regeneration. It is already a month stale (see `test:claims` above). Correction lands when the page is next regenerated on the ledger-owning machine — and that regeneration must be made with the Mission Replay question settled first. |
 | `gates.yml` has one raw step the inventory cannot see | The macOS lane runs `node --test test/homeenvironmenthost.mjs` directly rather than through a named gate, so `AGENTS.md`'s "one inventory owns every gate command" is true of every *named* gate but not of that line. |
+| **`test:claims` reads host state as if it were repository state** | Its snapshot-freshness assertion regenerates from `~/.pico-mcp/ledgers`, so it passes in CI (no corpus → self-skip) and fails on any maintainer machine whose ledgers moved since the tracked snapshot was generated — independently of what that maintainer changed. **Open item: make `test:claims` hermetic against a fixture ledger**, so the gate tests the generator and the tracked snapshot rather than the developer's private corpus. Until then it is red on this host by ruling (see the battery section), and `docs/claims/claims.json` stays untouched. |
 
 ### Deferred minors
 
@@ -537,15 +577,13 @@ you run tests in, and treat a failure under that pin as a fixture finding to rep
 reason to unpin. Run `npm run build` before any suite — 70 of 97 test files import ../dist
 and nothing rebuilds it.
 
-Two gates are red at 38.0.0 and both are recorded, not hidden:
-  1. test:spatialui-adoption — C4 (f41fb8e) edited src/spatialbench.ts, a protected file, and
-     did not update its byte pin in test/spatialui-adoption.mjs. The corpus lanes (BENCH_CORE,
-     BENCH_MR) and briefs/calib.json are intact, so only the pin is stale. Review C4's diff to
-     that file, then re-pin deliberately.
-  2. test:claims — the tracked docs/claims/claims.json (86 apps / 330 claims, 2026-08-13) is a
-     month behind this machine's ledger corpus (97 apps / 764 claims). Regenerating it runs
-     generate_claims_page AND folds com.picoagent.missionreplay — the paused app — into the
-     public snapshot. Settle that question before regenerating.
+One gate is red at 38.0.0, by ruling, and it is recorded rather than hidden:
+  test:claims — the tracked docs/claims/claims.json (86 apps / 330 claims, 2026-08-13) is a
+  month behind this machine's ledger corpus (97 apps / 764 claims). Regenerating it runs
+  generate_claims_page AND would publish com.picoagent.missionreplay — the paused app — on the
+  public claims page, so it was ruled NOT to be regenerated and claims.json is untouched. CI is
+  unaffected (a clean checkout has no ledgers and the assertion self-skips). The fix is to make
+  the gate hermetic against a fixture ledger, not to regenerate the snapshot.
 
 The externally blocked work, in the order it is worth doing:
   a. Provision the profiler payload (`<resolved pico-cli absolute path> setup`, run by the
