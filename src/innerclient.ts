@@ -93,8 +93,11 @@ export function createInnerClientProvider(connect: InnerConnect): InnerClientPro
         (client) => {
           generationOf.set(client, generation);
           if (generation.retired) {
-            // closed (or the transport failed) while connecting: never hand out a client the
-            // provider already gave up on — close it and let the waiters see why.
+            // closed (or the transport failed) while connecting — including a connect that retired
+            // its session synchronously, before its first await: never hand out a client the
+            // provider already gave up on, and never leave a retired generation installed as
+            // active, or every later acquire would return this same rejection until restart.
+            if (active === generation) active = null;
             generation.closing = client.close().catch(() => undefined);
             throw new Error(`inner client generation ${id} was retired during initialization`);
           }
@@ -109,7 +112,11 @@ export function createInnerClientProvider(connect: InnerConnect): InnerClientPro
           throw error;
         },
       );
-      active = generation;
+      // A connect that retired its session synchronously (before its first await) ran
+      // retireGeneration while `active` still pointed elsewhere; installing it here would wedge the
+      // provider on a permanently rejected attempt. Its waiters are rejected by the fulfilled
+      // branch above; the next acquire starts a fresh generation.
+      if (!generation.retired) active = generation;
       return generation.attempt;
     },
     retire(client) {

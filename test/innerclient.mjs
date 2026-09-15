@@ -223,6 +223,54 @@ test("provider: retire is idempotent and a stale client cannot retire the live g
   assert.equal(provider.current(), null);
 });
 
+test("provider: a connect that retires its session synchronously is never installed as the live generation; the next acquire reconnects", async () => {
+  // Fix round 1: `active = generation` used to be assigned unconditionally AFTER connect() returned,
+  // so a connect that called session.retire() before its first await installed a retired
+  // generation whose attempt rejects — and every later acquire returned that same rejection.
+  let invocations = 0;
+  const clients = [];
+  const connect = (session) => {
+    invocations += 1;
+    if (invocations === 1) session.retire(new Error("transport died before the first await"));
+    const client = fakeClient(`gen${invocations}`);
+    clients.push(client);
+    return Promise.resolve(client);
+  };
+  const provider = createInnerClientProvider(connect);
+  const first = provider.acquire();
+  assert.equal(provider.current(), null);
+  await assert.rejects(first, /retired during initialization/);
+  assert.equal(clients[0].closed, 1, "the late client of the retired generation is closed, not leaked");
+  assert.equal(provider.current(), null, "a retired generation is never installed as active");
+  const second = provider.acquire();
+  assert.equal(invocations, 2, "the next acquire reconnects instead of returning the wedged rejection");
+  const c2 = await second;
+  assert.equal(c2, clients[1]);
+  assert.equal(provider.current(), c2);
+  assert.equal(provider.generation(), 2);
+  const again = await Promise.all(Array.from({ length: 20 }, () => provider.acquire()));
+  assert.ok(again.every((client) => client === c2), "20 concurrent acquires after the retired attempt still share generation 2");
+  assert.equal(invocations, 2);
+});
+
+test("provider: a connect that retires its session synchronously and then fails leaves no wedged slot either", async () => {
+  let invocations = 0;
+  const connect = (session) => {
+    invocations += 1;
+    if (invocations === 1) {
+      session.retire(new Error("transport died before the first await"));
+      return Promise.reject(new Error("fixture connect 1 failed after retiring"));
+    }
+    return Promise.resolve(fakeClient(`gen${invocations}`));
+  };
+  const provider = createInnerClientProvider(connect);
+  await assert.rejects(provider.acquire(), /fixture connect 1 failed after retiring/);
+  assert.equal(provider.current(), null);
+  const c2 = await provider.acquire();
+  assert.equal(invocations, 2);
+  assert.equal(provider.current(), c2);
+});
+
 test("provider: calls go through the live generation's client", async () => {
   const fx = gatedConnect();
   const provider = createInnerClientProvider(fx.connect);

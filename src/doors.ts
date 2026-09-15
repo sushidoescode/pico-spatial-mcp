@@ -1090,9 +1090,11 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
         // the door's contract promises an entry per iteration, so a broken ledger lane must show).
         const perfNow = perfTrail.length && (perfTrail[perfTrail.length - 1] as any).iteration === i ? perfTrail[perfTrail.length - 1] as any : null;
         const led = await call("record_verification", { app, claim: `pico_loop iteration ${i}/${maxIterations} [${goal.slice(0, 80)}]: ${outcomes.map((o) => `${o.kind}=${o.status}`).join(" ")}${perfNow ? ` | appFps p5=${perfNow.p5} avg=${perfNow.avg} (pico-cli measured)` : ""}`, evidenceType: "structural" }).catch((e) => `record_verification threw: ${e instanceof Error ? e.message : String(e)}`);
+        // an inner isError arrives as the domain lane's error payload — the tool's own words lead
+        // the detail, so the 200-char budget is not spent on the {"status":"error",…} wrapper.
         const ledger = led && typeof led === "object" && led.status === "recorded"
           ? "recorded"
-          : `NOT recorded: ${(typeof led === "string" ? led : JSON.stringify(led ?? null)).slice(0, 200)}`;
+          : `NOT recorded: ${domainValueText(led).slice(0, 200)}`;
         iterationsLog.push({
           iteration: i,
           outcomes,

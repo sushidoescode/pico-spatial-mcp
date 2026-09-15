@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { VERIFY_APK_TEARDOWN_MS } from "../dist/verifyapk.js";
 import * as doorsModule from "../dist/doors.js";
+import { decodeDomainValue } from "../dist/innerclient.js";
 import * as plannerModule from "../dist/planner.js";
 import { innerFailureDetail } from "../dist/fleetbuild.js";
 import { createManagedRuntimeHarness } from "./helpers/picocli-managed-fixture.mjs";
@@ -98,10 +99,16 @@ if (doorsModule.registerDoorTools.length < 2) {
   };
   let injectedFleetResult = fleetResult;
   let injectedRecordArgs = null;
+  let injectedLedgerFailure = null;
   const injectedCall = async (name, args) => {
     if (name === "plan_app_spec") return { status: "ok", spec: { meta: { packageName: "com.example.fixture" } } };
     if (name === "fleet_build") return { status: "ok", results: [injectedFleetResult] };
-    if (name === "record_verification") { injectedRecordArgs = args; return { status: "recorded", entry: { evidenceType: args.evidenceType } }; }
+    if (name === "record_verification") {
+      injectedRecordArgs = args;
+      // a failed ledger lane reaches the loop as the domain lane's error payload (production decoder)
+      if (injectedLedgerFailure) return decodeDomainValue("record_verification", { content: [{ type: "text", text: injectedLedgerFailure }], isError: true });
+      return { status: "recorded", entry: { evidenceType: args.evidenceType } };
+    }
     throw new Error(`unexpected injected door call: ${name}`);
   };
   const receiptServer = new McpServer({ name: "door-receipt-test", version: "0.0.0" });
@@ -153,6 +160,20 @@ if (doorsModule.registerDoorTools.length < 2) {
         && loopedOut.remainingLookObligation?.[0]?.artifact === receiptCapture)
       ok("pico_loop carries the receipt identity, exact capture, and usable absolute project path through its exit");
     else fail(`pico_loop dropped or rewrote fleet receipt identity: ${JSON.stringify(loopedOut).slice(0, 420)}`);
+
+    // C5 fix round 1: a failed ledger lane is disclosed with the tool's OWN words first. The
+    // {"status":"error",…} payload wrapper must not lead the detail and eat its 200-char budget.
+    injectedLedgerFailure = "ledger root is read-only: EACCES /fixture/ledgers/com.example.fixture.json";
+    const ledgerFailed = await receiptClient.callTool({
+      name: "pico_loop",
+      arguments: { goal: loopGoal, draftSpec: { meta: { packageName: "com.example.fixture" } }, acceptance: [{ kind: "visual" }], budget: { iterations: 1 } },
+    });
+    const ledgerFailedOut = JSON.parse(ledgerFailed.content[0].text);
+    const ledgerDetail = ledgerFailedOut.iterationsLog?.[0]?.ledger ?? "";
+    if (ledgerDetail.startsWith(`NOT recorded: ${injectedLedgerFailure}`) && !/"status":"error"/.test(ledgerDetail))
+      ok("pico_loop discloses a failed ledger lane with the tool's own words first");
+    else fail(`pico_loop ledger detail wraps or hides the tool's words: ${JSON.stringify({ ledgerDetail, status: ledgerFailedOut.status }).slice(0, 360)}`);
+    injectedLedgerFailure = null;
 
     injectedFleetResult = { ...fleetResult, concluded: false, artifact: null, receipt: null, notes: ["after-install failed"] };
     const receiptless = await receiptClient.callTool({
@@ -720,11 +741,14 @@ fs.rmSync(managedHarness.root, { recursive: true, force: true });
 // full-surface child. Before C5, inner() tested its cache, awaited connect, then stored the
 // cache, so every concurrent first caller spawned its own dist/index.js. The fake node proxy on
 // the fixture PATH logs each inner lifetime; PICO_ADB points at an exit-1 stub so the raw-lane
-// check below can never reach a real adb or emulator.
+// check below can never reach a real adb or emulator. eye.ts resolves PICO_ADB by EXISTENCE first
+// and falls through to a real adb when it is missing, so the stub records every argv it receives
+// (proof it ran) and is asserted present + executable immediately before the call.
 {
   const coldHarness = createManagedRuntimeHarness();
   const coldAdb = path.join(coldHarness.root, "adb");
-  fs.writeFileSync(coldAdb, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const coldAdbMarker = path.join(coldHarness.root, "adb-invocations.log");
+  fs.writeFileSync(coldAdb, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${coldAdbMarker}'\nexit 1\n`, { mode: 0o755 });
   const coldTransport = new StdioClientTransport({
     command: process.execPath,
     args: ["dist/index.js"],
@@ -741,12 +765,22 @@ fs.rmSync(managedHarness.root, { recursive: true, force: true });
       ok(`20 concurrent first door calls started exactly one inner server (all ${statuses[0]})`);
     else fail(`concurrent first use started ${startsAfterBurst} inner servers (statuses: ${[...new Set(statuses)].join(", ")})`);
 
-    // raw lane over the real transport: capture_canonical's fail() must arrive as an error
-    const look = await coldClient.callTool({ name: "pico_look", arguments: {} });
-    const lookText = look.content?.[0]?.text ?? "";
-    if (look.isError === true && /screencap failed/.test(lookText) && !/"status": "ok"/.test(lookText) && innerStarts() === 1)
-      ok("pico_look forwards the inner screencap failure as isError over the real inner transport");
-    else fail(`pico_look laundered or re-spawned: ${JSON.stringify({ isError: look.isError, lookText: lookText.slice(0, 160), innerStarts: innerStarts() })}`);
+    // raw lane over the real transport: capture_canonical's fail() must arrive as an error.
+    // Guarded: a missing/non-executable stub would let eye.ts fall through to a real adb, so the
+    // call is only made once the stub is proven present, and the marker proves it actually ran.
+    const stubExecutable = (() => { try { fs.accessSync(coldAdb, fs.constants.X_OK); return fs.statSync(coldAdb).isFile(); } catch { return false; } })();
+    if (!stubExecutable) {
+      fail(`the e2e adb stub is missing or not executable immediately before pico_look (${coldAdb}); the call was NOT made`);
+    } else {
+      ok("the e2e adb stub exists and is executable immediately before pico_look");
+      const look = await coldClient.callTool({ name: "pico_look", arguments: {} });
+      const lookText = look.content?.[0]?.text ?? "";
+      const stubInvocations = fs.existsSync(coldAdbMarker) ? fs.readFileSync(coldAdbMarker, "utf8").split("\n").filter(Boolean) : [];
+      const stubRanScreencap = stubInvocations.some((line) => /exec-out screencap/.test(line));
+      if (look.isError === true && /screencap failed/.test(lookText) && !/"status": "ok"/.test(lookText) && innerStarts() === 1 && stubRanScreencap)
+        ok(`pico_look forwards the inner screencap failure as isError over the real inner transport (stub adb ran: ${stubInvocations.length} invocation(s), screencap argv recorded)`);
+      else fail(`pico_look laundered, re-spawned, or bypassed the stub: ${JSON.stringify({ isError: look.isError, lookText: lookText.slice(0, 160), innerStarts: innerStarts(), stubInvocations })}`);
+    }
   } finally {
     await coldClient.close();
     fs.rmSync(coldHarness.root, { recursive: true, force: true });
