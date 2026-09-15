@@ -21,7 +21,7 @@ Evidence ranking: `structural` < `auto_judged` < `vision_verified` < `device_ver
 
 ## Gotchas — the expensive ones
 
-**Tests import `dist/`, and nothing rebuilds it.** 60 of the 83 `test/*.mjs` files carry a
+**Tests import `dist/`, and nothing rebuilds it.** 61 of the 85 `test/*.mjs` files carry a
 static or dynamic import specifier starting `../dist/`
 (`grep -lE '(from|import\()[[:space:]]*"\.\./dist/' test/*.mjs | wc -l`);
 `dist/` is gitignored and there is no `pretest` hook. Edit `src/`, run a test, and you get
@@ -34,11 +34,15 @@ workflow exists. Hosts install from GitHub, and `/plugin update` keys off the ve
 manifests, so bumping `package.json` and running `npm run sync:meta` *is* the release. Testers
 get a hand-built `.tgz`.
 
-**`npm run smoke` is not hermetic, and the better your machine is set up, the more it fails.**
-It hardcodes `~/AndroidStudioProjects/claimsight` with no existence guard. CI is green only
-because `gates.yml` sets `SMOKE_SDK_OPTIONAL=1`, which downgrades failures to SKIP *only* while
-the error text still matches "No spatialbundle binary / emulator payload found under". Once a
-real SDK is present that excuse expires and those checks become hard failures.
+**`npm run smoke` is hermetic on purpose, and the real-toolchain lane is a separate command.**
+Smoke builds the server's whole environment itself — an empty tools root, a fixture home, a PATH
+whose first entry holds a fake `adb` that serves only `fixture-serial`, a fake Gradle, and an `npm`
+that refuses every call — so it cannot select host tooling and its result is not a property of your
+machine. `test:smoke-isolation` is what holds that line: it runs smoke twice under two different
+host homes and compares the checks one for one, with tripwire binaries in the second home. The
+tools that genuinely need an SDK live in `node test/sdk-integration.mjs run --project … --bundle …
+--output …` — three absolute paths, nothing discovered, deliberately not a gate. Put a host probe
+back into smoke and `test:smoke-isolation` fails; it will not quietly pass because CI is bare.
 
 **One inventory owns every gate command and its CI lane.** `scripts/gate-inventory.mjs` holds
 `GATES`; each `test:*`/`smoke` script is only `node scripts/run-gate.mjs <name>`, and `run-gate`

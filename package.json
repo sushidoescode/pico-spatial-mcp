@@ -27,6 +27,8 @@
     "test:tarball": "node scripts/run-gate.mjs test:tarball",
     "start": "node dist/index.js",
     "smoke": "node scripts/run-gate.mjs smoke",
+    "test:smoke-isolation": "node scripts/run-gate.mjs test:smoke-isolation",
+    "test:sdk-integration": "node scripts/run-gate.mjs test:sdk-integration",
     "test:lint": "node scripts/run-gate.mjs test:lint",
     "test:projectgen": "node scripts/run-gate.mjs test:projectgen",
     "test:unitygen": "node scripts/run-gate.mjs test:unitygen",

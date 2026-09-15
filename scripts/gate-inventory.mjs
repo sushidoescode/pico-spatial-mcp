@@ -30,6 +30,8 @@ export const GATE_SCOPES = Object.freeze(["fixture", "native-contract", "install
 export const GATES = Object.freeze({
   smoke: { host: "linux", scope: "fixture", commands: [["node", "test/smoke.mjs"]] },
   "test:tarball": { host: "linux", scope: "installed-artifact", commands: [["node", "scripts/verify-tarball.mjs"]] },
+  "test:smoke-isolation": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/smoke-isolation.mjs"]] },
+  "test:sdk-integration": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/sdk-integration.mjs"]] },
   "test:lint": { host: "linux", scope: "fixture", commands: [["node", "test/lint.mjs"], ["node", "--test", "test/run-battery.mjs", "test/gate-inventory.mjs"]] },
   "test:projectgen": { host: "linux", scope: "fixture", commands: [["node", "test/projectgen.mjs"]] },
   "test:unitygen": { host: "linux", scope: "fixture", commands: [["node", "test/unitygen.mjs"]] },
