@@ -646,7 +646,7 @@ test("the packer consumers import the shared selection rather than rebuilding on
   // S4 extracted the resolve+verify pair the four packer wrappers each held a copy of into
   // `prepareOperationToolchain`, so reaching the seam through THAT satisfies this gate too. What
   // must never come back is a consumer resolving (or, worse, hardcoding) a binary of its own.
-  for (const name of ["bundle.ts", "editorexport.ts", "bundlediff.ts", "workflow.ts", "editor.ts"]) {
+  for (const name of ["bundle.ts", "editorexport.ts", "bundlediff.ts", "workflow.ts", "editor.ts", "editorpalette.ts"]) {
     const text = fs.readFileSync(path.join(repoRoot, "src", name), "utf8");
     assert.match(text, /(?:resolve|prepare)OperationToolchain/, `${name} must resolve through ./toolchain.js`);
   }
@@ -1012,6 +1012,73 @@ test("S6 matrix: failed and missing selections are reported as themselves, never
   assert.equal(carried.selection, null);
   assert.equal(carried.selectionUnavailable.code, "unavailable/root-unavailable");
   assert.equal(toolchainProvenance(carried).toolchain, null);
+});
+
+test("S6 matrix (fix wave): install_editor_palette operates on the SELECTED editor bundle, honours an explicit editorApp, and never touches a real bundle", async () => {
+  // install_editor_palette MODIFIES and RE-SIGNS an app bundle, so it is never called against a
+  // real Spatial Editor.app here. Every selection below comes from an in-memory tree; the tool's
+  // real-filesystem existence check then fails BEFORE any backup, edit or codesign, and the error
+  // names the path the selection (or the override) chose — which is the whole proof.
+  const { registerEditorPaletteTools, resolveEditorPaletteApp } = await import("../dist/editorpalette.js");
+  const handlerFor = (io) => {
+    const handlers = {};
+    registerEditorPaletteTools({ registerTool: (name, _meta, fn) => { handlers[name] = fn; } }, { io });
+    return handlers.install_editor_palette;
+  };
+  const components = [{ shortName: "GameStats", fullCompName: "com.fixture.GameStats", pkgName: "com.fixture" }];
+
+  // (a) a host carrying BOTH 0.13 and 6.1 editor bundles selects 6.1, and the error names that path.
+  const io = mixedHostIO();
+  const selected = resolveEditorPaletteApp(undefined, io);
+  assert.equal(selected.app, "/sdk/6.1/editor/Spatial Editor.app");
+  assert.equal(selected.source, "selected");
+  assert.equal(selected.toolchain.selection.version, "6.1");
+  assert.equal(selected.toolchain.bin, S6_EDITOR);
+  for (const args of [{ components }, { restore: true }]) {
+    const viaSelection = JSON.parse((await handlerFor(io)(args)).content[0].text);
+    assert.equal(viaSelection.status, "error", JSON.stringify(viaSelection));
+    assert.match(viaSelection.error, /^editor not found at \/sdk\/6\.1\/editor\/Spatial Editor\.app$/);
+    assert.doesNotMatch(viaSelection.error, /0\.13/, "the legacy bundle beside the selected one is never the answer");
+    assert.equal(viaSelection.editorApp, "/sdk/6.1/editor/Spatial Editor.app");
+    assert.equal(viaSelection.editorAppSource, "selected");
+    assert.equal(viaSelection.toolchain.version, "6.1", "the result discloses the selection that named the bundle");
+  }
+
+  // (b) an explicit editorApp is honoured as an explicit path: it wins over selection and is named.
+  const viaOverride = JSON.parse((await handlerFor(io)({ components, editorApp: "/opt/custom/Spatial Editor.app" })).content[0].text);
+  assert.equal(viaOverride.status, "error");
+  assert.match(viaOverride.error, /^editor not found at \/opt\/custom\/Spatial Editor\.app$/);
+  assert.equal(viaOverride.editorAppSource, "explicit");
+  assert.equal(viaOverride.toolchain, undefined, "an explicit path carries no selection provenance");
+
+  // (c) nothing selectable: the selection layer's own structured failure comes back, not a new shape.
+  const empty = toolchainIOFromTree({ platform: "darwin", home: "/fixture", env: { PICO_HOME: "/sdk" }, files: {} });
+  const unavailable = JSON.parse((await handlerFor(empty)({ components })).content[0].text);
+  assert.equal(unavailable.status, "unavailable");
+  assert.equal(unavailable.code, "unavailable/root-unavailable");
+  assert.ok(unavailable.detail.length > 10, "a refusal must say why");
+  assert.deepEqual(Object.keys(unavailable).sort(), ["code", "detail", "status"], "exactly the selection layer's shape");
+  const packerOnly = mixedHostIO({ PICO_HOME: "/sdk" }, {
+    "/sdk/6.2/editor/spatialbundle/spatialbundle": { bytes: "packer-6.2", executable: true },
+  });
+  const newestLacksEditor = resolveEditorPaletteApp(undefined, packerOnly);
+  assert.equal(newestLacksEditor.app, "/sdk/6.1/editor/Spatial Editor.app", "a newer packer-only install cannot satisfy an editor request");
+  const linux = toolchainIOFromTree({
+    platform: "linux", home: "/home/dev", env: { PICO_HOME: "/sdk" },
+    files: { "/sdk/6.1/editor/spatialbundle/spatialbundle": { bytes: "p", executable: true } },
+  });
+  const offMac = JSON.parse((await handlerFor(linux)({ components })).content[0].text);
+  assert.equal(offMac.status, "unavailable");
+  assert.equal(offMac.code, "unavailable/component-unsupported-platform");
+
+  // The module carries no hardcoded bundle path and no home-directory default any more.
+  const source = fs.readFileSync(path.join(repoRoot, "src", "editorpalette.ts"), "utf8");
+  for (const line of source.split("\n")) {
+    if (line.trimStart().startsWith("*") || line.trimStart().startsWith("//")) continue;
+    assert.doesNotMatch(line, /sdk\/0\.13/, `a legacy path literal survived: ${line.trim()}`);
+    assert.doesNotMatch(line, /os\.homedir/, `a home-directory default survived: ${line.trim()}`);
+  }
+  assert.match(source, /resolveOperationToolchain\(\{ required: \["editor"\], primary: "editor" \}/);
 });
 
 test("S6 matrix: the same mixed host on win32 and linux FIXTURES selects the 6.1 payload published for that platform", async () => {
