@@ -43,14 +43,15 @@ jobs:
         run: npm run build
       - name: Prompt/tool surface conformance
         run: npm run test:prompts
-      # The Linux-assigned deterministic/headless tiers. The complete 47-invocation battery also
-      # includes one Windows-assigned and two macOS-assigned native contracts; emulator/LOOK work
-      # cannot run in this CI job.
+      # The Linux-assigned deterministic/headless tiers. scripts/gate-inventory.mjs owns the full
+      # inventory: this lane runs every gate assigned to linux, plus one Windows-assigned and two
+      # macOS-assigned native contracts elsewhere. Emulator/LOOK work cannot run in this CI job.
+      # test:lint fails if this file and the inventory ever disagree.
       - name: Smoke (every tool registers + responds)
         run: npm run smoke
         env:
           SMOKE_SDK_OPTIONAL: "1"
-      - name: Lint fixtures + keep-going battery-runner contract
+      - name: Lint fixtures + keep-going battery-runner + gate-inventory contract
         run: npm run test:lint
       - name: Vault fixtures (agent-vault parser + symbol check; real-vault asserts skip in CI)
         run: npm run test:vault
@@ -136,6 +137,12 @@ jobs:
         run: npm run test:knowledge-lifecycle
       - name: Sample conformance (our codegen vs PICO's eight official Spatial SDK samples)
         run: npm run test:conformance
+      - name: Revisioned run store (contracts, locator, locks, crash/concurrency recovery)
+        run: npm run test:runrevision
+      - name: Build freshness (a source edit invalidates dist/ before any suite reads it)
+        run: npm run test:buildfreshness
+      - name: Plugin bootstrap freshness (a host cache rebuilds when its source moved)
+        run: npm run test:plugin-bootstrap-freshness
 
   vcam-native:
     runs-on: macos-latest

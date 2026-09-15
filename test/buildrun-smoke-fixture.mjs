@@ -8,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 import * as fixture from "./helpers/buildrun-smoke-fixture.mjs";
+import { GATES, gateScriptCommand } from "../scripts/gate-inventory.mjs";
 import {
   analyzePackageRuntimeLogs,
   launchResultSucceeded,
@@ -58,9 +59,16 @@ test("Windows fixture materializes quoted adb.cmd and gradlew.bat launchers", ()
 });
 
 test("the native Windows CI lane owns the tracked wrapper-selection contract", () => {
+  // The package script is a dispatcher now (`node scripts/run-gate.mjs test:picocli-win`), so
+  // matching filenames inside its string proves nothing about what Windows actually runs. Inspect
+  // the resolved inventory command instead: all three constituent suites, in order, on Windows.
+  assert.equal(GATES["test:picocli-win"].host, "windows");
+  assert.deepEqual(GATES["test:picocli-win"].commands, [[
+    "node", "--test", "test/picocli-autoinstall.mjs",
+    "test/buildrun-smoke-fixture.mjs", "test/run-battery.mjs",
+  ]]);
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
-  assert.match(pkg.scripts["test:picocli-win"], /test\/buildrun-smoke-fixture\.mjs/);
-  assert.match(pkg.scripts["test:picocli-win"], /test\/run-battery\.mjs/, "native Windows must exercise the battery CLI boundary too");
+  assert.equal(pkg.scripts["test:picocli-win"], gateScriptCommand("test:picocli-win"));
   const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");
   const windowsJob = workflow.match(/^  picocli-windows:\n([\s\S]*?)(?=^  [A-Za-z0-9_-]+:\n)/m)?.[1] ?? "";
   assert.match(windowsJob, /npm run test:picocli-win/);

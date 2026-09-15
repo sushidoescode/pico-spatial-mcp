@@ -21,7 +21,7 @@ Evidence ranking: `structural` < `auto_judged` < `vision_verified` < `device_ver
 
 ## Gotchas — the expensive ones
 
-**Tests import `dist/`, and nothing rebuilds it.** 51 of 60 files in `test/` import `../dist/*.js`;
+**Tests import `dist/`, and nothing rebuilds it.** 60 of 82 files in `test/` import `../dist/*.js`;
 `dist/` is gitignored and there is no `pretest` hook. Edit `src/`, run a test, and you get
 byte-identical output because the test never saw your change. **Run `npm run build` first, every
 time.** Same trap in plugin form: `scripts/plugin-bootstrap.mjs` only builds when `dist/index.js`
@@ -38,10 +38,13 @@ because `gates.yml` sets `SMOKE_SDK_OPTIONAL=1`, which downgrades failures to SK
 the error text still matches "No spatialbundle binary / emulator payload found under". Once a
 real SDK is present that excuse expires and those checks become hard failures.
 
-**`test:runrevision` runs in no workflow, and the meta-gate that should catch that is itself
-red.** `test/distribution-adoption.mjs` asserts every `test:` script appears in `gates.yml`, and
-asserts script counts that no longer match reality — so the guard fails for its own reasons and
-people learn to ignore it. Four revision suites can regress invisibly.
+**One inventory owns every gate command and its CI lane.** `scripts/gate-inventory.mjs` holds
+`GATES`; each `test:*`/`smoke` script is only `node scripts/run-gate.mjs <name>`, and `run-gate`
+refuses a gate whose `dist/` is stale before spawning anything. `validateGateInventory` is what
+`test:lint` and `test:distribution-adoption` check, and the published counts are derived from it —
+so a gate that no lane runs (`test:runrevision` was exactly that, four revision suites regressing
+invisibly) now fails a gate instead of a doc. Adding one is three edits: an entry, a one-line
+script, a workflow step for its host lane.
 
 **The pico-cli policy block below is byte-pinned across six files.**
 `test/distribution-adoption.mjs` holds the canonical text inline and asserts an exact match in

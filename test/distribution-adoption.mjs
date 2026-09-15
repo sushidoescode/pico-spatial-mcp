@@ -8,6 +8,13 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createManagedRuntimeHarness, publishManagedFixtureVersion } from "./helpers/picocli-managed-fixture.mjs";
 import { writeReceipt } from "../scripts/build-identity.mjs";
+import {
+  GATES,
+  gateInventoryCounts,
+  gateScriptCommand,
+  parseWorkflowLanes,
+  validateGateInventory,
+} from "../scripts/gate-inventory.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -2113,34 +2120,40 @@ test("public docs do not use ignored .dev files as evidence", () => {
   assert.deepEqual(acceptedMutations, [], `public evidence guard accepted: ${acceptedMutations.join(", ")}`);
 });
 
-test("the 47 named gate invocations are assigned to 44 Linux, one native-Windows, and two native-macOS lanes", () => {
+test("every named gate invocation is assigned to one workflow lane whose runner OS matches the inventory", () => {
+  // scripts/gate-inventory.mjs is the single declaration; this test asserts the *shape* (set
+  // equality, one lane each, matching runner OS) and derives every published number from it, so
+  // adding a gate can never leave a stale literal behind here.
   const pkg = readJson("package.json");
-  const all = ["smoke", ...Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"))];
   const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");
-  const job = (name) => {
-    const start = new RegExp(`^  ${name}:\\n`, "m").exec(workflow);
-    assert.ok(start, `workflow job ${name} must exist`);
-    const bodyStart = start.index + start[0].length;
-    const remainder = workflow.slice(bodyStart);
-    const next = /^  [A-Za-z0-9_-]+:\n/m.exec(remainder);
-    return next ? remainder.slice(0, next.index) : remainder;
-  };
-  const namedCommands = (body) => [...body.matchAll(/^\s+run:\s+npm run (\S+)\s*$/gm)]
-    .map((match) => match[1]).filter((name) => all.includes(name));
-  const assigned = {
-    linux: namedCommands(job("gates")),
-    windows: namedCommands(job("picocli-windows")),
-    macos: namedCommands(job("vcam-native")),
-  };
+  assert.deepEqual(validateGateInventory(pkg, workflow), []);
+
+  const lanes = parseWorkflowLanes(workflow);
+  const assigned = Object.fromEntries(["linux", "windows", "macos"].map((host) => [
+    host,
+    lanes.filter((lane) => lane.host === host).flatMap((lane) => lane.gates),
+  ]));
+  const { invocations, suites, hosts } = gateInventoryCounts();
   assert.deepEqual(
     Object.fromEntries(Object.entries(assigned).map(([host, names]) => [host, names.length])),
-    { linux: 44, windows: 1, macos: 2 },
+    hosts,
   );
-  assert.deepEqual([...new Set(Object.values(assigned).flat())].sort(), [...all].sort(), "each named invocation must be assigned to a host lane");
-  assert.equal(Object.values(assigned).flat().length, all.length, "named invocations must not be duplicated across host lanes");
+  assert.deepEqual(
+    [...new Set(Object.values(assigned).flat())].sort(),
+    Object.keys(GATES).sort(),
+    "each named invocation must be assigned to a host lane",
+  );
+  assert.equal(Object.values(assigned).flat().length, invocations, "named invocations must not be duplicated across host lanes");
+  assert.equal(suites + 1, invocations, "smoke is the one named invocation that is not a test: suite");
 
   const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8").replaceAll("\n", " ");
-  assert.match(readme, /47 gate invocations[\s\S]{0,220}44[\s\S]{0,80}Linux[\s\S]{0,120}(?:one|1)[\s\S]{0,80}(?:native )?Windows[\s\S]{0,120}(?:two|2)[\s\S]{0,80}(?:native )?macOS/i);
+  const spelled = (value) => ({ 1: "(?:one|1)", 2: "(?:two|2)" })[value] ?? String(value);
+  assert.match(readme, new RegExp(
+    `${invocations} gate invocations[\\s\\S]{0,220}${spelled(hosts.linux)}[\\s\\S]{0,80}Linux`
+    + `[\\s\\S]{0,120}${spelled(hosts.windows)}[\\s\\S]{0,80}(?:native )?Windows`
+    + `[\\s\\S]{0,120}${spelled(hosts.macos)}[\\s\\S]{0,80}(?:native )?macOS`,
+    "i",
+  ));
 });
 
 test("pico-cli 0.4.2 docs state the measured scope and corrected deltas", () => {
@@ -2211,16 +2224,20 @@ test("official-samples guidance retracts the untracked 8\/8 runtime claim", () =
   assert.match(samples, /local workaround/i);
 });
 
-test("distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and 46 test suites plus smoke", () => {
+test("distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and an inventory-derived gate battery", () => {
   const pkg = readJson("package.json");
   const testScripts = Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"));
-  assert.equal(testScripts.length, 46, testScripts.join("\n"));
-  assert.equal(pkg.scripts["test:distribution-adoption"], "node --test test/distribution-adoption.mjs");
+  assert.deepEqual(
+    [...testScripts].sort(),
+    Object.keys(GATES).filter((name) => name.startsWith("test:")).sort(),
+    "package.json test: scripts and the gate inventory must be the same set",
+  );
+  // The script is a dispatcher; the argv it resolves to lives in the inventory.
+  assert.equal(pkg.scripts["test:distribution-adoption"], gateScriptCommand("test:distribution-adoption"));
+  assert.deepEqual(GATES["test:distribution-adoption"].commands, [["node", "--test", "test/distribution-adoption.mjs"]]);
 
   const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");
-  for (const script of testScripts) {
-    assert.match(workflow, new RegExp(`run: npm run ${script.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s|$)`), script);
-  }
+  assert.deepEqual(validateGateInventory(pkg, workflow), []);
   assert.equal((workflow.match(/run: npm run smoke\s/g) ?? []).length, 1);
 
   const tarball = fs.readFileSync(path.join(repoRoot, "scripts", "verify-tarball.mjs"), "utf8");

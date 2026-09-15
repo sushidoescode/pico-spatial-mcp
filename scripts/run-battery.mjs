@@ -1,18 +1,32 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, mkdirSync, openSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { GATES, hostFamilyForPlatform } from "./gate-inventory.mjs";
 import { npmLaunch } from "./plugin-bootstrap.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-export function discoverBatteryCommands(packageJson) {
-  return [
-    "smoke",
-    ...Object.keys(packageJson?.scripts ?? {}).filter((name) => name.startsWith("test:")),
-  ];
+/**
+ * What this host can actually run, and what it cannot.
+ *
+ * The battery used to discover `test:`-prefixed package scripts, which meant it ran the two macOS
+ * CMIO contracts on Linux, where their shell scripts print "skipped" and exit 0 — green output for
+ * a suite that tested nothing. The inventory already records which CI lane owns each gate, so the
+ * plan splits on that instead: off-platform gates are reported as skipped and never run, and the
+ * summary states how many, so nobody can read a short PASS as a whole-battery PASS.
+ */
+export function batteryPlan({ platform = process.platform, gates = GATES } = {}) {
+  const host = hostFamilyForPlatform(platform);
+  const run = [];
+  const skipped = [];
+  for (const [name, gate] of Object.entries(gates)) {
+    if (gate.host === host) run.push(name);
+    else skipped.push({ name, host: gate.host });
+  }
+  return { host, run, skipped };
 }
 
 export function batteryNpmLaunch(name, platform = process.platform, env = process.env) {
@@ -31,6 +45,27 @@ function spawnNpm(name, { worktree }) {
 }
 
 /**
+ * Claim a log path nobody else holds, creating it exclusively.
+ *
+ * A battery run is evidence. Writing over `<log>` because that name was passed twice destroys the
+ * previous run's output, so the requested name is only used when it is free; otherwise the first
+ * free `<log>.1`, `<log>.2`, … is reserved and returned.
+ */
+export function reserveBatteryLogPath(logPath) {
+  mkdirSync(path.dirname(logPath), { recursive: true });
+  for (let suffix = 0; suffix < 10_000; suffix++) {
+    const candidate = suffix === 0 ? logPath : `${logPath}.${suffix}`;
+    try {
+      closeSync(openSync(candidate, "wx"));
+      return candidate;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
+  }
+  throw new Error(`could not reserve a fresh battery log beside ${logPath}`);
+}
+
+/**
  * Run every requested gate and return one aggregate result. A failed child is data, not control
  * flow: later gates still execute and the caller receives a non-zero exitCode only after summary.
  */
@@ -38,12 +73,14 @@ export function runBattery({
   worktree,
   logPath,
   commands,
+  skipped = [],
   runCommand = spawnNpm,
   report = console.log,
   now = Date.now,
 }) {
-  mkdirSync(path.dirname(logPath), { recursive: true });
-  writeFileSync(logPath, `PICO gate battery (${commands.length} invocations)\ncheckout: ${worktree}\n`);
+  const reservedLogPath = reserveBatteryLogPath(logPath);
+  const skipNote = skipped.length ? `\nskipped (off-platform): ${skipped.map((entry) => `${entry.name} [${entry.host}]`).join(", ")}\n` : "";
+  writeFileSync(reservedLogPath, `PICO gate battery (${commands.length} invocations)\ncheckout: ${worktree}\n${skipNote}`);
 
   const results = [];
   for (const [index, name] of commands.entries()) {
@@ -69,7 +106,7 @@ export function runBattery({
     results.push(result);
 
     appendFileSync(
-      logPath,
+      reservedLogPath,
       `\n===== ${index + 1}/${commands.length} npm run ${name} (${elapsed}s; exit ${exitCode}${signal ? `; ${signal}` : ""}) =====\n${loggedOutput}`,
     );
     if (result.passed) {
@@ -82,26 +119,36 @@ export function runBattery({
 
   const failed = results.filter((result) => !result.passed);
   const passed = results.length - failed.length;
+  const skippedByHost = new Map();
+  for (const entry of skipped) skippedByHost.set(entry.host, (skippedByHost.get(entry.host) ?? 0) + 1);
+  const skipSummary = skipped.length
+    ? `; ${skipped.length} skipped off-platform (${[...skippedByHost].map(([host, count]) => `${host}: ${count}`).join(", ")})`
+    : "";
   const summary = failed.length
-    ? `BATTERY FAIL ${passed}/${results.length} passed; ${failed.length} failed: ${failed.map((result) => `${result.name} [exit ${result.exitCode}${result.signal ? `, ${result.signal}` : ""}]`).join(", ")}`
-    : `BATTERY PASS ${passed}/${results.length} (0 failed)`;
-  appendFileSync(logPath, `\n\n===== SUMMARY =====\n${summary}\n`);
+    ? `BATTERY FAIL ${passed}/${results.length} passed; ${failed.length} failed: ${failed.map((result) => `${result.name} [exit ${result.exitCode}${result.signal ? `, ${result.signal}` : ""}]`).join(", ")}${skipSummary}`
+    : `BATTERY PASS ${passed}/${results.length} (0 failed)${skipSummary}`;
+  appendFileSync(reservedLogPath, `\n\n===== SUMMARY =====\n${summary}\n`);
   report(summary);
-  report(`Full log: ${logPath}`);
-  return { exitCode: failed.length ? 1 : 0, passed, failed, results, summary, logPath };
+  report(`Full log: ${reservedLogPath}`);
+  return { exitCode: failed.length ? 1 : 0, passed, failed, results, summary, logPath: reservedLogPath, skipped };
 }
 
 export function defaultBatteryLogPath(worktree, tempDir = os.tmpdir()) {
   return path.join(tempDir, `pico-battery-${path.basename(worktree)}.log`);
 }
 
-export function runBatteryCli(args = process.argv.slice(2), defaultWorktree = repoRoot) {
+export function runBatteryCli(args = process.argv.slice(2), {
+  defaultWorktree = repoRoot,
+  gates = GATES,
+  platform = process.platform,
+  runCommand = spawnNpm,
+  report = console.log,
+} = {}) {
   const worktree = args[0] ? path.resolve(args[0]) : defaultWorktree;
   const logPath = args[1] ?? defaultBatteryLogPath(worktree);
-  console.log(`battery checkout: ${worktree}\nlog: ${logPath}\n`);
-  const packageJson = JSON.parse(readFileSync(path.join(worktree, "package.json"), "utf8"));
-  const commands = discoverBatteryCommands(packageJson);
-  return runBattery({ worktree, logPath, commands }).exitCode;
+  const plan = batteryPlan({ platform, gates });
+  report(`battery checkout: ${worktree}\nhost: ${plan.host}\nlog: ${logPath} (a fresh file is reserved if that name is taken)\n`);
+  return runBattery({ worktree, logPath, commands: plan.run, skipped: plan.skipped, runCommand, report }).exitCode;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
