@@ -1,31 +1,86 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { expandHome, run } from "./util.js";
+import {
+  compareVersions,
+  registerDefaultToolchainIO,
+  resolveRootCandidate,
+  scanInstallations,
+  selectInstallation,
+  type InstallationScan,
+  type ToolComponent,
+  type ToolchainIO,
+} from "./toolchainselection.js";
 
 /**
- * Resolution of the PICO spatial tools root. Mirrors the order used by the
- * com.pico.spatial.tools Gradle plugin: local.properties[spatial.tools.dir]
- * -> $PICO_HOME -> the default install location used by the Android Studio
- * Spatial plugin (~/Library/PICO/sdk on macOS).
+ * Host wiring for the PICO spatial toolchain.
+ *
+ * All selection logic lives in ./toolchainselection.ts, which is pure and takes a
+ * ToolchainIO. This file owns the production ToolchainIO built from fs/os/process,
+ * plus the three legacy entry points (resolveToolsRoot / listVersions / pickVersion)
+ * that existing callers still use. They are compatibility adapters: Task S2 migrates
+ * consumers to resolveToolchain(), which additionally identifies the payload bytes.
+ *
+ * Root order (unchanged, and mirrored by the resolver): the com.pico.spatial.tools
+ * Gradle plugin's local.properties[spatial.tools.dir] -> $PICO_HOME -> the default
+ * install location used by the Android Studio Spatial plugin (~/Library/PICO/sdk).
  */
 export const DEFAULT_TOOLS_ROOT = expandHome("~/Library/PICO/sdk");
 export const AVD_HOME = expandHome("~/.pico/avd");
 export const DISCOVERY_DIR = expandHome("~/Library/Caches/TemporaryItems/avd/pico_running");
+
+/** The host-backed ToolchainIO the pure resolver runs against in production. */
+export function hostToolchainIO(): ToolchainIO {
+  return {
+    platform: process.platform,
+    home: os.homedir(),
+    env: process.env,
+    read(target: string): Buffer | null {
+      try {
+        return fs.statSync(target).isFile() ? fs.readFileSync(target) : null;
+      } catch {
+        return null;
+      }
+    },
+    entries(target: string): string[] | null {
+      try {
+        return fs.readdirSync(target);
+      } catch {
+        return null;
+      }
+    },
+    realpath(target: string): string | null {
+      try {
+        return fs.realpathSync(target);
+      } catch {
+        return null;
+      }
+    },
+    executable: isExecutable,
+  };
+}
+registerDefaultToolchainIO(hostToolchainIO);
 
 export interface ToolsRoot {
   root: string;
   source: "local.properties" | "PICO_HOME" | "default";
 }
 
+/**
+ * Compatibility adapter over resolveRootCandidate(). It keeps the legacy contract
+ * exactly — including returning DEFAULT_TOOLS_ROOT on a platform for which the
+ * resolver refuses to invent one — because the callers that still depend on a root
+ * string with no failure channel are migrated in Task S2. It also has nowhere to put
+ * the resolver's ambiguous/property-conflict, so a local.properties that declares two
+ * different spatial.tools.dir values degrades to the default root here; only
+ * resolveToolchain() reports that condition honestly.
+ */
 export function resolveToolsRoot(projectDir?: string): ToolsRoot {
-  if (projectDir) {
-    const lp = path.join(expandHome(projectDir), "local.properties");
-    if (fs.existsSync(lp)) {
-      const m = fs.readFileSync(lp, "utf8").match(/^\s*spatial\.tools\.dir\s*=\s*(.+)\s*$/m);
-      if (m) return { root: expandHome(m[1].trim()), source: "local.properties" };
-    }
+  const candidate = resolveRootCandidate({ androidProjectRoot: projectDir }, hostToolchainIO());
+  if (!("status" in candidate) && candidate.source !== "explicit") {
+    return { root: candidate.root, source: candidate.source };
   }
-  if (process.env.PICO_HOME) return { root: expandHome(process.env.PICO_HOME), source: "PICO_HOME" };
   return { root: DEFAULT_TOOLS_ROOT, source: "default" };
 }
 
@@ -37,35 +92,22 @@ export interface VersionInfo {
   emulatorBin: string | null;
 }
 
-export function listVersions(root: string): VersionInfo[] {
-  if (!fs.existsSync(root)) return [];
-  return fs
-    .readdirSync(root)
-    .filter((d) => /^\d+\.\d+(\.\d+)?$/.test(d))
-    .sort((a, b) => compareVersions(a, b))
-    .map((version) => {
-      const sb = path.join(root, version, "editor", "spatialbundle", "spatialbundle");
-      const emu = path.join(root, version, "emulator", "emulator");
-      const editorDir = path.join(root, version, "editor");
-      const emulatorDir = path.join(root, version, "emulator");
-      return {
-        version,
-        hasEditor: fs.existsSync(editorDir) && fs.readdirSync(editorDir).length > 0,
-        hasEmulator: fs.existsSync(emulatorDir) && fs.readdirSync(emulatorDir).length > 0,
-        spatialbundle: isExecutable(sb) ? sb : null,
-        emulatorBin: isExecutable(emu) ? emu : null,
-      };
-    });
+const LEGACY_COMPONENTS: readonly ToolComponent[] = ["packer", "emulator"];
+
+function versionInfo(install: InstallationScan, io: ToolchainIO): VersionInfo {
+  return {
+    version: install.version,
+    hasEditor: (io.entries(path.join(install.dir, "editor")) ?? []).length > 0,
+    hasEmulator: (io.entries(path.join(install.dir, "emulator")) ?? []).length > 0,
+    spatialbundle: install.components.packer ?? null,
+    emulatorBin: install.components.emulator ?? null,
+  };
 }
 
-function compareVersions(a: string, b: string): number {
-  const pa = a.split(".").map(Number);
-  const pb = b.split(".").map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (d !== 0) return d;
-  }
-  return 0;
+export function listVersions(root: string): VersionInfo[] {
+  const io = hostToolchainIO();
+  const installs = scanInstallations(root, LEGACY_COMPONENTS, io);
+  return installs ? installs.map((install) => versionInfo(install, io)) : [];
 }
 
 function isExecutable(p: string): boolean {
@@ -77,18 +119,35 @@ function isExecutable(p: string): boolean {
   }
 }
 
-/** Pick a usable toolchain version: the requested one, or the newest with the needed payload. */
+/**
+ * Pick a usable toolchain version: the requested one, or the newest carrying the
+ * needed payload. Unlike the pre-S1 behaviour, a requested version that does not
+ * actually contain the requested component is a miss rather than a hit — that is
+ * how an emulator lane used to be handed a packer-only install.
+ */
 export function pickVersion(
   root: string,
   requested?: string,
   need: "editor" | "emulator" | "any" = "any",
 ): VersionInfo | null {
-  const versions = listVersions(root);
-  if (requested) return versions.find((v) => v.version === requested) ?? null;
-  const usable = versions.filter((v) =>
-    need === "editor" ? v.spatialbundle : need === "emulator" ? v.emulatorBin : v.spatialbundle || v.emulatorBin,
+  // An empty root is a caller bug, not an invitation to re-resolve the root order.
+  if (!root) return null;
+  if (need === "any") {
+    const editor = pickVersion(root, requested, "editor");
+    const emulator = pickVersion(root, requested, "emulator");
+    if (!editor) return emulator;
+    if (!emulator) return editor;
+    return compareVersions(editor.version, emulator.version) >= 0 ? editor : emulator;
+  }
+  const io = hostToolchainIO();
+  const chosen = selectInstallation(
+    { toolsRoot: root, toolsVersion: requested, required: [need === "editor" ? "packer" : "emulator"] },
+    io,
   );
-  return usable.length ? usable[usable.length - 1] : null;
+  if ("status" in chosen) return null;
+  const installs = scanInstallations(root, LEGACY_COMPONENTS, io) ?? [];
+  const install = installs.find((candidate) => candidate.version === chosen.installation.version);
+  return install ? versionInfo(install, io) : null;
 }
 
 export function emulatorLibDir(root: string, version: string): string {
