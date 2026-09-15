@@ -88,8 +88,8 @@ export function registerBundleDiffTools(server: McpServer) {
       const sb = ctx.bin;
       const a = await bundleInfo(sb, expandHome(bundleA));
       const b = await bundleInfo(sb, expandHome(bundleB));
-      if ("error" in a) return fail(`bundleA: ${a.error}`);
-      if ("error" in b) return fail(`bundleB: ${b.error}`);
+      if ("error" in a) return fail(`bundleA: ${a.error} (inspected with ${toolchainProvenanceLine(ctx)})`);
+      if ("error" in b) return fail(`bundleB: ${b.error} (inspected with ${toolchainProvenanceLine(ctx)})`);
       const setA = new Set(a.fingerprint), setB = new Set(b.fingerprint);
       const cap = maxLines ?? 60;
       const added = b.fingerprint.filter((l) => !setA.has(l));

@@ -25,6 +25,12 @@ import {
   verifyOperationOverride,
 } from "../dist/toolchain.js";
 import { packAndInspectScene, resolveSceneToolchain } from "../dist/workflow.js";
+import {
+  inspectBundleReport,
+  packerToolchain,
+  resolveSchemaToolchain,
+  schemaUsdDir,
+} from "../dist/bundle.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
@@ -535,6 +541,86 @@ test("version reporting helpers read the tool's output, never a path", () => {
   assert.ok(!reportedVersionMatchesPin("6.1", "6.10.0"));
   assert.ok(!reportedVersionMatchesPin("6.1.1", "6.1.0"));
   assert.ok(!reportedVersionMatchesPin("latest", "6.1.0"));
+});
+
+// ------------------------------------------- overrides are disclosed, and never redirect a read
+
+const INSTALLED_PACKER = "/sdk/6.1/editor/spatialbundle/spatialbundle";
+
+const OVERRIDE_ENV = { PICO_SPATIALBUNDLE: OVERRIDE, PICO_HOME: "/sdk" };
+
+test("scene_schemas reads beside the INSTALLED packer and never spawns, even with the override set", async () => {
+  const io = overrideIO({}, OVERRIDE_ENV);
+  const probe = { calls: 0, fn: async () => { probe.calls += 1; return "spatialbundle 6.1.0.0"; } };
+
+  // $PICO_SPATIALBUNDLE names a packer to RUN. scene_schemas runs nothing — it reads USD schema
+  // files that ship inside the installation — so the override must not move where it reads from.
+  const ctx = await resolveSchemaToolchain({}, io, probe.fn);
+  assert.ok(!("error" in ctx), JSON.stringify(ctx));
+  assert.equal(ctx.binaryOverride, null, "the override must not redirect a data-file lookup");
+  assert.equal(ctx.bin, INSTALLED_PACKER);
+  assert.equal(schemaUsdDir(ctx), "/sdk/6.1/editor/spatialbundle/usd");
+  assert.notEqual(schemaUsdDir(ctx), path.join(path.dirname(OVERRIDE), "usd"));
+  assert.equal(probe.calls, 0, "a schema lookup launches nothing");
+
+  // The secondary defect: a version pin plus an override used to make this lookup spawn
+  // `$PICO_SPATIALBUNDLE --version`. With the override off there is nothing to verify.
+  const pinned = await resolveSchemaToolchain({ toolsVersion: "6.1" }, io, probe.fn);
+  assert.ok(!("error" in pinned));
+  assert.equal(pinned.bin, INSTALLED_PACKER);
+  assert.equal(probe.calls, 0, "a pinned schema lookup still launches nothing");
+
+  // And it still reports which installation the grammar came from.
+  assert.match(toolchainProvenanceLine(pinned), /packer 6\.1 from PICO_HOME \/sdk/);
+  assert.doesNotMatch(toolchainProvenanceLine(pinned), /PICO_SPATIALBUNDLE/);
+});
+
+test("inspect_bundle's body names the binary that decoded the bundle", async () => {
+  const io = overrideIO({}, OVERRIDE_ENV);
+  const ctx = await packerToolchain({}, io);
+  assert.ok(!("error" in ctx));
+  assert.equal(ctx.bin, OVERRIDE, "inspect_bundle RUNS the packer, so the override applies here");
+
+  const body = inspectBundleReport("Model Count: 2\nAsset Count: 5", "{\"schemaVersion\":1}", ctx);
+  assert.match(body, /# spatialbundle info/);
+  assert.match(body, /Model Count: 2/);
+  assert.match(body, /# BundleInfo\.json/);
+  assert.match(body, /schemaVersion/);
+  // The caller never named this binary in the request; the result must say it was used.
+  assert.match(body, /# toolchain/);
+  assert.ok(body.includes(OVERRIDE), "the override path must appear in the result");
+  assert.ok(body.includes(OVERRIDE_SHA.slice(0, 12)), "the override's byte identity must appear too");
+
+  // An absent manifest is still reported honestly, and provenance survives it.
+  const noManifest = inspectBundleReport("Model Count: 0", null, ctx);
+  assert.match(noManifest, /not extractable/);
+  assert.ok(noManifest.includes(OVERRIDE));
+});
+
+test("a packer operation that RUNS the binary still honours the override by default", async () => {
+  const io = overrideIO({}, OVERRIDE_ENV);
+  const ctx = await packerToolchain({}, io);
+  assert.equal(ctx.bin, OVERRIDE);
+  assert.equal(ctx.binaryOverride.file.sha256, OVERRIDE_SHA);
+  // …and the opt-out is explicit, not a default that silently drifted.
+  const optedOut = await packerToolchain({ allowBinaryOverride: false }, io);
+  assert.equal(optedOut.bin, INSTALLED_PACKER);
+  assert.equal(optedOut.binaryOverride, null);
+});
+
+test("every tool result that can run the override discloses which binary ran", () => {
+  // A source-level audit, so a new packer consumer cannot report tool output anonymously.
+  const cases = [
+    ["bundle.ts", /toolchainProvenance\(sb\)/, /toolchainProvenanceLine\(/],
+    ["workflow.ts", /toolchainProvenance\(ctx\)/, /toolchainProvenanceLine\(ctx\)/],
+    ["editorexport.ts", /toolchainProvenance\(ctx\)/, /toolchainProvenanceLine\(ctx\)/],
+    ["bundlediff.ts", /toolchainProvenance\(ctx\)/, /toolchainProvenanceLine\(ctx\)/],
+  ];
+  for (const [name, spread, line] of cases) {
+    const text = fs.readFileSync(path.join(repoRoot, "src", name), "utf8");
+    assert.match(text, spread, `${name} must spread structured provenance into a result`);
+    assert.match(text, line, `${name} must name the binary in a text result`);
+  }
 });
 
 // --------------------------------------------------------------- no independent 0.13 fallback

@@ -64,7 +64,9 @@ export function registerEditorExportTools(server: McpServer) {
       const packArgs = ["pack", "-s", src, "-o", out, "--formats", ...(formats ?? ["usda"]), "--override-output", "--force-build", "--compress-textures", compressTextures ?? "astc6x6"];
       if (projectDir) packArgs.push("-p", expandHome(projectDir));
       const pack = await run(sb, packArgs, { timeoutMs: 600_000 });
-      if (pack.code !== 0 || !fs.existsSync(out)) return fail(`editor_export_bundle: pack failed.\n${tail(pack.stdout + pack.stderr, 40)}`);
+      if (pack.code !== 0 || !fs.existsSync(out)) {
+        return fail(`editor_export_bundle: pack failed with ${toolchainProvenanceLine(ctx)}.\n${tail(pack.stdout + pack.stderr, 40)}`);
+      }
 
       const info = await run(sb, ["info", "-i", out], { timeoutMs: 60_000 });
       const byType: Record<string, number> = {};
@@ -74,7 +76,7 @@ export function registerEditorExportTools(server: McpServer) {
       const physicsCooked = (byType["collisionshape"] ?? 0) > 0;
 
       if (assertPhysics && !physicsCooked) {
-        return fail(`editor_export_bundle: assertPhysics=true but NO cooked collisionshape in ${out}. Does the scene have a 'def SpatialComponent \"CollisionComponent\"' (author_editor_component collision_box)? cooked types: ${JSON.stringify(byType)}`);
+        return fail(`editor_export_bundle: assertPhysics=true but NO cooked collisionshape in ${out} (baked with ${toolchainProvenanceLine(ctx)}). Does the scene have a 'def SpatialComponent \"CollisionComponent\"' (author_editor_component collision_box)? cooked types: ${JSON.stringify(byType)}`);
       }
       const sizeMB = Number((fs.statSync(out).size / 1024 / 1024).toFixed(2));
       return okJson({

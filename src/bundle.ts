@@ -12,28 +12,82 @@ import {
   toolchainProvenanceLine,
   verifyOperationOverride,
   type OperationToolchain,
+  type OverrideVersionProbe,
+  type ToolchainIO,
 } from "./toolchain.js";
 
 export const BUNDLE_CACHE_NOTE =
   "Baking leaves generated assets/BundleCache/ content; exclude BundleCache from APK assets with androidResources.ignoreAssetsPattern and add app/src/main/assets/BundleCache/ to .gitignore.";
 
+export interface PackerToolchainOptions {
+  toolsVersion?: string;
+  androidProjectRoot?: string;
+  /**
+   * Whether $PICO_SPATIALBUNDLE may redirect this operation. True for anything that RUNS the
+   * packer; false for a lookup of data files that ship beside the installed one.
+   */
+  allowBinaryOverride?: boolean;
+}
+
 /**
  * One structural selection per operation, with the explicit $PICO_SPATIALBUNDLE override
  * identified by its bytes rather than by its filename. Every stage of the operation runs the
  * `bin` this returns; nothing re-resolves halfway through.
+ *
+ * `io` and `probe` are injected by tests only; production takes the host defaults.
  */
-async function packerToolchain(opts: { toolsVersion?: string; androidProjectRoot?: string }): Promise<OperationToolchain | { error: string }> {
-  const prepared = resolveOperationToolchain({
-    androidProjectRoot: opts.androidProjectRoot,
-    toolsVersion: opts.toolsVersion,
-    required: ["packer"],
-    primary: "packer",
-    allowBinaryOverride: true,
-  });
+export async function packerToolchain(
+  opts: PackerToolchainOptions,
+  io?: ToolchainIO,
+  probe?: OverrideVersionProbe,
+): Promise<OperationToolchain | { error: string }> {
+  const prepared = resolveOperationToolchain(
+    {
+      androidProjectRoot: opts.androidProjectRoot,
+      toolsVersion: opts.toolsVersion,
+      required: ["packer"],
+      primary: "packer",
+      allowBinaryOverride: opts.allowBinaryOverride ?? true,
+    },
+    io,
+  );
   if (isToolchainFailure(prepared)) return { error: `${prepared.code}: ${prepared.detail}` };
-  const verified = await verifyOperationOverride(prepared);
+  const verified = await verifyOperationOverride(prepared, probe);
   if (isToolchainFailure(verified)) return { error: `${verified.code}: ${verified.detail}` };
   return verified;
+}
+
+/**
+ * scene_schemas reads USD schema files that ship INSIDE the installed toolchain; it never
+ * executes anything. $PICO_SPATIALBUNDLE names a packer to run, not an installation to read
+ * from, so honouring it here would silently move the "authoritative grammar" to whatever
+ * directory happens to sit beside that binary — or fail on a host where the tool used to work.
+ * Keeping the override off also means this lookup never spawns a `--version` probe.
+ */
+export async function resolveSchemaToolchain(
+  opts: PackerToolchainOptions,
+  io?: ToolchainIO,
+  probe?: OverrideVersionProbe,
+): Promise<OperationToolchain | { error: string }> {
+  return packerToolchain({ ...opts, allowBinaryOverride: false }, io, probe);
+}
+
+/** Where scene_schemas looks: the `usd` directory beside the selected packer. */
+export function schemaUsdDir(context: OperationToolchain): string {
+  return path.join(path.dirname(context.bin), "usd");
+}
+
+/**
+ * inspect_bundle's body. The binary that decoded the bundle is named in the output, because a
+ * caller who did not put $PICO_SPATIALBUNDLE in the request must still be able to see that it
+ * decided which binary read these bytes.
+ */
+export function inspectBundleReport(info: string, manifest: string | null, context: OperationToolchain): string {
+  return [
+    `# spatialbundle info\n${info}`,
+    `# BundleInfo.json\n${manifest ?? "(not extractable — older bundle format or no unzip)"}`,
+    `# toolchain\nInspected with ${toolchainProvenanceLine(context)}`,
+  ].join("\n\n");
 }
 
 /** Bake one textured model into a .bundle via spatialbundle. Exported so import_model_catalog can batch it. */
@@ -149,10 +203,10 @@ export function registerBundleTools(server: McpServer) {
       const unzip = await run("unzip", ["-p", p, "BundleInfo.json"], { timeoutMs: 30_000 });
       if (unzip.code === 0 && unzip.stdout.trim()) manifest = unzip.stdout.trim();
       const info = (r.stdout + r.stderr).trim();
-      if (r.code !== 0 && !manifest) return fail(`spatialbundle info failed (exit ${r.code}):\n${info}`);
-      return ok(
-        `# spatialbundle info\n${info}\n\n# BundleInfo.json\n${manifest ? tail(manifest, 120) : "(not extractable — older bundle format or no unzip)"}`,
-      );
+      if (r.code !== 0 && !manifest) {
+        return fail(`spatialbundle info failed (exit ${r.code}) using ${toolchainProvenanceLine(sb)}:\n${info}`);
+      }
+      return ok(inspectBundleReport(info, manifest ? tail(manifest, 120) : null, sb));
     },
   );
 
@@ -234,15 +288,16 @@ export function registerBundleTools(server: McpServer) {
       inputSchema: { toolsVersion: z.string().optional() },
     },
     async ({ toolsVersion }) => {
-      const sb = await packerToolchain({ toolsVersion });
+      const sb = await resolveSchemaToolchain({ toolsVersion });
       if ("error" in sb) return fail(sb.error);
-      const usdDir = path.join(path.dirname(sb.bin), "usd");
+      const usdDir = schemaUsdDir(sb);
       const out: string[] = [];
       for (const lib of ["spatialComponent", "spatialAudio", "spatialTimeline"]) {
         const schema = path.join(usdDir, lib, "resources", "schema.usda");
         if (fs.existsSync(schema)) out.push(`# ${lib} (${schema})\n${fs.readFileSync(schema, "utf8")}`);
       }
       if (!out.length) return fail(`No PICO schema.usda files found under ${usdDir}`);
+      out.push(`# toolchain\nRead from ${toolchainProvenanceLine(sb)}`);
       return ok(out.join("\n\n"));
     },
   );
