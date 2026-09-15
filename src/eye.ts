@@ -9,6 +9,7 @@ import { run, runBinary, okJson, fail, expandHome } from "./util.js";
 import { readCaptureBytes, validateCapture, validateCaptureBuffer } from "./evidence.js";
 import { appendAutoJudgedEntry } from "./ledger.js";
 import { sendXrRecenter } from "./grpc.js";
+import { adbExecutable } from "./adb.js";
 
 /**
  * eye.ts — v6.3 THE TRUSTWORTHY AUTOMATED EYE + DETERMINISTIC CAPTURE (now MR-aware).
@@ -43,10 +44,10 @@ import { sendXrRecenter } from "./grpc.js";
  * escalates — by design, never auto-PASS on a dark-island count that happens to land in the band.
  */
 
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools, identity-keyed so a replaced adb is observed without a restart. */
 function resolveAdb(): string {
-  const c = [process.env.PICO_ADB, path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb"), "/opt/homebrew/bin/adb", "adb"].filter(Boolean) as string[];
-  for (const x of c) if (x === "adb" || fs.existsSync(x)) return x;
-  return "adb";
+  return adbExecutable();
 }
 
 export type FrameMeasurements = {

@@ -1,9 +1,7 @@
-import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, okJson, fail, sleep } from "./util.js";
+import { adbExecutable } from "./adb.js";
 
 /**
  * assert_scene — STRUCTURAL verification via the injected Agent Bridge. Broadcasts `dump_scene`,
@@ -15,15 +13,10 @@ import { run, okJson, fail, sleep } from "./util.js";
  * with capture_frame / verify_visual for the visual ground truth.
  */
 
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools, identity-keyed so a replaced adb is observed without a restart. */
 function resolveAdb(): string {
-  const c = [
-    process.env.PICO_ADB,
-    path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb"),
-    "/opt/homebrew/bin/adb",
-    "adb",
-  ].filter(Boolean) as string[];
-  for (const x of c) if (x === "adb" || fs.existsSync(x)) return x;
-  return "adb";
+  return adbExecutable();
 }
 
 interface Entity { name: string; children: number; comps: string[]; }

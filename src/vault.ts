@@ -1,9 +1,26 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { okJson } from "./util.js";
+import { expandHome, okJson } from "./util.js";
+import { IdentityCache } from "./identitycache.js";
+import { hostToolchainIO } from "./toolchain.js";
+import { isVersionToken, resolveRootCandidate } from "./toolchainselection.js";
+import {
+  hostDeclarationIO,
+  loadVerifiedCompatibilityEvidence,
+  parsePackageRevision,
+  readCompatibilityIndex,
+  readDeclarationIdentity,
+  resolveDeclarationContext,
+  SDK_COMPATIBILITY_DATA_DIR,
+  SDK_COMPATIBILITY_INDEX_PATH,
+} from "./declarationcontext.js";
+import type { CompatibilityIndexResult, CompatibilityLoadResult, DeclarationContext, DeclarationIO, DeclarationIdentityResult, VerifiedCompatibilityEvidence } from "./declarationcontext.js";
+import { readProjectSdkIdentity } from "./projectidentity.js";
+import type { ProjectSdkIdentity } from "./projectidentity.js";
 
 /**
  * vault.ts — v14.6 the AGENT-VAULT SYMBOL INDEX + the preflight vault check.
@@ -29,8 +46,18 @@ import { okJson } from "./util.js";
  * have no declarations, only doc samples), so ui imports are skipped — validating them would
  * false-positive on every SpatialUI panel we emit.
  *
- * The index is memoized per vault root; parsing the 1.3MB api-reference takes ~50ms, so there is
- * deliberately NO disk cache (a cache adds a staleness bug class to save 50ms once per process).
+ * The index is memoized per vault root and keyed on that root's CONTENT (package metadata +
+ * declaration filenames and hashes), so a vault replaced in place is re-read rather than answered
+ * from the copy that was there at startup. Parsing the 1.3MB api-reference takes ~50ms, so there
+ * is deliberately NO disk cache (a cache adds a staleness bug class to save 50ms once per process).
+ *
+ * Task S5 — declaration AUTHORITY is explicit and versioned. A vault answers for the package
+ * revision its package.xml declares and nothing else: every lookup is labeled `historical` unless
+ * a reviewed compatibility record (declarationcontext.ts) verifies these exact declaration bytes
+ * against the project's exact resolved SDK artifacts. The root/version/workspace resolution below
+ * is unified on the selected PICO tools root; an explicit vault path is an explicitly identified
+ * SOURCE, never proof of target compatibility; a version label is bounded to a numeric token and
+ * never names a path; and no revision is inferred from a directory name.
  */
 
 export interface VaultParam {
@@ -451,47 +478,147 @@ export function parseVaultFile(text: string, fileName: string, out: VaultType[])
   }
 }
 
-// ── index loading (memoized per root; no disk cache — see header comment) ───────────────────────────────
+// ── index loading (keyed on the vault's CONTENT; no disk cache — see header comment) ────────────────────
 
-const memo = new Map<string, VaultIndex | null>();
+/**
+ * Task S4 — one IdentityCache per vault root, keyed on what that root actually holds.
+ *
+ * A vault root is a directory the CLI's utility payload materializes and REPLACES: `pico-cli
+ * setup` after an SDK upgrade rewrites `knowledge/api-reference/` in place. The previous memo was
+ * keyed on the root string alone, so the first successful load of a long-lived server answered
+ * every later query — an agent told to ground its Kotlin in "the authoritative declarations" was
+ * being handed the declarations of a vault that had already been replaced, with a file:line
+ * citation pointing into bytes that no longer existed. Keying on the canonical root, the package
+ * metadata and every declaration file's name + content makes a swap a cache miss.
+ *
+ * Still per-root rather than one global entry, because `vault_diff` deliberately loads two roots
+ * back to back and neither should evict the other. Absence is still never cached.
+ */
+const memo = new Map<string, IdentityCache<VaultIndex | null>>();
+
+/**
+ * The selected PICO tools root the vault workspaces live under — the same candidate chain the
+ * toolchain resolver uses (explicit $PICO_HOME, else the documented platform default). On a
+ * platform with no documented default the historical `~/Library/PICO/sdk` spelling is kept so
+ * nothing that used to resolve stops resolving; it is not a new platform default.
+ */
+export function vaultSdkBase(): string {
+  const candidate = resolveRootCandidate({}, hostToolchainIO());
+  if ("root" in candidate) return candidate.root;
+  return path.join(os.homedir(), "Library", "PICO", "sdk");
+}
+
+/** `<base>/<version>/agent-vault` for a NUMERIC version label only; anything else is null (never a path). */
+export function vaultRootForVersion(version: string): string | null {
+  if (!isVersionToken(version)) return null;
+  return path.join(vaultSdkBase(), version, "agent-vault");
+}
 
 export function defaultVaultRoot(): string {
-  return process.env.PICO_AGENT_VAULT || path.join(os.homedir(), "Library", "PICO", "sdk", "0.13", "agent-vault");
+  return process.env.PICO_AGENT_VAULT || path.join(vaultSdkBase(), "0.13", "agent-vault");
+}
+
+export type VaultRootSource = "explicit" | "version" | "env" | "default";
+export type VaultSelection =
+  | { status: "ok"; root: string; source: VaultRootSource; version: string | null }
+  | { status: "unavailable"; code: "version-invalid" | "root-invalid"; detail: string };
+
+/**
+ * explicit vaultRoot (an explicitly identified source) > numeric sdkVersion under the selected
+ * base > $PICO_AGENT_VAULT > the 0.13 default. A version label that is not `\d+.\d+[.\d+]` is
+ * refused rather than joined into a path, so `../x` can never reach outside the tools root.
+ */
+export function resolveVaultSelection(hints: { vaultRoot?: string; sdkVersion?: string } = {}): VaultSelection {
+  const explicit = (hints.vaultRoot ?? "").trim();
+  if (explicit) {
+    const expanded = expandHome(explicit);
+    if (!path.isAbsolute(expanded)) {
+      return { status: "unavailable", code: "root-invalid", detail: `vaultRoot ${JSON.stringify(explicit)} is not an absolute path; an explicit vault root must name its location outright (relative roots are not resolved against the server's working directory)` };
+    }
+    return { status: "ok", root: path.resolve(expanded), source: "explicit", version: null };
+  }
+  const version = hints.sdkVersion ?? "";
+  if (version !== "") {
+    const root = vaultRootForVersion(version);
+    if (!root) {
+      return { status: "unavailable", code: "version-invalid", detail: `sdkVersion ${JSON.stringify(version)} is not a numeric version label (expected 0.13 or 6.1.0); a version label selects a workspace under ${vaultSdkBase()} and never names a path` };
+    }
+    return { status: "ok", root, source: "version", version };
+  }
+  if (process.env.PICO_AGENT_VAULT) return { status: "ok", root: process.env.PICO_AGENT_VAULT, source: "env", version: null };
+  return { status: "ok", root: defaultVaultRoot(), source: "default", version: null };
+}
+
+const sha256 = (bytes: Buffer): string => crypto.createHash("sha256").update(bytes).digest("hex");
+
+/**
+ * The identity of a vault root: where it really is, what revision it declares, and the exact
+ * declaration files it carries. Reading the bytes is the same I/O the load performs anyway — the
+ * cache saves the parse, which is the expensive half.
+ */
+function vaultIdentity(root: string, apiDir: string, files: string[]): string {
+  let canonical: string;
+  try {
+    canonical = fs.realpathSync(root);
+  } catch {
+    canonical = path.resolve(root);
+  }
+  let metadata = "absent";
+  try {
+    metadata = sha256(fs.readFileSync(path.join(root, "package.xml")));
+  } catch {
+    /* package.xml is optional metadata; its ABSENCE is part of the identity too */
+  }
+  const declarations = [...files].sort().map((f) => {
+    try {
+      return `${f}\0${sha256(fs.readFileSync(path.join(apiDir, f)))}`;
+    } catch {
+      return `${f}\0unreadable`;
+    }
+  });
+  return [canonical, metadata, ...declarations].join("\n");
 }
 
 export function loadVaultIndex(vaultRoot?: string): VaultIndex | null {
   const root = vaultRoot ?? defaultVaultRoot();
-  if (memo.has(root)) return memo.get(root)!;
-  let index: VaultIndex | null = null;
+  const apiDir = path.join(root, "knowledge", "api-reference");
+  let files: string[];
   try {
-    const apiDir = path.join(root, "knowledge", "api-reference");
-    const files = fs.readdirSync(apiDir).filter((f) => f.endsWith(".md"));
-    if (files.length) {
-      const all: VaultType[] = [];
-      for (const f of files) parseVaultFile(fs.readFileSync(path.join(apiDir, f), "utf8"), f, all);
-      const packages = new Map<string, Map<string, VaultType>>();
-      for (const ty of all) {
-        let m = packages.get(ty.package);
-        if (!m) packages.set(ty.package, (m = new Map()));
-        m.set(ty.name, ty);
-      }
-      let sdkVersion: string | null = null;
-      try {
-        const xml = fs.readFileSync(path.join(root, "package.xml"), "utf8");
-        const rm = /<revision><major>(\d+)<\/major><minor>(\d+)<\/minor>(?:<micro>(\d+)<\/micro>)?/.exec(xml);
-        if (rm) sdkVersion = rm[3] !== undefined ? `${rm[1]}.${rm[2]}.${rm[3]}` : `${rm[1]}.${rm[2]}`;
-      } catch {
-        /* version is optional metadata */
-      }
-      index = { vaultRoot: root, sdkVersion, packages, typeCount: all.length, fileCount: files.length };
-    }
+    files = fs.readdirSync(apiDir).filter((f) => f.endsWith(".md"));
   } catch {
-    index = null;
+    return null;
   }
-  // memoize ONLY successful loads — a server started before utility provisioning must pick the vault
-  // up once it appears (the retry cost of an absent vault is a single failed readdirSync)
-  if (index) memo.set(root, index);
-  return index;
+  if (!files.length) return null;
+
+  let cache = memo.get(root);
+  if (!cache) memo.set(root, (cache = new IdentityCache<VaultIndex | null>()));
+  return cache.getOr(
+    vaultIdentity(root, apiDir, files),
+    (): VaultIndex | null => {
+      try {
+        const all: VaultType[] = [];
+        for (const f of files) parseVaultFile(fs.readFileSync(path.join(apiDir, f), "utf8"), f, all);
+        const packages = new Map<string, Map<string, VaultType>>();
+        for (const ty of all) {
+          let m = packages.get(ty.package);
+          if (!m) packages.set(ty.package, (m = new Map()));
+          m.set(ty.name, ty);
+        }
+        let sdkVersion: string | null = null;
+        try {
+          sdkVersion = parsePackageRevision(fs.readFileSync(path.join(root, "package.xml"), "utf8"));
+        } catch {
+          /* version is optional metadata for the symbol index; declaration AUTHORITY requires it (declarationcontext.ts) */
+        }
+        return { vaultRoot: root, sdkVersion, packages, typeCount: all.length, fileCount: files.length };
+      } catch {
+        return null;
+      }
+    },
+    // memoize ONLY successful loads — a server started before utility provisioning must pick the
+    // vault up once it appears (the retry cost of an absent vault is a single failed readdirSync)
+    (index) => index !== null,
+  );
 }
 
 /**
@@ -775,13 +902,184 @@ const fmtParam = (p: VaultParam) => `${p.name}: ${p.type}${p.hasDefault ? " = <d
 const DEFAULT_VAULT_SDK_VERSION = "0.13.3";
 const SDK_600_DRIFT_DOC = "docs/SDK_6_0_0_DRIFT.md";
 
-function vaultProvenance(index: VaultIndex | null) {
+// ── declaration authority (Task S5) ─────────────────────────────────────────────────────────────────────
+
+export interface DeclarationAuthorityHints {
+  /** An Android project root whose declared BOM / resolved SDK the answer should be bound to. A hint, not an identity. */
+  projectRoot?: string;
+  /** Reviewed compatibility records to consider; only paths listed in the packaged index can ever be accepted. */
+  recordPaths?: readonly string[];
+}
+
+export type SymbolAuthority = "unavailable" | "historical" | "unknown" | "incompatible" | "target-compatible";
+
+/**
+ * The state of the package-owned reviewed index, reported DISTINCTLY from "no records": an
+ * index that is missing (not packaged, not readable) or invalid (schema, or a referenced file
+ * whose bytes no longer match) means nothing can be verified — which is not the same fact as a
+ * present index that lists no reviewed mappings yet.
+ */
+export interface CompatibilityIndexState {
+  status: "present" | "missing" | "invalid";
+  path: string;
+  code: string | null;
+  detail: string | null;
+  records: number;
+}
+
+export function describeCompatibilityIndex(io: DeclarationIO = hostDeclarationIO()): { state: CompatibilityIndexState; result: CompatibilityIndexResult } {
+  const result = readCompatibilityIndex(io);
+  const state: CompatibilityIndexState = result.status === "ok"
+    ? { status: "present", path: SDK_COMPATIBILITY_INDEX_PATH, code: null, detail: null, records: result.index.records.length }
+    : { status: result.code === "index-missing" ? "missing" : "invalid", path: SDK_COMPATIBILITY_INDEX_PATH, code: result.code, detail: result.detail, records: 0 };
+  return { state, result };
+}
+
+export interface DeclarationAuthorityReport {
+  compatibilityIndex: CompatibilityIndexState;
+  declarationIdentity:
+    | { status: "ok"; root: string; packageRevision: string | null; authority: "declarations" | "prose"; fingerprint: string; sourceCount: number }
+    | { status: "unavailable"; code: string; detail: string };
+  target: { projectRoot: string; fingerprint: string; declaredBom: string | null; status: ProjectSdkIdentity["status"]; reasons: readonly string[] } | null;
+  evidence: {
+    index: string;
+    accepted: { id: string; path: string; sha256: string; verdict: "compatible" | "incompatible"; targetBom: string; symbols: readonly string[] }[];
+    rejected: readonly { path: string; code: string; detail: string }[];
+  } | null;
+  context: { status: DeclarationContext["status"]; evidencePaths: readonly string[]; verifiedSymbols: readonly string[] } | null;
+  note: string;
+}
+
+/** What describeDeclarationAuthority read: the public report plus the SDK-owned objects the door result is derived from. */
+export interface DeclarationAuthority {
+  report: DeclarationAuthorityReport;
+  identity: DeclarationIdentityResult;
+  target: ProjectSdkIdentity | null;
+  accepted: readonly VerifiedCompatibilityEvidence[];
+  context: DeclarationContext | null;
+}
+
+function contextNote(identity: DeclarationIdentityResult, target: ProjectSdkIdentity | null, context: DeclarationContext | null, loaded: CompatibilityLoadResult | null, compatibilityIndex: CompatibilityIndexState): string {
+  if (identity.status !== "ok") {
+    return `Declaration identity unavailable (${identity.code}): ${identity.detail}. The symbol index below (when present) is a HISTORICAL lookup with no declared package revision behind it and no target authority.`;
+  }
+  const revision = identity.identity.packageRevision ?? "an undeclared revision";
+  if (identity.identity.authority === "prose") {
+    return `${identity.identity.root} carries prose documentation only (${revision}); prose never grants declaration authority.`;
+  }
+  if (!target) {
+    return `HISTORICAL lookup: these declarations describe package revision ${revision} as materialized at ${identity.identity.root}. No project was supplied, so nothing here is target-verified — pass projectRoot to bind the answer to a project's declared BOM and resolved SDK artifacts.`;
+  }
+  const bom = target.declaredBom ?? "no literal BOM";
+  const rejections = loaded?.rejected.length ? ` Rejected records: ${loaded.rejected.map((r) => `${r.code}`).join(", ")}.` : "";
+  switch (context?.status) {
+    case "target-compatible":
+      return `Target-verified: a reviewed compatibility record binds these ${revision} declarations to project ${target.projectRoot} (BOM ${bom}) for the listed verifiedSymbols only; any other symbol remains unknown.${rejections}`;
+    case "incompatible":
+      return `INCOMPATIBLE: a reviewed record verifies that at least one scoped signature of these ${revision} declarations does NOT hold for project ${target.projectRoot} (BOM ${bom}); verifiedSymbols lists the scopes that do.${rejections}`;
+    default: {
+      const why = compatibilityIndex.status === "missing"
+        ? `the reviewed compatibility index is missing (${compatibilityIndex.code}: ${compatibilityIndex.detail}), so nothing can be verified`
+        : compatibilityIndex.status === "invalid"
+          ? `the reviewed compatibility index is invalid (${compatibilityIndex.code}: ${compatibilityIndex.detail}), so nothing can be verified`
+          : compatibilityIndex.records === 0 && !loaded?.rejected.length
+            ? `the reviewed compatibility index lists no records, so nothing verifies these ${revision} declarations`
+            : `no reviewed compatibility record verifies these ${revision} declarations`;
+      return `Target linkage UNKNOWN for project ${target.projectRoot} (BOM ${bom}, identity ${target.status}): ${why}. Treat every declaration as historical ${revision} truth, not as a statement about the project's SDK.${rejections}`;
+    }
+  }
+}
+
+/**
+ * Read the vault's declaration identity, the project's declared identity (when a root hint is
+ * given) and whatever reviewed evidence links them. Hints select what is READ; nothing in them is
+ * trusted as an identity, a fingerprint or a verdict — the SDK-owned reader and loader decide.
+ */
+export function describeDeclarationAuthority(vaultRoot: string, hints: DeclarationAuthorityHints = {}, io: DeclarationIO = hostDeclarationIO()): DeclarationAuthority {
+  const identity = readDeclarationIdentity(vaultRoot, io);
+  const target = hints.projectRoot?.trim() ? readProjectSdkIdentity(hints.projectRoot.trim()) : null;
+  const { state: compatibilityIndex, result: index } = describeCompatibilityIndex(io);
+  let loaded: CompatibilityLoadResult | null = null;
+  let context: DeclarationContext | null = null;
+  if (identity.status === "ok") {
+    if (target) {
+      const indexed = index.status === "ok" ? index.index.records.map((r) => path.join(SDK_COMPATIBILITY_DATA_DIR, ...r.path.split("/"))) : [];
+      const paths = hints.recordPaths?.length ? hints.recordPaths : indexed;
+      loaded = loadVerifiedCompatibilityEvidence(paths, identity.identity, target, io);
+    }
+    context = resolveDeclarationContext(identity.identity, target, loaded?.accepted ?? []);
+  }
+  const report: DeclarationAuthorityReport = {
+    compatibilityIndex,
+    declarationIdentity: identity.status === "ok"
+      ? { status: "ok", root: identity.identity.root, packageRevision: identity.identity.packageRevision, authority: identity.identity.authority, fingerprint: identity.identity.fingerprint, sourceCount: identity.identity.sources.length }
+      : { status: "unavailable", code: identity.code, detail: identity.detail },
+    target: target ? { projectRoot: target.projectRoot, fingerprint: target.fingerprint, declaredBom: target.declaredBom, status: target.status, reasons: target.reasons } : null,
+    evidence: loaded
+      ? {
+        index: SDK_COMPATIBILITY_INDEX_PATH,
+        accepted: loaded.accepted.map((e) => ({ id: e.id, path: e.record.path, sha256: e.record.sha256, verdict: e.verdict, targetBom: e.targetBom, symbols: e.symbols })),
+        rejected: loaded.rejected,
+      }
+      : null,
+    context: context ? { status: context.status, evidencePaths: context.evidencePaths, verifiedSymbols: context.verifiedSymbols } : null,
+    note: contextNote(identity, target, context, loaded, compatibilityIndex),
+  };
+  return { report, identity, target, accepted: loaded?.accepted ?? [], context };
+}
+
+export interface LookupHeadline {
+  symbolAuthority: SymbolAuthority;
+  /** `target-verified` only when the headline is a verified verdict; everything else is a historical lookup. */
+  lookup: "historical" | "target-verified";
+  /** Exactly the returned matches that are inside the verified-compatible scope. */
+  verifiedMatches: string[];
+  /** Exactly the returned matches that a verified record marks incompatible. */
+  incompatibleMatches: string[];
+}
+
+/**
+ * The headline for ONE lookup over the matches it returns. Conservative in both directions: any
+ * match a verified record marks incompatible headlines `incompatible`; `target-compatible` requires
+ * EVERY returned match to be in the verified scope — one verified `Entity` beside an unverified
+ * same-named `Entity` from another package is `unknown`, with `verifiedMatches` naming the one.
+ */
+export function lookupHeadline(authority: Pick<DeclarationAuthority, "identity" | "target" | "accepted" | "context">, matchNames: readonly string[]): LookupHeadline {
+  const none = { lookup: "historical" as const, verifiedMatches: [] as string[], incompatibleMatches: [] as string[] };
+  if (authority.identity.status !== "ok" || !authority.context) return { symbolAuthority: "unavailable", ...none };
+  if (!authority.target) return { symbolAuthority: "historical", ...none };
+  const { context } = authority;
+  if (context.status === "unknown" || authority.identity.identity.authority !== "declarations") return { symbolAuthority: "unknown", ...none };
+  const applicable = authority.accepted.filter((e) => context.evidencePaths.includes(e.record.path));
+  const incompatible = new Set(applicable.filter((e) => e.verdict === "incompatible").flatMap((e) => [...e.symbols]));
+  const names = [...new Set(matchNames)];
+  const incompatibleMatches = names.filter((name) => incompatible.has(name));
+  const verifiedMatches = names.filter((name) => context.verifiedSymbols.includes(name));
+  const symbolAuthority: SymbolAuthority = incompatibleMatches.length
+    ? "incompatible"
+    : names.length > 0 && verifiedMatches.length === names.length
+      ? "target-compatible"
+      : "unknown";
+  return {
+    symbolAuthority,
+    lookup: symbolAuthority === "target-compatible" || symbolAuthority === "incompatible" ? "target-verified" : "historical",
+    verifiedMatches,
+    incompatibleMatches,
+  };
+}
+
+function vaultProvenance(index: VaultIndex | null, selection?: VaultSelection, authority?: DeclarationAuthority) {
+  const identity = authority?.identity;
   return {
     declarationSource: "PICO agent-vault knowledge/api-reference",
     defaultSdkVersion: DEFAULT_VAULT_SDK_VERSION,
     activeSdkVersion: index?.sdkVersion ?? null,
+    packageRevision: identity?.status === "ok" ? identity.identity.packageRevision : null,
+    declarationAuthority: identity?.status === "ok" ? identity.identity.authority : "unavailable",
+    vaultRoot: selection?.status === "ok" ? selection.root : null,
+    rootSource: selection?.status === "ok" ? selection.source : null,
     sdk600DriftDoc: SDK_600_DRIFT_DOC,
-    note: `Default declarations come from the ${DEFAULT_VAULT_SDK_VERSION} vault; the app skeleton builds on SDK 6.0.0. Consult ${SDK_600_DRIFT_DOC} for the measured near-zero public-API drift caveat.`,
+    note: `Default declarations come from the ${DEFAULT_VAULT_SDK_VERSION} vault and are HISTORICAL: they describe that package revision. The app skeleton builds on SDK 6.0.0; ${SDK_600_DRIFT_DOC} records the measured near-zero public-API drift as historical evidence, not target authority. A declaration is target-verified only when a reviewed record in ${SDK_COMPATIBILITY_INDEX_PATH} verifies against the local vault bytes and the project's exact resolved SDK artifacts.`,
   };
 }
 
@@ -804,18 +1102,56 @@ export function registerVaultTools(server: McpServer) {
     "vault_api",
     {
       description:
-        "Look up the EXACT declaration of a PICO Spatial SDK symbol in the agent-vault api-reference (authoritative SDK truth, materialized by the CLI's separately provisioned utility payload) — constructors with param names/order/defaults, @param unit docs ('measured in degrees'), properties, functions, enum entries, supertypes, and the vault file:line citation. The default declarations come from the 0.13.3 vault; the app skeleton builds on SDK 6.0.0, whose measured near-zero public-API drift caveat is documented in docs/SDK_6_0_0_DRIFT.md. Consult BEFORE emitting Kotlin that calls an SDK API you have not used before — all-Float signatures compile silently with swapped/wrong-unit args (the createCapsule and SpotLightComponent bugs). Accepts a simple name ('RigidBodyComponent'), dotted nested name ('AnchorComponent.TrackingMode'), or full FQN.",
+        "Look up the EXACT declaration of a PICO Spatial SDK symbol in the agent-vault api-reference (materialized by the CLI's separately provisioned utility payload) — constructors with param names/order/defaults, @param unit docs ('measured in degrees'), properties, functions, enum entries, supertypes, and the vault file:line citation. AUTHORITY IS EXPLICIT: the default declarations come from the 0.13.3 vault and every answer is labeled with the package revision its package.xml declares; the app skeleton builds on SDK 6.0.0, and docs/SDK_6_0_0_DRIFT.md records the measured near-zero public-API drift as historical evidence, not target authority. Pass projectRoot to bind the answer to that project's declared BOM: the result then reports declarationIdentity, target and declarationContext (target-compatible / unknown / incompatible) from SDK-owned reading of local bytes and reviewed compatibility records — hints select what is read, they never assert a verdict. Without a verified linkage the lookup is historical/unknown and says so. Consult BEFORE emitting Kotlin that calls an SDK API you have not used before — all-Float signatures compile silently with swapped/wrong-unit args (the createCapsule and SpotLightComponent bugs). Accepts a simple name ('RigidBodyComponent'), dotted nested name ('AnchorComponent.TrackingMode'), or full FQN.",
       inputSchema: {
         symbol: z.string().describe("Type name to look up: simple ('ShapeResource'), nested dotted ('Entity.CloneOptions'), or fully qualified ('com.pico.spatial.core.ecs.RigidBodyComponent')."),
-        sdkVersion: z.string().optional().describe("v26: query a specific materialized vault workspace (e.g. '0.13' -> ~/Library/PICO/sdk/0.13/agent-vault; see vault_workspaces). Default: the active vault."),
+        sdkVersion: z.string().optional().describe("v26: query a materialized vault workspace by NUMERIC version label (e.g. '0.13' -> <tools root>/0.13/agent-vault; see vault_workspaces). Not a path, and not a claim about what the declarations are — the answer reports the revision package.xml declares. Default: the active vault."),
+        vaultRoot: z.string().optional().describe("Explicit agent-vault root to read instead of the version/default resolution. An explicitly identified SOURCE, not proof of target compatibility."),
+        projectRoot: z.string().optional().describe("Android project root hint: its declared BOM and identity are read statically (never Gradle) and reviewed compatibility evidence is verified against it. Omit for a plain historical lookup."),
+        recordPaths: z.array(z.string()).optional().describe("Reviewed compatibility record paths to consider. Only records listed in the packaged reviewed index can be accepted; a caller path never adds a trust anchor."),
       },
     },
-    async ({ symbol, sdkVersion }) => {
-      const root = sdkVersion ? path.join(os.homedir(), "Library", "PICO", "sdk", sdkVersion, "agent-vault") : undefined;
+    async ({ symbol, sdkVersion, vaultRoot, projectRoot, recordPaths }) => {
+      const selection = resolveVaultSelection({ vaultRoot, sdkVersion });
+      if (selection.status !== "ok") {
+        return okJson({
+          status: "unavailable", code: selection.code, symbol: symbol.trim(), symbolAuthority: "unavailable" as SymbolAuthority,
+          note: `${selection.detail}. agent-vault workspaces live under ${vaultSdkBase()} (override the default with PICO_AGENT_VAULT). ${managedSetupGuidance}`,
+          compatibilityIndex: describeCompatibilityIndex().state,
+          vaultProvenance: vaultProvenance(null, selection),
+        });
+      }
+      const root = selection.root;
+      const authority = describeDeclarationAuthority(root, { projectRoot, recordPaths });
       const index = loadVaultIndex(root);
       if (!index) {
-        return okJson({ status: "unavailable", note: `agent-vault not found (${root ?? `default ${defaultVaultRoot()}`}, override with PICO_AGENT_VAULT). ${managedSetupGuidance}`, vaultProvenance: vaultProvenance(null) });
+        return okJson({
+          status: "unavailable", symbol: symbol.trim(), symbolAuthority: "unavailable" as SymbolAuthority,
+          note: `agent-vault not found (${selection.source === "default" ? `default ${root}` : `${root} from ${selection.source}`}, override with PICO_AGENT_VAULT). ${managedSetupGuidance}`,
+          vaultSelection: { root, source: selection.source, version: selection.version },
+          declarationIdentity: authority.report.declarationIdentity,
+          target: authority.report.target,
+          compatibilityIndex: authority.report.compatibilityIndex,
+          vaultProvenance: vaultProvenance(null, selection, authority),
+        });
       }
+      // The headline is computed over the matches a result RETURNS, never over the query string
+      // alone: every returned match must be verified before the result is called target-verified.
+      const authorityFields = (matchNames: readonly string[]) => {
+        const headline = lookupHeadline(authority, matchNames);
+        return {
+          symbolAuthority: headline.symbolAuthority,
+          lookup: headline.lookup,
+          verifiedMatches: headline.verifiedMatches,
+          incompatibleMatches: headline.incompatibleMatches,
+          vaultSelection: { root, source: selection.source, version: selection.version },
+          declarationIdentity: authority.report.declarationIdentity,
+          target: authority.report.target,
+          compatibilityIndex: authority.report.compatibilityIndex,
+          declarationContext: authority.report.context ? { ...authority.report.context, rejected: authority.report.evidence?.rejected ?? [], note: authority.report.note } : { status: "unavailable" as const, rejected: [], note: authority.report.note },
+          vaultProvenance: vaultProvenance(index, selection, authority),
+        };
+      };
       const wanted = symbol.trim();
       const matches: VaultType[] = [];
       let memberNote: string | undefined;
@@ -861,23 +1197,35 @@ export function registerVaultTools(server: McpServer) {
           for (const [name, t] of m)
             if (name.toLowerCase().includes(needle)) near.add(t.qualifiedName);
         const docHits = searchVaultDocs(wanted, index.vaultRoot);
+        const revisionLabel = authority.identity.status === "ok" && authority.identity.identity.packageRevision ? `package revision ${authority.identity.identity.packageRevision}` : `SDK ${index.sdkVersion ?? "?"} (revision undeclared)`;
+        // With a target whose linkage is not verified, an absence is a fact about the HISTORICAL
+        // declarations only — it must never read as "the target SDK lacks this symbol".
+        const absenceScope = authority.target
+          ? ` This absence is a fact about the historical ${revisionLabel} declarations; it says nothing about project ${authority.target.projectRoot}'s SDK (${authority.target.declaredBom ?? "no literal BOM"}) — target linkage is ${authority.context?.status ?? "unavailable"}.`
+          : "";
         if (docHits.length) {
           return okJson({
             status: "documented-only", sdkVersion: index.sdkVersion, symbol: wanted,
-            note: "NOT in api-reference/ (which covers the ECS/type surface), but documented in the vault's prose docs — this is the SpatialUI/Compose surface: modifiers, composables and gesture functions. The symbol is REAL; the api-reference simply does not carry it. Read the cited doc for the call shape — do NOT invent parameters it does not show.",
+            note: "NOT in api-reference/ (which covers the ECS/type surface), but documented in the vault's prose docs — this is the SpatialUI/Compose surface: modifiers, composables and gesture functions. The symbol is REAL; the api-reference simply does not carry it. Read the cited doc for the call shape — do NOT invent parameters it does not show. Prose is secondary evidence and grants no declaration authority." + absenceScope,
             documentation: docHits,
-            vaultProvenance: vaultProvenance(index),
+            ...authorityFields([wanted]),
             ...(near.size ? { similar: [...near].slice(0, 10) } : {}),
           });
         }
         return okJson({
           status: "not-found", sdkVersion: index.sdkVersion, symbol: wanted,
-          note: "no vault declaration and no prose-doc mention — either the symbol does not exist in SDK " + (index.sdkVersion ?? "?") + " or it is a vault coverage gap (cf. GaussianSplatting*). Do NOT invent a signature.",
-          vaultProvenance: vaultProvenance(index),
+          note: `no vault declaration and no prose-doc mention in the ${revisionLabel} vault — either the symbol does not exist in that revision or it is a vault coverage gap (cf. GaussianSplatting*). Do NOT invent a signature.` + absenceScope,
+          ...authorityFields([wanted]),
           ...(near.size ? { similar: [...near].slice(0, 10) } : {}),
         });
       }
-      return okJson({ status: "ok", sdkVersion: index.sdkVersion, ...(memberNote ? { note: memberNote } : {}), matches: matches.slice(0, 5).map(typeCard), vaultProvenance: vaultProvenance(index) });
+      const returned = matches.slice(0, 5);
+      return okJson({
+        status: "ok", sdkVersion: index.sdkVersion,
+        ...(memberNote ? { note: memberNote } : {}),
+        matches: returned.map(typeCard),
+        ...authorityFields(returned.map((t) => t.qualifiedName)),
+      });
     },
   );
 }

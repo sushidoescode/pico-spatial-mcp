@@ -1,9 +1,7 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { fail, ok, okJson, run, sleep } from "./util.js";
+import { adbExecutable } from "./adb.js";
 
 /**
  * generate_scene_understanding_kotlin — the CORRECT native surface-pin path (sense/plane).
@@ -48,15 +46,10 @@ import { fail, ok, okJson, run, sleep } from "./util.js";
  * drives it through the Agent Bridge and parses the inventory back out of logcat.
  */
 
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools, identity-keyed so a replaced adb is observed without a restart. */
 function resolveAdb(): string {
-  const c = [
-    process.env.PICO_ADB,
-    path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb"),
-    "/opt/homebrew/bin/adb",
-    "adb",
-  ].filter(Boolean) as string[];
-  for (const x of c) if (x === "adb" || fs.existsSync(x)) return x;
-  return "adb";
+  return adbExecutable();
 }
 
 export interface ProbedPlane {

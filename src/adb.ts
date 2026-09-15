@@ -1,18 +1,215 @@
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { fail, image, ok, okJson, run, runBinary, sleep, tail } from "./util.js";
-import { findAdb, pickVersion, resolveToolsRoot } from "./toolchain.js";
+import { hostToolchainIO } from "./toolchain.js";
+import { executableCandidates } from "./picocli.js";
+import { executableNames, resolveRootCandidate, selectInstallation, type FileIdentity, type ToolchainIO } from "./toolchainselection.js";
+import { IdentityCache } from "./identitycache.js";
 
-let cachedAdb: string | null = null;
+/**
+ * THE one adb lookup (Task S4).
+ *
+ * Before this, every consumer carried its own copy of `[$PICO_ADB, <literal 0.13 path>,
+ * /opt/homebrew/bin/adb, "adb"]`, so on a host carrying both 0.13 and 6.1 every capture, deploy
+ * and verification ran the 0.13 adb while the structural selection chose 6.1 — measured on this
+ * repo's own machine. `src/adb.ts` additionally memoized its answer in a `cachedAdb` that no
+ * toolchain change could ever dislodge.
+ *
+ * Precedence, one chain for every consumer:
+ *   1. explicit `$PICO_ADB` — it must exist, be executable and be readable, and its BYTES are
+ *      disclosed, so a pinned adb is identified rather than trusted by filename. It fails CLOSED:
+ *      a set-but-unusable override is refused outright and NOTHING else is probed, because
+ *      quietly running a different binary than the one an operator named is the failure this
+ *      whole task exists to remove. `adbExecutable` turns that refusal into a throw.
+ *   2. PATH — searched in JS through the shared PATH/PATHEXT helper, never a POSIX `which`
+ *      subprocess, so the lookup is identical on Windows and costs no process.
+ *   3. the SELECTED toolchain's bundled `adb` component — the S1 selection, so it follows the
+ *      installation this server is otherwise using instead of a hardcoded version directory.
+ *
+ * Caching: keyed on the winning candidate's identity (source + path + size + mtime), so a
+ * replaced or removed adb, a changed `$PICO_ADB`, a changed PATH or a toolchain switch is
+ * observed inside one process. Absence is never cached. Only the sha256 is skipped on a hit —
+ * the candidate chain is re-walked every call.
+ */
+
+export type AdbSource = "explicit" | "path" | "bundled";
+
+/** A set-but-unusable `$PICO_ADB`, reported rather than hidden behind the candidate that won. */
+export interface AdbOverrideRejection {
+  path: string;
+  reason: string;
+}
+
+export type AdbResolution =
+  | { status: "ok"; path: string; source: AdbSource; identity: FileIdentity; overrideRejected: AdbOverrideRejection | null; probed: readonly string[] }
+  | { status: "unavailable"; code: string; detail: string; overrideRejected: AdbOverrideRejection | null; probed: readonly string[] };
+
+/** The selection IO plus the cheap stat that decides whether a payload needs re-hashing. */
+export interface AdbIO extends ToolchainIO {
+  stat?(target: string): { size: number; mtimeMs: number } | null;
+}
+
+export function hostAdbIO(): AdbIO {
+  return {
+    ...hostToolchainIO(),
+    stat(target: string) {
+      try {
+        const s = fs.statSync(target);
+        return s.isFile() ? { size: s.size, mtimeMs: s.mtimeMs } : null;
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+const adbCache = new IdentityCache<{ status: "ok"; path: string; source: AdbSource; identity: FileIdentity }>();
+
+/** Tests only: prove a cache miss. Production never needs it — the key does the work. */
+export function clearAdbResolutionCache(): void {
+  adbCache.clear();
+}
+
+/** The bundled candidate, resolved through the S1 selection WITHOUT hashing a multi-MB payload. */
+function bundledAdbCandidate(io: AdbIO): string | null {
+  const root = resolveRootCandidate({}, io);
+  if ("status" in root) return null;
+  const chosen = selectInstallation({ toolsRoot: root.root, required: ["adb"] }, io);
+  if ("status" in chosen) return null;
+  return chosen.installation.components.adb ?? null;
+}
+
+function identityKey(source: AdbSource, target: string, io: AdbIO): string {
+  const stat = io.stat?.(target);
+  // Without a stat (fixtures, exotic IO) the key falls back to the content itself: correct, just
+  // not cheap. It never falls back to the path alone — that is the staleness this task removes.
+  if (!stat) {
+    const bytes = io.read(target);
+    return `${source}\0${target}\0sha:${bytes ? crypto.createHash("sha256").update(bytes).digest("hex") : "unreadable"}`;
+  }
+  return `${source}\0${target}\0${stat.size}\0${stat.mtimeMs}`;
+}
+
+/**
+ * Resolve the adb executable this process should run, with its provenance and byte identity.
+ * Structural only: nothing is executed and no device connection is opened.
+ */
+export function resolveAdbExecutable(io: AdbIO = hostAdbIO()): AdbResolution {
+  const P = io.platform === "win32" ? path.win32 : path.posix;
+  const probed: string[] = [];
+
+  const refuseOverride = (rejection: AdbOverrideRejection): AdbResolution => ({
+    status: "unavailable",
+    code: "unavailable/adb-override-unusable",
+    detail:
+      `$PICO_ADB=${rejection.path} ${rejection.reason}. An explicitly configured adb is never ` +
+      "replaced by a PATH or bundled candidate, so no fallback was attempted — correct $PICO_ADB, " +
+      "or unset it to use PATH and the selected toolchain's bundled platform-tools.",
+    overrideRejected: rejection,
+    probed,
+  });
+
+  // Candidates are probed in precedence order and the walk STOPS at the first usable one, so a
+  // host whose adb is on PATH never scans the tools root.
+  const pick = ():
+    | { kind: "winner"; source: AdbSource; path: string }
+    | { kind: "override-rejected"; rejection: AdbOverrideRejection }
+    | { kind: "none" } => {
+    const declared = (io.env.PICO_ADB ?? "").trim();
+    if (declared) {
+      probed.push(declared);
+      // An explicit configuration fails CLOSED, like every other explicit root and pin on this
+      // track. Falling through to PATH would run a different binary than the operator named, and
+      // the caller — which only ever sees the resolved string — would have no way to notice.
+      if (io.realpath(declared) === null) {
+        return { kind: "override-rejected", rejection: { path: declared, reason: "names no existing file" } };
+      }
+      if (!io.executable(declared)) {
+        return { kind: "override-rejected", rejection: { path: declared, reason: "is not an executable file" } };
+      }
+      return { kind: "winner", source: "explicit", path: declared };
+    }
+    for (const name of executableNames("adb", io.platform)) {
+      for (const candidate of executableCandidates(name, io.env, io.platform)) {
+        probed.push(candidate);
+        if (io.executable(candidate)) return { kind: "winner", source: "path", path: candidate };
+      }
+    }
+    const bundled = bundledAdbCandidate(io);
+    if (bundled) {
+      probed.push(bundled);
+      if (io.executable(bundled)) return { kind: "winner", source: "bundled", path: bundled };
+    }
+    return { kind: "none" };
+  };
+
+  const picked = pick();
+  if (picked.kind === "override-rejected") return refuseOverride(picked.rejection);
+  if (picked.kind === "none") {
+    return {
+      status: "unavailable",
+      code: "unavailable/adb-missing",
+      detail: `adb not found on PATH or in the PICO emulator's bundled platform-tools (probed: ${probed.join(", ") || "nothing"})`,
+      overrideRejected: null,
+      probed,
+    };
+  }
+
+  const winner = picked;
+  const resolved = adbCache.getOr(
+    identityKey(winner.source, P.normalize(winner.path), io),
+    () => {
+      const bytes = io.read(winner.path);
+      return {
+        status: "ok" as const,
+        path: winner.path,
+        source: winner.source,
+        identity: {
+          path: winner.path,
+          // Empty means the payload could not be read (a directory, or X_OK without R_OK). It is an
+          // absence of evidence, never a hash — and it is not published, so a file that becomes
+          // readable is picked up on the next call.
+          sha256: bytes ? crypto.createHash("sha256").update(bytes).digest("hex") : "",
+        },
+      };
+    },
+    (value) => value.identity.sha256 !== "",
+  );
+  if (winner.source === "explicit" && !resolved.identity.sha256) {
+    // An override whose bytes cannot be read cannot be identified, and identifying it is the whole
+    // point of naming one explicitly. This also catches $PICO_ADB pointing at a directory, which
+    // passes an X_OK check.
+    return refuseOverride({ path: winner.path, reason: "is not a readable regular file, so the bytes it would be identified by cannot be disclosed" });
+  }
+  return { ...resolved, overrideRejected: null, probed };
+}
+
+/**
+ * The executable a consumer runs.
+ *
+ * An unusable EXPLICIT `$PICO_ADB` throws: it is an operator error, not a degraded host, and every
+ * consumer reaches this through a string, so a fall-through would substitute a different binary
+ * for an install or a capture with nothing in that operation's own result to say so. Throwing puts
+ * it on each caller's existing handler error path instead.
+ *
+ * No adb anywhere is NOT a throw — the bare name is returned exactly as before, so that failure
+ * still lands at the spawn where it always did rather than at a new throw inside a handler that
+ * used to degrade.
+ */
+export function adbExecutable(io: AdbIO = hostAdbIO()): string {
+  const resolved = resolveAdbExecutable(io);
+  if (resolved.status === "ok") return resolved.path;
+  if (resolved.overrideRejected) throw new Error(resolved.detail);
+  return "adb";
+}
 
 export async function adbPath(): Promise<string> {
-  if (cachedAdb) return cachedAdb;
-  const { root } = resolveToolsRoot();
-  const sel = pickVersion(root, undefined, "emulator");
-  const adb = await findAdb(root, sel?.version);
-  if (!adb) throw new Error("adb not found on PATH or in the PICO emulator's bundled platform-tools");
-  cachedAdb = adb;
-  return adb;
+  const resolved = resolveAdbExecutable();
+  if (resolved.status !== "ok") throw new Error(resolved.detail);
+  return resolved.path;
 }
 
 export async function adb(args: string[], timeoutMs = 60_000) {

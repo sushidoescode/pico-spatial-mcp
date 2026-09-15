@@ -1,0 +1,227 @@
+{
+  "sdkVersion": "0.13.3",
+  "artifacts": {
+    "design": "com.pico.spatial.ui:design:0.13.3",
+    "foundation": "com.pico.spatial.ui:foundation:0.13.3",
+    "platform": "com.pico.spatial.ui:platform:0.13.3",
+    "core": "com.pico.spatial.core:core:0.13.3"
+  },
+  "entries": [
+    {
+      "symbol": "Subwindow",
+      "import": "com.pico.spatial.ui.design.windows.Subwindow",
+      "signature": "@Composable fun Subwindow(rotation3D: Rotation3D? = null, followViewpoints: Set<ViewPoint> = ViewPoint.All, placement: SubwindowPlacement = SubwindowPlacement.Default, offset: DpOffset3D = getGap(getLayoutDirection(placement)), focusable: Boolean = true, content: @Composable BoxScope.() -> Unit)",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:design:0.13.3",
+      "source": "design-0.13.3-sources.jar!/com/pico/spatial/ui/design/windows/Subwindow.kt"
+    },
+    {
+      "symbol": "SubwindowPlacement",
+      "import": "com.pico.spatial.ui.design.windows.SubwindowPlacement",
+      "signature": "enum class SubwindowPlacement { Default, Left, Right }",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:design:0.13.3",
+      "source": "design-0.13.3-sources.jar!/com/pico/spatial/ui/design/windows/Subwindow.kt"
+    },
+    {
+      "symbol": "ViewPoint",
+      "import": "com.pico.spatial.ui.platform.ViewPoint",
+      "signature": "enum class ViewPoint(val value: Int) { Front(0), Right(1), Back(2), Left(3); companion object { val FrontOnly = setOf(Front); val All = setOf(Front, Right, Back, Left) } }",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:platform:0.13.3",
+      "source": "platform-0.13.3-sources.jar!/com/pico/spatial/ui/platform/VolumeViewPointManager.kt"
+    },
+    {
+      "symbol": "DpOffset3D",
+      "import": "com.pico.spatial.ui.foundation.geometry.DpOffset3D",
+      "signature": "class DpOffset3D(val x: Dp, val y: Dp, val z: Dp)",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:foundation:0.13.3",
+      "source": "foundation-0.13.3-sources.jar!/com/pico/spatial/ui/foundation/geometry/Offset3D.kt"
+    },
+    {
+      "symbol": "SpatialAppScope",
+      "import": "com.pico.spatial.ui.foundation.dsl.SpatialAppScope",
+      "signature": "interface SpatialAppScope { val context: Context; val density: Density }; fun Application.launch(block: SpatialAppScope.() -> Unit)",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:foundation:0.13.3",
+      "source": "foundation-0.13.3-sources.jar!/com/pico/spatial/ui/foundation/dsl/SpatialAppScope.kt"
+    },
+    {
+      "symbol": "DefaultStage",
+      "import": "com.pico.spatial.ui.foundation.dsl.DefaultStage",
+      "signature": "fun SpatialAppScope.DefaultStage(content: @Composable StageScope.() -> Unit)",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:foundation:0.13.3",
+      "source": "foundation-0.13.3-sources.jar!/com/pico/spatial/ui/foundation/dsl/Stage.kt"
+    },
+    {
+      "symbol": "WindowContainer",
+      "import": "com.pico.spatial.ui.foundation.dsl.WindowContainer",
+      "signature": "fun SpatialAppScope.WindowContainer(id: String, form: Form? = null, defaultSize: WindowContainerSize? = null, resizeType: ContainerResizeType? = null, defaultResizeRestriction: ContainerResizeRestriction? = null, enableMaterialBackground: Boolean? = null, volumeAlignment: VolumeAlignment? = null, defaultVolumeBasePanelType: VolumeBasePanelType? = null, defaultCaptionBarType: CaptionBarType? = null, placement: (PlacementContext.() -> Placement)? = null, targetActivity: Class<out ComponentActivity>? = null, worldScale: WorldScale? = null, content: @Composable WindowContainerScope.() -> Unit); fun SpatialAppScope.WindowContainer(id: String, form: Form? = null, properties: ContainerProperties.() -> Unit = {}, content: @Composable WindowContainerScope.() -> Unit)",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:foundation:0.13.3",
+      "source": "foundation-0.13.3-sources.jar!/com/pico/spatial/ui/foundation/dsl/WindowContainer.kt"
+    },
+    {
+      "symbol": "WindowContainerSize",
+      "import": "com.pico.spatial.ui.foundation.dsl.WindowContainerSize",
+      "signature": "class WindowContainerSize { constructor(width: Float, height: Float, depth: Float, unit: LengthUnit?); constructor(width: Dp, height: Dp, depth: Dp = Dp.Unspecified) }",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:foundation:0.13.3",
+      "source": "foundation-0.13.3-sources.jar!/com/pico/spatial/ui/foundation/dsl/WindowContainerSize.kt"
+    },
+    {
+      "symbol": "LocalSpatialNavigator",
+      "import": "com.pico.spatial.ui.platform.containers.LocalSpatialNavigator",
+      "signature": "used members declared in interface SpatialNavigator: fun openWindowContainer(id: String, tag: String? = null, bundle: Bundle? = null); fun closeWindowContainer(id: String, tag: String? = null); fun closeWindowContainer(); val LocalSpatialNavigator = compositionLocalOf<SpatialNavigator> { error(\"No LocalSpatialContainerNavigator provided\") }",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:platform:0.13.3",
+      "source": "platform-0.13.3-sources.jar!/com/pico/spatial/ui/platform/containers/SpatialNavigator.kt"
+    },
+    {
+      "symbol": "SpatialContainerScope.bundle",
+      "import": "receiver member; no standalone bundle import",
+      "signature": "interface SpatialContainerScope { val bundle: Bundle? }; interface WindowContainerScope : SpatialContainerScope, WindowContainerConstraintsScope",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:platform:0.13.3",
+      "source": "platform-0.13.3-sources.jar!/com/pico/spatial/ui/platform/containers/SpatialContainerScope.kt"
+    },
+    {
+      "symbol": "Bundle/bundleOf",
+      "import": "android.os.Bundle; androidx.core.os.bundleOf",
+      "signature": "public fun bundleOf(vararg pairs: Pair<String, Any?>): Bundle; public fun bundleOf(): Bundle = Bundle(0)",
+      "sdkVersion": "0.13.3",
+      "artifact": "androidx.core:core-ktx:1.13.0; Android platform",
+      "source": "core-ktx-1.13.0-sources.jar!/androidx/core/os/Bundle.kt; Android SDK android/os/Bundle.java"
+    },
+    {
+      "symbol": "ContainerResizeType.ContentSize",
+      "import": "com.pico.spatial.ui.platform.resize.ContainerResizeType",
+      "signature": "enum class ContainerResizeType { Automatic, ContentMinSize, ContentSize }",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:platform:0.13.3",
+      "source": "platform-0.13.3-sources.jar!/com/pico/spatial/ui/platform/resize/ContainerResizeType.kt"
+    },
+    {
+      "symbol": "windowConstraints",
+      "import": "WindowContainerConstraintsScope receiver member; no standalone import",
+      "signature": "fun Modifier.windowConstraints(minWidth: Dp = Dp.Unspecified, minHeight: Dp = Dp.Unspecified, maxWidth: Dp = Dp.Unspecified, maxHeight: Dp = Dp.Unspecified, minDepth: Dp = Dp.Unspecified, maxDepth: Dp = Dp.Unspecified): Modifier; fun Modifier.windowConstraints(width: Dp, height: Dp, depth: Dp = Dp.Unspecified): Modifier",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:platform:0.13.3",
+      "source": "platform-0.13.3-sources.jar!/com/pico/spatial/ui/platform/resize/WindowConstraintsModifier.kt"
+    },
+    {
+      "symbol": "detectSpatialTapGesture",
+      "import": "com.pico.spatial.ui.foundation.gesture.detectSpatialTapGesture",
+      "signature": "suspend fun PointerInputScope.detectSpatialTapGesture(context: Context, targetedToEntity: TargetEntity? = null, onTap: (value: SpatialTapValue) -> Unit)",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:foundation:0.13.3",
+      "source": "foundation-0.13.3-sources.jar!/com/pico/spatial/ui/foundation/gesture/SpatialTapGestureDetector.kt"
+    },
+    {
+      "symbol": "detectSpatialDragGesture",
+      "import": "com.pico.spatial.ui.foundation.gesture.detectSpatialDragGesture",
+      "signature": "suspend fun PointerInputScope.detectSpatialDragGesture(context: Context, targetedToEntity: TargetEntity? = null, onDragStart: (location: Offset3D) -> Unit = {}, onDragEnd: () -> Unit = {}, onDragCancel: () -> Unit = {}, onDrag: (dragValue: SpatialDragValue) -> Unit); class SpatialDragValue(val dragAmount: Offset3D, val interactionKind: InteractionKind, val inputDevicePose: InputDevicePose, val targetEntity: Entity? = null)",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:foundation:0.13.3",
+      "source": "foundation-0.13.3-sources.jar!/com/pico/spatial/ui/foundation/gesture/SpatialDragGestureDetector.kt"
+    },
+    {
+      "symbol": "detectSpatialScaleGesture",
+      "import": "com.pico.spatial.ui.foundation.gesture.detectSpatialScaleGesture",
+      "signature": "suspend fun PointerInputScope.detectSpatialScaleGesture(context: Context, targetedToEntity: TargetEntity? = null, onScaleStart: () -> Unit = {}, onScaleEnd: () -> Unit = {}, onScaleCancel: () -> Unit = {}, onScale: (scale: SpatialScaleValue) -> Unit); class SpatialScaleValue(val centroid: NormalizedPoint3D, val scaleValue: Float, val leftInteractionKind: InteractionKind, val rightInteractionKind: InteractionKind, val targetEntity: Entity? = null)",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:foundation:0.13.3",
+      "source": "foundation-0.13.3-sources.jar!/com/pico/spatial/ui/foundation/gesture/SpatialScaleGestureDetector.kt"
+    },
+    {
+      "symbol": "TargetEntity",
+      "import": "com.pico.spatial.ui.foundation.gesture.TargetEntity",
+      "signature": "sealed class TargetEntity private constructor() { companion object { @Stable fun hit(entity: Entity): TargetEntity = EntityTreeTarget(entity) } }",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:foundation:0.13.3",
+      "source": "foundation-0.13.3-sources.jar!/com/pico/spatial/ui/foundation/gesture/TargetEntity.kt"
+    },
+    {
+      "symbol": "InteractableComponent",
+      "import": "com.pico.spatial.core.ecs.InteractableComponent",
+      "signature": "public class InteractableComponent : Component(); Entity nested declaration: public class ComponentSet internal constructor() : Collection<Component> { public inline fun <reified T : Component> set(component: T) { this[T::class.java] = component } }",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.core:core:0.13.3",
+      "source": "core-0.13.3-sources.jar!/com/pico/spatial/core/ecs/InteractableComponent.kt; core-0.13.3-sources.jar!/com/pico/spatial/core/ecs/Entity.kt"
+    },
+    {
+      "symbol": "CollisionComponent + ShapeResource.createBox",
+      "import": "com.pico.spatial.core.ecs.CollisionComponent; com.pico.spatial.core.ecs.resource.ShapeResource",
+      "signature": "public class CollisionComponent : Component { public constructor(collisionShape: List<ShapeResource>, physicsMaterial: PhysicsMaterialResource, collisionResponseMode: CollisionResponseMode = COLLIDER_FULL, collisionFilter: CollisionFilter = CollisionFilter.COLLISION_FILTER_DEFAULT, collisionInfoDetailLevel: CollisionInfoDetailLevel = CollisionInfoDetailLevel.BRIEF) }; public class ShapeResource { public companion object { public fun createBox(size: Vector3): ShapeResource } }",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.core:core:0.13.3",
+      "source": "core-0.13.3-sources.jar!/com/pico/spatial/core/ecs/CollisionComponent.kt; core-0.13.3-sources.jar!/com/pico/spatial/core/ecs/resource/ShapeResource.kt"
+    },
+    {
+      "symbol": "LocalPhysicalLengthConverter/LengthUnit",
+      "import": "com.pico.spatial.ui.platform.LocalPhysicalLengthConverter; com.pico.spatial.ui.platform.LengthUnit",
+      "signature": "object LocalPhysicalLengthConverter { val current: PhysicalLengthConverter @Composable get() }; interface PhysicalLengthConverter : Density { fun dpToLength(dp: Dp, lengthUnit: LengthUnit): Float; fun lengthToDp(length: Float, lengthUnit: LengthUnit): Dp }; enum class LengthUnit { Meters, Centimeters }",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:platform:0.13.3",
+      "source": "platform-0.13.3-sources.jar!/com/pico/spatial/ui/platform/PhysicalLengthConverter.kt"
+    },
+    {
+      "symbol": "TitleBar",
+      "import": "com.pico.spatial.ui.design.TitleBar",
+      "signature": "@Composable fun TitleBar(title: @Composable BoxScope.() -> Unit, modifier: Modifier = Modifier, leadingActions: (@Composable RowScope.() -> Unit)? = null, trailingActions: (@Composable RowScope.() -> Unit)? = null, contentPadding: PaddingValues = TitleBarDefaults.HorizontalPadding, leadingGap: Dp = TitleBarDefaults.ActionsGap, trailingGap: Dp = TitleBarDefaults.ActionsGap, titleAlignment: TitleAlignment = TitleAlignment.Center, colors: TitleBarColors = TitleBarDefaults.titleBarColors())",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:design:0.13.3",
+      "source": "design-0.13.3-sources.jar!/com/pico/spatial/ui/design/TitleBar.kt"
+    },
+    {
+      "symbol": "Toolbar",
+      "import": "com.pico.spatial.ui.design.windows.Toolbar",
+      "signature": "@Composable fun Toolbar(cornerSize: Dp = ToolbarDefaults.CornerRadius, followViewpoints: Set<ViewPoint> = ViewPoint.All, focusable: Boolean = true, content: @Composable RowScope.() -> Unit); segmented overload: @Composable fun Toolbar(followViewpoints: Set<ViewPoint> = ViewPoint.All, focusable: Boolean = true, contentConfiguration: ToolbarSegmentConfiguration = ToolbarDefaults.contentConfiguration(), supportingConfiguration: ToolbarSegmentConfiguration = ToolbarDefaults.supportingConfiguration(), supportingContent: (@Composable RowScope.() -> Unit)? = null, content: @Composable RowScope.() -> Unit); emitted cornerSize = 32.dp selects and disambiguates the legacy overload",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:design:0.13.3",
+      "source": "design-0.13.3-sources.jar!/com/pico/spatial/ui/design/windows/Toolbar.kt"
+    },
+    {
+      "symbol": "TabBar",
+      "import": "com.pico.spatial.ui.design.windows.TabBar",
+      "signature": "@Composable fun TabBar(followViewpoints: Set<ViewPoint> = ViewPoint.All, focusable: Boolean = true, extraContentHeight: Dp = TabBarDefaults.ExpandedContentHeight, content: TabBarScope.() -> Unit); interface TabBarScope { fun item(selected: Boolean, onClick: () -> Unit, mainContent: @Composable () -> Unit, modifier: Modifier = Modifier, badge: @Composable (() -> Unit)? = null, supportContent: @Composable (() -> Unit)? = null, extraContent: @Composable (() -> Unit)? = null) }",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:design:0.13.3",
+      "source": "design-0.13.3-sources.jar!/com/pico/spatial/ui/design/windows/TabBar.kt"
+    },
+    {
+      "symbol": "Sheet",
+      "import": "com.pico.spatial.ui.design.windows.Sheet",
+      "signature": "@Composable fun Sheet(modifier: Modifier = Modifier, properties: DialogProperties = SheetDefaults.DefaultSheetsProperties, onDismissRequest: (() -> Unit)? = null, cornerRadius: Dp = SheetDefaults.CornerRadius, followViewpoints: Set<ViewPoint> = ViewPoint.All, contentPadding: PaddingValues = SheetDefaults.ContentPadding, contentSpace: Dp = SheetDefaults.ContentSpace, title: (@Composable () -> Unit)? = null, leadingAction: (@Composable () -> Unit)? = { DefaultCloseIconButton(onClick = { onDismissRequest?.invoke() }) }, trailingAction: (@Composable () -> Unit)? = null, bottom: (@Composable () -> Unit)? = null, content: @Composable () -> Unit)",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:design:0.13.3",
+      "source": "design-0.13.3-sources.jar!/com/pico/spatial/ui/design/windows/Sheets.kt"
+    },
+    {
+      "symbol": "SnackbarHost (no public Snackbar composable)",
+      "import": "com.pico.spatial.ui.design.windows.SnackbarHost",
+      "signature": "@Composable fun SnackbarHost(content: @Composable () -> Unit); private @Composable fun Snackbar(snackData: SnackbarData)",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:design:0.13.3",
+      "source": "design-0.13.3-sources.jar!/com/pico/spatial/ui/design/windows/Snackbar.kt"
+    },
+    {
+      "symbol": "CoachmarkBox/SimpleCoachmark",
+      "import": "com.pico.spatial.ui.design.windows.CoachmarkBox; com.pico.spatial.ui.design.windows.SimpleCoachmark",
+      "signature": "@Composable fun CoachmarkBox(coachmark: @Composable CoachmarkScope.() -> Unit, modifier: Modifier = Modifier, showCoachmark: Boolean = true, direction: CoachmarkDirection = CoachmarkDirection.ToEnd, gap: Dp = CoachmarkDefaults.DefaultGap, content: @Composable BoxScope.() -> Unit); @Composable fun CoachmarkScope.SimpleCoachmark(text: @Composable () -> Unit, modifier: Modifier = Modifier, button: (@Composable () -> Unit)? = null, backgroundColor: Color = CoachmarkDefaults.DefaultBackgroundColor, cornerSize: Dp = LocalTokensBearer.current.dimension.RadiusMedium)",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:design:0.13.3",
+      "source": "design-0.13.3-sources.jar!/com/pico/spatial/ui/design/windows/Coachmark.kt"
+    },
+    {
+      "symbol": "SegmentControl/SegmentItem",
+      "import": "com.pico.spatial.ui.design.SegmentControl; com.pico.spatial.ui.design.SegmentItem",
+      "signature": "@Composable fun SegmentControl(modifier: Modifier = Modifier, backgroundColor: Color = SegmentControlDefaults.backgroundColor, itemSpace: Dp = SegmentControlDefaults.ItemSpace, contentPadding: Dp = SegmentControlDefaults.ContainerPadding, cornerRadius: Dp = SegmentControlDefaults.Small.containerCornerRadius(), content: @Composable RowScope.() -> Unit); @Composable fun RowScope.SegmentItem(selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, interactionSource: MutableInteractionSource = remember { MutableInteractionSource() }, textStyle: TextStyle = SegmentControlDefaults.Small.textStyle(), colors: SegmentControlColors = SegmentControlDefaults.colors(), title: (@Composable () -> Unit)? = null, icon: (@Composable () -> Unit)? = null, contentPadding: PaddingValues = SegmentControlDefaults.Small.itemContentPadding(), gap: Dp = SegmentControlDefaults.ItemGap)",
+      "sdkVersion": "0.13.3",
+      "artifact": "com.pico.spatial.ui:design:0.13.3",
+      "source": "design-0.13.3-sources.jar!/com/pico/spatial/ui/design/SegmentControls.kt"
+    }
+  ]
+}

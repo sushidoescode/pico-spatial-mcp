@@ -1,7 +1,10 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveToolsRoot } from "./toolchain.js";
+import { resolveHostToolchain } from "./toolchain.js";
+import { serializeJavaProperty, TOOLS_DIR_PROPERTY, type SelectedToolchain } from "./toolchainselection.js";
+import { readProjectSdkIdentity } from "./projectidentity.js";
 
 /**
  * projectgen.ts — v29.3: emit a complete, buildable PICO spatial Android project from the
@@ -19,7 +22,14 @@ import { resolveToolsRoot } from "./toolchain.js";
  *    generate_app_wiring overwrites both when an AppSpec drives the build — same contract as
  *    the clone path had.
  *  - local.properties is GENERATED per machine (sdk.dir detection + spatial.tools.dir),
- *    never shipped.
+ *    never shipped. The tools root written there comes from ONE explicit toolchain selection
+ *    (supplied by the caller, or resolved once before the destination is created), and it is
+ *    reported back in GenerateResult — a generated project should never have to be re-probed
+ *    to learn which installation it was pointed at.
+ *  - The dependency catalog is COPIED, never rewritten. The host's tool installation and the
+ *    project's BOM are different facts: appskeleton/gradle/libs.versions.toml pins the Spatial
+ *    SDK BOM, and changing the tools a machine happens to carry must not move it. The copy is
+ *    verified byte-for-byte below, and its declared BOM is disclosed as templateBom.
  *  - `_gitignore` files are stored dot-less (npm pack silently drops `.gitignore`) and emitted
  *    as `.gitignore`.
  *
@@ -139,6 +149,20 @@ export interface GenerateOptions {
   appName: string;
   stageStyle: "1" | "2" | "3";
   rootProjectName?: string;
+  /**
+   * The toolchain this project is generated against. Supplied: used as-is, and its `root` is
+   * what lands in local.properties — the caller has already chosen, and generation must not
+   * silently re-choose. Omitted: resolved ONCE below, before the destination exists.
+   */
+  toolchain?: SelectedToolchain;
+}
+
+/** What the generator copied out of the packaged skeleton, so a caller can prove it was unchanged. */
+export interface TemplateBomProvenance {
+  /** The BOM version the template declares, read statically — null when it cannot be read. */
+  declaredBom: string | null;
+  /** sha256 of the GENERATED gradle/libs.versions.toml; equal to the skeleton's by construction. */
+  catalogSha256: string;
 }
 
 export interface GenerateResult {
@@ -149,6 +173,27 @@ export interface GenerateResult {
   filesWritten: number;
   sourceDir: string;
   homeStage: string;
+  /** The exact selection written into local.properties. Never inferred after the fact. */
+  toolchain: SelectedToolchain;
+  templateBom: TemplateBomProvenance;
+}
+
+const CATALOG_REL = "gradle/libs.versions.toml";
+const sha256File = (file: string): string => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+
+/**
+ * A selection reaches here from a tool input as much as from TypeScript, so its shape is checked
+ * at runtime. Rejecting it BEFORE the destination is created is the point: a half-written project
+ * pointed at an unusable toolchain is worse than no project.
+ */
+function requireUsableSelection(selection: unknown): SelectedToolchain {
+  const candidate = selection as Partial<SelectedToolchain> & { code?: string; detail?: string };
+  if (typeof candidate !== "object" || candidate === null || candidate.status !== "ok" || typeof candidate.root !== "string" || candidate.root === "") {
+    const code = typeof candidate?.code === "string" ? candidate.code : `${candidate?.status ?? "missing"}/unusable-selection`;
+    const detail = typeof candidate?.detail === "string" ? candidate.detail : "the supplied toolchain selection is not an ok selection with a root";
+    throw new Error(`cannot generate a project against this toolchain: ${code} — ${detail}`);
+  }
+  return candidate as SelectedToolchain;
 }
 
 /**
@@ -164,6 +209,13 @@ export function generateSpatialProject(opts: GenerateOptions): GenerateResult {
   if (!skel.ok) throw new Error(`packaged app skeleton incomplete at ${skel.root} — missing: ${skel.missing.join(", ")} (reinstall the package)`);
   if (fs.existsSync(dst)) throw new Error(`Target already exists: ${dst}`);
   if (!/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/.test(packageName)) throw new Error(`invalid packageName: ${packageName}`);
+
+  // ONE selection, resolved before anything is written. An unusable host toolchain is a
+  // structured failure here, not a project pointed at a directory that does not exist.
+  const toolchain = requireUsableSelection(opts.toolchain ?? resolveHostToolchain({ required: ["packer"] }));
+  const templateCatalog = path.join(SKELETON_ROOT, ...CATALOG_REL.split("/"));
+  const templateCatalogSha = sha256File(templateCatalog);
+  const templateBom: TemplateBomProvenance = { declaredBom: readProjectSdkIdentity(SKELETON_ROOT).declaredBom, catalogSha256: templateCatalogSha };
 
   const pkgPath = packageName.replace(/\./g, "/");
   const rootName = (opts.rootProjectName ?? path.basename(dst)).replace(/[^A-Za-z0-9._-]+/g, "-") || "spatialapp";
@@ -194,13 +246,21 @@ export function generateSpatialProject(opts: GenerateOptions): GenerateResult {
   fs.chmodSync(path.join(dst, "gradlew"), 0o755);
   fs.chmodSync(path.join(dst, "gradlew.bat"), 0o755);
 
+  // The dependency catalog is the project's identity, not the machine's. Nothing above may
+  // rewrite it; if anything ever does, that is a defect, not a result to hand back.
+  const generatedCatalog = path.join(dst, ...CATALOG_REL.split("/"));
+  const generatedCatalogSha = sha256File(generatedCatalog);
+  if (generatedCatalogSha !== templateCatalogSha)
+    throw new Error(`generation rewrote ${CATALOG_REL} (template ${templateCatalogSha.slice(0, 12)} -> generated ${generatedCatalogSha.slice(0, 12)}) — the project BOM must be copied verbatim`);
+
   // local.properties — machine-specific by definition, so always generated, never shipped.
-  const { root: toolsRoot } = resolveToolsRoot();
+  // Escaped per java.util.Properties.store, which is what Gradle reads it back with: a tools
+  // root with a space, a drive letter, a '#' or a non-ASCII character must survive verbatim.
   const sdkDir = detectAndroidSdkDir();
   const lp = [
     "# Generated by pico-spatial-mcp (machine-specific — do not commit).",
-    ...(sdkDir ? [`sdk.dir=${sdkDir.split(path.sep).join("/")}`] : []),
-    `spatial.tools.dir=${toolsRoot.split(path.sep).join("/")}`,
+    ...(sdkDir ? [serializeJavaProperty("sdk.dir", sdkDir.split(path.sep).join("/"))] : []),
+    serializeJavaProperty(TOOLS_DIR_PROPERTY, toolchain.root.split(path.sep).join("/")),
     "",
   ].join("\n");
   fs.writeFileSync(path.join(dst, "local.properties"), lp);
@@ -215,5 +275,7 @@ export function generateSpatialProject(opts: GenerateOptions): GenerateResult {
     filesWritten,
     sourceDir,
     homeStage: path.join(sourceDir, "content/HomeStage.kt"),
+    toolchain,
+    templateBom: { ...templateBom, catalogSha256: generatedCatalogSha },
   };
 }

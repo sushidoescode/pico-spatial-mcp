@@ -11,6 +11,8 @@ const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
 
 const { runPreflightChecks } = await import("../dist/preflight.js");
+const { detectJavaHome, gradleEnv } = await import("../dist/toolchain.js");
+const { toolchainIOFromTree } = await import("./helpers/toolchain-fixture.mjs");
 
 // A fully-broken fake environment: every runner fails.
 const brokenIO = {
@@ -384,6 +386,213 @@ else fail(`preflight_env cached managed-store contract broken: ${JSON.stringify(
 
 fs.rmSync(emptyManaged.root, { recursive: true, force: true });
 fs.rmSync(cachedManaged.root, { recursive: true, force: true });
+
+// ===========================================================================================
+// Task S2 block — the pico-sdk row comes from the injected structural toolchain selection.
+// (Appended as one delimited block; the CLI track appends its own after this one.)
+// ===========================================================================================
+{
+  // The brief's regression, verbatim: a host whose selection is 6.1 must not be described
+  // through the legacy hardcoded 0.13 directory.
+  const checks = runPreflightChecks({...healthyIO, toolchainInspection:{
+    status:"ok", root:"/sdk", rootSource:"PICO_HOME", version:"6.1",
+    reason:"newest-usable", files:{packer:{path:"/sdk/6.1/packer",sha256:"a".repeat(64)}}, identity:"b".repeat(64)
+  }});
+  const row = checks.find((x) => x.name === "pico-sdk");
+  if (row && row.status === "pass" && /6\.1/.test(row.detail) && !/0\.13/.test(row.detail)) {
+    ok("pico-sdk row reports the SELECTED version, not the legacy 0.13 directory");
+  } else {
+    fail(`pico-sdk row did not report the injected 6.1 selection: ${JSON.stringify(row)}`);
+  }
+  if (row && /PICO_HOME/.test(row.detail)) ok("pico-sdk row names the selected root source");
+  else fail(`pico-sdk row does not name the root source: ${JSON.stringify(row)}`);
+}
+
+{
+  // An existing (empty) 0.13 directory used to be the whole check. statMtimeMs() returning a
+  // number for EVERY path is exactly that machine; an unavailable selection must still fail.
+  const checks = runPreflightChecks({...healthyIO, toolchainInspection:{
+    status:"unavailable", code:"unavailable/component-missing",
+    detail:"No toolchain under /fake-home/Library/PICO/sdk provides every required component (packer); inspected 0.13",
+  }});
+  const row = checks.find((x) => x.name === "pico-sdk");
+  if (row && row.status === "fail" && /component-missing/.test(row.detail) && typeof row.fix === "string" && row.fix.length > 10) {
+    ok("an empty 0.13 directory no longer makes an unavailable selection pass");
+  } else {
+    fail(`unavailable selection did not fail the pico-sdk row: ${JSON.stringify(row)}`);
+  }
+}
+
+{
+  // Split install: the packer is 6.1 and the emulator payload is 6.0. Each component reports its
+  // OWN version instead of the pair collapsing to one "unavailable".
+  const checks = runPreflightChecks({...healthyIO,
+    toolchainInspection:{
+      status:"ok", root:"/sdk", rootSource:"local.properties", version:"6.1", reason:"newest-usable",
+      files:{packer:{path:"/sdk/6.1/editor/spatialbundle/spatialbundle",sha256:"c".repeat(64)}}, identity:"d".repeat(64),
+    },
+    emulatorInspection:{
+      status:"ok", root:"/sdk", rootSource:"local.properties", version:"6.0", reason:"newest-usable",
+      files:{emulator:{path:"/sdk/6.0/emulator/emulator",sha256:"e".repeat(64)}}, identity:"f".repeat(64),
+    },
+  });
+  const row = checks.find((x) => x.name === "pico-sdk");
+  if (row && row.status === "pass" && /packer 6\.1/.test(row.detail) && /emulator 6\.0/.test(row.detail)) {
+    ok("pico-sdk row reports packer and emulator versions separately");
+  } else {
+    fail(`split 6.1/6.0 install was not reported per component: ${JSON.stringify(row)}`);
+  }
+}
+
+{
+  // A packer-only host is still buildable; the missing emulator payload is disclosed, not hidden.
+  const checks = runPreflightChecks({...healthyIO,
+    toolchainInspection:{
+      status:"ok", root:"/sdk", rootSource:"PICO_HOME", version:"6.1", reason:"newest-usable",
+      files:{packer:{path:"/sdk/6.1/editor/spatialbundle/spatialbundle",sha256:"c".repeat(64)}}, identity:"d".repeat(64),
+    },
+    emulatorInspection:{ status:"unavailable", code:"unavailable/component-missing", detail:"no emulator payload under /sdk" },
+  });
+  const row = checks.find((x) => x.name === "pico-sdk");
+  if (row && row.status === "pass" && /packer 6\.1/.test(row.detail) && /emulator unavailable/.test(row.detail)) {
+    ok("pico-sdk row discloses a missing emulator payload without failing the build SDK");
+  } else {
+    fail(`packer-only host mis-reported: ${JSON.stringify(row)}`);
+  }
+}
+
+{
+  // Fixtures that describe no structural inspection get an honest "unknown", never a pass and
+  // never a silent 0.13 claim.
+  const row = runPreflightChecks(healthyIO).find((x) => x.name === "pico-sdk");
+  if (row && row.status === "unknown" && !/0\.13/.test(row.detail) && typeof row.fix === "string" && row.fix.length > 10) {
+    ok("pico-sdk row is unknown (not pass) when no structural selection was supplied");
+  } else {
+    fail(`pico-sdk row without an inspection is wrong: ${JSON.stringify(row)}`);
+  }
+}
+
+// ── Task S4: the adb row's candidate ordering, provenance and override validation ─────────────
+// S2 gave this row an adbInspection but shipped no assertions for it. The precedence the adapter
+// in src/adb.ts implements is explicit $PICO_ADB -> PATH -> the SELECTED toolchain's bundled
+// platform-tools, with the legacy 0.13 location retained only as a last candidate; the row must
+// agree, and an override that does not answer `adb version` must never be reported as the answer.
+{
+  const SELECTED = "/sdk/6.1/emulator/system-images/platform-tools/adb";
+  const adbInspection = {
+    status: "ok", root: "/sdk", rootSource: "PICO_HOME", version: "6.1", reason: "newest-usable",
+    files: { adb: { path: SELECTED, sha256: "a".repeat(64) } }, identity: "b".repeat(64),
+  };
+  // `working` names every candidate this fake machine answers `adb version` for.
+  const adbIO = (working, extra = {}) => {
+    const probed = [];
+    return {
+      io: {
+        ...healthyIO,
+        adbInspection,
+        // Declared explicitly so these rows never read this HOST's $PICO_ADB: without it a
+        // developer machine that exports one would silently change which candidates are probed.
+        adbOverride: null,
+        exec: (cmd, args) => {
+          if (args[0] === "version") { probed.push(cmd); return { ok: working.includes(cmd), stdout: working.includes(cmd) ? "Android Debug Bridge version 1.0.41" : "", stderr: "" }; }
+          return healthyIO.exec(cmd, args);
+        },
+        ...extra,
+      },
+      probed,
+    };
+  };
+
+  {
+    const { io, probed } = adbIO(["/opt/pinned/adb", "adb", SELECTED], { adbOverride: "/opt/pinned/adb" });
+    const row = runPreflightChecks(io).find((x) => x.name === "adb");
+    row && row.status === "pass" && /\/opt\/pinned\/adb/.test(row.detail) && /PICO_ADB|explicit/i.test(row.detail)
+      ? ok("adb row reports an explicit PICO_ADB with its provenance")
+      : fail(`explicit PICO_ADB not reported: ${JSON.stringify(row)}`);
+    // Fail-closed precedence: when an override is configured it is the ONLY candidate, so the row
+    // can never report an adb that src/adb.ts would refuse to run.
+    JSON.stringify(probed) === JSON.stringify(["/opt/pinned/adb"])
+      ? ok("adb row probes the explicit override and nothing else")
+      : fail(`override was not the only probe: ${JSON.stringify(probed)}`);
+  }
+
+  {
+    const { io, probed } = adbIO(["adb", SELECTED]);
+    const row = runPreflightChecks(io).find((x) => x.name === "adb");
+    row && row.status === "pass" && /^adb\b/.test(row.detail) && /PATH/i.test(row.detail)
+      ? ok("adb row prefers PATH over the bundled payload")
+      : fail(`PATH-first ordering not reported: ${JSON.stringify(row)}`);
+    probed.indexOf("adb") < probed.indexOf(SELECTED) || !probed.includes(SELECTED)
+      ? ok("adb row probes PATH before the selected payload")
+      : fail(`candidate order wrong: ${JSON.stringify(probed)}`);
+  }
+
+  {
+    const { io, probed } = adbIO([SELECTED]);
+    const row = runPreflightChecks(io).find((x) => x.name === "adb");
+    row && row.status === "pass" && row.detail.startsWith(SELECTED)
+      ? ok("adb row falls back to the SELECTED toolchain's bundled adb")
+      : fail(`bundled fallback not reported: ${JSON.stringify(row)}`);
+    !/0\.13/.test(probed.slice(0, probed.indexOf(SELECTED) + 1).join(" "))
+      ? ok("the legacy 0.13 path is not probed before the selected payload")
+      : fail(`0.13 probed too early: ${JSON.stringify(probed)}`);
+  }
+
+  {
+    // An override whose bytes do not answer `adb version` FAILS CLOSED: it is never replaced by a
+    // PATH adb the operator did not ask for. A working PATH adb is present here precisely so the
+    // row cannot pass by falling through to it.
+    const { io, probed } = adbIO(["adb", SELECTED], { adbOverride: "/opt/broken/adb" });
+    const row = runPreflightChecks(io).find((x) => x.name === "adb");
+    row && row.status === "fail" && /\/opt\/broken\/adb/.test(row.detail) && /never replaced/i.test(row.detail)
+      && typeof row.fix === "string" && /unset it/i.test(row.fix)
+      ? ok("an unusable PICO_ADB fails closed and is disclosed")
+      : fail(`invalid override mishandled: ${JSON.stringify(row)}`);
+    JSON.stringify(probed) === JSON.stringify(["/opt/broken/adb"])
+      ? ok("a rejected override stops the probe: no PATH or bundled candidate is consulted")
+      : fail(`fallback was probed after a rejected override: ${JSON.stringify(probed)}`);
+  }
+
+  {
+    // With NO override configured the row still lists every candidate it tried.
+    const { io } = adbIO([]);
+    const row = runPreflightChecks(io).find((x) => x.name === "adb");
+    row && row.status === "fail" && /\badb\b/.test(row.detail) && /\/sdk\/6\.1\//.test(row.detail) && /0\.13/.test(row.detail)
+      && typeof row.fix === "string" && row.fix.length > 10
+      ? ok("a failing adb row with no override lists every probed candidate and carries a fix")
+      : fail(`adb failure detail incomplete: ${JSON.stringify(row)}`);
+  }
+}
+
+// ── Task S4: JDK inspection and gradleEnv answer from ONE injected context ────────────────────
+{
+  const jdkIO = (home, executable) => toolchainIOFromTree({
+    platform: "darwin", home: "/fixture",
+    env: { JAVA_HOME: home }, files: { [`${home}/bin/java`]: { bytes: "fixture-java", executable } },
+  });
+  for (const [home, executable, expected] of [["/jdk-a", true, "/jdk-a"], ["/jdk-b", true, "/jdk-b"], ["/jdk-b", false, null]]) {
+    const context = jdkIO(home, executable);
+    const detected = detectJavaHome(context);
+    const injected = gradleEnv(context);
+    const row = runPreflightChecks({ ...healthyIO, detectJavaHome: () => detectJavaHome(context), javaHomeEnv: context.env.JAVA_HOME ?? null })
+      .find((x) => x.name === "jdk");
+    detected === expected
+      ? ok(`jdk inspection follows the injected context (${home}, executable=${executable})`)
+      : fail(`jdk inspection ignored the injected context: got ${JSON.stringify(detected)}, want ${JSON.stringify(expected)}`);
+    JSON.stringify(injected) === JSON.stringify(expected ? { JAVA_HOME: expected } : {})
+      ? ok(`gradleEnv agrees with the same context (${home})`)
+      : fail(`gradleEnv disagreed with detectJavaHome: ${JSON.stringify(injected)} vs ${JSON.stringify(detected)}`);
+    const rowAgrees = expected ? row.status === "pass" && row.detail.includes(expected) : row.status === "fail";
+    rowAgrees
+      ? ok(`the jdk row reports exactly what the Gradle lane would get (${home})`)
+      : fail(`jdk row disagrees with the build lane: ${JSON.stringify(row)}`);
+  }
+  const declared = jdkIO("/jdk-a", true);
+  const declaredRow = runPreflightChecks({ ...healthyIO, detectJavaHome: () => detectJavaHome(declared), javaHomeEnv: "/jdk-a" }).find((x) => x.name === "jdk");
+  /JAVA_HOME=\/jdk-a/.test(declaredRow?.detail ?? "")
+    ? ok("the jdk row names JAVA_HOME as the source when the injected environment declares it")
+    : fail(`jdk row source wrong: ${JSON.stringify(declaredRow)}`);
+}
 
 console.log(`\nPreflight test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

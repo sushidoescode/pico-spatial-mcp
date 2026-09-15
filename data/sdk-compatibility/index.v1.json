@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "records": [],
+  "historicalReferences": [
+    {
+      "path": "basis/sdk-6.0.0-drift.md",
+      "sha256": "e1671fbdaf1ee278298258f4aa3c5771861a677e37e22e8281d0ffc7eb7d6b5a"
+    },
+    {
+      "path": "basis/sdk-adoption-provenance.json",
+      "sha256": "058bbf48ae902a22dd77f23e6a4427fc2bb5349ee09cede268aefbf76fa3f20e"
+    }
+  ]
+}

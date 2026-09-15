@@ -416,6 +416,23 @@ const sdkOut = JSON.parse(sdk.content[0].text);
 if (sdkOut.status === "ok" || sdkOut.status === "unavailable") ok(`pico_sdk orchestrates the inner server (status: ${sdkOut.status})`);
 else fail(`pico_sdk unexpected: ${JSON.stringify(sdkOut).slice(0, 120)}`);
 
+// Task S5: the SDK door forwards HINTS only — never an identity, a fingerprint or a compatibility
+// verdict — and a lookup without a project hint is labeled historical (or unavailable), never target-verified.
+const picoSdkDefinition = toolDefinitions.find((tool) => tool.name === "pico_sdk");
+const picoSdkProperties = Object.keys(picoSdkDefinition?.inputSchema?.properties ?? {}).sort();
+if (JSON.stringify(picoSdkProperties) === JSON.stringify(["projectRoot", "recordPaths", "sdkVersion", "symbol", "vaultRoot"])
+    && JSON.stringify(picoSdkDefinition?.inputSchema?.required) === JSON.stringify(["symbol"])
+    && !picoSdkProperties.some((name) => /identity|fingerprint|compatib|verdict|binding/i.test(name))
+    && /historical/i.test(picoSdkDefinition?.description ?? "")
+    && /0\.13\.3/.test(picoSdkDefinition?.description ?? "")
+    && /docs\/SDK_6_0_0_DRIFT\.md/.test(picoSdkDefinition?.description ?? "")
+    && (sdkOut.symbolAuthority === "historical" || sdkOut.symbolAuthority === "unavailable")
+    && sdkOut.lookup !== "target-verified"
+    && (sdkOut.target === null || sdkOut.target === undefined)
+    && typeof sdkOut.declarationIdentity?.status === "string")
+  ok(`pico_sdk takes hint inputs only and labels a projectless lookup ${sdkOut.symbolAuthority}`);
+else fail(`pico_sdk authority contract drifted: ${JSON.stringify({ properties: picoSdkProperties, required: picoSdkDefinition?.inputSchema?.required, symbolAuthority: sdkOut.symbolAuthority, lookup: sdkOut.lookup, target: sdkOut.target, identity: sdkOut.declarationIdentity?.status }).slice(0, 400)}`);
+
 // error path carries a fix pointer
 const fx = await client.callTool({ name: "pico_place", arguments: { semanticScenePath: "/nonexistent.json", label: "counter" } });
 const fxOut = JSON.parse(fx.content[0].text);
