@@ -13,6 +13,8 @@ import path from "node:path";
 
 export const IDENTITY_SCHEMA_VERSION = 1;
 export const RECEIPT_NAME = "build-receipt.json";
+/** Local, gitignored, and never packaged: it describes one machine's node_modules, nothing shared. */
+export const DEPENDENCY_RECEIPT_NAME = ".pico-dependencies.json";
 
 /** Hashed alongside the sources. `src/`-relative paths and these three root files can never collide
  *  with a `toolchain:` key, so the namespace stays unambiguous without escaping. */
@@ -80,6 +82,85 @@ export function inputIdentity(root) {
   return { schemaVersion: IDENTITY_SCHEMA_VERSION, sha256: digestFiles(sorted), files: sorted };
 }
 
+/**
+ * What `npm ci` was last asked to reproduce: the lockfile bytes plus the Node major that ran it.
+ * Node major belongs here for the same reason it belongs in `inputIdentity` — npm resolves optional
+ * and native dependencies against it, so the same lockfile installs differently across majors.
+ *
+ * Schema (`schemaVersion: 1`, recorded in the receipt): sha256 over sorted `<key>\0<sha256>\n`
+ * lines for `package-lock.json` and `toolchain:node-major` — the material formula `inputIdentity`
+ * uses. Deliberately NOT a walk of `node_modules`: hashing a 200 MB tree on every host start is the
+ * cost this whole file exists to avoid, and the lockfile is the thing `npm ci` is contracted to.
+ *
+ * Returns null when there is no readable lockfile, because there is then nothing to be current
+ * against — and an install nobody can account for must never be reported as current.
+ */
+export function dependencyIdentity(root) {
+  const checkout = path.resolve(root);
+  let lockBytes;
+  try { lockBytes = fs.readFileSync(path.join(checkout, "package-lock.json")); } catch { return null; }
+  return digestFiles(sortFiles([
+    { path: "package-lock.json", sha256: sha256(lockBytes) },
+    { path: NODE_MAJOR_KEY, sha256: sha256(String(nodeMajor())) },
+  ]));
+}
+
+export function dependencyReceipt(root, { npmArgv, identity = dependencyIdentity(root) }) {
+  return { schemaVersion: IDENTITY_SCHEMA_VERSION, dependencyIdentity: identity, npmArgv: [...npmArgv] };
+}
+
+/**
+ * Record a dependency install. The caller must already have checked that the install succeeded and
+ * that the lockfile still hashes to `identity` — this is the publication step, not the proof.
+ */
+export function writeDependencyReceipt(root, options) {
+  const checkout = path.resolve(root);
+  const receipt = dependencyReceipt(checkout, options);
+  if (typeof receipt.dependencyIdentity !== "string") {
+    throw new Error(`refusing to record a dependency install with no readable package-lock.json in ${checkout}`);
+  }
+  fs.writeFileSync(path.join(checkout, DEPENDENCY_RECEIPT_NAME), `${JSON.stringify(receipt, null, 2)}\n`);
+  return receipt;
+}
+
+/**
+ * Do the installed dependencies still answer to the lockfile on disk? Never throws. Missing,
+ * unreadable, malformed and mismatched all mean the same thing — unknown — and unknown is never
+ * current: the caller reinstalls once rather than trusting a tree it cannot account for.
+ */
+export function verifyDependencies(root) {
+  const checkout = path.resolve(root);
+  if (!fs.existsSync(path.join(checkout, "node_modules"))) {
+    return { current: false, reasons: ["node_modules/ does not exist; dependencies were never installed here"] };
+  }
+
+  let raw;
+  try { raw = fs.readFileSync(path.join(checkout, DEPENDENCY_RECEIPT_NAME), "utf8"); }
+  catch (error) {
+    return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} is unreadable (${error.code ?? error.message}); this node_modules cannot be accounted for`] };
+  }
+  let receipt;
+  try { receipt = JSON.parse(raw); }
+  catch (error) { return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} is unparsable: ${error.message}`] }; }
+  if (!receipt || typeof receipt !== "object" || receipt.schemaVersion !== IDENTITY_SCHEMA_VERSION) {
+    return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} carries schemaVersion ${receipt?.schemaVersion} instead of ${IDENTITY_SCHEMA_VERSION}`] };
+  }
+  if (typeof receipt.dependencyIdentity !== "string"
+    || !Array.isArray(receipt.npmArgv) || receipt.npmArgv.length === 0
+    || !receipt.npmArgv.every((token) => typeof token === "string")) {
+    return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} is missing its dependency identity or the command that produced it`] };
+  }
+
+  const identity = dependencyIdentity(checkout);
+  if (identity === null) {
+    return { current: false, reasons: ["package-lock.json is unreadable, so the installed dependencies cannot be checked against it"] };
+  }
+  if (identity !== receipt.dependencyIdentity) {
+    return { current: false, reasons: [`package-lock.json changed since the install (${receipt.dependencyIdentity.slice(0, 12)} -> ${identity.slice(0, 12)})`] };
+  }
+  return { current: true, reasons: [] };
+}
+
 /** The emitted tree, receipt excluded — a receipt can never be part of its own output digest. */
 export function outputIdentity(outDir) {
   const files = sortFiles(
@@ -126,29 +207,12 @@ function readReceipt(distDir) {
   return { receipt };
 }
 
-/**
- * Is `dist/` the output of the source that is on disk right now? Never throws: every failure is a
- * reason, and an empty reason list is the only thing that makes `current` true.
- */
-export function verifyBuild(root) {
-  const checkout = path.resolve(root);
-  const distDir = path.join(checkout, "dist");
+/** Every way the bytes in `outDir` can fail to be the ones `receipt` says were emitted. */
+function emittedByteReasons(distDir, receipt) {
   const reasons = [];
-
-  if (!fs.existsSync(distDir)) return { current: false, reasons: ["dist/ does not exist; run npm run build"] };
-
-  const { receipt, reason } = readReceipt(distDir);
-  if (!receipt) return { current: false, reasons: [reason] };
-
-  let identity;
-  try { identity = inputIdentity(checkout); }
-  catch (error) { return { current: false, reasons: [`the source identity could not be recomputed: ${error.message}`] }; }
-  if (identity.sha256 !== receipt.input.sha256) {
-    reasons.push(`the source input identity changed since the build (${receipt.input.sha256.slice(0, 12)} -> ${identity.sha256.slice(0, 12)})`);
-  }
-
   const listed = new Set();
   const rehashed = [];
+
   for (const entry of receipt.output.files) {
     // A receipt is untrusted input: it may only ever name files inside the tree it describes.
     if (typeof entry?.path !== "string" || typeof entry?.sha256 !== "string"
@@ -173,6 +237,50 @@ export function verifyBuild(root) {
   if (!reasons.length && digestFiles(sortFiles(rehashed)) !== receipt.output.sha256) {
     reasons.push(`dist/${RECEIPT_NAME} records an output digest that its own file list does not produce`);
   }
+  return reasons;
+}
 
+/**
+ * Are the bytes in `dist/` the ones the receipt beside them records — output half only?
+ *
+ * This is the question an installed package can actually answer. A tarball ships `dist/` and
+ * `scripts/` and nothing else: no `src/`, no `tsconfig.json`, no lockfile, so `inputIdentity` there
+ * describes an empty checkout and `verifyBuild` is permanently `current:false`. Reading that as
+ * "stale, rebuild" would be a lie twice over — there is no source to compile and no compiler to
+ * compile it with. So a consumer checks only what shipped against what the publisher recorded.
+ */
+export function verifyEmittedOutput(root) {
+  const distDir = path.join(path.resolve(root), "dist");
+  if (!fs.existsSync(distDir)) return { current: false, reasons: ["dist/ does not exist; this installed payload is incomplete"] };
+
+  const { receipt, reason } = readReceipt(distDir);
+  if (!receipt) return { current: false, reasons: [reason] };
+
+  const reasons = emittedByteReasons(distDir, receipt);
+  return { current: reasons.length === 0, reasons };
+}
+
+/**
+ * Is `dist/` the output of the source that is on disk right now? Never throws: every failure is a
+ * reason, and an empty reason list is the only thing that makes `current` true.
+ */
+export function verifyBuild(root) {
+  const checkout = path.resolve(root);
+  const distDir = path.join(checkout, "dist");
+  const reasons = [];
+
+  if (!fs.existsSync(distDir)) return { current: false, reasons: ["dist/ does not exist; run npm run build"] };
+
+  const { receipt, reason } = readReceipt(distDir);
+  if (!receipt) return { current: false, reasons: [reason] };
+
+  let identity;
+  try { identity = inputIdentity(checkout); }
+  catch (error) { return { current: false, reasons: [`the source identity could not be recomputed: ${error.message}`] }; }
+  if (identity.sha256 !== receipt.input.sha256) {
+    reasons.push(`the source input identity changed since the build (${receipt.input.sha256.slice(0, 12)} -> ${identity.sha256.slice(0, 12)})`);
+  }
+
+  reasons.push(...emittedByteReasons(distDir, receipt));
   return { current: reasons.length === 0, reasons };
 }

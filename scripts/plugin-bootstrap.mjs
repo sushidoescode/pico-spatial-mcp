@@ -1,12 +1,41 @@
 #!/usr/bin/env node
+/**
+ * plugin-bootstrap — what a host runs instead of the server, so a plugin cache is always the build
+ * of the source it currently holds.
+ *
+ * This used to decide setup from two existence checks — is there a `node_modules/`, is there a
+ * `dist/index.js` — which answers "has this ever been built" and not "is this build still the
+ * source". A cache whose source or lockfile moved underneath it therefore served stale output
+ * forever, across every host restart, with nothing on screen to say so. The decision now runs on
+ * the receipts from build-identity.mjs, and the actions on the lease from build-source.mjs.
+ *
+ * Two shapes arrive here and they are not the same program. A source checkout (the host plugin
+ * cache: `src/` plus `tsconfig.json`) can install and compile, so it is made current before the
+ * server starts. An installed tarball has neither source nor compiler, so it is only ever checked
+ * against the receipt that shipped with it — never installed into, never compiled.
+ */
 
 import fs from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  dependencyIdentity,
+  verifyBuild,
+  verifyDependencies,
+  verifyEmittedOutput,
+  writeDependencyReceipt,
+} from "./build-identity.mjs";
+import { buildSource, runCompiler, withSourceSetup } from "./build-source.mjs";
+
 const DEFAULT_COMMAND_TIMEOUT_MS = 5 * 60 * 1_000;
 const DEFAULT_KILL_GRACE_MS = 2_000;
+const DEFAULT_SETUP_WAIT_MS = 30 * 1_000;
+
+/** The one install this bootstrap ever runs, and the token that stands for the in-process build. */
+const INSTALL_ARGS = ["ci", "--no-audit", "--no-fund"];
+const BUILD_ACTION = ["run", "build"];
 
 export function resolvePluginRoot(metaUrl = import.meta.url) {
   return path.resolve(path.dirname(fileURLToPath(metaUrl)), "..");
@@ -31,18 +60,24 @@ export function npmLaunch(args, platform = process.platform, env = process.env) 
   };
 }
 
-export function needsSourceBuild({ nodeModulesPresent, distEntryPresent }) {
-  return !(nodeModulesPresent && distEntryPresent);
+/**
+ * The setup actions a source checkout still needs, in the order they must run.
+ *
+ * Split on purpose: Claude Code pre-installs deps into the plugin cache (npm ci --ignore-scripts),
+ * so the common cold start only needs the tsc build — a full npm ci would push first launch toward
+ * the host's MCP startup timeout. Each action is a fresh array, so a caller that edits the plan it
+ * was handed cannot rewrite the next caller's.
+ */
+export function sourceSetupPlan({ dependenciesCurrent, buildCurrent }) {
+  const plan = [];
+  if (!dependenciesCurrent) plan.push([...INSTALL_ARGS]);
+  if (!buildCurrent) plan.push([...BUILD_ACTION]);
+  return plan;
 }
 
-export function sourceSetupPlan({ nodeModulesPresent, distEntryPresent }) {
-  // Split on purpose: Claude Code pre-installs deps into the plugin cache (npm ci
-  // --ignore-scripts), so the common cold start only needs the ~15 s tsc build — a full
-  // npm ci would push first launch toward the host's MCP startup timeout.
-  const plan = [];
-  if (!nodeModulesPresent) plan.push(["ci", "--no-audit", "--no-fund"]);
-  if (!distEntryPresent) plan.push(["run", "build"]);
-  return plan;
+/** Can anything here actually be compiled? A tarball has `dist/` and `scripts/` and no more. */
+export function isSourceCheckout(root) {
+  return pathIsDirectory(path.join(root, "src")) && pathIsFile(path.join(root, "tsconfig.json"));
 }
 
 export function runBoundedChild(
@@ -190,6 +225,90 @@ export function runMcpChild(
   });
 }
 
+/**
+ * Install dependencies once, then record what was installed — but only once the lockfile it was
+ * installed from is still the lockfile on disk. A receipt written over a lockfile that moved during
+ * the install would certify a tree nobody ever installed, and every later start would trust it.
+ */
+async function installDependencies(root, { platform, env, commandTimeoutMs, killGraceMs, spawnImpl }) {
+  const before = dependencyIdentity(root);
+  if (before === null) {
+    const error = new Error(`no readable package-lock.json in ${root}; there is nothing for npm ci to install from`);
+    error.code = "BOOTSTRAP_NO_LOCKFILE";
+    throw error;
+  }
+
+  const launch = npmLaunch(INSTALL_ARGS, platform, env);
+  await requireSuccessfulCommand(launch.command, launch.args, {
+    cwd: root,
+    env,
+    timeoutMs: commandTimeoutMs,
+    killGraceMs,
+    stdio: ["ignore", 2, 2], // stdout carries MCP protocol frames; npm chatter goes to stderr.
+    spawnImpl,
+  });
+
+  const after = dependencyIdentity(root);
+  if (after !== before) {
+    const error = new Error(
+      `package-lock.json changed while npm ci was running in ${root}; the install was not recorded and will be retried on the next start`,
+    );
+    error.code = "BOOTSTRAP_LOCKFILE_RACED";
+    throw error;
+  }
+  writeDependencyReceipt(root, { identity: after, npmArgv: INSTALL_ARGS });
+}
+
+/**
+ * Bring a source checkout up to date, doing as little as it truthfully can.
+ *
+ * The overwhelmingly common start is an unchanged cache, and that path must cost nothing but two
+ * digests: no lock file written, no npm, no registry request, no CLI resolution. Only when
+ * something is genuinely stale is the setup lease taken — and both identities are then re-read
+ * *under* it, because the owner we waited behind may already have done the whole job.
+ */
+async function prepareSourceCheckout(root, options) {
+  if (verifyDependencies(root).current && verifyBuild(root).current) return;
+
+  await withSourceSetup({ root, waitMs: options.setupWaitMs, clock: options.clock }, async (owner) => {
+    const plan = sourceSetupPlan({
+      dependenciesCurrent: verifyDependencies(root).current,
+      buildCurrent: verifyBuild(root).current,
+    });
+
+    let installed = false;
+    for (const args of plan) {
+      if (args[0] === INSTALL_ARGS[0]) {
+        await installDependencies(root, options);
+        installed = true;
+        continue;
+      }
+      // The build action means "make the output current", and an install can be exactly what it
+      // was waiting for: `npm ci` restores the TypeScript whose version is part of the build
+      // identity, so a dist/ that only looked stale because node_modules was gone is now current.
+      if (installed && verifyBuild(root).current) continue;
+      // In-process on the lease we already hold. Spawning `npm run build` here would send a second
+      // process to queue for the same lock we are standing on, and deadlock until it timed out.
+      await buildSource({ root, runCompiler: options.runCompilerImpl, owner });
+    }
+  });
+}
+
+/**
+ * An installed package can prove only that its payload is the one that shipped. If it is not, the
+ * answer is a reinstall: there is no source here to rebuild from and no compiler to rebuild with.
+ */
+function requireIntactPackagedPayload(root) {
+  const verdict = verifyEmittedOutput(root);
+  if (verdict.current) return;
+  const error = new Error(
+    `the installed payload in ${root} does not match the build receipt that shipped with it, so the server was not started: `
+    + `${verdict.reasons.join("; ")}. Reinstall pico-spatial-mcp to restore the published files.`,
+  );
+  error.code = "BOOTSTRAP_PAYLOAD_INVALID";
+  throw error;
+}
+
 export async function runBootstrap({
   root = resolvePluginRoot(),
   platform = process.platform,
@@ -197,24 +316,19 @@ export async function runBootstrap({
   execPath = process.execPath,
   commandTimeoutMs = DEFAULT_COMMAND_TIMEOUT_MS,
   killGraceMs = DEFAULT_KILL_GRACE_MS,
+  setupWaitMs = DEFAULT_SETUP_WAIT_MS,
+  clock,
   spawnImpl = spawn,
+  // The production compiler, bounded by this bootstrap's own command timeout. Its terminate grace
+  // is left at build-source's own: that wait is a blocking sleep inside a signal handler.
+  runCompilerImpl = (compile) => runCompiler({ ...compile, timeoutMs: commandTimeoutMs, spawn: spawnImpl }),
 } = {}) {
-  const nodeModulesPresent = pathIsDirectory(path.join(root, "node_modules"));
-  const distEntryPresent = pathIsFile(path.join(root, "dist", "index.js"));
-
-  const setupPlan = sourceSetupPlan({ nodeModulesPresent, distEntryPresent });
-  if (setupPlan.length > 0) {
-    for (const args of setupPlan) {
-      const launch = npmLaunch(args, platform, env);
-      await requireSuccessfulCommand(launch.command, launch.args, {
-        cwd: root,
-        env,
-        timeoutMs: commandTimeoutMs,
-        killGraceMs,
-        stdio: ["ignore", 2, 2],
-        spawnImpl,
-      });
-    }
+  if (isSourceCheckout(root)) {
+    await prepareSourceCheckout(root, {
+      platform, env, commandTimeoutMs, killGraceMs, setupWaitMs, clock, spawnImpl, runCompilerImpl,
+    });
+  } else {
+    requireIntactPackagedPayload(root);
   }
 
   return runMcpChild(root, { env, execPath, spawnImpl });

@@ -54,3 +54,7 @@ evidence-frame-drift-*.png
 /.pico-source-setup.lock
 /.dist-staging-*
 /.dist-backup-*
+
+# the local record of the last successful `npm ci`: it describes this machine's node_modules, so it
+# is never repo content and never travels with the package
+/.pico-dependencies.json

@@ -694,24 +694,32 @@ test("an interrupt stops the production compiler's child process", async (t) => 
   const compilerPid = Number(fs.readFileSync(pidPath, "utf8"));
   assert.ok(compilerPid > 0);
   // If the behaviour under test regresses, this child outlives the run and keeps the test runner
-  // alive forever. A hang is a far worse failure report than an assertion, so reap it regardless.
-  t.after(() => { try { process.kill(compilerPid, "SIGKILL"); } catch {} });
+  // alive forever. A hang is a far worse failure report than an assertion, so reap it regardless —
+  // but only while it is still ours to reap. Once the poll below has watched this pid die, the
+  // number is free for the OS to hand to someone else, and signalling it would hit a stranger.
+  let compilerReaped = false;
+  t.after(() => { if (!compilerReaped) { try { process.kill(compilerPid, "SIGKILL"); } catch {} } });
 
   handleInterrupt("SIGTERM", { raise: () => {} });
   // Bounded on purpose. If the compiler is never stopped it never exits, so this promise never
   // settles — and an un-awaitable build must be reported as a failed assertion, not as a runner
   // that hangs until CI times out.
+  let bound;
   const outcome = await Promise.race([
     build.then(() => "the build resolved despite being interrupted", (error) => `rejected: ${error.message}`),
-    new Promise((resolve) => setTimeout(() => resolve("the build never settled after the interrupt"), 10_000)),
+    new Promise((resolve) => { bound = setTimeout(() => resolve("the build never settled after the interrupt"), 10_000); }),
   ]);
+  // The losing arm keeps the runner alive for its full 10s otherwise: a suite that passes must exit.
+  clearTimeout(bound);
   assert.match(outcome, /^rejected: .*interrupted/, outcome);
 
   // SIGKILL stops it from executing instantly, but the pid lingers as a zombie until libuv reaps
   // it, so poll for the entry to disappear rather than assuming the reap has already happened.
   const reaped = Date.now() + 3_000;
   while (alive(compilerPid) && Date.now() < reaped) await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.equal(alive(compilerPid), false, `compiler pid ${compilerPid} outlived the interrupt`);
+  const stillAlive = alive(compilerPid);
+  compilerReaped = !stillAlive;
+  assert.equal(stillAlive, false, `compiler pid ${compilerPid} outlived the interrupt`);
 
   // The stand-in rewrites its outDir every 20ms, so a quarter second of silence means it is gone.
   await new Promise((resolve) => setTimeout(resolve, 250));
