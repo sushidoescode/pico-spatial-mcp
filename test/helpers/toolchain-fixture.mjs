@@ -12,6 +12,13 @@
 //   unreadable: [absolutePath]            entries that exist but deny read/list
 // The returned io also carries `reads` — every path passed to io.read(), in call
 // order — so a test can prove which payload bytes a selection actually consumed.
+//
+// A file spec may also be a Buffer (or {bytes: Buffer}) so a fixture can carry exact
+// non-UTF-8-safe bytes, e.g. a byte-for-byte copy of a packaged basis document.
+//
+// declarationIOFromTree({...same options, artifacts}) -> DeclarationIO (Task S5)
+//   artifacts : [{coordinate, sha256, path}]  an EXPLICIT coordinate/hash -> path table;
+//               artifactPath() answers only exact (coordinate, sha256) pairs it lists.
 
 import path from "node:path";
 
@@ -73,10 +80,11 @@ export function toolchainIOFromTree({
   for (const [rawPath, spec] of Object.entries(files)) {
     const abs = absolute(rawPath, "files key");
     if (dirTable.has(key(abs))) throw new Error(`toolchainIOFromTree: ${rawPath} is declared both as a directory and a file`);
+    const rawBytes = typeof spec === "string" || Buffer.isBuffer(spec) ? spec : spec?.bytes;
     fileTable.set(key(abs), {
       path: abs,
-      bytes: typeof spec === "string" ? spec : String(spec?.bytes ?? ""),
-      executable: typeof spec === "string" ? false : Boolean(spec?.executable),
+      bytes: Buffer.isBuffer(rawBytes) ? Buffer.from(rawBytes) : typeof rawBytes === "string" ? rawBytes : String(rawBytes ?? ""),
+      executable: typeof spec === "string" || Buffer.isBuffer(spec) ? false : Boolean(spec?.executable),
     });
     addAncestors(abs);
   }
@@ -119,7 +127,8 @@ export function toolchainIOFromTree({
       const resolved = resolveLinks(requested);
       if (denied(resolved)) return null;
       const file = fileTable.get(key(resolved));
-      return file ? Buffer.from(file.bytes, "utf8") : null;
+      if (!file) return null;
+      return Buffer.isBuffer(file.bytes) ? Buffer.from(file.bytes) : Buffer.from(file.bytes, "utf8");
     },
     entries(target) {
       const resolved = resolveLinks(normalize(target));
@@ -154,4 +163,31 @@ export function macSdkTree(versions) {
     if (components.proto !== undefined) files[`${base}/emulator/lib/emulator_controller.proto`] = { bytes: components.proto };
   }
   return files;
+}
+
+/**
+ * Task S5 — the same in-memory tree exposed as a DeclarationIO: read/entries/realpath from the
+ * tree plus an EXPLICIT artifact table. Nothing is searched or inferred: `artifactPath` returns
+ * the listed path only for an exact (coordinate, sha256) pair, and null for everything else, so
+ * a test decides byte-for-byte which artifacts "exist" for a compatibility record.
+ */
+export function declarationIOFromTree({ artifacts = [], ...treeOptions } = {}) {
+  const io = toolchainIOFromTree(treeOptions);
+  const table = new Map();
+  for (const entry of artifacts) {
+    if (!entry || typeof entry.coordinate !== "string" || typeof entry.sha256 !== "string" || typeof entry.path !== "string") {
+      throw new Error(`declarationIOFromTree: artifacts entries must be {coordinate, sha256, path}, got ${JSON.stringify(entry)}`);
+    }
+    table.set(`${entry.coordinate}\0${entry.sha256}`, entry.path);
+  }
+  return {
+    read: (target) => io.read(target),
+    entries: (target) => io.entries(target),
+    realpath: (target) => io.realpath(target),
+    artifactPath(coordinate, sha256) {
+      return table.get(`${coordinate}\0${sha256}`) ?? null;
+    },
+    /** Test-only: the underlying tree io (its `reads` log is shared). */
+    tree: io,
+  };
 }
