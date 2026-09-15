@@ -26,10 +26,17 @@ import path from "node:path";
  * | Equal numeric versions contain different required bytes | `ambiguous/version-alias-conflict` |
  * | Platform has no verified default root                 | `unavailable/unsupported-default-root` |
  * | Duplicate `spatial.tools.dir` keys disagree           | `ambiguous/property-conflict`      |
+ * | `required` names no components                        | `unavailable/required-empty`       |
+ * | `required` names something outside `TOOL_COMPONENTS`  | `unavailable/component-unknown`    |
+ * | No `io` passed and no host implementation registered  | `unavailable/io-unavailable`       |
  *
- * The last row is an addition to the codes listed in the task brief, not a
- * change to them: a project file that declares two different tool roots is
- * exactly as unusable as a request that contradicts its own pin.
+ * The last four rows are additions to the codes listed in the task brief, not
+ * changes to them. A project file declaring two different tool roots is exactly
+ * as unusable as a request that contradicts its own pin; and a request naming no
+ * components, or a component that does not exist, must not be answerable — an
+ * empty `required` is vacuously satisfiable by any directory and would hand every
+ * root and version the same identity (the digest of the empty string), which is
+ * precisely the collision `identity` exists to make impossible.
  */
 
 export type ToolComponent = "packer" | "emulator" | "adb" | "proto";
@@ -83,6 +90,11 @@ export const TOOL_COMPONENTS: readonly ToolComponent[] = ["adb", "emulator", "pa
 
 /** The selection property an Android project may use to override the tools root. */
 export const TOOLS_DIR_PROPERTY = "spatial.tools.dir";
+
+/** Guards the union at runtime: tool inputs arrive as JSON, not as TypeScript. */
+export function isToolComponent(value: unknown): value is ToolComponent {
+  return typeof value === "string" && (TOOL_COMPONENTS as readonly string[]).includes(value);
+}
 
 interface ComponentLayout {
   /** Directory segments below `<root>/<version>/`. */
@@ -353,7 +365,8 @@ export interface InstallationScan {
 }
 
 function componentFile(versionDir: string, component: ToolComponent, io: ToolchainIO, P: PathApi): string | null {
-  const layout = COMPONENT_LAYOUT[component];
+  const layout = COMPONENT_LAYOUT[component] as ComponentLayout | undefined;
+  if (!layout) return null; // scanInstallations is exported; never dereference an unknown key
   const dir = P.join(versionDir, ...layout.dir);
   const names = layout.executableBase
     ? executableNames(layout.executableBase, io.platform)
@@ -366,7 +379,8 @@ function componentFile(versionDir: string, component: ToolComponent, io: Toolcha
 }
 
 function expectedComponentLocation(component: ToolComponent, platform: NodeJS.Platform): string {
-  const layout = COMPONENT_LAYOUT[component];
+  const layout = COMPONENT_LAYOUT[component] as ComponentLayout | undefined;
+  if (!layout) return component;
   const name = layout.executableBase ? executableNames(layout.executableBase, platform)[0]! : layout.fixedName!;
   return [...layout.dir, name].join("/");
 }
@@ -454,7 +468,24 @@ export interface InstallationChoice {
  * directly so hot paths never read a multi-megabyte binary just to pick a version.
  */
 export function selectInstallation(request: ToolchainRequest, io: ToolchainIO): InstallationChoice | UnusableToolchain {
-  const required = [...new Set(request.required)];
+  // Caller input is validated before anything is probed. An empty `required` is
+  // vacuously satisfied by every installation, and an out-of-union string would
+  // otherwise dereference an undefined layout, so neither may reach the scan.
+  const requested: readonly unknown[] = request.required ?? [];
+  const unknown = [...new Set(requested)].filter((component) => !isToolComponent(component));
+  if (unknown.length) {
+    return unavailable(
+      "unavailable/component-unknown",
+      `Unknown toolchain component(s) ${unknown.map((c) => JSON.stringify(c)).join(", ")}; expected one of ${TOOL_COMPONENTS.join(", ")}`,
+    );
+  }
+  const required = [...new Set(requested as readonly ToolComponent[])];
+  if (required.length === 0) {
+    return unavailable(
+      "unavailable/required-empty",
+      `A toolchain request must name at least one required component (${TOOL_COMPONENTS.join(", ")}); an empty request matches any directory and identifies nothing`,
+    );
+  }
 
   const candidate = resolveRootCandidate(request, io);
   if (isFailure(candidate)) return candidate;
@@ -563,22 +594,27 @@ export function registerDefaultToolchainIO(factory: () => ToolchainIO): void {
   defaultIOFactory = factory;
 }
 
-function defaultIO(): ToolchainIO {
-  if (!defaultIOFactory) {
-    throw new Error("resolveToolchain needs a ToolchainIO: pass one, or import ./toolchain.js to install the host implementation");
-  }
-  return defaultIOFactory();
-}
-
 /**
  * Select one installation that carries every required component, and identify the
  * exact payload bytes it will run. Never falls back from a declared root or pin.
+ *
+ * Omitting `io` uses the host implementation `./toolchain.js` registers at import
+ * time. A consumer that never imports that module gets a structured
+ * `unavailable/io-unavailable` rather than a throw; `resolveHostToolchain()` in
+ * `./toolchain.js` is the entry point that cannot be in that state.
  */
-export function resolveToolchain(request: ToolchainRequest, io: ToolchainIO = defaultIO()): ToolchainSelection {
-  const chosen = selectInstallation(request, io);
+export function resolveToolchain(request: ToolchainRequest, io?: ToolchainIO): ToolchainSelection {
+  const host = io ?? defaultIOFactory?.() ?? null;
+  if (!host) {
+    return unavailable(
+      "unavailable/io-unavailable",
+      "resolveToolchain has no ToolchainIO: pass one explicitly, or call resolveHostToolchain() from ./toolchain.js, whose import installs the host implementation",
+    );
+  }
+  const chosen = selectInstallation(request, host);
   if (isFailure(chosen)) return chosen;
 
-  const P = pathFor(io.platform);
+  const P = pathFor(host.platform);
   const required = new Set(request.required);
   const files: Partial<Record<ToolComponent, FileIdentity>> = {};
   for (const component of TOOL_COMPONENTS) {
@@ -590,7 +626,7 @@ export function resolveToolchain(request: ToolchainRequest, io: ToolchainIO = de
         `Toolchain ${chosen.installation.version} under ${chosen.root} is missing required component ${component}`,
       );
     }
-    const bytes = io.read(file);
+    const bytes = host.read(file);
     if (!bytes) {
       return unavailable(
         "unavailable/component-missing",

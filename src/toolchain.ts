@@ -6,11 +6,14 @@ import {
   compareVersions,
   registerDefaultToolchainIO,
   resolveRootCandidate,
+  resolveToolchain,
   scanInstallations,
   selectInstallation,
   type InstallationScan,
   type ToolComponent,
   type ToolchainIO,
+  type ToolchainRequest,
+  type ToolchainSelection,
 } from "./toolchainselection.js";
 
 /**
@@ -61,6 +64,16 @@ export function hostToolchainIO(): ToolchainIO {
   };
 }
 registerDefaultToolchainIO(hostToolchainIO);
+
+/**
+ * The consumer entry point: component-valid selection against the host filesystem,
+ * with the ToolchainIO passed explicitly. Prefer this over `resolveToolchain(request)`
+ * — the bare call depends on this module having been imported for its registration
+ * side effect, and returns `unavailable/io-unavailable` when it has not been.
+ */
+export function resolveHostToolchain(request: ToolchainRequest): ToolchainSelection {
+  return resolveToolchain(request, hostToolchainIO());
+}
 
 export interface ToolsRoot {
   root: string;

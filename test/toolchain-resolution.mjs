@@ -11,6 +11,7 @@
 // Run: npm run build && node --test test/toolchain-resolution.mjs
 
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -77,38 +78,33 @@ test("brief regression: component validity, newest usable, explicit-vs-pin confl
 
 test("every contract failure code is reachable with its documented trigger", () => {
   const io = briefIO();
-  assert.equal(
-    resolveToolchain({ toolsVersion: "6.1", required: ["emulator"] }, io).code,
-    "unavailable/component-missing",
-    "explicit version lacks a required component",
-  );
-  assert.equal(
-    resolveToolchain({ toolsVersion: "7.0", required: ["packer"] }, io).code,
-    "unavailable/version-missing",
-    "requested version directory does not exist",
-  );
-  assert.equal(
-    resolveToolchain({ toolsRoot: "/fixture/not-installed", required: ["packer"] }, io).code,
-    "unavailable/root-unavailable",
-    "explicit root is absent",
-  );
-  assert.equal(
-    resolveToolchain({ toolsVersion: "6.1", projectToolsVersion: "6.0", required: ["packer"] }, io).code,
-    "ambiguous/version-conflict",
-    "explicit request contradicts the supplied project pin",
-  );
-  const aliasIO = macIO({ "6.1": { packer: "one-payload" }, "6.1.0": { packer: "other-payload" } });
-  assert.equal(
-    resolveToolchain({ required: ["packer"] }, aliasIO).code,
-    "ambiguous/version-alias-conflict",
-    "equal numeric versions contain different required bytes",
-  );
-  const linuxIO = toolchainIOFromTree({ platform: "linux", home: "/home/dev", env: {}, files: {} });
-  assert.equal(
-    resolveToolchain({ required: ["packer"] }, linuxIO).code,
-    "unavailable/unsupported-default-root",
-    "platform has no verified default root",
-  );
+  const rows = [
+    ["explicit version lacks a required component", { toolsVersion: "6.1", required: ["emulator"] }, io, "unavailable", "unavailable/component-missing"],
+    ["requested version directory does not exist", { toolsVersion: "7.0", required: ["packer"] }, io, "unavailable", "unavailable/version-missing"],
+    ["explicit root is absent", { toolsRoot: "/fixture/not-installed", required: ["packer"] }, io, "unavailable", "unavailable/root-unavailable"],
+    ["explicit request contradicts the supplied project pin", { toolsVersion: "6.1", projectToolsVersion: "6.0", required: ["packer"] }, io, "ambiguous", "ambiguous/version-conflict"],
+    [
+      "equal numeric versions contain different required bytes",
+      { required: ["packer"] },
+      macIO({ "6.1": { packer: "one-payload" }, "6.1.0": { packer: "other-payload" } }),
+      "ambiguous",
+      "ambiguous/version-alias-conflict",
+    ],
+    [
+      "platform has no verified default root",
+      { required: ["packer"] },
+      toolchainIOFromTree({ platform: "linux", home: "/home/dev", env: {}, files: {} }),
+      "unavailable",
+      "unavailable/unsupported-default-root",
+    ],
+    ["required names no components", { required: [] }, io, "unavailable", "unavailable/required-empty"],
+    ["required names something outside TOOL_COMPONENTS", { required: ["editor"] }, io, "unavailable", "unavailable/component-unknown"],
+  ];
+  for (const [trigger, request, triggerIO, status, code] of rows) {
+    const sel = resolveToolchain(request, triggerIO);
+    assert.equal(sel.status, status, trigger);
+    assert.equal(sel.code, code, trigger);
+  }
   const conflictingProps = toolchainIOFromTree({
     platform: "darwin",
     home: "/fixture",
@@ -618,6 +614,115 @@ test("identity is deterministic, content-sensitive and independent of the root p
   });
   const relocated = resolveToolchain({ toolsRoot: "/elsewhere/sdk", required: ["packer", "emulator"] }, elsewhere);
   assert.equal(relocated.identity, first.identity, "identity is relative to the root, so a moved install keeps it");
+});
+
+// ------------------------------------------------- requested component validity
+
+// sha256 of the empty string: what an empty `required` would digest to for every
+// root and every version if the resolver were willing to answer such a request.
+const EMPTY_STRING_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+test("an empty required set is rejected, never answered with a constant identity", () => {
+  const io = briefIO();
+  const empty = resolveToolchain({ required: [] }, io);
+  assert.equal(empty.status, "unavailable");
+  assert.equal(empty.code, "unavailable/required-empty");
+  assert.equal(empty.identity, undefined);
+  assert.equal(empty.version, undefined);
+  assert.equal(resolveToolchain({ required: undefined }, io).code, "unavailable/required-empty", "an absent field is not a request");
+
+  // A completely different tree must not answer the same request the same way.
+  const other = toolchainIOFromTree({
+    platform: "darwin",
+    home: "/other",
+    files: { "/other/Library/PICO/sdk/9.9/emulator/emulator": { bytes: "unrelated", executable: true } },
+  });
+  assert.equal(resolveToolchain({ required: [] }, other).code, "unavailable/required-empty");
+
+  // ...and no selection that does succeed carries the empty digest.
+  assert.notEqual(resolveToolchain({ required: ["packer"] }, io).identity, EMPTY_STRING_SHA256);
+});
+
+test("an out-of-union component is a structured result, not a TypeError", () => {
+  const io = briefIO();
+  for (const bogus of [["editor"], ["packer", "spatialbundle"], [""], [null], [42], ["PACKER"]]) {
+    let sel;
+    assert.doesNotThrow(() => {
+      sel = resolveToolchain({ required: bogus }, io);
+    }, `required: ${JSON.stringify(bogus)}`);
+    assert.equal(sel.status, "unavailable", JSON.stringify(bogus));
+    assert.equal(sel.code, "unavailable/component-unknown", JSON.stringify(bogus));
+  }
+  assert.match(resolveToolchain({ required: ["editor"] }, io).detail, /"editor"/);
+  assert.match(resolveToolchain({ required: ["editor"] }, io).detail, /adb, emulator, packer, proto/);
+  assert.equal(resolveToolchain({ required: ["packer", "packer"] }, io).version, "6.1", "duplicates are deduplicated, not rejected");
+});
+
+// ------------------------------------------------------------- host io wiring
+
+test("resolveToolchain with no io and no registered host implementation is structured, not a throw", async () => {
+  // A distinct module URL gives a fresh instance whose registration hook is unset,
+  // which is the state an S2 consumer importing only toolchainselection.js sees.
+  const unregistered = await import("../dist/toolchainselection.js?unregistered");
+  let sel;
+  assert.doesNotThrow(() => {
+    sel = unregistered.resolveToolchain({ required: ["packer"] });
+  });
+  assert.equal(sel.status, "unavailable");
+  assert.equal(sel.code, "unavailable/io-unavailable");
+  assert.match(sel.detail, /resolveHostToolchain/);
+});
+
+test("host entry points resolve against a real tree, symlink alias included", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico-toolchain-host-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const packer = path.join(root, "6.1.0", "editor", "spatialbundle", "spatialbundle");
+  fs.mkdirSync(path.dirname(packer), { recursive: true });
+  fs.writeFileSync(packer, "host-packer", { mode: 0o755 });
+  let aliased = true;
+  try {
+    fs.symlinkSync(path.join(root, "6.1.0"), path.join(root, "6.1"), "dir");
+  } catch {
+    aliased = false; // unprivileged Windows hosts cannot create one
+  }
+
+  const { hostToolchainIO, resolveHostToolchain } = await import("../dist/toolchain.js");
+  const viaModule = await import("../dist/toolchainselection.js");
+
+  const savedHome = process.env.PICO_HOME;
+  try {
+    process.env.PICO_HOME = root;
+    const viaHost = resolveHostToolchain({ required: ["packer"] });
+    assert.equal(viaHost.status, "ok", viaHost.detail);
+    assert.equal(viaHost.rootSource, "PICO_HOME");
+    assert.equal(viaHost.root, root);
+    assert.equal(viaHost.files.packer.sha256, crypto.createHash("sha256").update("host-packer").digest("hex"));
+
+    // The import-time registration: the bare call must agree with the explicit one.
+    const viaDefault = viaModule.resolveToolchain({ required: ["packer"] });
+    assert.equal(viaDefault.status, "ok", viaDefault.detail);
+    assert.equal(viaDefault.identity, viaHost.identity);
+    assert.equal(viaDefault.files.packer.path, viaHost.files.packer.path);
+
+    assert.equal(resolveHostToolchain({ required: [] }).code, "unavailable/required-empty");
+    assert.equal(resolveHostToolchain({ toolsVersion: "9.9", required: ["packer"] }).code, "unavailable/version-missing");
+
+    if (aliased) {
+      assert.equal(viaHost.version, "6.1", "the symlinked alias sorts first and is not a conflict");
+      assert.equal(
+        hostToolchainIO().realpath(path.join(root, "6.1", "editor", "spatialbundle", "spatialbundle")),
+        fs.realpathSync(packer),
+        "hostToolchainIO().realpath canonicalises a real symlink",
+      );
+      assert.equal(hostToolchainIO().realpath(path.join(root, "nope")), null);
+    } else {
+      t.diagnostic("symlinks unavailable on this host; alias canonicalisation not exercised");
+      assert.equal(viaHost.version, "6.1.0");
+    }
+  } finally {
+    if (savedHome === undefined) delete process.env.PICO_HOME;
+    else process.env.PICO_HOME = savedHome;
+  }
 });
 
 // ---------------------------------------------------------------------- purity
