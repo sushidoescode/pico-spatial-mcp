@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { okJson, tail, okJsonStructured } from "./util.js";
 import {
   ensurePicoCli,
@@ -15,6 +15,7 @@ import {
   describePicoCliEnvironmentFailure,
   picoCliOperationCapability,
   retainPicoCliObservation,
+  picoCliObservationRoot,
   type PicoCliCommandResult,
   type PicoCliObservationRetentionInput,
   type PicoCliRetainedObservation,
@@ -25,6 +26,7 @@ import {
   type CliRouteDurationFlag,
   type OperationCapability,
 } from "./clicapabilities.js";
+import { inspectMp4, sha256File } from "./artifactinspection.js";
 import {
   assessCoverage,
   classifyWatchEnd,
@@ -82,12 +84,74 @@ const SETUP_REQUIRED_NOTE =
   "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry.";
 
 const RECORD_HONESTY =
-  "The artifact is the file pulled by the official CLI; this tool checks only that it is a " +
-  "nonempty regular file, not that its container is valid. Its pixels prove nothing until LOOKED " +
+  "The artifact is the file pulled by the official CLI. This tool stat-checks it AND inspects its " +
+  "container: box structure, declared tracks, and the duration MEASURED from the file's own movie " +
+  "header. A returned duration is NOT a measurement — the CLI echoes the clamped request, so " +
+  "requestedDurationSec and measuredDurationSec are reported separately and may disagree. A " +
+  "container that will not parse is invalid media; when nothing could inspect the bytes the media " +
+  "is unvalidated, never a successful decode. Its pixels still prove nothing until LOOKED " +
   "at. Guest-side adb screenrecord and pico-cli capture record " +
   "yield empty/invalid files on this emulator display; the working macOS host-side recipe is " +
   "screencapture -V -l<windowId>. Evidence class: a capture artifact " +
   "that still requires a LOOK before any visual claim.";
+
+/** Bytes above this are hashed but not parsed: an unbounded read is not an inspection budget. */
+const MAX_RECORDING_INSPECT_BYTES = 256 * 1024 * 1024;
+
+export type RecordingInspection = {
+  media: "validated" | "unvalidated" | "invalid";
+  sha256: string | null;
+  bytes: number | null;
+  measuredDurationSec: number | null;
+  hasVideoTrack: boolean | null;
+  trackCount: number | null;
+  reason: string;
+};
+
+/**
+ * Inspect a pulled recording. `measuredDurationSec` comes from the file's own `mvhd`; the CLI's
+ * returned duration is the clamped REQUEST and is never treated as a measurement. When the bytes
+ * cannot be read or are too large to parse within budget the answer is `unvalidated` — explicitly
+ * "nothing checked this" — and never a successful decode.
+ */
+export function inspectRecordingArtifact(artifactPath: string): RecordingInspection {
+  const digest = sha256File(artifactPath);
+  if (digest.sha256 === null) {
+    return { media: "unvalidated", sha256: null, bytes: null, measuredDurationSec: null, hasVideoTrack: null, trackCount: null, reason: digest.reason };
+  }
+  if (digest.bytes > MAX_RECORDING_INSPECT_BYTES) {
+    return {
+      media: "unvalidated",
+      sha256: digest.sha256,
+      bytes: digest.bytes,
+      measuredDurationSec: null,
+      hasVideoTrack: null,
+      trackCount: null,
+      reason: `the recording is ${digest.bytes} bytes, above the ${MAX_RECORDING_INSPECT_BYTES}-byte container-inspection budget; it was hashed but not parsed`,
+    };
+  }
+  let bytes: Buffer;
+  try {
+    bytes = fs.readFileSync(artifactPath);
+  } catch (error: any) {
+    return { media: "unvalidated", sha256: digest.sha256, bytes: digest.bytes, measuredDurationSec: null, hasVideoTrack: null, trackCount: null, reason: `the recording could not be read for inspection: ${error?.message ?? String(error)}` };
+  }
+  const mp4 = inspectMp4(bytes);
+  if (!mp4.valid) {
+    return { media: "invalid", sha256: digest.sha256, bytes: digest.bytes, measuredDurationSec: null, hasVideoTrack: false, trackCount: null, reason: `the recording is not a parseable MP4/ISO-BMFF container: ${mp4.reason}` };
+  }
+  return {
+    media: "validated",
+    sha256: digest.sha256,
+    bytes: digest.bytes,
+    measuredDurationSec: mp4.durationSec,
+    hasVideoTrack: mp4.hasVideoTrack,
+    trackCount: mp4.trackCount,
+    reason: mp4.durationSec === null
+      ? "the container parsed but states no movie duration, so no duration was measured"
+      : `the container parsed; ${mp4.durationSec}s measured from its movie header, ${mp4.trackCount} track(s), video track ${mp4.hasVideoTrack ? "declared" : "absent"}`,
+  };
+}
 
 /** Best-effort crash-marker scan over watch-crash output. Named indicators, not a verdict. */
 export function scanForCrashIndicators(text: string): string[] {
@@ -413,16 +477,29 @@ export function registerPicoCliTools(server: McpServer) {
         artifact: z.string().optional().describe("The recording path. Its pixels prove nothing until LOOKED at."),
         artifactExists: z.boolean().optional(),
         artifactBytes: z.number().nullable().optional(),
-        durationSec: z.number().optional(),
+        durationSec: z.number().optional().describe("Deprecated alias of requestedDurationSec — the CLAMPED REQUEST, never a measurement."),
+        requestedDurationSec: z.number().optional().describe("What this wrapper asked the CLI for, after clamping to the 1-180s range."),
+        measuredDurationSec: z.number().nullable().optional().describe("Duration read from the recording's OWN movie header. null when the container states none or nothing could inspect it."),
+        media: z.enum(["validated", "unvalidated", "invalid"]).optional().describe("validated = the container parsed; invalid = it did not; unvalidated = nothing could inspect the bytes (never a successful decode)."),
+        artifactSha256: z.string().nullable().optional(),
         exitCode: z.number().nullable().optional(),
       }).passthrough(),
       inputSchema: {
         durationSec: z.number().min(1).max(180).optional().describe("Recording length in seconds (CLI range 1-180; default 15)."),
-        device: z.string().optional().describe("Device serial (default emulator-5554)."),
-        outputPath: z.string().optional().describe("Local output path (default ~/.pico-mcp/recordings/rec-<timestamp>.mp4)."),
+        device: z.string().optional().describe("REQUIRED adb device serial. There is no default: a recording names the device it came from."),
+        outputPath: z.string().optional().describe("Local output path. Default: a run-unique file under the observation root, never a fixed or shared path a later recording can overwrite."),
       },
     },
     async ({ durationSec, device, outputPath }) => {
+      // Explicit target identity, checked before any CLI work: a recording that cannot name its
+      // device is not evidence about any device, and a default serial records whatever is attached.
+      if (!device || !device.trim()) {
+        return okJsonStructured({
+          status: "failed",
+          failureClass: "runtime",
+          note: "device is required: capture_record names the device the recording came from, and there is no default target. Pass the adb serial of the device to record.",
+        });
+      }
       const ensured = await ensurePicoCli();
       if (ensured.status !== "ok") {
         return okJsonStructured({
@@ -435,10 +512,12 @@ export function registerPicoCliTools(server: McpServer) {
       const cli = picoCliFromEnsure(ensured)!;
       const provenance = { picoCli: picoCliProvenance(ensured) };
       const sec = Math.min(180, Math.max(1, Math.round(durationSec ?? 15)));
-      const outDir = path.join(os.homedir(), ".pico-mcp", "recordings");
-      fs.mkdirSync(outDir, { recursive: true });
-      const artifact = outputPath ?? path.join(outDir, `rec-${new Date().toISOString().replace(/[:.]/g, "-")}.mp4`);
-      const args = ["capture", "record", "-t", String(sec), "-o", artifact, "-d", device ?? "emulator-5554"];
+      // Run-unique by construction. The old default was a wall-clock name in one shared directory:
+      // two recordings started in the same millisecond collided, and nothing tied a file to its run.
+      const runId = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
+      const artifact = outputPath ?? path.join(picoCliObservationRoot(), "capture-record", runId, "recording.mp4");
+      fs.mkdirSync(path.dirname(artifact), { recursive: true });
+      const args = ["capture", "record", "-t", String(sec), "-o", artifact, "-d", device];
 
       // The CLI blocks for the recording duration, then pulls the file — allow generous pull time.
       const r = await runPicoCli(cli, args, { timeoutMs: (sec + 120) * 1000 });
@@ -468,6 +547,8 @@ export function registerPicoCliTools(server: McpServer) {
       // Exit 0 is not evidence the recording is a non-empty regular file — stat once and fail closed.
       const inspection = inspectPicoCliArtifact(artifact);
       const artifactOk = inspection.exists === true && inspection.regularFile && (inspection.bytes ?? 0) > 0;
+      // ...and a nonempty regular file is not evidence it is a recording. Inspect the container.
+      const media = artifactOk ? inspectRecordingArtifact(artifact) : null;
       const artifactFailure = inspection.statError
         ? `could not be stat-checked: ${inspection.statError}`
         : inspection.exists === false
@@ -475,17 +556,35 @@ export function registerPicoCliTools(server: McpServer) {
           : !inspection.regularFile
             ? "not a regular file"
             : "empty";
+      const mediaInvalid = media?.media === "invalid";
       return okJsonStructured({
-        status: artifactOk ? "ok" : "failed",
+        status: artifactOk && !mediaInvalid ? "ok" : "failed",
         artifact,
         ...(inspection.exists === null ? {} : { artifactExists: inspection.exists }),
         artifactBytes: inspection.bytes,
         durationSec: sec,
-        ...(artifactOk
+        requestedDurationSec: sec,
+        ...(media
+          ? {
+              media: media.media,
+              measuredDurationSec: media.measuredDurationSec,
+              artifactSha256: media.sha256,
+              hasVideoTrack: media.hasVideoTrack,
+              mediaNote: media.reason,
+              // The CLI's own returned duration is the clamped request; only measuredDurationSec is
+              // read from the file. They are reported side by side precisely so nobody conflates them.
+              durationNote: media.measuredDurationSec === null
+                ? `requested ${sec}s; the file states no measurable duration, so the request is the only number here and it is not evidence of length`
+                : `requested ${sec}s; the file's own movie header measures ${media.measuredDurationSec}s`,
+            }
+          : {}),
+        ...(artifactOk && !mediaInvalid
           ? {}
           : {
               failureClass: "runtime",
-              note: `pico-cli exited 0 but the recording at ${artifact} is ${artifactFailure} — treat as failed.`,
+              note: mediaInvalid
+                ? `pico-cli exited 0 and wrote ${inspection.bytes} bytes to ${artifact}, but ${media!.reason} — treat as failed.`
+                : `pico-cli exited 0 but the recording at ${artifact} is ${artifactFailure} — treat as failed.`,
               ...(inspection.statError ? { error: inspection.statError } : {}),
             }),
         ...(output ? { outputTail: tail(output, 12) } : {}),

@@ -486,7 +486,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
 
   forwardDoor(
     "pico_look",
-    "DOOR 4 — Capture the emulator's forward view deterministically and return the image path. READ the image; that look is what turns a claim into vision_verified (record it with pico_record). NO pose control exists on this path: deterministic = the fixed forward screencap; the multi-angle alternatives are Accessibility-gated GUI drags whose free-cam drifts — so bring content into the forward FOV instead of moving the camera. OCCLUSION: a docked HUD/menu panel can cover the scene; when the app's generated wiring routes the panel DEBUG_CMDs, drive 'panel:hide' before a scene capture and 'panel:show' after (adb shell am broadcast -a <pkg>.DEBUG_CMD --es cmd panel:hide). Apps without that route ignore the broadcast — confirm with the capture itself, never by assumption.",
+    "DOOR 4 — Capture the emulator's current display through the device shell and return the image path. ROUTE: `screencap` composites the display the shell presents, not what an XR runtime submits to the headset — for an immersive layer it can read black while the app renders correctly, and can read black when nothing is drawn, so black is inconclusive about the route rather than a rendering verdict; the bytes are structurally inspected before they are saved. READ the image; that look is what turns a claim into vision_verified (record it with pico_record). NO pose control exists on this path: deterministic = the fixed forward screencap; the multi-angle alternatives are Accessibility-gated GUI drags whose free-cam drifts — so bring content into the forward FOV instead of moving the camera. OCCLUSION: a docked HUD/menu panel can cover the scene; when the app's generated wiring routes the panel DEBUG_CMDs, drive 'panel:hide' before a scene capture and 'panel:show' after (adb shell am broadcast -a <pkg>.DEBUG_CMD --es cmd panel:hide). Apps without that route ignore the broadcast — confirm with the capture itself, never by assumption.",
     {},
     async () => {
       // raw lane: the capture tool's own result (path/sha JSON, or its fail() text as isError) is
@@ -498,12 +498,18 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
 
   forwardDoor(
     "pico_verify_app",
-    "DOOR 5 — Verify ANY PICO APK through the honest loop (v22 pico-verify core): install → launch → settle → deterministic capture → calibrated-eye judgment. Works for apps this server never built (including official PICO samples). Returns verdict + capture; escalations require a look.",
-    { apkPath: z.string(), packageName: z.string().describe("The APK's applicationId."), settleSec: z.number().optional() },
-    async ({ apkPath, packageName, settleSec }) => {
-      // raw lane: verdict + capture provenance (and any structured or isError result) verbatim
+    "DOOR 5 — OBSERVE any external PICO APK on an EXPLICITLY NAMED device: install → installed-digest check → launch → settle → identity (boot id, PID + process start, foreground) → bounded PID-scoped log → one structurally inspected capture, published immutably into a unique run directory. Works for apps this server never built (including official PICO samples). The result is a STRUCTURAL OBSERVATION, never a run receipt, a release claim or a hardware claim, and no verdict is machine-assigned: it returns identity plus the capture, and YOU look. It never clears the device's global log and never stops an app it was not given — a foreign foreground comes back as a conflict with the evidence.",
+    {
+      apkPath: z.string(),
+      packageName: z.string().describe("The APK's applicationId."),
+      serial: z.string().describe("REQUIRED adb serial of the device to observe. There is no default: an observation names the device it observed."),
+      activity: z.string().optional().describe("Fully-qualified launch activity; omitted means a monkey LAUNCHER intent."),
+      settleSec: z.number().optional(),
+    },
+    async ({ apkPath, packageName, serial, activity, settleSec }) => {
+      // raw lane: identity + capture provenance (and any structured or isError result) verbatim
       const callRaw = await doorCallRaw();
-      return callRaw("verify_pico_apk", { apkPath, packageName, ...(settleSec ? { settleSec } : {}) });
+      return callRaw("verify_pico_apk", { apkPath, packageName, serial, ...(activity ? { activity } : {}), ...(settleSec ? { settleSec } : {}) });
     },
   );
 

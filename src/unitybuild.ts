@@ -109,7 +109,7 @@ export function registerUnityBuildTools(server: McpServer) {
             editor,
             logPath,
             ...(editor.warning ? { warning: editor.warning } : {}),
-            next: [`verify_pico_apk with apkPath='${result.apkPath}' (LOOK at the capture before any visual claim).`],
+            next: [`verify_pico_apk with apkPath='${result.apkPath}' and the serial of the device to observe (there is no default target; LOOK at the capture before any visual claim).`],
           });
         }
         return okJson({ built: false, error: result.error ?? "build reported not-ok", fix: pointedFix(logTail + (result.error ?? "")), logPath, logTail: logTail.slice(-1200) });
