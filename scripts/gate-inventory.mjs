@@ -49,7 +49,7 @@ export const GATES = Object.freeze({
   "test:assetgate": { host: "linux", scope: "fixture", commands: [["node", "test/assetgate.mjs"]] },
   "test:worldenv": { host: "linux", scope: "fixture", commands: [["node", "test/worldenv.mjs"]] },
   "test:referring": { host: "linux", scope: "fixture", commands: [["node", "test/referring.mjs"]] },
-  "test:doors": { host: "linux", scope: "fixture", commands: [["node", "test/doors.mjs"]] },
+  "test:doors": { host: "linux", scope: "fixture", commands: [["node", "test/doors.mjs"], ["node", "--test", "test/innerclient.mjs"]] },
   "test:prompts": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/prompts.mjs"]] },
   "test:archetype": { host: "linux", scope: "fixture", commands: [["node", "test/archetype.mjs"]] },
   "test:claims": { host: "linux", scope: "fixture", commands: [["node", "test/claimspage.mjs"]] },
@@ -73,9 +73,21 @@ export const GATES = Object.freeze({
   "test:emulator-restart": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/emulator.mjs", "test/restart-emulator.mjs", "test/observation.mjs", "test/navigation.mjs", "test/runtimecontinuity.mjs", "test/navigationtarget.mjs", "test/worldlocomotion.mjs"]] },
   "test:modelmeasure": { host: "linux", scope: "fixture", commands: [["node", "test/modelmeasure.mjs"]] },
   "test:docsmeta": { host: "linux", scope: "fixture", commands: [["node", "test/docsmeta.mjs"], ["node", "--test", "test/public-docs.mjs"]] },
-  "test:picocli": { host: "linux", scope: "fixture", commands: [["node", "test/picocli.mjs"], ["node", "--test", "test/picocli-autoinstall.mjs", "test/picocli-sweep.mjs"]] },
+  "test:picocli": { host: "linux", scope: "fixture", commands: [["node", "test/picocli.mjs"], ["node", "--test", "test/picocli-autoinstall.mjs", "test/picocli-sweep.mjs"], ["node", "--test", "test/cliobservations.mjs"]] },
   "test:runreceipt": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/runreceipt-identity.mjs", "test/runreceipt-store.mjs", "test/nativefleetreceipt.mjs", "test/fleetreceipt.mjs", "test/runreceipt-ledger.mjs", "test/runreceipt-ship.mjs", "test/runreceipt-portability.mjs"]] },
   "test:runrevision": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/runrevision-contracts.mjs", "test/runrevision-store.mjs", "test/runrevision-locator.mjs", "test/runrevision-locks.mjs"]] },
+  // The SDK-selection track (S1-S6) as ONE gate: six suites that share one subject — which
+  // toolchain/declaration a project resolves to. `declarationcontext-installed` copies the
+  // built dist/ into a relocated package and spawns it, so the whole gate is `fixture` scope
+  // and run-gate's staleness refusal applies. Linux only: the inventory gives every gate
+  // exactly one lane, so a second (Windows) invocation would need a second gate name.
+  "test:sdkselection": {
+    host: "linux",
+    scope: "fixture",
+    commands: [["node", "--test", "test/toolchain-resolution.mjs", "test/toolchain-consumers.mjs",
+      "test/projectidentity.mjs", "test/toolchain-cache.mjs", "test/declarationcontext.mjs",
+      "test/declarationcontext-installed.mjs"]],
+  },
   "test:swan": { host: "linux", scope: "fixture", commands: [["node", "test/swan.mjs"]] },
   "test:placeonsurface": { host: "linux", scope: "fixture", commands: [["node", "test/placeonsurface.mjs"]] },
   "test:menuactions": { host: "linux", scope: "fixture", commands: [["node", "test/menuactions.mjs"]] },

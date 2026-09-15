@@ -19,6 +19,12 @@
  *        version destroyed the earlier artifacts testers were still installing from. Publication is
  *        now scripts/publish-tarball.mjs: an exclusive, non-replacing primitive that adds one file
  *        and can reach no other. --publish now names the destination FILE, not a directory to prune.
+ *  [M10] dist/ shipped without data/sdk-compatibility/ -> the installed server's declaration
+ *        authority degraded silently to index-missing. The INSTALLED payload canary now runs
+ *        against the extracted package, so a dropped files[] entry fails the gate loudly.
+ *  [M11] the doors surface was only ever exercised on its success path -> a failed inner capture
+ *        could be laundered into {status:"ok"}, and concurrent first calls could each spawn their
+ *        own inner child. Both are now asserted against the INSTALLED artifact, hermetically.
  *
  * Run:  npm run test:tarball
  *       npm run test:tarball -- --publish ~/releases/<date>/pico-spatial-mcp-<version>.tgz
@@ -313,6 +319,25 @@ try {
     fs.existsSync(path.join(installed, d)) ? ok(`payload present: ${d}/`) : fail(`payload MISSING: ${d}/ — the built code resolves it`);
   }
 
+  // [M10] The reviewed SDK-compatibility payload must ship intact: dist/declarationcontext.js
+  //       resolves data/sdk-compatibility/ from its own module URL, so a tarball missing it
+  //       installs a server whose declaration authority silently degrades to index-missing — every
+  //       lookup stays historical and nothing in the build output says why. The INSTALLED copy of
+  //       the canary is imported, from the installed root, so this proves the script shipped too.
+  //       (S6's handoff called this [M6]; that number was already taken by the hostile-path
+  //       sandbox and the doors round-trip, so it landed as the next free marker.)
+  try {
+    const { verifySdkCompatibilityPayload } = await import(
+      pathToFileURL(path.join(installed, "scripts", "verify-sdk-compatibility-payload.mjs")).href
+    );
+    const payload = verifySdkCompatibilityPayload(installed);
+    payload.ok
+      ? ok(`reviewed SDK-compatibility payload verified (${payload.checked.length} files, index + every referenced record/basis)`)
+      : fail(`reviewed SDK-compatibility payload missing or altered: ${payload.errors.slice(0, 3).join("; ")}`);
+  } catch (error) {
+    fail(`SDK-compatibility payload canary could not run against the installed package: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
   // [M2] Content, not just a directory.
   const briefDir = path.join(installed, "briefs");
   if (fs.existsSync(briefDir)) {
@@ -467,6 +492,105 @@ try {
   }
   else fail(`door tool failed in a spaced path: ${JSON.stringify(sdkBody).slice(0, 200)} — module-relative resolution is broken`);
   await doorsClient.close();
+
+  // [M11] The doors surface, on its FAILURE and CONCURRENCY paths, against the installed artifact.
+  //       [M6] above only ever proves the happy path, and two regressions hide behind that:
+  //         (a) a failed inner capture rewrapped as {status:"ok"} — an agent then "verifies" an
+  //             app from a screencap that never happened;
+  //         (b) concurrent FIRST door calls each spawning their own inner full-surface child,
+  //             which is invisible until the machine is loaded enough for it to matter.
+  //       Hermetic by construction, exactly like test/doors.mjs's end-to-end case: a fixture HOME,
+  //       a PATH holding only a recording `node` proxy and a refusing `npm`, CLI operations off,
+  //       and $PICO_ADB pointed at an exit-1 stub that records its argv. Nothing here can reach a
+  //       real adb, a device, an emulator or a registry. The fixture lives INSIDE the sandbox, so
+  //       the one rmSync this script is allowed to own already cleans it up.
+  if (process.platform === "win32") {
+    skip("installed doors isError/single-flight checks: their stub fixture is POSIX-only (test:tarball is a Linux gate)");
+  } else {
+    const fixtureRoot = path.join(sandbox, "doors fixture");
+    const fixtureHome = path.join(fixtureRoot, "home");
+    const fixtureBin = path.join(fixtureRoot, "bin");
+    const nodeSpawnLog = path.join(fixtureRoot, "node-spawns.log");
+    const adbLog = path.join(fixtureRoot, "adb-invocations.log");
+    fs.mkdirSync(fixtureHome, { recursive: true });
+    fs.mkdirSync(fixtureBin, { recursive: true });
+    const shQuote = (value) => `'${String(value).replaceAll("'", `'"'"'`)}'`;
+    // doors.ts spawns its inner child as `node <here>/index.js` — resolved through PATH — so one
+    // recorded line ending in dist/index.js IS one inner child. The proxy then becomes real node.
+    fs.writeFileSync(
+      path.join(fixtureBin, "node"),
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> ${shQuote(nodeSpawnLog)}\nexec ${shQuote(process.execPath)} "$@"\n`,
+      { mode: 0o755 },
+    );
+    fs.writeFileSync(
+      path.join(fixtureBin, "npm"),
+      `#!/bin/sh\nprintf 'fixture npm refuses every call: %s\\n' "$*" >&2\nexit 2\n`,
+      { mode: 0o755 },
+    );
+    // capture resolves $PICO_ADB by EXISTENCE first and falls through to a real adb when it is
+    // missing, so the stub records every argv it receives and is re-checked immediately before use.
+    const adbStub = path.join(fixtureBin, "adb");
+    fs.writeFileSync(adbStub, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${shQuote(adbLog)}\nexit 1\n`, { mode: 0o755 });
+    const coldEnv = {
+      ...process.env,
+      HOME: fixtureHome,
+      USERPROFILE: fixtureHome,
+      PATH: [fixtureBin, path.dirname(process.execPath)].join(path.delimiter),
+      PICO_HOME: path.join(fixtureRoot, "absent-pico-home"),
+      PICO_ADB: adbStub,
+      PICO_MCP_SURFACE: "doors",
+      PICO_MCP_CLI_POLICY: "disabled",
+    };
+    delete coldEnv.PICO_MCP_OUTER_SURFACE;
+    delete coldEnv.PICO_MCP_CLI_PATH;
+    delete coldEnv.PICO_MCP_AUTOINSTALL_CLI;
+    delete coldEnv.PICO_MCP_AUTOUPDATE_CLI;
+    const innerChildren = () => (fs.existsSync(nodeSpawnLog)
+      ? fs.readFileSync(nodeSpawnLog, "utf8").split("\n").filter((line) => /dist\/index\.js$/.test(line.trim()))
+      : []).length;
+    const statusOf = (result) => {
+      const text = result?.content?.[0]?.text ?? "";
+      try { return JSON.parse(text).status ?? "<no status field>"; }
+      catch { return `<unparseable: ${String(text).slice(0, 60)}>`; }
+    };
+    const coldTransport = new StdioClientTransport({
+      command: process.execPath, args: [entry], cwd: sandbox, env: coldEnv,
+    });
+    const coldClient = new Client({ name: "tarball-verifier-doors-cold", version: "0.0.0" });
+    try {
+      await coldClient.connect(coldTransport);
+      const settled = await Promise.allSettled(
+        Array.from({ length: 20 }, () => coldClient.callTool({ name: "pico_sdk", arguments: { symbol: "Entity" } })),
+      );
+      const statuses = settled.map((outcome) => outcome.status === "fulfilled"
+        ? statusOf(outcome.value)
+        : `<rejected: ${outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}>`);
+      const spawnedByBurst = innerChildren();
+      spawnedByBurst === 1 && statuses.every((s) => s === statuses[0] && s !== "error")
+        ? ok(`20 concurrent first door calls on the installed artifact started exactly one inner server (all ${statuses[0]})`)
+        : fail(`installed doors surface started ${spawnedByBurst} inner servers for a 20-way first-call burst (statuses: ${[...new Set(statuses)].join(", ")})`);
+
+      const stubUsable = (() => {
+        try { fs.accessSync(adbStub, fs.constants.X_OK); return fs.statSync(adbStub).isFile(); }
+        catch { return false; }
+      })();
+      if (!stubUsable) {
+        fail(`the installed-doors adb stub is missing or not executable immediately before pico_look (${adbStub}); the call was NOT made`);
+      } else {
+        const look = await coldClient.callTool({ name: "pico_look", arguments: {} });
+        const lookText = look?.content?.[0]?.text ?? "";
+        const adbCalls = fs.existsSync(adbLog) ? fs.readFileSync(adbLog, "utf8").split("\n").filter(Boolean) : [];
+        look?.isError === true && /screencap failed/.test(lookText) && !/"status":\s*"ok"/.test(lookText)
+          && innerChildren() === 1 && adbCalls.some((line) => /exec-out screencap/.test(line))
+          ? ok(`installed pico_look forwards the inner screencap failure as isError, never as status ok (stub adb ran: ${adbCalls.length} invocation(s), screencap argv recorded)`)
+          : fail(`installed pico_look laundered, re-spawned, or bypassed the stub: ${JSON.stringify({ isError: look?.isError ?? null, text: lookText.slice(0, 200), innerChildren: innerChildren(), adbCalls }).slice(0, 500)}`);
+      }
+    } catch (error) {
+      fail(`installed doors failure/concurrency checks could not run: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      await coldClient.close().catch(() => {});
+    }
+  }
 
   // [M7] The CODED default (v36.3): env unset must serve the doors surface from the installed
   //      artifact. Docs always said doors; until v36.3 the code said full, so one missed env var

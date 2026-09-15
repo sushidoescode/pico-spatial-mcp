@@ -12,7 +12,7 @@ this once, then start from the pointers at the bottom.
   MCP tool surface (255 tools on macOS (installed-tarball runtime-measured) versus a source-derived 252 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list`
   measurement has run). `src/doors.ts` is the intent-level facade described in the
   README's vocabulary primer.
-- **`test/*.mjs`** — the deterministic gate battery, 53 gate invocations (52 `test:` suites plus `smoke`):
+- **`test/*.mjs`** — the deterministic gate battery, 54 gate invocations (53 `test:` suites plus `smoke`):
   `test:lint`, `test:ledger`, `test:doors`, `test:vault`, `test:occupancy`, `test:affordance`,
   `test:eye`, `test:worldenv`, `test:conformance`, …. All of it runs headless, no emulator boot required. It's mirrored 1:1 in
   `.github/workflows/gates.yml`, which is what actually gates `main` — if a suite isn't in that

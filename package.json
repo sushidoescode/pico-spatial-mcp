@@ -9,6 +9,7 @@
   "main": "dist/index.js",
   "files": [
     "dist",
+    "data/sdk-compatibility",
     "scripts",
     "tools",
     "briefs",
@@ -67,6 +68,7 @@
     "test:picocli": "node scripts/run-gate.mjs test:picocli",
     "test:runreceipt": "node scripts/run-gate.mjs test:runreceipt",
     "test:runrevision": "node scripts/run-gate.mjs test:runrevision",
+    "test:sdkselection": "node scripts/run-gate.mjs test:sdkselection",
     "test:swan": "node scripts/run-gate.mjs test:swan",
     "test:placeonsurface": "node scripts/run-gate.mjs test:placeonsurface",
     "test:menuactions": "node scripts/run-gate.mjs test:menuactions",

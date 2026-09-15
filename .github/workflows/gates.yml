@@ -141,6 +141,8 @@ jobs:
         run: npm run test:conformance
       - name: Revisioned run store (contracts, locator, locks, crash/concurrency recovery)
         run: npm run test:runrevision
+      - name: SDK/toolchain selection (resolution, consumers, project identity, cache, declaration context)
+        run: npm run test:sdkselection
       - name: Build freshness (a source edit invalidates dist/ before any suite reads it)
         run: npm run test:buildfreshness
       - name: Plugin bootstrap freshness (a host cache rebuilds when its source moved)
