@@ -19,10 +19,11 @@ import { IdentityCache } from "./identitycache.js";
  * toolchain change could ever dislodge.
  *
  * Precedence, one chain for every consumer:
- *   1. explicit `$PICO_ADB` — it must exist and be executable, and its BYTES are disclosed, so a
- *      pinned adb is identified rather than trusted by filename. A set-but-unusable override does
- *      not win (that would break every consumer on a stale export) and is not silently swallowed
- *      either: the rejection rides along on the result for the doctor to report.
+ *   1. explicit `$PICO_ADB` — it must exist, be executable and be readable, and its BYTES are
+ *      disclosed, so a pinned adb is identified rather than trusted by filename. It fails CLOSED:
+ *      a set-but-unusable override is refused outright and NOTHING else is probed, because
+ *      quietly running a different binary than the one an operator named is the failure this
+ *      whole task exists to remove. `adbExecutable` turns that refusal into a throw.
  *   2. PATH — searched in JS through the shared PATH/PATHEXT helper, never a POSIX `which`
  *      subprocess, so the lookup is identical on Windows and costs no process.
  *   3. the SELECTED toolchain's bundled `adb` component — the S1 selection, so it follows the
@@ -99,73 +100,110 @@ function identityKey(source: AdbSource, target: string, io: AdbIO): string {
 export function resolveAdbExecutable(io: AdbIO = hostAdbIO()): AdbResolution {
   const P = io.platform === "win32" ? path.win32 : path.posix;
   const probed: string[] = [];
-  let overrideRejected: AdbOverrideRejection | null = null;
+
+  const refuseOverride = (rejection: AdbOverrideRejection): AdbResolution => ({
+    status: "unavailable",
+    code: "unavailable/adb-override-unusable",
+    detail:
+      `$PICO_ADB=${rejection.path} ${rejection.reason}. An explicitly configured adb is never ` +
+      "replaced by a PATH or bundled candidate, so no fallback was attempted — correct $PICO_ADB, " +
+      "or unset it to use PATH and the selected toolchain's bundled platform-tools.",
+    overrideRejected: rejection,
+    probed,
+  });
 
   // Candidates are probed in precedence order and the walk STOPS at the first usable one, so a
   // host whose adb is on PATH never scans the tools root.
-  const pick = (): { source: AdbSource; path: string } | null => {
+  const pick = ():
+    | { kind: "winner"; source: AdbSource; path: string }
+    | { kind: "override-rejected"; rejection: AdbOverrideRejection }
+    | { kind: "none" } => {
     const declared = (io.env.PICO_ADB ?? "").trim();
     if (declared) {
       probed.push(declared);
-      if (io.executable(declared)) return { source: "explicit", path: declared };
-      overrideRejected = {
-        path: declared,
-        reason: io.realpath(declared) === null
-          ? "$PICO_ADB names no existing file"
-          : "$PICO_ADB is not an executable file",
-      };
+      // An explicit configuration fails CLOSED, like every other explicit root and pin on this
+      // track. Falling through to PATH would run a different binary than the operator named, and
+      // the caller — which only ever sees the resolved string — would have no way to notice.
+      if (io.realpath(declared) === null) {
+        return { kind: "override-rejected", rejection: { path: declared, reason: "names no existing file" } };
+      }
+      if (!io.executable(declared)) {
+        return { kind: "override-rejected", rejection: { path: declared, reason: "is not an executable file" } };
+      }
+      return { kind: "winner", source: "explicit", path: declared };
     }
     for (const name of executableNames("adb", io.platform)) {
       for (const candidate of executableCandidates(name, io.env, io.platform)) {
         probed.push(candidate);
-        if (io.executable(candidate)) return { source: "path", path: candidate };
+        if (io.executable(candidate)) return { kind: "winner", source: "path", path: candidate };
       }
     }
     const bundled = bundledAdbCandidate(io);
     if (bundled) {
       probed.push(bundled);
-      if (io.executable(bundled)) return { source: "bundled", path: bundled };
+      if (io.executable(bundled)) return { kind: "winner", source: "bundled", path: bundled };
     }
-    return null;
+    return { kind: "none" };
   };
 
-  const winner = pick();
-  if (!winner) {
+  const picked = pick();
+  if (picked.kind === "override-rejected") return refuseOverride(picked.rejection);
+  if (picked.kind === "none") {
     return {
       status: "unavailable",
       code: "unavailable/adb-missing",
       detail: `adb not found on PATH or in the PICO emulator's bundled platform-tools (probed: ${probed.join(", ") || "nothing"})`,
-      overrideRejected,
+      overrideRejected: null,
       probed,
     };
   }
 
-  const resolved = adbCache.get(identityKey(winner.source, P.normalize(winner.path), io), () => {
-    const bytes = io.read(winner.path);
-    return {
-      status: "ok" as const,
-      path: winner.path,
-      source: winner.source,
-      identity: {
+  const winner = picked;
+  const resolved = adbCache.getOr(
+    identityKey(winner.source, P.normalize(winner.path), io),
+    () => {
+      const bytes = io.read(winner.path);
+      return {
+        status: "ok" as const,
         path: winner.path,
-        // An executable this process may run but not READ (X_OK without R_OK) is not a refusal —
-        // it still runs. Its bytes are simply not evidence, and an empty digest says so rather
-        // than claiming a hash. `path` is what distinguishes two such candidates.
-        sha256: bytes ? crypto.createHash("sha256").update(bytes).digest("hex") : "",
-      },
-    };
-  });
-  return { ...resolved, overrideRejected, probed };
+        source: winner.source,
+        identity: {
+          path: winner.path,
+          // Empty means the payload could not be read (a directory, or X_OK without R_OK). It is an
+          // absence of evidence, never a hash — and it is not published, so a file that becomes
+          // readable is picked up on the next call.
+          sha256: bytes ? crypto.createHash("sha256").update(bytes).digest("hex") : "",
+        },
+      };
+    },
+    (value) => value.identity.sha256 !== "",
+  );
+  if (winner.source === "explicit" && !resolved.identity.sha256) {
+    // An override whose bytes cannot be read cannot be identified, and identifying it is the whole
+    // point of naming one explicitly. This also catches $PICO_ADB pointing at a directory, which
+    // passes an X_OK check.
+    return refuseOverride({ path: winner.path, reason: "is not a readable regular file, so the bytes it would be identified by cannot be disclosed" });
+  }
+  return { ...resolved, overrideRejected: null, probed };
 }
 
 /**
- * The executable a consumer runs. Keeps the historical bare-name last resort so that a host with
- * no adb anywhere fails exactly where it failed before (at the spawn) rather than at a new throw
- * inside a tool handler that used to degrade.
+ * The executable a consumer runs.
+ *
+ * An unusable EXPLICIT `$PICO_ADB` throws: it is an operator error, not a degraded host, and every
+ * consumer reaches this through a string, so a fall-through would substitute a different binary
+ * for an install or a capture with nothing in that operation's own result to say so. Throwing puts
+ * it on each caller's existing handler error path instead.
+ *
+ * No adb anywhere is NOT a throw — the bare name is returned exactly as before, so that failure
+ * still lands at the spawn where it always did rather than at a new throw inside a handler that
+ * used to degrade.
  */
 export function adbExecutable(io: AdbIO = hostAdbIO()): string {
   const resolved = resolveAdbExecutable(io);
-  return resolved.status === "ok" ? resolved.path : "adb";
+  if (resolved.status === "ok") return resolved.path;
+  if (resolved.overrideRejected) throw new Error(resolved.detail);
+  return "adb";
 }
 
 export async function adbPath(): Promise<string> {

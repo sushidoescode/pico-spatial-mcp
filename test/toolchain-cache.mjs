@@ -16,12 +16,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { IdentityCache } from "../dist/identitycache.js";
 import { adbExecutable, clearAdbResolutionCache, resolveAdbExecutable } from "../dist/adb.js";
 import { clearProtoCache, loadProto } from "../dist/grpc.js";
 import { detectJavaHome, gradleEnv } from "../dist/toolchain.js";
+import { executeLiveCaptureSettled, SETTLE_COMPARISON } from "../dist/observation.js";
 import { toolchainIOFromTree } from "./helpers/toolchain-fixture.mjs";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // ─────────────────────────────────────────────────────────── the cache primitive
 
@@ -129,17 +133,72 @@ test("adb resolution falls back to the SELECTED toolchain's bundled adb, not a h
   assert.ok(!/0\.13/.test(r.path), "the bundled candidate must come from the selection, never a literal 0.13 path");
 });
 
-test("a set-but-unusable PICO_ADB is disclosed, never silently substituted without a record", () => {
+test("a set-but-unusable PICO_ADB FAILS CLOSED and probes nothing else", () => {
+  // The track rule: an explicit root or pin never falls back. A perfectly good adb sits on PATH
+  // here precisely so that "it resolved" cannot be mistaken for "it was correct".
   clearAdbResolutionCache();
   const io = adbIO({
-    env: { PICO_ADB: "/opt/pinned/adb", PATH: "/usr/local/bin" },
-    files: { "/opt/pinned/adb": { bytes: "not-executable", executable: false }, [PATH_ADB]: { bytes: "path-adb", executable: true } },
+    env: { PICO_ADB: "/opt/pinned/adb", PATH: "/usr/local/bin", PICO_HOME: "/fixture/Library/PICO/sdk" },
+    files: {
+      "/opt/pinned/adb": { bytes: "not-executable", executable: false },
+      [PATH_ADB]: { bytes: "path-adb", executable: true },
+      ...sdkTree("bundled-adb"),
+    },
   });
   const r = resolveAdbExecutable(io);
-  assert.equal(r.status, "ok");
-  assert.equal(r.source, "path");
+  assert.equal(r.status, "unavailable");
+  assert.equal(r.code, "unavailable/adb-override-unusable");
   assert.equal(r.overrideRejected?.path, "/opt/pinned/adb");
   assert.match(r.overrideRejected.reason, /executable/i);
+  assert.deepEqual(r.probed, ["/opt/pinned/adb"], "no PATH or bundled candidate may be probed past a rejected override");
+  assert.ok(!io.reads.some((p) => p === PATH_ADB || p === BUNDLED_ADB), "no fallback payload may be read");
+});
+
+test("adbExecutable THROWS on an unusable explicit override, naming the path and the reason", () => {
+  const cases = [
+    { label: "missing", files: {}, reason: /names no existing file/ },
+    { label: "not executable", files: { "/opt/pinned/adb": { bytes: "x", executable: false } }, reason: /not an executable file/ },
+  ];
+  for (const { label, files, reason } of cases) {
+    clearAdbResolutionCache();
+    const io = adbIO({
+      env: { PICO_ADB: "/opt/pinned/adb", PATH: "/usr/local/bin", PICO_HOME: "/fixture/Library/PICO/sdk" },
+      files: { ...files, [PATH_ADB]: { bytes: "path-adb", executable: true }, ...sdkTree("bundled-adb") },
+    });
+    assert.throws(() => adbExecutable(io), (error) => {
+      assert.match(error.message, /\/opt\/pinned\/adb/, `${label}: the configured path must be named`);
+      assert.match(error.message, reason, `${label}: the reason must be named`);
+      assert.match(error.message, /no fallback was attempted/i, `${label}: the refusal to fall back must be stated`);
+      return true;
+    }, `${label}: adbExecutable must refuse rather than substitute a different binary`);
+    assert.ok(!io.reads.some((p) => p === PATH_ADB || p === BUNDLED_ADB), `${label}: no fallback payload may be read`);
+  }
+});
+
+test("an explicit override whose bytes cannot be read is refused, not silently identity-less", () => {
+  // $PICO_ADB pointing at a directory passes an X_OK check; an override that cannot be identified
+  // by its bytes is not an override at all.
+  clearAdbResolutionCache();
+  const io = toolchainIOFromTree({
+    platform: "darwin", home: "/fixture",
+    env: { PICO_ADB: "/opt/pinned", PATH: "/usr/local/bin" },
+    files: { "/opt/pinned/inner": { bytes: "x", executable: true }, [PATH_ADB]: { bytes: "path-adb", executable: true } },
+  });
+  io.executable = (target) => target === "/opt/pinned" || target === "/opt/pinned/inner" || target === PATH_ADB;
+  const r = resolveAdbExecutable(io);
+  assert.equal(r.status, "unavailable");
+  assert.equal(r.code, "unavailable/adb-override-unusable");
+  assert.match(r.overrideRejected.reason, /readable regular file/i);
+});
+
+test("a corrected PICO_ADB is honoured immediately: a refusal is never cached", () => {
+  clearAdbResolutionCache();
+  const broken = adbIO({ env: { PICO_ADB: "/opt/pinned/adb" }, files: { "/opt/pinned/adb": { bytes: "x", executable: false } } });
+  assert.equal(resolveAdbExecutable(broken).status, "unavailable");
+  const fixed = adbIO({ env: { PICO_ADB: "/opt/pinned/adb" }, files: { "/opt/pinned/adb": { bytes: "pinned-adb", executable: true } } });
+  const r = resolveAdbExecutable(fixed);
+  assert.equal(r.status, "ok");
+  assert.equal(r.source, "explicit");
 });
 
 test("a replaced adb at the same path is observed inside one process", () => {
@@ -372,4 +431,59 @@ test("gradleEnv and detectJavaHome answer from the same injected context", () =>
     const home = detectJavaHome(io);
     assert.deepEqual(gradleEnv(io), home ? { JAVA_HOME: home } : {});
   }
+});
+
+// ──────────────────────────────────────────── the refusal reaches a real consumer, and stays lazy
+
+test("a real consumer surfaces the refusal through its own error path, spawning no adb", async (t) => {
+  // executeLiveCaptureSettled is the live entrypoint test/observation.mjs already drives with a
+  // captured-runner fixture. Called WITHOUT injected dependencies it goes through
+  // emulatorlook.resolveAdb() -> adbExecutable(), which is the whole point: the throw has to land
+  // on the consumer's own handler path rather than the consumer quietly capturing with some other
+  // adb. Nothing is spawned, because the refusal happens before the dependency set is built.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-s4-consumer-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const outPath = path.join(scratch, "refused.png");
+  const configured = path.join(scratch, "not-an-adb");
+  fs.writeFileSync(configured, "not executable", { mode: 0o644 });
+
+  const prior = process.env.PICO_ADB;
+  process.env.PICO_ADB = configured;
+  clearAdbResolutionCache();
+  try {
+    await assert.rejects(
+      () => executeLiveCaptureSettled(
+        { serial: "emulator-5554", outPath, maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON },
+        {},
+      ),
+      (error) => {
+        assert.match(error.message, new RegExp(configured.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+        assert.match(error.message, /not an executable file/);
+        assert.match(error.message, /no fallback was attempted/i);
+        return true;
+      },
+    );
+  } finally {
+    if (prior === undefined) delete process.env.PICO_ADB; else process.env.PICO_ADB = prior;
+    clearAdbResolutionCache();
+  }
+  assert.equal(fs.existsSync(outPath), false, "nothing may be captured when the configured adb was refused");
+});
+
+test("no consumer resolves adb at module load", () => {
+  // src/verifyapk.ts froze its adb into a module constant, and src/index.ts imports it at server
+  // start: one consumer's adb fixed for the process lifetime, a PATH walk plus a sha256 added to
+  // every `tools/list`, and — worst — a bad $PICO_ADB able to throw during server startup instead
+  // of inside the handler that asked for it.
+  const offenders = [];
+  for (const name of fs.readdirSync(path.join(repoRoot, "src")).filter((f) => f.endsWith(".ts"))) {
+    if (name === "adb.ts") continue; // where adbExecutable is defined
+    for (const line of fs.readFileSync(path.join(repoRoot, "src", name), "utf8").split("\n")) {
+      if (!/adbExecutable\s*\(/.test(line)) continue;
+      const topLevel = !/^[ \t]/.test(line);
+      const lazy = /=>\s*adbExecutable\s*\(/.test(line);
+      if (topLevel && !lazy) offenders.push(`${name}: ${line.trim()}`);
+    }
+  }
+  assert.deepEqual(offenders, [], "adb must be resolved per call, never frozen at import time");
 });

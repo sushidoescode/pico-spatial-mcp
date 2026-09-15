@@ -214,23 +214,32 @@ function picoSdkCheck(io: PreflightIO): CheckResult {
   return { name: "pico-sdk", status: "pass", detail, fix: null };
 }
 
+/** The explicitly configured adb, from the injected context (production captures process.env). */
+function declaredAdbOverride(io: PreflightIO): string {
+  return (io.adbOverride ?? process.env.PICO_ADB ?? "").trim();
+}
+
 /**
  * The same precedence `src/adb.ts` runs — explicit $PICO_ADB, then PATH, then the adb of the
  * SELECTED toolchain — with the legacy hardcoded location retained only as a LAST candidate so a
  * host that really does carry a 0.13 payload keeps working. Every candidate is still confirmed by
  * actually running `adb version`: the structural selection narrows where to look, it does not
  * replace the native probe.
+ *
+ * An explicit $PICO_ADB is the ONLY candidate when it is set, because the adapter fails closed on
+ * one it cannot use. Probing on past it here would report an adb that no operation will run.
  */
 function adbCandidates(io: PreflightIO): string[] {
-  const override = (io.adbOverride ?? process.env.PICO_ADB ?? "").trim();
+  const override = declaredAdbOverride(io);
+  if (override) return [override];
   const selected = io.adbInspection?.status === "ok" ? io.adbInspection.files.adb?.path : undefined;
   const legacy = LEGACY_SDK_ADB(io.home);
-  return [...new Set([...(override ? [override] : []), "adb", ...(selected ? [selected] : []), legacy])];
+  return [...new Set(["adb", ...(selected ? [selected] : []), legacy])];
 }
 
 /** Where a working candidate came from, so the row never implies the wrong provenance. */
 function adbSourceLabel(io: PreflightIO, candidate: string): string {
-  const override = (io.adbOverride ?? process.env.PICO_ADB ?? "").trim();
+  const override = declaredAdbOverride(io);
   if (override && candidate === override) return "explicit $PICO_ADB";
   if (candidate === "adb") return "PATH";
   if (io.adbInspection?.status === "ok" && candidate === io.adbInspection.files.adb?.path) {
@@ -274,16 +283,22 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
     ? { name: "node", status: "pass", detail: io.nodeVersion, fix: null }
     : { name: "node", status: "fail", detail: `found ${io.nodeVersion}, need >=20`, fix: "Install Node 20 or newer (e.g. `brew install node@20`), then restart your MCP client so the server runs on it." });
 
-  // 2. adb. An explicit $PICO_ADB that does NOT answer `adb version` must never be reported as
-  //    the answer — but it must not vanish either: a stale export silently replaced by a different
-  //    adb is exactly the provenance failure this row exists to surface, so the rejection is
-  //    disclosed beside the candidate that actually won.
+  // 2. adb. An explicit $PICO_ADB that does NOT answer `adb version` FAILS this row, because that
+  //    is what every operation will now do: src/adb.ts refuses to substitute a different binary
+  //    for one an operator named, so a row that quietly reported a PATH adb here would promise a
+  //    working lane that throws the moment anything installs, launches or captures.
   const adb = findAdb(io);
-  const declaredAdb = (io.adbOverride ?? process.env.PICO_ADB ?? "").trim();
-  const overrideNote = declaredAdb && adb !== declaredAdb ? ` ($PICO_ADB ${declaredAdb} did not answer \`adb version\` and was skipped)` : "";
+  const declaredAdb = declaredAdbOverride(io);
   push(adb
-    ? { name: "adb", status: "pass", detail: `${adb} (from ${adbSourceLabel(io, adb)})${overrideNote}`, fix: null }
-    : { name: "adb", status: "fail", detail: `no adb on PATH and no bundled platform-tools (probed: ${adbCandidates(io).join(", ")})`, fix: "Install the PICO Spatial Plugin in Android Studio (it downloads the emulator payload, whose platform-tools carry adb) or add adb to PATH." });
+    ? { name: "adb", status: "pass", detail: `${adb} (from ${adbSourceLabel(io, adb)})`, fix: null }
+    : declaredAdb
+      ? {
+          name: "adb",
+          status: "fail",
+          detail: `$PICO_ADB=${declaredAdb} did not answer \`adb version\`; an explicitly configured adb is never replaced by a PATH or bundled candidate, so nothing else was probed`,
+          fix: "Correct $PICO_ADB to a runnable adb, or unset it to fall back to PATH and the selected toolchain's bundled platform-tools, then re-run this read-only check.",
+        }
+      : { name: "adb", status: "fail", detail: `no adb on PATH and no bundled platform-tools (probed: ${adbCandidates(io).join(", ")})`, fix: "Install the PICO Spatial Plugin in Android Studio (it downloads the emulator payload, whose platform-tools carry adb) or add adb to PATH." });
 
   // 2b. PICO SDK payload. adb can be on PATH from an unrelated Android install, so a passing adb
   //     check is not evidence the PICO SDK is present. Without it there is nothing to build against.

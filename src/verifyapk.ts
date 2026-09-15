@@ -9,7 +9,11 @@ import { okJson } from "./util.js";
 import { adbExecutable } from "./adb.js";
 
 const run = promisify(execFile);
-const ADB = adbExecutable();
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools. Resolved PER CALL (identity-keyed, so a hit costs a stat) rather
+ *  than frozen into a module constant at import time — this module is imported at server
+ *  start, so an eager constant would re-freeze exactly what the identity keying unfreezes. */
+const ADB = () => adbExecutable();
 const SERIAL = "emulator-5554";
 export const VERIFY_APK_TEARDOWN_MS = 2_000;
 
@@ -47,7 +51,7 @@ export function registerVerifyApkTools(server: McpServer) {
       // 1. install -r (reinstall, keep data)
       let installed = false;
       try {
-        const r = await run(ADB, ["-s", SERIAL, "install", "-r", apkPath], { timeout: 180_000, maxBuffer: 8 * 1024 * 1024 });
+        const r = await run(ADB(), ["-s", SERIAL, "install", "-r", apkPath], { timeout: 180_000, maxBuffer: 8 * 1024 * 1024 });
         installed = /Success/i.test(`${r.stdout}${r.stderr}`);
         if (!installed) errors.push(`install: ${(r.stdout + r.stderr).trim().slice(0, 200)}`);
       } catch (e: any) {
@@ -60,9 +64,9 @@ export function registerVerifyApkTools(server: McpServer) {
       //    animation is still in flight (reproduced by the Unity hello-XR settling test).
       //    CLEAR logcat after the pause so the crash/ANR scan remains scoped to THIS launch.
       try {
-        await run(ADB, ["-s", SERIAL, "shell", "am", "force-stop", packageName], { timeout: 20_000 });
+        await run(ADB(), ["-s", SERIAL, "shell", "am", "force-stop", packageName], { timeout: 20_000 });
         await new Promise((r) => setTimeout(r, VERIFY_APK_TEARDOWN_MS));
-        await run(ADB, ["-s", SERIAL, "logcat", "-c"], { timeout: 15_000 }).catch(() => {});
+        await run(ADB(), ["-s", SERIAL, "logcat", "-c"], { timeout: 15_000 }).catch(() => {});
       } catch (e: any) {
         errors.push(`force-stop: ${String(e?.message ?? e).slice(0, 120)}`);
       }
@@ -75,7 +79,7 @@ export function registerVerifyApkTools(server: McpServer) {
         : ["-s", SERIAL, "shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"];
       const attemptLaunch = async (): Promise<boolean> => {
         try {
-          const r = await run(ADB, launchArgs, { timeout: 30_000 });
+          const r = await run(ADB(), launchArgs, { timeout: 30_000 });
           const started = !/Error|Exception|No activities found|aborted|current full space don't allow start fullscreen/i.test(`${r.stdout}${r.stderr}`);
           if (!started) errors.push(`launch: ${(r.stdout + r.stderr).trim().slice(0, 200)}`);
           return started;
@@ -92,7 +96,7 @@ export function registerVerifyApkTools(server: McpServer) {
       // 5a. process alive? (pidof exits non-zero when no process)
       const probeAlive = async (): Promise<boolean> => {
         try {
-          const r = await run(ADB, ["-s", SERIAL, "shell", "pidof", packageName], { timeout: 15_000 });
+          const r = await run(ADB(), ["-s", SERIAL, "shell", "pidof", packageName], { timeout: 15_000 });
           return r.stdout.trim().length > 0;
         } catch {
           return false;
@@ -106,7 +110,7 @@ export function registerVerifyApkTools(server: McpServer) {
       let fullSpaceBlocked = false;
       const scanLogcat = async () => {
         try {
-          const r = await run(ADB, ["-s", SERIAL, "shell", "logcat", "-d"], { timeout: 30_000, maxBuffer: 32 * 1024 * 1024 });
+          const r = await run(ADB(), ["-s", SERIAL, "shell", "logcat", "-d"], { timeout: 30_000, maxBuffer: 32 * 1024 * 1024 });
           const log = `${r.stdout}`;
           crashed = /\bFATAL\b/.test(log) || log.includes(`ANR in ${packageName}`);
           if (expectLogcatContains) logcatMatch = log.includes(expectLogcatContains);
@@ -125,11 +129,11 @@ export function registerVerifyApkTools(server: McpServer) {
       const recoveryNotes: string[] = [];
       if (launched && !processAlive && fullSpaceBlocked) {
         try {
-          const d = await run(ADB, ["-s", SERIAL, "shell", "dumpsys", "activity", "activities"], { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
+          const d = await run(ADB(), ["-s", SERIAL, "shell", "dumpsys", "activity", "activities"], { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
           const m = String(d.stdout).match(/topResumedActivity=ActivityRecord\{\S+ u0 ([\w.]+)\//);
           const incumbent = m && m[1] !== packageName ? m[1] : null;
           if (incumbent) {
-            await run(ADB, ["-s", SERIAL, "shell", "am", "force-stop", incumbent], { timeout: 20_000 });
+            await run(ADB(), ["-s", SERIAL, "shell", "am", "force-stop", incumbent], { timeout: 20_000 });
             await new Promise((r) => setTimeout(r, VERIFY_APK_TEARDOWN_MS));
             launched = await attemptLaunch();
             await new Promise((r) => setTimeout(r, settle * 1000));
@@ -151,7 +155,7 @@ export function registerVerifyApkTools(server: McpServer) {
         fs.mkdirSync(dir, { recursive: true });
         const safe = packageName.replace(/[^A-Za-z0-9._-]/g, "_") || "app";
         const out = path.join(dir, `${safe}.png`);
-        const png = await run(ADB, ["-s", SERIAL, "exec-out", "screencap", "-p"], { timeout: 30_000, encoding: "buffer" as any, maxBuffer: 32 * 1024 * 1024 });
+        const png = await run(ADB(), ["-s", SERIAL, "exec-out", "screencap", "-p"], { timeout: 30_000, encoding: "buffer" as any, maxBuffer: 32 * 1024 * 1024 });
         const buf = png.stdout as unknown as Buffer;
         if (buf && buf.length > 1000) { fs.writeFileSync(out, buf); artifact = out; }
         else errors.push(`capture: screencap returned ${buf?.length ?? 0} bytes (too small)`);

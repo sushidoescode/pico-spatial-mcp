@@ -506,7 +506,11 @@ fs.rmSync(cachedManaged.root, { recursive: true, force: true });
     row && row.status === "pass" && /\/opt\/pinned\/adb/.test(row.detail) && /PICO_ADB|explicit/i.test(row.detail)
       ? ok("adb row reports an explicit PICO_ADB with its provenance")
       : fail(`explicit PICO_ADB not reported: ${JSON.stringify(row)}`);
-    probed[0] === "/opt/pinned/adb" ? ok("adb row probes the explicit override first") : fail(`override was not probed first: ${JSON.stringify(probed)}`);
+    // Fail-closed precedence: when an override is configured it is the ONLY candidate, so the row
+    // can never report an adb that src/adb.ts would refuse to run.
+    JSON.stringify(probed) === JSON.stringify(["/opt/pinned/adb"])
+      ? ok("adb row probes the explicit override and nothing else")
+      : fail(`override was not the only probe: ${JSON.stringify(probed)}`);
   }
 
   {
@@ -532,20 +536,27 @@ fs.rmSync(cachedManaged.root, { recursive: true, force: true });
   }
 
   {
-    // An override whose bytes do not answer `adb version` must not be claimed as the answer, and
-    // must not be hidden either: the row falls through AND discloses the rejection.
-    const { io } = adbIO(["adb"], { adbOverride: "/opt/broken/adb" });
+    // An override whose bytes do not answer `adb version` FAILS CLOSED: it is never replaced by a
+    // PATH adb the operator did not ask for. A working PATH adb is present here precisely so the
+    // row cannot pass by falling through to it.
+    const { io, probed } = adbIO(["adb", SELECTED], { adbOverride: "/opt/broken/adb" });
     const row = runPreflightChecks(io).find((x) => x.name === "adb");
-    row && row.status === "pass" && /^adb\b/.test(row.detail) && /\/opt\/broken\/adb/.test(row.detail)
-      ? ok("an unusable PICO_ADB falls through and is disclosed")
+    row && row.status === "fail" && /\/opt\/broken\/adb/.test(row.detail) && /never replaced/i.test(row.detail)
+      && typeof row.fix === "string" && /unset it/i.test(row.fix)
+      ? ok("an unusable PICO_ADB fails closed and is disclosed")
       : fail(`invalid override mishandled: ${JSON.stringify(row)}`);
+    JSON.stringify(probed) === JSON.stringify(["/opt/broken/adb"])
+      ? ok("a rejected override stops the probe: no PATH or bundled candidate is consulted")
+      : fail(`fallback was probed after a rejected override: ${JSON.stringify(probed)}`);
   }
 
   {
-    const { io } = adbIO([], { adbOverride: "/opt/broken/adb" });
+    // With NO override configured the row still lists every candidate it tried.
+    const { io } = adbIO([]);
     const row = runPreflightChecks(io).find((x) => x.name === "adb");
-    row && row.status === "fail" && /\/opt\/broken\/adb/.test(row.detail) && /\/sdk\/6\.1\//.test(row.detail) && typeof row.fix === "string" && row.fix.length > 10
-      ? ok("a failing adb row lists every probed candidate and carries a fix")
+    row && row.status === "fail" && /\badb\b/.test(row.detail) && /\/sdk\/6\.1\//.test(row.detail) && /0\.13/.test(row.detail)
+      && typeof row.fix === "string" && row.fix.length > 10
+      ? ok("a failing adb row with no override lists every probed candidate and carries a fix")
       : fail(`adb failure detail incomplete: ${JSON.stringify(row)}`);
   }
 }
