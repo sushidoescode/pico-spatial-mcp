@@ -560,3 +560,80 @@ test("a lock whose holder has exited is reported as dead, with a recovery comman
   assert.equal(fs.existsSync(lockPath), true);
   fs.rmSync(lockPath);
 });
+
+test("two concurrent builds under one lease are serialized, and neither sweeps the other", async () => {
+  const root = createCheckout();
+  const events = [];
+  let releaseBarrier;
+  const barrier = new Promise((resolve) => { releaseBarrier = resolve; });
+  let aStaging;
+  let bStaging;
+  let aStagingAfterYield;
+  let bSawAStaging;
+
+  await withSourceSetup({ root }, async (lease) => {
+    const a = buildSource({
+      root,
+      owner: lease,
+      runCompiler: async ({ outDir }) => {
+        aStaging = outDir;
+        events.push("A:start");
+        // Yield while still owning outDir. An unserialized sibling would run its sweep right here.
+        await barrier;
+        aStagingAfterYield = fs.existsSync(outDir);
+        fs.writeFileSync(path.join(outDir, "index.js"), "export const built = \"A\";\n");
+        events.push("A:end");
+      },
+    });
+    const b = buildSource({
+      root,
+      owner: lease,
+      runCompiler: async ({ outDir }) => {
+        bStaging = outDir;
+        bSawAStaging = fs.existsSync(aStaging);
+        events.push("B:start");
+        fs.writeFileSync(path.join(outDir, "index.js"), "export const built = \"B\";\n");
+        events.push("B:end");
+      },
+    });
+    releaseBarrier();
+    await Promise.all([a, b]);
+  });
+
+  assert.equal(aStagingAfterYield, true, "a sibling build's sweep deleted this build's staging");
+  assert.deepEqual(events, ["A:start", "A:end", "B:start", "B:end"], "the two builds interleaved");
+  assert.notEqual(aStaging, bStaging);
+  assert.equal(bSawAStaging, false, "A's staging outlived A's own publication");
+
+  assert.equal(fs.readFileSync(path.join(root, "dist", "index.js"), "utf8"), "export const built = \"B\";\n");
+  assert.equal(verifyBuild(root).current, true);
+  assert.deepEqual(verifyBuild(root).reasons, []);
+  assert.deepEqual(fs.readdirSync(root).filter((name) => name.startsWith(".dist-") || name === LOCK_NAME), []);
+});
+
+test("the sweep spares staging an active build is using", async () => {
+  const root = createCheckout();
+  const stale = path.join(root, ".dist-staging-stale");
+  let liveStaging;
+  let swept;
+  let liveSurvived;
+
+  await buildSource({
+    root,
+    runCompiler: async ({ outDir }) => {
+      liveStaging = outDir;
+      fs.writeFileSync(path.join(outDir, "index.js"), "export const value = 1;\n");
+      // A genuinely stale sibling appears next to a staging tree that is in use right now.
+      fs.mkdirSync(stale, { recursive: true });
+      fs.writeFileSync(path.join(stale, "index.js"), "half-written output\n");
+      swept = sweepStaleScratch(root);
+      liveSurvived = fs.existsSync(outDir);
+    },
+  });
+
+  assert.equal(liveSurvived, true, "the sweep deleted staging an active build was using");
+  assert.deepEqual(swept, [".dist-staging-stale"]);
+  assert.equal(fs.existsSync(stale), false);
+  assert.equal(verifyBuild(root).current, true);
+  assert.deepEqual(fs.readdirSync(root).filter((name) => name.startsWith(".dist-")), []);
+});

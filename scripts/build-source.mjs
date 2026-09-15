@@ -82,26 +82,37 @@ function releaseLock({ lockPath, token }) {
   try { fs.rmSync(lockPath, { force: true }); } catch {}
 }
 
+/** Is this exact path scratch that some build in this process is using right now? */
+function isLiveScratch(target) {
+  for (const record of ACTIVE_LEASES.values()) if (record.live.has(target)) return true;
+  return false;
+}
+
 /**
  * Remove scratch that an earlier, interrupted build left behind.
  *
- * Deleting other builds' directories is only safe because this runs while we hold the setup lock:
- * holding it proves no other build owns scratch in this root right now. Names are matched against
- * the same `<prefix><random>` shape every removal uses, and `readdirSync` on the root means nothing
- * outside it is ever a candidate.
+ * Deleting directories this build did not create is safe on two conditions, and it needs both.
+ * Holding the setup lock rules out another *process* owning scratch here. It does not rule out
+ * another build in *this* process: a caller may share one lease across several `buildSource`
+ * calls, so a sibling's staging tree can be on disk and in use. Anything a live lease has
+ * recorded is therefore skipped. Beyond that, names must match the `<prefix><random>` shape every
+ * removal uses, and `readdirSync` on the root means nothing outside it is ever a candidate.
  */
 export function sweepStaleScratch(root) {
+  const checkout = path.resolve(root);
   const swept = [];
   let entries;
-  try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return swept; }
+  try { entries = fs.readdirSync(checkout, { withFileTypes: true }); } catch { return swept; }
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const prefix = entry.name.startsWith(STAGING_PREFIX) ? STAGING_PREFIX
       : entry.name.startsWith(BACKUP_PREFIX) ? BACKUP_PREFIX
       : null;
     if (!prefix || entry.name.length === prefix.length) continue;
+    const target = path.join(checkout, entry.name);
+    if (isLiveScratch(target)) continue;
     try {
-      removeOwnedScratch(root, path.join(root, entry.name), prefix);
+      removeOwnedScratch(checkout, target, prefix);
       swept.push(entry.name);
     } catch {}
   }
@@ -145,9 +156,11 @@ function raiseDefaultSignal(signal) {
  */
 export function handleInterrupt(signal, { raise = raiseDefaultSignal } = {}) {
   for (const record of [...ACTIVE_LEASES.values()]) {
-    if (record.staging) {
-      try { removeOwnedScratch(record.checkout, record.staging, STAGING_PREFIX); } catch {}
-      record.staging = null;
+    // Every in-flight staging tree, not just the newest: one lease can have several.
+    for (const target of [...record.live]) {
+      if (!path.basename(target).startsWith(STAGING_PREFIX)) continue;
+      try { removeOwnedScratch(record.checkout, target, STAGING_PREFIX); } catch {}
+      record.live.delete(target);
     }
     releaseLock(record);
   }
@@ -202,7 +215,7 @@ export async function withSourceSetup({ root, owner, waitMs = DEFAULT_WAIT_MS, c
   }
 
   const lease = Object.freeze({ kind: "pico-source-setup-owner" });
-  const held = { checkout, lockPath, token, staging: null };
+  const held = { checkout, lockPath, token, live: new Set(), chain: Promise.resolve() };
   ACTIVE_LEASES.set(lease, held);
   armInterruptCleanup();
   try {
@@ -256,28 +269,35 @@ export function runCompiler({ root, outDir, timeoutMs = COMPILE_TIMEOUT_MS, spaw
  * actually landed. A failed swap puts the previous tree back; if even that fails the backup is
  * kept and named in the error, because a build must never be the reason output disappears.
  */
-export function publishStaging(root, staging) {
+export function publishStaging(root, staging, live = null) {
   assertOwnedScratch(root, staging, STAGING_PREFIX);
   const distDir = path.join(root, "dist");
   const backup = path.join(root, scratchName(BACKUP_PREFIX));
   let backedUp = false;
 
-  if (fs.existsSync(distDir)) {
-    fs.renameSync(distDir, backup);
-    backedUp = true;
-  }
+  // The swap is deliberately synchronous, so no sibling build can observe the backup mid-flight.
+  // It is still recorded as live, so the invariant survives anyone making this async later.
+  live?.add(backup);
   try {
-    fs.renameSync(staging, distDir);
-  } catch (error) {
-    if (backedUp) {
-      try { fs.renameSync(backup, distDir); backedUp = false; } catch {}
+    if (fs.existsSync(distDir)) {
+      fs.renameSync(distDir, backup);
+      backedUp = true;
     }
-    if (backedUp) {
-      throw new Error(`${error.message}; the previous dist/ is preserved as ${path.basename(backup)} and must be renamed back by hand`);
+    try {
+      fs.renameSync(staging, distDir);
+    } catch (error) {
+      if (backedUp) {
+        try { fs.renameSync(backup, distDir); backedUp = false; } catch {}
+      }
+      if (backedUp) {
+        throw new Error(`${error.message}; the previous dist/ is preserved as ${path.basename(backup)} and must be renamed back by hand`);
+      }
+      throw error;
     }
-    throw error;
+    if (backedUp) removeOwnedScratch(root, backup, BACKUP_PREFIX);
+  } finally {
+    live?.delete(backup);
   }
-  if (backedUp) removeOwnedScratch(root, backup, BACKUP_PREFIX);
 }
 
 /**
@@ -286,35 +306,50 @@ export function publishStaging(root, staging) {
  * source changed while the compiler was running.
  */
 export async function buildSource({ root, runCompiler: compile = runCompiler, owner }) {
-  return withSourceSetup({ root, owner }, async (lease) => {
-    const checkout = fs.realpathSync(path.resolve(root));
-    const recovered = sweepStaleScratch(checkout);
-    if (recovered.length) log(`build-source: recovered scratch from an interrupted build: ${recovered.join(", ")}`);
-
+  return withSourceSetup({ root, owner }, (lease) => {
     const held = ACTIVE_LEASES.get(lease);
-    const staging = path.join(checkout, scratchName(STAGING_PREFIX));
-    const before = inputIdentity(checkout);
-    held.staging = staging;
-    try {
-      fs.mkdirSync(staging, { recursive: true });
-      await compile({ root: checkout, outDir: staging });
-
-      const after = inputIdentity(checkout);
-      if (after.sha256 !== before.sha256) {
-        throw new Error("the source changed during compilation; the output was discarded rather than published");
-      }
-      writeReceipt(checkout, staging, after);
-      publishStaging(checkout, staging);
-    } finally {
-      held.staging = null;
-      // Cleanup is best-effort reporting: it must never mask the failure that brought us here.
-      try {
-        if (fs.existsSync(staging)) removeOwnedScratch(checkout, staging, STAGING_PREFIX);
-      } catch (cleanupError) {
-        log(`build-source: could not remove ${path.basename(staging)}: ${cleanupError.message}`);
-      }
-    }
+    return serializeUnderLease(held, () => compileAndPublish(held, compile));
   });
+}
+
+/**
+ * Builds sharing one lease run one at a time. Without this a second concurrent call's synchronous
+ * prefix lands while the first is awaiting its compiler, and the two interleave over one `dist/`.
+ * Sequential and nested reuse are unaffected: they simply find an already-settled queue.
+ */
+function serializeUnderLease(held, work) {
+  const run = held.chain.then(work);
+  held.chain = run.then(() => {}, () => {}); // a failed build must not poison the queue behind it
+  return run;
+}
+
+async function compileAndPublish(held, compile) {
+  const { checkout, live } = held;
+  const recovered = sweepStaleScratch(checkout);
+  if (recovered.length) log(`build-source: recovered scratch from an interrupted build: ${recovered.join(", ")}`);
+
+  const staging = path.join(checkout, scratchName(STAGING_PREFIX));
+  const before = inputIdentity(checkout);
+  live.add(staging);
+  try {
+    fs.mkdirSync(staging, { recursive: true });
+    await compile({ root: checkout, outDir: staging });
+
+    const after = inputIdentity(checkout);
+    if (after.sha256 !== before.sha256) {
+      throw new Error("the source changed during compilation; the output was discarded rather than published");
+    }
+    writeReceipt(checkout, staging, after);
+    publishStaging(checkout, staging, live);
+  } finally {
+    live.delete(staging);
+    // Cleanup is best-effort reporting: it must never mask the failure that brought us here.
+    try {
+      if (fs.existsSync(staging)) removeOwnedScratch(checkout, staging, STAGING_PREFIX);
+    } catch (cleanupError) {
+      log(`build-source: could not remove ${path.basename(staging)}: ${cleanupError.message}`);
+    }
+  }
 }
 
 export async function buildSourceCli(root) {
