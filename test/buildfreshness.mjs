@@ -1,0 +1,413 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { PassThrough } from "node:stream";
+
+import { inputIdentity, verifyBuild } from "../scripts/build-identity.mjs";
+import { assertOwnedScratch, buildSource, publishStaging, runCompiler, withSourceSetup } from "../scripts/build-source.mjs";
+
+const LOCK_NAME = ".pico-source-setup.lock";
+const fixtures = [];
+
+test.after(() => {
+  for (const dir of fixtures.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+function writeSource(root, relativePath, contents) {
+  const target = path.join(root, "src", ...relativePath.split("/"));
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, contents);
+}
+
+function writeInstalledTypeScript(root, version) {
+  const dir = path.join(root, "node_modules", "typescript");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "package.json"), `${JSON.stringify({ name: "typescript", version })}\n`);
+}
+
+/** A throwaway checkout with the same shape the real build reads: config, lockfile and sources. */
+function createCheckout({ sources = { "index.ts": "export const value = 1;\n" } } = {}) {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pico-buildfresh-")));
+  fixtures.push(root);
+  fs.writeFileSync(path.join(root, "package.json"), `${JSON.stringify({ name: "fixture", version: "0.0.0", type: "module" })}\n`);
+  fs.writeFileSync(path.join(root, "package-lock.json"), `${JSON.stringify({ name: "fixture", lockfileVersion: 3 })}\n`);
+  fs.writeFileSync(path.join(root, "tsconfig.json"), `${JSON.stringify({ compilerOptions: { outDir: "dist", rootDir: "src" }, include: ["src/**/*.ts"] })}\n`);
+  for (const [relativePath, contents] of Object.entries(sources)) writeSource(root, relativePath, contents);
+  return root;
+}
+
+function listSources(dir, prefix = "") {
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+  const found = [];
+  for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) found.push(...listSources(path.join(dir, entry.name), relativePath));
+    else if (entry.name.endsWith(".ts")) found.push(relativePath);
+  }
+  return found;
+}
+
+/** Stand-in compiler that really emits one file per source, so removals and tampering are real. */
+function transpiler({ onCompile } = {}) {
+  return async ({ root, outDir }) => {
+    fs.mkdirSync(outDir, { recursive: true });
+    for (const relativePath of listSources(path.join(root, "src"))) {
+      const target = path.join(outDir, ...relativePath.replace(/\.ts$/, ".js").split("/"));
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, fs.readFileSync(path.join(root, "src", ...relativePath.split("/"))));
+    }
+    if (onCompile) await onCompile();
+  };
+}
+
+function fakeClock() {
+  let elapsed = 0;
+  return { now: () => elapsed, wait: async (ms) => { elapsed += ms; }, get elapsed() { return elapsed; } };
+}
+
+function fakeChild(code) {
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.kill = () => {};
+  setImmediate(() => {
+    child.stdout.end();
+    child.stderr.end();
+    child.emit("close", code, null);
+  });
+  return child;
+}
+
+function assertNoAbsolutePaths(value, where) {
+  if (typeof value === "string") {
+    assert.equal(path.isAbsolute(value), false, `${where} leaks an absolute path: ${value}`);
+    assert.equal(/^[A-Za-z]:[\\/]/.test(value), false, `${where} leaks a drive path: ${value}`);
+    return;
+  }
+  if (Array.isArray(value)) { value.forEach((item, index) => assertNoAbsolutePaths(item, `${where}[${index}]`)); return; }
+  if (value && typeof value === "object") {
+    for (const [key, item] of Object.entries(value)) assertNoAbsolutePaths(item, `${where}.${key}`);
+  }
+}
+
+test("source edits change the input identity and invalidate the receipt", async () => {
+  const root = createCheckout();
+  await buildSource({ root, runCompiler: transpiler() });
+  assert.equal(verifyBuild(root).current, true);
+
+  const before = inputIdentity(root).sha256;
+  fs.writeFileSync(path.join(root, "src/index.ts"), "export const value = 2;\n");
+  assert.notEqual(inputIdentity(root).sha256, before);
+  assert.equal(verifyBuild(root).current, false);
+});
+
+test("the input identity is a sorted, deterministic digest over sources, config, lockfile and toolchain", () => {
+  const root = createCheckout({
+    sources: { "index.ts": "export const a = 1;\n", "b/two.ts": "export const b = 2;\n", "a/one.ts": "export const c = 3;\n" },
+  });
+  const identity = inputIdentity(root);
+  assert.equal(identity.schemaVersion, 1);
+  assert.match(identity.sha256, /^[a-f0-9]{64}$/);
+
+  const paths = identity.files.map((file) => file.path);
+  assert.deepEqual(paths, [...paths].sort());
+  for (const expected of ["package-lock.json", "package.json", "src/a/one.ts", "src/b/two.ts", "src/index.ts", "tsconfig.json", "toolchain:node-major", "toolchain:typescript"]) {
+    assert.ok(paths.includes(expected), `input identity is missing ${expected}`);
+  }
+  for (const file of identity.files) assert.match(file.sha256, /^[a-f0-9]{64}$/);
+
+  assert.deepEqual(inputIdentity(root), identity);
+  const material = identity.files.map(({ path: filePath, sha256 }) => `${filePath}\0${sha256}\n`).join("");
+  assert.equal(crypto.createHash("sha256").update(material).digest("hex"), identity.sha256);
+});
+
+test("a successful build publishes dist with a portable receipt and no leftover scratch", async () => {
+  const root = createCheckout({ sources: { "index.ts": "export const value = 1;\n", "lib/helper.ts": "export const helper = 2;\n" } });
+  await buildSource({ root, runCompiler: transpiler() });
+
+  const raw = fs.readFileSync(path.join(root, "dist", "build-receipt.json"), "utf8");
+  const receipt = JSON.parse(raw);
+  assert.equal(receipt.schemaVersion, 1);
+  assert.equal(receipt.input.sha256, inputIdentity(root).sha256);
+  assert.deepEqual(receipt.input.files, inputIdentity(root).files);
+  assert.deepEqual(receipt.output.files.map((file) => file.path), ["index.js", "lib/helper.js"]);
+  assert.match(receipt.output.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(receipt.nodeMajor, Number(process.versions.node.split(".")[0]));
+
+  assertNoAbsolutePaths(receipt, "receipt");
+  assert.equal(raw.includes(os.homedir()), false, "receipt leaks the home directory");
+  assert.equal(raw.includes(root), false, "receipt leaks the checkout path");
+  assert.doesNotMatch(raw, /\d{4}-\d{2}-\d{2}T\d{2}:/, "receipt carries a timestamp");
+
+  assert.equal(verifyBuild(root).current, true);
+  assert.deepEqual(verifyBuild(root).reasons, []);
+  assert.deepEqual(fs.readdirSync(root).filter((name) => name.startsWith(".dist-") || name === LOCK_NAME), []);
+});
+
+test("removing a source removes its emitted module on the next successful build", async () => {
+  const root = createCheckout({ sources: { "index.ts": "export const value = 1;\n", "extra.ts": "export const extra = 1;\n" } });
+  await buildSource({ root, runCompiler: transpiler() });
+  assert.equal(fs.existsSync(path.join(root, "dist", "extra.js")), true);
+
+  fs.rmSync(path.join(root, "src", "extra.ts"));
+  await buildSource({ root, runCompiler: transpiler() });
+  assert.equal(fs.existsSync(path.join(root, "dist", "extra.js")), false);
+  assert.equal(verifyBuild(root).current, true);
+});
+
+test("lockfile and tsconfig edits invalidate the receipt", async () => {
+  const lockEdited = createCheckout();
+  await buildSource({ root: lockEdited, runCompiler: transpiler() });
+  fs.writeFileSync(path.join(lockEdited, "package-lock.json"), `${JSON.stringify({ name: "fixture", lockfileVersion: 3, packages: {} })}\n`);
+  const afterLock = verifyBuild(lockEdited);
+  assert.equal(afterLock.current, false);
+  assert.ok(afterLock.reasons.some((reason) => /input/i.test(reason)), afterLock.reasons.join("; "));
+
+  const configEdited = createCheckout();
+  await buildSource({ root: configEdited, runCompiler: transpiler() });
+  fs.writeFileSync(path.join(configEdited, "tsconfig.json"), `${JSON.stringify({ compilerOptions: { outDir: "dist", rootDir: "src", strict: true }, include: ["src/**/*.ts"] })}\n`);
+  assert.equal(verifyBuild(configEdited).current, false);
+});
+
+test("the installed TypeScript version participates in the identity", async () => {
+  const root = createCheckout();
+  await buildSource({ root, runCompiler: transpiler() });
+  const readReceipt = () => JSON.parse(fs.readFileSync(path.join(root, "dist", "build-receipt.json"), "utf8"));
+  assert.equal(readReceipt().typescript, null);
+
+  const before = inputIdentity(root).sha256;
+  writeInstalledTypeScript(root, "9.9.9");
+  assert.notEqual(inputIdentity(root).sha256, before);
+  assert.equal(verifyBuild(root).current, false);
+
+  await buildSource({ root, runCompiler: transpiler() });
+  assert.equal(readReceipt().typescript, "9.9.9");
+  assert.equal(verifyBuild(root).current, true);
+});
+
+test("a failed compilation preserves the previously published output", async () => {
+  const root = createCheckout();
+  await buildSource({ root, runCompiler: transpiler() });
+  const oldEntry = path.join(root, "dist", "index.js");
+  const oldBytes = fs.readFileSync(oldEntry);
+
+  writeSource(root, "index.ts", "export const value = 2;\n");
+  await assert.rejects(buildSource({ root, runCompiler: async () => { throw Error("compile failed"); } }), /compile failed/);
+  assert.deepEqual(fs.readFileSync(oldEntry), oldBytes);
+  assert.deepEqual(fs.readdirSync(root).filter((name) => name.startsWith(".dist-") || name === LOCK_NAME), []);
+  assert.equal(verifyBuild(root).current, false);
+});
+
+test("a source change during compilation is rejected and the old output survives", async () => {
+  const root = createCheckout();
+  await buildSource({ root, runCompiler: transpiler() });
+  const oldBytes = fs.readFileSync(path.join(root, "dist", "index.js"));
+
+  await assert.rejects(
+    buildSource({ root, runCompiler: transpiler({ onCompile: () => writeSource(root, "index.ts", "export const value = 3;\n") }) }),
+    /changed during/i,
+  );
+  assert.deepEqual(fs.readFileSync(path.join(root, "dist", "index.js")), oldBytes);
+  assert.deepEqual(fs.readdirSync(root).filter((name) => name.startsWith(".dist-") || name === LOCK_NAME), []);
+});
+
+test("tampered, missing and orphaned output invalidates the receipt", async () => {
+  const tampered = createCheckout();
+  await buildSource({ root: tampered, runCompiler: transpiler() });
+  fs.appendFileSync(path.join(tampered, "dist", "index.js"), "// tampered\n");
+  const tamperedResult = verifyBuild(tampered);
+  assert.equal(tamperedResult.current, false);
+  assert.ok(tamperedResult.reasons.some((reason) => reason.includes("index.js")), tamperedResult.reasons.join("; "));
+
+  const removed = createCheckout();
+  await buildSource({ root: removed, runCompiler: transpiler() });
+  fs.rmSync(path.join(removed, "dist", "index.js"));
+  const removedResult = verifyBuild(removed);
+  assert.equal(removedResult.current, false);
+  assert.ok(removedResult.reasons.some((reason) => reason.includes("index.js")), removedResult.reasons.join("; "));
+
+  const orphaned = createCheckout();
+  await buildSource({ root: orphaned, runCompiler: transpiler() });
+  fs.writeFileSync(path.join(orphaned, "dist", "orphan.js"), "export const orphan = 1;\n");
+  const orphanResult = verifyBuild(orphaned);
+  assert.equal(orphanResult.current, false);
+  assert.ok(orphanResult.reasons.some((reason) => reason.includes("orphan.js")), orphanResult.reasons.join("; "));
+});
+
+test("a missing, unparsable or half-published build is never current", async () => {
+  const root = createCheckout();
+  const neverBuilt = verifyBuild(root);
+  assert.equal(neverBuilt.current, false);
+  assert.ok(neverBuilt.reasons.length > 0);
+
+  await buildSource({ root, runCompiler: transpiler() });
+  const receiptPath = path.join(root, "dist", "build-receipt.json");
+  fs.rmSync(receiptPath);
+  assert.equal(verifyBuild(root).current, false);
+
+  fs.writeFileSync(receiptPath, "{ not json");
+  const unparsable = verifyBuild(root);
+  assert.equal(unparsable.current, false);
+  assert.ok(unparsable.reasons.length > 0);
+
+  fs.writeFileSync(receiptPath, `${JSON.stringify({ schemaVersion: 2, input: {}, output: {} })}\n`);
+  assert.equal(verifyBuild(root).current, false);
+
+  // A receipt may only name files inside the tree it describes.
+  const escaping = { schemaVersion: 1, input: inputIdentity(root), output: { sha256: "0".repeat(64), files: [{ path: "../../etc/hosts", sha256: "0".repeat(64) }] } };
+  fs.writeFileSync(receiptPath, `${JSON.stringify(escaping)}\n`);
+  const traversal = verifyBuild(root);
+  assert.equal(traversal.current, false);
+  assert.ok(traversal.reasons.some((reason) => /malformed output entry/.test(reason)), traversal.reasons.join("; "));
+
+  fs.rmSync(path.join(root, "dist"), { recursive: true });
+  assert.equal(verifyBuild(root).current, false);
+});
+
+test("an independent writer waits for the lock, then fails without stealing it", async () => {
+  const root = createCheckout();
+  const lockPath = path.join(root, LOCK_NAME);
+
+  await withSourceSetup({ root }, async () => {
+    const held = fs.readFileSync(lockPath, "utf8");
+    const record = JSON.parse(held);
+    assert.equal(record.pid, process.pid);
+    assert.match(record.token, /^[a-f0-9]{32}$/);
+
+    const clock = fakeClock();
+    await assert.rejects(
+      withSourceSetup({ root, waitMs: 30_000, clock }, async () => { throw new Error("the second writer must not run"); }),
+      /\.pico-source-setup\.lock/,
+    );
+    assert.ok(clock.elapsed >= 30_000, `waited only ${clock.elapsed}ms`);
+    assert.equal(fs.readFileSync(lockPath, "utf8"), held, "the waiting writer stole the lock");
+  });
+
+  assert.equal(fs.existsSync(lockPath), false);
+});
+
+test("a waiting writer proceeds once the holder releases the lock", async () => {
+  const root = createCheckout();
+  const lockPath = path.join(root, LOCK_NAME);
+  fs.writeFileSync(lockPath, `${JSON.stringify({ pid: process.pid + 1, token: "f".repeat(32) })}\n`, { flag: "wx" });
+
+  let ticks = 0;
+  const clock = {
+    now: () => ticks * 100,
+    wait: async () => { ticks += 1; if (ticks === 3) fs.rmSync(lockPath); },
+  };
+
+  let ran = false;
+  await withSourceSetup({ root, waitMs: 30_000, clock }, async () => { ran = true; });
+  assert.equal(ran, true);
+  assert.ok(ticks >= 3, `the writer did not wait: ${ticks} poll(s)`);
+  assert.equal(fs.existsSync(lockPath), false);
+});
+
+test("only the exact active lease for the same root is reused", async () => {
+  const rootA = createCheckout();
+  const rootB = createCheckout();
+  const lockA = path.join(rootA, LOCK_NAME);
+
+  let retired;
+  await withSourceSetup({ root: rootB }, async (lease) => { retired = lease; });
+
+  let captured;
+  await withSourceSetup({ root: rootA }, async (lease) => {
+    captured = lease;
+    let nested = false;
+    await withSourceSetup({ root: rootA, owner: lease }, async (inner) => {
+      nested = true;
+      assert.equal(inner, lease);
+    });
+    assert.equal(nested, true);
+    assert.equal(fs.existsSync(lockA), true, "a nested call released the outer lock");
+
+    await assert.rejects(withSourceSetup({ root: rootA, owner: "a-token" }, async () => {}), /owner/i);
+    await assert.rejects(withSourceSetup({ root: rootA, owner: {} }, async () => {}), /owner/i);
+    await assert.rejects(withSourceSetup({ root: rootA, owner: retired }, async () => {}), /owner/i);
+    await withSourceSetup({ root: rootB }, async (activeElsewhere) => {
+      await assert.rejects(withSourceSetup({ root: rootA, owner: activeElsewhere }, async () => {}), /owner/i);
+    });
+  });
+
+  await assert.rejects(withSourceSetup({ root: rootA, owner: captured }, async () => {}), /owner/i);
+  assert.equal(fs.existsSync(lockA), false);
+});
+
+test("buildSource reuses a caller-held lease instead of deadlocking on itself", async () => {
+  const root = createCheckout();
+  const lockPath = path.join(root, LOCK_NAME);
+  await withSourceSetup({ root }, async (lease) => {
+    await buildSource({ root, owner: lease, runCompiler: transpiler() });
+    assert.equal(fs.existsSync(lockPath), true);
+  });
+  assert.equal(verifyBuild(root).current, true);
+  assert.equal(fs.existsSync(lockPath), false);
+});
+
+test("the production compiler runs the checkout's TypeScript through this node binary", async () => {
+  const root = createCheckout();
+  const tscEntry = path.join(root, "node_modules", "typescript", "bin", "tsc");
+  fs.mkdirSync(path.dirname(tscEntry), { recursive: true });
+  fs.writeFileSync(tscEntry, "// fixture tsc\n");
+  const outDir = path.join(root, ".dist-staging-fixture");
+
+  const calls = [];
+  const spawn = (command, args, options) => { calls.push({ command, args, options }); return fakeChild(0); };
+  await runCompiler({ root, outDir, spawn });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, process.execPath);
+  assert.deepEqual(calls[0].args, [tscEntry, "-p", path.join(root, "tsconfig.json"), "--outDir", outDir]);
+  assert.equal(calls[0].options.shell, false);
+  assert.equal(calls[0].options.cwd, root);
+
+  await assert.rejects(runCompiler({ root, outDir, spawn: () => fakeChild(2) }), /2/);
+
+  const bare = createCheckout();
+  await assert.rejects(runCompiler({ root: bare, outDir: path.join(bare, ".dist-staging-fixture"), spawn }), /typescript/i);
+});
+
+test("a failed publication restores the previous dist and keeps no backup behind", async () => {
+  const root = createCheckout();
+  await buildSource({ root, runCompiler: transpiler() });
+  const published = fs.readdirSync(path.join(root, "dist")).sort();
+  const oldBytes = fs.readFileSync(path.join(root, "dist", "index.js"));
+
+  // A staging tree that vanished between compilation and publication: dist must come back intact.
+  assert.throws(() => publishStaging(root, path.join(root, ".dist-staging-gone")), /ENOENT/);
+  assert.deepEqual(fs.readdirSync(path.join(root, "dist")).sort(), published);
+  assert.deepEqual(fs.readFileSync(path.join(root, "dist", "index.js")), oldBytes);
+  assert.deepEqual(fs.readdirSync(root).filter((name) => name.startsWith(".dist-backup-")), []);
+  assert.equal(verifyBuild(root).current, true);
+});
+
+test("every destructive step refuses paths the build does not own", async () => {
+  const root = createCheckout();
+  const outside = createCheckout();
+
+  assertOwnedScratch(root, path.join(root, ".dist-staging-abc123"), ".dist-staging-");
+  for (const [target, prefix] of [
+    [path.join(outside, ".dist-staging-abc123"), ".dist-staging-"],
+    [path.join(root, "src"), ".dist-staging-"],
+    [path.join(root, "dist"), ".dist-backup-"],
+    [path.join(root, ".dist-staging-"), ".dist-staging-"],
+    [path.join(root, "nested", ".dist-staging-abc123"), ".dist-staging-"],
+    [root, ".dist-staging-"],
+  ]) {
+    assert.throws(() => assertOwnedScratch(root, target, prefix), /is not a .* path owned by/, target);
+  }
+
+  // A staging tree belonging to another checkout must not be publishable into this one.
+  const foreign = path.join(outside, ".dist-staging-foreign");
+  fs.mkdirSync(foreign, { recursive: true });
+  assert.throws(() => publishStaging(root, foreign), /is not a .* path owned by/);
+  assert.equal(fs.existsSync(foreign), true, "a foreign staging tree was consumed");
+  assert.equal(fs.existsSync(path.join(root, "dist")), false);
+});

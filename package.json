@@ -21,7 +21,7 @@
     "DESIGN.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "node scripts/build-source.mjs",
     "prepack": "node scripts/prepack-clean.mjs && npm run build",
     "sync:meta": "node scripts/sync-metadata.mjs",
     "test:tarball": "node scripts/verify-tarball.mjs",
