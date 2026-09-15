@@ -15,6 +15,22 @@ export const IDENTITY_SCHEMA_VERSION = 1;
 export const RECEIPT_NAME = "build-receipt.json";
 /** Local, gitignored, and never packaged: it describes one machine's node_modules, nothing shared. */
 export const DEPENDENCY_RECEIPT_NAME = ".pico-dependencies.json";
+/** npm's own record of the tree it laid down, written by every `npm ci` and `npm install`. */
+export const HIDDEN_LOCKFILE_SEGMENTS = ["node_modules", ".package-lock.json"];
+const HIDDEN_LOCKFILE_NAME = HIDDEN_LOCKFILE_SEGMENTS.join("/");
+
+/** What proved an install THIS time. */
+export const ACCEPTED_BY = Object.freeze({ receipt: "receipt", hiddenLockfile: "hidden-lockfile" });
+/** What a receipt records as the evidence that produced it. */
+export const RECORDED_SOURCE = Object.freeze({ npmCi: "npm-ci", hiddenLockfile: "hidden-lockfile" });
+const KNOWN_SOURCES = new Set(Object.values(RECORDED_SOURCE));
+
+/**
+ * The fields that say WHICH artifact is installed. Everything else a lockfile entry carries —
+ * license, engines, bin, funding, dependency ranges — describes the package rather than identifying
+ * what landed on disk, and npm is free to record it in one file and not the other.
+ */
+const RESOLUTION_FIELDS = ["version", "resolved", "integrity", "dev", "optional"];
 
 /** Hashed alongside the sources. `src/`-relative paths and these three root files can never collide
  *  with a `toolchain:` key, so the namespace stays unambiguous without escaping. */
@@ -105,8 +121,15 @@ export function dependencyIdentity(root) {
   ]));
 }
 
-export function dependencyReceipt(root, { npmArgv, identity = dependencyIdentity(root) }) {
-  return { schemaVersion: IDENTITY_SCHEMA_VERSION, dependencyIdentity: identity, npmArgv: [...npmArgv] };
+const isPlainObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+const isStringList = (value) => Array.isArray(value) && value.length > 0 && value.every((token) => typeof token === "string");
+
+export function dependencyReceipt(root, { npmArgv, identity = dependencyIdentity(root), source = RECORDED_SOURCE.npmCi }) {
+  const receipt = { schemaVersion: IDENTITY_SCHEMA_VERSION, dependencyIdentity: identity, source };
+  // Only our own install can name the command that produced it; adopting npm's record must not
+  // claim one. An empty or invented argv would be a worse record than no argv at all.
+  if (source === RECORDED_SOURCE.npmCi) receipt.npmArgv = [...npmArgv];
+  return receipt;
 }
 
 /**
@@ -115,6 +138,12 @@ export function dependencyReceipt(root, { npmArgv, identity = dependencyIdentity
  */
 export function writeDependencyReceipt(root, options) {
   const checkout = path.resolve(root);
+  if (!KNOWN_SOURCES.has(options.source ?? RECORDED_SOURCE.npmCi)) {
+    throw new Error(`refusing to record ${JSON.stringify(options.source)} as the evidence for an install in ${checkout}`);
+  }
+  if ((options.source ?? RECORDED_SOURCE.npmCi) === RECORDED_SOURCE.npmCi && !isStringList(options.npmArgv)) {
+    throw new Error(`refusing to record an ${RECORDED_SOURCE.npmCi} install in ${checkout} without the command that produced it`);
+  }
   const receipt = dependencyReceipt(checkout, options);
   if (typeof receipt.dependencyIdentity !== "string") {
     throw new Error(`refusing to record a dependency install with no readable package-lock.json in ${checkout}`);
@@ -123,42 +152,142 @@ export function writeDependencyReceipt(root, options) {
   return receipt;
 }
 
+function readJsonFile(target) {
+  try { return { value: JSON.parse(fs.readFileSync(target, "utf8")) }; }
+  catch (error) { return { error }; }
+}
+
+/** Do two lockfile entries name the same installed artifact? Returns a reason, or null when they do. */
+function resolutionMismatch(wanted, installed, key) {
+  if (!isPlainObject(wanted) || !isPlainObject(installed)) {
+    return `${HIDDEN_LOCKFILE_NAME} and package-lock.json disagree on the shape of ${key}`;
+  }
+  for (const field of RESOLUTION_FIELDS) {
+    const inWanted = Object.hasOwn(wanted, field);
+    const inInstalled = Object.hasOwn(installed, field);
+    if (inWanted !== inInstalled) {
+      return `${HIDDEN_LOCKFILE_NAME} and package-lock.json disagree on ${key}: ${field} is recorded in only one of them`;
+    }
+    if (inWanted && wanted[field] !== installed[field]) {
+      return `${HIDDEN_LOCKFILE_NAME} records ${key} ${field} ${JSON.stringify(installed[field])} against package-lock.json's ${JSON.stringify(wanted[field])}`;
+    }
+  }
+  return null;
+}
+
 /**
- * Do the installed dependencies still answer to the lockfile on disk? Never throws. Missing,
- * unreadable, malformed and mismatched all mean the same thing — unknown — and unknown is never
- * current: the caller reinstalls once rather than trusting a tree it cannot account for.
+ * Does npm's own record of the installed tree still describe the lockfile on disk?
+ *
+ * `npm ci` and `npm install` write `node_modules/.package-lock.json` — the tree they actually laid
+ * down. When it still matches `package-lock.json`, the dependencies ARE accounted for, by the tool
+ * that installed them, and re-running `npm ci` would spend a network round trip to learn what is
+ * already true. Without this, every pre-existing cache and every developer checkout is forced
+ * through a full install on its next start, and an offline host cannot start at all.
+ *
+ * The comparison is deliberately narrow and purely local: the same `lockfileVersion`, the same set
+ * of entries (npm omits the root `""` entry from its own record, so it is excluded from both), and
+ * per entry only the fields that identify the installed artifact. Anything it cannot read, parse or
+ * line up is not evidence of anything, and says so.
  */
-export function verifyDependencies(root) {
+export function matchesHiddenLockfile(root) {
   const checkout = path.resolve(root);
-  if (!fs.existsSync(path.join(checkout, "node_modules"))) {
-    return { current: false, reasons: ["node_modules/ does not exist; dependencies were never installed here"] };
+
+  const installedTree = readJsonFile(path.join(checkout, ...HIDDEN_LOCKFILE_SEGMENTS));
+  if (installedTree.error) {
+    return { matches: false, reasons: [installedTree.error.code === "ENOENT"
+      ? `npm has no record of this tree either (${HIDDEN_LOCKFILE_NAME} does not exist)`
+      : `${HIDDEN_LOCKFILE_NAME} could not be read: ${installedTree.error.code ?? installedTree.error.message}`] };
+  }
+  const lockfile = readJsonFile(path.join(checkout, "package-lock.json"));
+  if (lockfile.error) {
+    return { matches: false, reasons: [`package-lock.json could not be read: ${lockfile.error.code ?? lockfile.error.message}`] };
   }
 
+  if (lockfile.value?.lockfileVersion !== installedTree.value?.lockfileVersion) {
+    return { matches: false, reasons: [`${HIDDEN_LOCKFILE_NAME} records lockfileVersion ${JSON.stringify(installedTree.value?.lockfileVersion)} against package-lock.json's ${JSON.stringify(lockfile.value?.lockfileVersion)}`] };
+  }
+  const wanted = lockfile.value?.packages;
+  const installed = installedTree.value?.packages;
+  if (!isPlainObject(wanted) || !isPlainObject(installed)) {
+    return { matches: false, reasons: [`${HIDDEN_LOCKFILE_NAME} or package-lock.json has no packages map to compare`] };
+  }
+
+  const wantedKeys = Object.keys(wanted).filter((key) => key !== "");
+  for (const key of Object.keys(installed)) {
+    if (key === "") continue;
+    if (!Object.hasOwn(wanted, key)) {
+      return { matches: false, reasons: [`${HIDDEN_LOCKFILE_NAME} lists ${key}, which package-lock.json does not`] };
+    }
+  }
+  for (const key of wantedKeys) {
+    if (!Object.hasOwn(installed, key)) {
+      return { matches: false, reasons: [`${HIDDEN_LOCKFILE_NAME} does not list ${key}`] };
+    }
+    const reason = resolutionMismatch(wanted[key], installed[key], key);
+    if (reason) return { matches: false, reasons: [reason] };
+  }
+  return { matches: true, reasons: [] };
+}
+
+/** `{current, reasons[]}` plus the evidence, from a receipt alone. */
+function receiptVerdict(checkout, identity) {
   let raw;
   try { raw = fs.readFileSync(path.join(checkout, DEPENDENCY_RECEIPT_NAME), "utf8"); }
   catch (error) {
-    return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} is unreadable (${error.code ?? error.message}); this node_modules cannot be accounted for`] };
+    return { current: false, reasons: [error.code === "ENOENT"
+      ? `no install has been recorded here yet (${DEPENDENCY_RECEIPT_NAME} does not exist)`
+      : `${DEPENDENCY_RECEIPT_NAME} is unreadable (${error.code ?? error.message})`] };
   }
   let receipt;
   try { receipt = JSON.parse(raw); }
   catch (error) { return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} is unparsable: ${error.message}`] }; }
-  if (!receipt || typeof receipt !== "object" || receipt.schemaVersion !== IDENTITY_SCHEMA_VERSION) {
+  if (!isPlainObject(receipt) || receipt.schemaVersion !== IDENTITY_SCHEMA_VERSION) {
     return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} carries schemaVersion ${receipt?.schemaVersion} instead of ${IDENTITY_SCHEMA_VERSION}`] };
   }
+  // A receipt written before this file recorded its evidence can only have come from our own install.
+  const source = receipt.source ?? RECORDED_SOURCE.npmCi;
+  if (!KNOWN_SOURCES.has(source)) {
+    return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} names ${JSON.stringify(source)} as the evidence for this install, which this build does not know`] };
+  }
   if (typeof receipt.dependencyIdentity !== "string"
-    || !Array.isArray(receipt.npmArgv) || receipt.npmArgv.length === 0
-    || !receipt.npmArgv.every((token) => typeof token === "string")) {
+    || (source === RECORDED_SOURCE.npmCi && !isStringList(receipt.npmArgv))) {
     return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} is missing its dependency identity or the command that produced it`] };
+  }
+  if (receipt.dependencyIdentity !== identity) {
+    return { current: false, reasons: [`package-lock.json changed since the install (${receipt.dependencyIdentity.slice(0, 12)} -> ${identity.slice(0, 12)})`] };
+  }
+  return { current: true, reasons: [] };
+}
+
+/**
+ * Do the installed dependencies still answer to the lockfile on disk? Never throws.
+ *
+ * Two things can answer yes. Our own receipt is the cheap one and the only one a warm start pays
+ * for. Failing that, npm's own record of the install is consulted — a tree npm vouches for is
+ * accounted for, even though we did not lay it down. Only when neither can speak is the tree
+ * unknown, and unknown is never current: the caller reinstalls once rather than trusting it.
+ *
+ * `acceptedBy` says which of the two carried it, so a caller can record npm's evidence as its own
+ * and make the next start receipt-fast.
+ */
+export function verifyDependencies(root) {
+  const checkout = path.resolve(root);
+  if (!fs.existsSync(path.join(checkout, "node_modules"))) {
+    return { current: false, acceptedBy: null, identity: null, reasons: ["node_modules/ does not exist; dependencies were never installed here"] };
   }
 
   const identity = dependencyIdentity(checkout);
   if (identity === null) {
-    return { current: false, reasons: ["package-lock.json is unreadable, so the installed dependencies cannot be checked against it"] };
+    return { current: false, acceptedBy: null, identity: null, reasons: ["package-lock.json is unreadable, so the installed dependencies cannot be checked against it"] };
   }
-  if (identity !== receipt.dependencyIdentity) {
-    return { current: false, reasons: [`package-lock.json changed since the install (${receipt.dependencyIdentity.slice(0, 12)} -> ${identity.slice(0, 12)})`] };
-  }
-  return { current: true, reasons: [] };
+
+  const receipt = receiptVerdict(checkout, identity);
+  if (receipt.current) return { current: true, acceptedBy: ACCEPTED_BY.receipt, identity, reasons: [] };
+
+  const npm = matchesHiddenLockfile(checkout);
+  if (npm.matches) return { current: true, acceptedBy: ACCEPTED_BY.hiddenLockfile, identity, reasons: [] };
+
+  return { current: false, acceptedBy: null, identity, reasons: [...receipt.reasons, ...npm.reasons] };
 }
 
 /** The emitted tree, receipt excluded — a receipt can never be part of its own output digest. */

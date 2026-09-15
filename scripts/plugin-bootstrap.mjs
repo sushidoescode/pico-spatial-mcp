@@ -21,6 +21,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  ACCEPTED_BY,
+  RECORDED_SOURCE,
   dependencyIdentity,
   verifyBuild,
   verifyDependencies,
@@ -256,8 +258,26 @@ async function installDependencies(root, { platform, env, commandTimeoutMs, kill
     error.code = "BOOTSTRAP_LOCKFILE_RACED";
     throw error;
   }
-  writeDependencyReceipt(root, { identity: after, npmArgv: INSTALL_ARGS });
+  writeDependencyReceipt(root, { identity: after, npmArgv: INSTALL_ARGS, source: RECORDED_SOURCE.npmCi });
 }
+
+/**
+ * Write down an install npm made and we did not, so the next start reads one small receipt instead
+ * of comparing two lockfiles again. Best effort on purpose: the evidence that accepted this tree is
+ * already good, so failing to record it must never be the reason a server does not start.
+ */
+function adoptInstalledDependencies(root, verdict) {
+  try {
+    writeDependencyReceipt(root, { identity: verdict.identity, source: RECORDED_SOURCE.hiddenLockfile });
+  } catch (error) {
+    process.stderr.write(
+      `pico-spatial-mcp bootstrap: could not record the dependencies npm had already installed (${error.message}); the next start will check them again\n`,
+    );
+  }
+}
+
+const isInstallAction = (args) => args[0] === INSTALL_ARGS[0];
+const isBuildAction = (args) => args[0] === BUILD_ACTION[0];
 
 /**
  * Bring a source checkout up to date, doing as little as it truthfully can.
@@ -266,31 +286,38 @@ async function installDependencies(root, { platform, env, commandTimeoutMs, kill
  * digests: no lock file written, no npm, no registry request, no CLI resolution. Only when
  * something is genuinely stale is the setup lease taken — and both identities are then re-read
  * *under* it, because the owner we waited behind may already have done the whole job.
+ *
+ * A tree accepted on npm's own evidence rather than on a receipt of ours is one step short of that:
+ * it takes the lease once to write the receipt down, and is receipt-fast from then on.
  */
 async function prepareSourceCheckout(root, options) {
-  if (verifyDependencies(root).current && verifyBuild(root).current) return;
+  if (verifyDependencies(root).acceptedBy === ACCEPTED_BY.receipt && verifyBuild(root).current) return;
 
   await withSourceSetup({ root, waitMs: options.setupWaitMs, clock: options.clock }, async (owner) => {
+    let dependencies = verifyDependencies(root);
+    if (dependencies.acceptedBy === ACCEPTED_BY.hiddenLockfile) {
+      adoptInstalledDependencies(root, dependencies);
+      // Read it back: a receipt that does not verify leaves us exactly where we were, which is a
+      // tree npm still vouches for — or, if even that has moved since, one we reinstall.
+      dependencies = verifyDependencies(root);
+    }
+
     const plan = sourceSetupPlan({
-      dependenciesCurrent: verifyDependencies(root).current,
+      dependenciesCurrent: dependencies.current,
       buildCurrent: verifyBuild(root).current,
     });
 
-    let installed = false;
-    for (const args of plan) {
-      if (args[0] === INSTALL_ARGS[0]) {
-        await installDependencies(root, options);
-        installed = true;
-        continue;
-      }
-      // The build action means "make the output current", and an install can be exactly what it
-      // was waiting for: `npm ci` restores the TypeScript whose version is part of the build
-      // identity, so a dist/ that only looked stale because node_modules was gone is now current.
-      if (installed && verifyBuild(root).current) continue;
-      // In-process on the lease we already hold. Spawning `npm run build` here would send a second
-      // process to queue for the same lock we are standing on, and deadlock until it timed out.
-      await buildSource({ root, runCompiler: options.runCompilerImpl, owner });
-    }
+    const installing = plan.some(isInstallAction);
+    if (installing) await installDependencies(root, options);
+
+    // `npm ci` rewrites node_modules, and the installed TypeScript version is part of the build
+    // identity — so an install can satisfy a build that was planned AND invalidate one that was
+    // not. Either way the only honest thing to do afterwards is ask the question again, rather
+    // than act on a verdict taken before the tree underneath it changed.
+    const mustBuild = installing ? !verifyBuild(root).current : plan.some(isBuildAction);
+    // In-process on the lease we already hold. Spawning `npm run build` here would send a second
+    // process to queue for the same lock we are standing on, and deadlock until it timed out.
+    if (mustBuild) await buildSource({ root, runCompiler: options.runCompilerImpl, owner });
   });
 }
 

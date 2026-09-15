@@ -23,7 +23,10 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import {
+  ACCEPTED_BY,
   DEPENDENCY_RECEIPT_NAME,
+  HIDDEN_LOCKFILE_SEGMENTS,
+  RECORDED_SOURCE,
   dependencyIdentity,
   nodeMajor,
   verifyBuild,
@@ -47,10 +50,46 @@ test.after(() => {
 
 // ---------------------------------------------------------------- fixtures
 
+/** The tree an install lays down, as npm's own record spells it: resolution fields only. */
+const INSTALLED_TREE = {
+  "node_modules/typescript": {
+    version: "5.6.2",
+    resolved: "https://registry.npmjs.org/typescript/-/typescript-5.6.2.tgz",
+    integrity: "sha512-fixture-typescript",
+    dev: true,
+  },
+  "node_modules/zod": {
+    version: "3.23.8",
+    resolved: "https://registry.npmjs.org/zod/-/zod-3.23.8.tgz",
+    integrity: "sha512-fixture-zod",
+  },
+};
+
+/**
+ * `package-lock.json`, carrying the root `""` entry npm omits from its own record and the
+ * descriptive metadata npm is free to spell differently in the two files. Only the resolution
+ * fields may count, and these fixtures make that the difference between them.
+ */
+function lockfileFor(tree = INSTALLED_TREE, { lockfileVersion = 3 } = {}) {
+  const packages = { "": { name: "fixture", version: "0.0.0", license: "MIT", dependencies: { zod: "^3.23.8" } } };
+  for (const [name, entry] of Object.entries(tree)) {
+    packages[name] = { ...entry, license: "MIT", engines: { node: ">=20" }, funding: { url: "https://example.invalid" } };
+  }
+  return { name: "fixture", version: "0.0.0", lockfileVersion, requires: true, packages };
+}
+
+/** npm's own record of what it installed, written by every `npm ci` and `npm install`. */
+function writeHiddenLockfile(root, { tree = INSTALLED_TREE, lockfileVersion = 3, raw } = {}) {
+  const target = path.join(root, ...HIDDEN_LOCKFILE_SEGMENTS);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const body = raw ?? `${JSON.stringify({ name: "fixture", version: "0.0.0", lockfileVersion, requires: true, packages: { ...tree } })}\n`;
+  fs.writeFileSync(target, body);
+}
+
 /** A source checkout shaped like a host plugin cache, under a space/Unicode path on purpose. */
 function createCheckout({
   source = "export const value = 1;\n",
-  lock = { name: "fixture", lockfileVersion: 3 },
+  lock = lockfileFor(),
   dirName = "plugin cache ü 漢字",
 } = {}) {
   const parent = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pico-bootfresh-")));
@@ -293,14 +332,17 @@ test("an install is only current when its receipt accounts for the lockfile on d
   assert.match(verifyDependencies(root).reasons.join(" "), /node_modules/);
 
   installDependenciesInto(root);
-  assert.equal(verifyDependencies(root).current, false, "node_modules with no receipt is an unknown install");
-  assert.match(verifyDependencies(root).reasons.join(" "), /unreadable|cannot be accounted/);
+  assert.equal(verifyDependencies(root).current, false, "node_modules nothing can account for is an unknown install");
+  assert.match(verifyDependencies(root).reasons.join(" "), /no install has been recorded here yet/);
+  assert.match(verifyDependencies(root).reasons.join(" "), /npm has no record of this tree either/);
 
   const written = recordCurrentInstall(root) ?? JSON.parse(fs.readFileSync(receiptPath, "utf8"));
   assert.equal(written.schemaVersion, 1);
   assert.equal(written.dependencyIdentity, dependencyIdentity(root));
   assert.deepEqual(written.npmArgv, INSTALL_ARGS);
+  assert.equal(written.source, RECORDED_SOURCE.npmCi);
   assert.equal(verifyDependencies(root).current, true);
+  assert.equal(verifyDependencies(root).acceptedBy, ACCEPTED_BY.receipt);
 
   fs.writeFileSync(receiptPath, "{not json");
   assert.equal(verifyDependencies(root).current, false);
@@ -313,8 +355,13 @@ test("an install is only current when its receipt accounts for the lockfile on d
   fs.writeFileSync(receiptPath, `${JSON.stringify({ schemaVersion: 1, dependencyIdentity: dependencyIdentity(root) })}\n`);
   assert.equal(verifyDependencies(root).current, false, "a receipt that does not say what produced it is not trustworthy");
 
+  fs.writeFileSync(receiptPath, `${JSON.stringify({ schemaVersion: 1, dependencyIdentity: dependencyIdentity(root), source: "vibes" })}\n`);
+  assert.equal(verifyDependencies(root).current, false, "an evidence kind this build does not know is not evidence");
+
   recordCurrentInstall(root);
-  fs.writeFileSync(path.join(root, "package-lock.json"), `${JSON.stringify({ name: "fixture", lockfileVersion: 3, bumped: true })}\n`);
+  fs.writeFileSync(path.join(root, "package-lock.json"), `${JSON.stringify(lockfileFor({
+    ...INSTALLED_TREE, "node_modules/zod": { ...INSTALLED_TREE["node_modules/zod"], version: "3.25.0" },
+  }))}\n`);
   assert.equal(verifyDependencies(root).current, false);
   assert.match(verifyDependencies(root).reasons.join(" "), /package-lock\.json changed/);
 
@@ -322,6 +369,53 @@ test("an install is only current when its receipt accounts for the lockfile on d
   recordCurrentInstall(root);
   fs.rmSync(path.join(root, "node_modules"), { recursive: true });
   assert.equal(verifyDependencies(root).current, false);
+});
+
+test("npm's own record of the install is accepted when our receipt cannot speak", () => {
+  const root = createCheckout();
+  installDependenciesInto(root);
+  const hidden = path.join(root, ...HIDDEN_LOCKFILE_SEGMENTS);
+
+  assert.equal(verifyDependencies(root).current, false, "no receipt and no npm record");
+
+  writeHiddenLockfile(root);
+  assert.deepEqual(
+    { current: verifyDependencies(root).current, acceptedBy: verifyDependencies(root).acceptedBy, reasons: verifyDependencies(root).reasons },
+    { current: true, acceptedBy: ACCEPTED_BY.hiddenLockfile, reasons: [] },
+    "metadata npm spells differently in the two files must not count as a mismatch",
+  );
+
+  // It outranks nothing: a receipt that IS current is still what answers, and answers as a receipt.
+  recordCurrentInstall(root);
+  assert.equal(verifyDependencies(root).acceptedBy, ACCEPTED_BY.receipt);
+  fs.rmSync(path.join(root, DEPENDENCY_RECEIPT_NAME));
+
+  for (const [label, mutate, expected] of [
+    ["one package at another version", () => writeHiddenLockfile(root, {
+      tree: { ...INSTALLED_TREE, "node_modules/zod": { ...INSTALLED_TREE["node_modules/zod"], version: "3.25.0" } },
+    }), /records node_modules\/zod version "3\.25\.0"/],
+    ["a resolution field in only one of them", () => writeHiddenLockfile(root, {
+      tree: { ...INSTALLED_TREE, "node_modules/zod": { version: "3.23.8", resolved: INSTALLED_TREE["node_modules/zod"].resolved } },
+    }), /integrity is recorded in only one of them/],
+    ["a package npm installed that the lockfile does not name", () => writeHiddenLockfile(root, {
+      tree: { ...INSTALLED_TREE, "node_modules/left-pad": { version: "1.3.0" } },
+    }), /lists node_modules\/left-pad, which package-lock\.json does not/],
+    ["a package the lockfile names that npm did not install", () => writeHiddenLockfile(root, {
+      tree: { "node_modules/typescript": INSTALLED_TREE["node_modules/typescript"] },
+    }), /does not list node_modules\/zod/],
+    ["an entry that is not an object", () => writeHiddenLockfile(root, { tree: { ...INSTALLED_TREE, "node_modules/zod": "3.23.8" } }),
+      /disagree on the shape of node_modules\/zod/],
+    ["a different lockfileVersion", () => writeHiddenLockfile(root, { lockfileVersion: 2 }), /records lockfileVersion 2 against package-lock\.json's 3/],
+    ["no packages map at all", () => fs.writeFileSync(hidden, `${JSON.stringify({ lockfileVersion: 3 })}\n`), /no packages map to compare/],
+    ["unparsable JSON", () => fs.writeFileSync(hidden, "{ this is not json"), /could not be read: /],
+    ["no record at all", () => fs.rmSync(hidden), /npm has no record of this tree either/],
+  ]) {
+    mutate();
+    const verdict = verifyDependencies(root);
+    assert.equal(verdict.current, false, `${label} must not be accepted`);
+    assert.equal(verdict.acceptedBy, null, label);
+    assert.match(verdict.reasons.join(" "), expected, `${label}: ${verdict.reasons.join(" ")}`);
+  }
 });
 
 test("a packaged payload is verified from its receipt without any source", () => {
@@ -435,9 +529,10 @@ test("a lockfile edit reinstalls, rebuilds and records the new dependency identi
   assert.deepEqual(scratchLeft(root), []);
 });
 
-test("a cache with no trustworthy dependency receipt installs once", async () => {
+test("a cache with neither a receipt nor npm's own record installs once", async () => {
   const root = createWarmCheckout();
   fs.rmSync(path.join(root, DEPENDENCY_RECEIPT_NAME));
+  assert.equal(fs.existsSync(path.join(root, ...HIDDEN_LOCKFILE_SEGMENTS)), false, "nothing may be able to vouch for this tree");
 
   const log = [];
   const { spawnImpl, launches } = recordingSpawn({ log, onInstall: ({ options }) => installDependenciesInto(options.cwd) });
@@ -447,6 +542,94 @@ test("a cache with no trustworthy dependency receipt installs once", async () =>
   assert.deepEqual(kinds(launches), ["install", "launch"], "unknown dependencies are never declared current");
   assert.equal(compiler.calls.length, 0, "an install that leaves the build identity untouched must not force a rebuild");
   assert.equal(verifyDependencies(root).current, true);
+});
+
+test("a cache npm installed and we did not starts with no npm, records it once, then is receipt-fast", async () => {
+  const root = createWarmCheckout();
+  // Exactly what every pre-existing plugin cache and developer checkout looks like on its first
+  // start after this ships: npm laid the tree down, and we have no receipt of our own.
+  fs.rmSync(path.join(root, DEPENDENCY_RECEIPT_NAME));
+  writeHiddenLockfile(root);
+
+  const log = [];
+  const { spawnImpl, launches } = recordingSpawn({ log });
+  const compiler = recordingCompiler({ log });
+  await runBootstrap({ root, spawnImpl, runCompilerImpl: compiler.runCompilerImpl });
+
+  assert.deepEqual(kinds(launches), ["launch"], "an offline host must not be sent to the registry to learn what is already on disk");
+  assert.equal(compiler.calls.length, 0);
+
+  const receipt = JSON.parse(fs.readFileSync(path.join(root, DEPENDENCY_RECEIPT_NAME), "utf8"));
+  assert.equal(receipt.source, RECORDED_SOURCE.hiddenLockfile);
+  assert.equal(receipt.dependencyIdentity, dependencyIdentity(root));
+  assert.equal(Object.hasOwn(receipt, "npmArgv"), false, "adopting npm's record must not claim a command we never ran");
+  assert.deepEqual(scratchLeft(root), [], "the lease taken to write it must be released");
+
+  // Take npm's record away: if the second start still needs nothing, the receipt is what carried it.
+  fs.rmSync(path.join(root, ...HIDDEN_LOCKFILE_SEGMENTS));
+  assert.equal(verifyDependencies(root).acceptedBy, ACCEPTED_BY.receipt);
+  const warm = recordingSpawn();
+  const warmCompiler = recordingCompiler();
+  await runBootstrap({ root, spawnImpl: warm.spawnImpl, runCompilerImpl: warmCompiler.runCompilerImpl });
+
+  assert.deepEqual(kinds(warm.launches), ["launch"]);
+  assert.equal(warmCompiler.calls.length, 0);
+  assert.deepEqual(scratchLeft(root), [], "a receipt-fast start does not even take the lease");
+});
+
+test("a single changed package in npm's record sends the cache through one install", async () => {
+  const root = createWarmCheckout();
+  fs.rmSync(path.join(root, DEPENDENCY_RECEIPT_NAME));
+  writeHiddenLockfile(root, {
+    tree: { ...INSTALLED_TREE, "node_modules/zod": { ...INSTALLED_TREE["node_modules/zod"], version: "3.25.0" } },
+  });
+
+  const { spawnImpl, launches } = recordingSpawn({ onInstall: ({ options }) => installDependenciesInto(options.cwd) });
+  const compiler = recordingCompiler();
+  await runBootstrap({ root, spawnImpl, runCompilerImpl: compiler.runCompilerImpl });
+
+  assert.deepEqual(kinds(launches), ["install", "launch"]);
+  assert.deepEqual(launches[0].args, INSTALL_ARGS);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, DEPENDENCY_RECEIPT_NAME), "utf8")).source, RECORDED_SOURCE.npmCi);
+});
+
+test("a record npm wrote for another lockfile version, or no record we can parse, is not evidence", async () => {
+  for (const [label, options] of [
+    ["a different lockfileVersion", { lockfileVersion: 2 }],
+    ["malformed JSON", { raw: "{ npm was interrupted mid-write" }],
+  ]) {
+    const root = createWarmCheckout();
+    fs.rmSync(path.join(root, DEPENDENCY_RECEIPT_NAME));
+    writeHiddenLockfile(root, options);
+
+    const { spawnImpl, launches } = recordingSpawn({ onInstall: ({ options: spawnOptions }) => installDependenciesInto(spawnOptions.cwd) });
+    const compiler = recordingCompiler();
+    await runBootstrap({ root, spawnImpl, runCompilerImpl: compiler.runCompilerImpl });
+
+    assert.deepEqual(kinds(launches), ["install", "launch"], label);
+    assert.deepEqual(scratchLeft(root), [], label);
+  }
+});
+
+test("an install that changes the installed TypeScript rebuilds output that was current before it", async () => {
+  const root = createWarmCheckout();
+  fs.rmSync(path.join(root, DEPENDENCY_RECEIPT_NAME));
+  assert.equal(verifyBuild(root).current, true, "the build starts current, so nothing plans a rebuild");
+
+  const log = [];
+  // The reinstall genuinely moves the toolchain: the build identity that was current is not any more.
+  const { spawnImpl, launches } = recordingSpawn({
+    log,
+    onInstall: ({ options }) => installDependenciesInto(options.cwd, { typescriptVersion: "5.7.3" }),
+  });
+  const compiler = recordingCompiler({ log });
+  await runBootstrap({ root, spawnImpl, runCompilerImpl: compiler.runCompilerImpl });
+
+  assert.deepEqual(log, ["install:start", "install:end", "compile:start", "compile:end", "launch:start", "launch:end"],
+    "a build the plan did not ask for is still owed once the install invalidated the old one");
+  assert.deepEqual(kinds(launches), ["install", "launch"]);
+  assert.equal(verifyBuild(root).current, true);
+  assert.deepEqual(scratchLeft(root), []);
 });
 
 test("restoring a deleted node_modules does not recompile output the install makes current again", async () => {
@@ -573,6 +756,9 @@ test("a lockfile that changes during installation is rejected instead of recorde
 
 test("an installed package with an intact payload launches without npm or a compiler", async () => {
   const root = createInstalledPackage();
+  // Even with a hidden lockfile sitting there, nothing on this branch may reach for npm: an
+  // installed package has no package-lock.json to be current against and no compiler to run.
+  writeHiddenLockfile(root);
   const { spawnImpl, launches } = recordingSpawn();
   const compiler = recordingCompiler();
 
