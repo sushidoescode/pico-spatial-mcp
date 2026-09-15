@@ -70,6 +70,21 @@ for (const [file, pick] of [
   v === pkgVersion ? ok(`${file} carries version ${v}`) : fail(`${file} version ${v} != package.json ${pkgVersion}`);
 }
 
+// package-lock.json carries the release version TWICE — the top-level field and the root package
+// entry — and `npm version` writes both. A hand-edited package.json, a resolved merge conflict, or
+// a lockfile regenerated from a different checkout can leave either behind, and nothing downstream
+// notices: the host manifests above are stamped by sync-metadata, but the lock is not. A tarball
+// then ships one version in package.json and another in its own lock.
+{
+  const lock = JSON.parse(read("package-lock.json"));
+  for (const [label, value] of [["version", lock.version], ["packages[''].version", lock.packages?.[""]?.version]]) {
+    value === pkgVersion
+      ? ok(`package-lock.json ${label} carries version ${value}`)
+      : fail(`package-lock.json ${label} is ${JSON.stringify(value)} != package.json ${pkgVersion} — ` +
+             "run `npm version --no-git-tag-version <version>` rather than editing package.json by hand");
+  }
+}
+
 // Portable core and Claude's host overlay deliberately have different schemas, but one identity.
 const portableManifest = JSON.parse(read("plugin.json"));
 const claudeManifest = JSON.parse(read(".claude-plugin/plugin.json"));
