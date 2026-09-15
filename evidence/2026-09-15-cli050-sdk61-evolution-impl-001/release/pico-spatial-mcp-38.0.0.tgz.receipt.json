@@ -1,0 +1,238 @@
+{
+  "schemaVersion": 1,
+  "artifact": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/pico-spatial-mcp-38.0.0.tgz",
+    "name": "pico-spatial-mcp-38.0.0.tgz",
+    "sha256": "941e402bb2c234c444e31c62c9bc9dc2c69055ac3aeee48c960e870e100f36d6",
+    "bytes": 2158783
+  },
+  "package": {
+    "name": "pico-spatial-mcp",
+    "version": "38.0.0"
+  },
+  "build": {
+    "schemaVersion": 1,
+    "input": {
+      "sha256": "e51cb8f1b72bfdde1b7f4b0b7927b4db8f8184f899e7c7cfaf21471307cbca3f",
+      "files": 195
+    },
+    "output": {
+      "sha256": "68a3d0a73884eb5bb57c6a906600e443c56922b2a34dfae29bb434a97eabd7ce",
+      "files": 190
+    },
+    "typescript": "5.9.3",
+    "nodeMajor": 25
+  },
+  "platform": {
+    "os": "darwin",
+    "arch": "arm64",
+    "node": "v25.8.1"
+  },
+  "command": {
+    "argv": [
+      "node",
+      "scripts/verify-tarball.mjs",
+      "--publish",
+      "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/pico-spatial-mcp-38.0.0.tgz"
+    ]
+  },
+  "checks": [
+    {
+      "name": "packed pico-spatial-mcp-38.0.0.tgz (2108 kB, sha256 941e402bb2c234c444e31c62c9bc9dc2c69055ac3aeee48c960e870e100f36d6)",
+      "status": "pass"
+    },
+    {
+      "name": "installed into a clean directory with --omit=dev",
+      "status": "pass"
+    },
+    {
+      "name": "installed home environment dataset directory contains exactly the versioned JSON",
+      "status": "pass"
+    },
+    {
+      "name": "installed home environment dataset bytes match the exact packed source dataset",
+      "status": "pass"
+    },
+    {
+      "name": "home environment dataset ships in the installed package",
+      "status": "pass"
+    },
+    {
+      "name": "installed dataset keeps Mesume Day excluded for its zero-geometry public-parser failure",
+      "status": "pass"
+    },
+    {
+      "name": "installed dataset keeps both Livingroom refresh surface extensions",
+      "status": "pass"
+    },
+    {
+      "name": "installed dataset keeps the evidence-falsified Day guarantees and optional cluster ranges",
+      "status": "pass"
+    },
+    {
+      "name": "installed dataset retains complete one-to-one measured-potential Livingroom ranking inputs",
+      "status": "pass"
+    },
+    {
+      "name": "installed dataset carries only accepted, syntactically pinned refresh evidence",
+      "status": "pass"
+    },
+    {
+      "name": "installed selector ranks complete Day/Night potential and receipts the canonical dataset hash",
+      "status": "pass"
+    },
+    {
+      "name": "derived out-of-dist dependencies from the build: appskeleton, assets, briefs, data, package.json, scripts, tools, unityskeleton",
+      "status": "pass"
+    },
+    {
+      "name": "payload present: appskeleton/",
+      "status": "pass"
+    },
+    {
+      "name": "payload present: assets/",
+      "status": "pass"
+    },
+    {
+      "name": "payload present: briefs/",
+      "status": "pass"
+    },
+    {
+      "name": "payload present: data/",
+      "status": "pass"
+    },
+    {
+      "name": "payload present: package.json/",
+      "status": "pass"
+    },
+    {
+      "name": "payload present: scripts/",
+      "status": "pass"
+    },
+    {
+      "name": "payload present: tools/",
+      "status": "pass"
+    },
+    {
+      "name": "payload present: unityskeleton/",
+      "status": "pass"
+    },
+    {
+      "name": "reviewed SDK-compatibility payload verified (3 files, index + every referenced record/basis)",
+      "status": "pass"
+    },
+    {
+      "name": "briefs/ carries 22 briefs",
+      "status": "pass"
+    },
+    {
+      "name": "brief canary parses: gallery.json",
+      "status": "pass"
+    },
+    {
+      "name": "brief canary parses: knockdown.json",
+      "status": "pass"
+    },
+    {
+      "name": "no build droppings anywhere in the package",
+      "status": "pass"
+    },
+    {
+      "name": "no absolute home paths in any shipped file",
+      "status": "pass"
+    },
+    {
+      "name": "TESTERS.md ships",
+      "status": "pass"
+    },
+    {
+      "name": "reader-facing doc ships: SKILLS.md",
+      "status": "pass"
+    },
+    {
+      "name": "reader-facing doc ships: DESIGN.md",
+      "status": "pass"
+    },
+    {
+      "name": "reader-facing doc ships: GETTING_STARTED.md",
+      "status": "pass"
+    },
+    {
+      "name": "app skeleton ships complete and non-empty (17 canaries)",
+      "status": "pass"
+    },
+    {
+      "name": "appskeleton/gradlew kept its exec bit through pack+install",
+      "status": "pass"
+    },
+    {
+      "name": "gradle wrapper jar ships intact",
+      "status": "pass"
+    },
+    {
+      "name": "dot-less _gitignore survived packing (npm drops files named .gitignore)",
+      "status": "pass"
+    },
+    {
+      "name": "menu.bundle ships for GameMenu briefs",
+      "status": "pass"
+    },
+    {
+      "name": "unity skeleton ships complete (11 canaries)",
+      "status": "pass"
+    },
+    {
+      "name": "unityskeleton _gitignore survived packing",
+      "status": "pass"
+    },
+    {
+      "name": "bin entry has a shebang",
+      "status": "pass"
+    },
+    {
+      "name": "installed server listed exactly 255 tools for darwin (255 on the full macOS surface)",
+      "status": "pass"
+    },
+    {
+      "name": "all 43 anchor tools present",
+      "status": "pass"
+    },
+    {
+      "name": "preflight_env ran from the installed copy (14 checks, status: problems)",
+      "status": "pass"
+    },
+    {
+      "name": "preflight fixes contain no repo-only commands",
+      "status": "pass"
+    },
+    {
+      "name": "doors surface registered all 18 door tools",
+      "status": "pass"
+    },
+    {
+      "name": "a door tool completed its inner self-client spawn from a path containing a space",
+      "status": "pass"
+    },
+    {
+      "name": "20 concurrent first door calls on the installed artifact started exactly one inner server (all unavailable)",
+      "status": "pass"
+    },
+    {
+      "name": "installed pico_look forwards the inner screencap failure as isError, never as status ok (stub adb ran: 1 invocation(s), screencap argv recorded)",
+      "status": "pass"
+    },
+    {
+      "name": "PICO_MCP_SURFACE unset serves the 18-tool doors surface (full stays explicit opt-in)",
+      "status": "pass"
+    },
+    {
+      "name": "packed dist/build-receipt.json binds the payload to source e51cb8f1b72b / output 68a3d0a73884",
+      "status": "pass"
+    }
+  ],
+  "limitations": [
+    "installed-artifact checks ran on darwin/arm64 only; no other platform was exercised",
+    "no host-plugin discovery: the host plugin manifests were not loaded or registered by any host",
+    "no emulator, device or visual claim: nothing here is vision_verified or device_verified"
+  ]
+}
