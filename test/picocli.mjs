@@ -472,5 +472,473 @@ const watchDescription = picoCliToolMetadata.watch_crash?.description ?? "";
   ? ok("watch_crash description states the observed-window contract instead of the retired claim")
   : fail(`watch_crash description still carries retired wording: ${JSON.stringify(watchDescription.slice(0, 200))}`);
 
+
+// --- C4: the perf command + report contract -----------------------------------------------
+// Argv and schema facts below are SOURCE-INSPECTED: the official tarballs in
+// evidence/2026-09-15-cli050-sdk61-evolution-audit-001/ were read in memory (never extracted, never
+// run) down to the nested profiler package. Report fixtures are SYNTHETIC and labelled as such —
+// test/fixtures/picocli/synthetic/README.md names the exact archive members they encode. No
+// provisioned profiler help was ever observable on this host, so nothing here is help-observed.
+const assert = (await import("node:assert/strict")).default;
+const os = await import("node:os");
+const pathMod = await import("node:path");
+const expect = (label, fn) => {
+  try { fn(); ok(label); } catch (e) { fail(`${label}: ${e instanceof Error ? e.message : String(e)}`); }
+};
+
+const {
+  cliOperationOptions,
+} = await import("../dist/clicapabilities.js");
+const {
+  adaptPerfReport,
+  collectPerfLive,
+  perfLiveArgv,
+} = await import("../dist/perfcli.js");
+const {
+  parseProfilerEnvelope,
+  parseTraceLoadHumanSession,
+  runPerfTrace,
+  traceArgv,
+  validateTraceLoadEnvelope,
+  validateTraceQueryEnvelope,
+} = await import("../dist/perftrace.js");
+const { createFakePerfCli } = await import("./fixtures/picocli/synthetic/fake-perf-cli.mjs");
+
+const syntheticDir = new URL("./fixtures/picocli/synthetic/", import.meta.url);
+const syntheticReport = (name) => fs.realpathSync(new URL(`live-report-${name}.json`, syntheticDir));
+const readSynthetic = (name) => fs.readFileSync(syntheticReport(name), "utf8");
+const c4Tmp = fs.mkdtempSync(pathMod.join(os.tmpdir(), "pico-c4-"));
+
+// Route option facts: every flag comes from the vendored profiler's own registerOptions/params.
+const live050Options = cliOperationOptions("0.5.0", "perf-live");
+live050Options?.names.package === "--package" && live050Options?.names.duration === "--duration"
+  && live050Options?.names.device === "--device" && live050Options?.names.output === "--output"
+  && live050Options?.names.save === "--save"
+  ? ok("perf-live option names are the canonical 0.2.0 long options (--package/--duration/--save/--output)")
+  : fail(`perf-live option facts wrong: ${JSON.stringify(live050Options)}`);
+cliOperationOptions("0.4.4", "perf-live") === null
+  ? ok("perf-live has no option facts on the 0.4.x line (it has no route there)")
+  : fail("perf-live must not carry option facts on a line with no route");
+cliOperationOptions("0.4.4", "trace-record")?.names.package === "--app"
+  && cliOperationOptions("0.5.0", "trace-record")?.names.package === "--package"
+  ? ok("trace-record's package option follows each line's bundled profiler (0.1.0 --app, 0.2.0 --package)")
+  : fail(`trace-record package option wrong: ${JSON.stringify([cliOperationOptions("0.4.4", "trace-record"), cliOperationOptions("0.5.0", "trace-record")])}`);
+cliOperationOptions("0.5.0", "trace-load")?.names.envelope === "--envelope"
+  && cliOperationOptions("0.4.4", "trace-load")?.names.envelope === "--envelope"
+  ? ok("trace-load declares the global --envelope flag on both lines")
+  : fail("trace-load envelope option fact missing");
+[...cliOperationRoutes("0.4.4"), ...cliOperationRoutes("0.5.0")]
+  .every((route) => !JSON.stringify(cliOperationOptions("0.4.4", route.operation) ?? {}).includes("monitor")
+    && !JSON.stringify(cliOperationOptions("0.5.0", route.operation) ?? {}).includes("monitor"))
+  ? ok("no route option fact mentions the rejected `monitor` resource")
+  : fail("a route option fact still mentions monitor");
+
+// The exact dispatched argv. `perf monitor run` is rejected by the 0.5.0 router (PERF_ROUTER050),
+// so the fake CLI refuses it; this asserts what we actually send instead.
+const liveCapability = {
+  operation: "perf-live",
+  state: "supported",
+  argvPrefix: ["perf", "live", "run"],
+  reason: "help-names-operation: `perf live run --help` exited 0 and a pico-cli usage line names `perf live run`",
+  evidence: [],
+};
+const fakeLiveRunner = createFakePerfCli({ reportFixture: syntheticReport("0.2.0-complete") });
+const reportPath = pathMod.join(c4Tmp, "live-report-dispatch.json");
+const dispatched = await collectPerfLive(
+  { packageName: "com.example.fixture", durationSec: 15, device: "fixture-serial", reportPath },
+  {
+    capability: () => liveCapability,
+    options: () => cliOperationOptions("0.5.0", "perf-live"),
+    run: fakeLiveRunner.run,
+    retain: () => ({ retained: false, error: "retention disabled in this fixture" }),
+    cliPath: "/fixture/pico-cli",
+    cliRaw: "pico-cli/0.5.0 (fixture)",
+    cliVersion: "0.5.0",
+  },
+);
+const capturedRun = fakeLiveRunner.calls[0] ?? { args: [] };
+expect("collectPerfLive dispatches the source-derived perf live run argv verbatim", () => {
+  assert.deepEqual(capturedRun.args, ["perf", "live", "run", "--package", "com.example.fixture",
+    "--duration", "15", "--device", "fixture-serial", "--save", "--output", reportPath]);
+});
+dispatched.status === "ok" && dispatched.measurement === "complete" && dispatched.reportVersion === "0.2.0"
+  && dispatched.summary?.appFps?.p5 === 62 && dispatched.view?.diagnosis?.result === "PASS"
+  && typeof dispatched.rawReportSha256 === "string" && dispatched.rawReportPath === reportPath
+  ? ok("a saved 0.2.0 report adapts to status ok / measurement complete with a bounded view")
+  : fail(`dispatched perf result wrong: ${JSON.stringify({ ...dispatched, view: undefined, jankWindows: undefined })}`);
+fakeLiveRunner.calls.every((call) => !call.args.includes("monitor"))
+  ? ok("no dispatched perf argv contains `monitor`")
+  : fail("a perf dispatch still uses the rejected monitor route");
+
+// The WHOLE raw report is copied into the immutable observation run directory, so the evidence
+// survives even if the CLI's own output path is later overwritten.
+const { retainPicoCliObservation } = await import("../dist/picocli.js");
+const retentionRoot = pathMod.join(c4Tmp, "observations");
+const retainedRunner = createFakePerfCli({ reportFixture: syntheticReport("0.2.0-complete") });
+const retainedReportPath = pathMod.join(c4Tmp, "retained-dispatch.json");
+const retainedResult = await collectPerfLive(
+  { packageName: "com.example.fixture", durationSec: 15, device: "fixture-serial", reportPath: retainedReportPath },
+  {
+    capability: () => liveCapability,
+    options: () => cliOperationOptions("0.5.0", "perf-live"),
+    run: retainedRunner.run,
+    retain: (input) => retainPicoCliObservation({ operation: "perf-live", runId: "fixture-run", ...input }, retentionRoot),
+    cliPath: "/fixture/pico-cli", cliRaw: "pico-cli/0.5.0", cliVersion: "0.5.0",
+  },
+);
+const retainedCopy = pathMod.join(retentionRoot, "perf-live", "fixture-run", "live-report.json");
+fs.existsSync(retainedCopy)
+  && fs.readFileSync(retainedCopy, "utf8") === readSynthetic("0.2.0-complete")
+  && retainedResult.rawReportPath === retainedCopy
+  && retainedResult.retainedLog?.reportSha256 === retainedResult.rawReportSha256
+  && fs.existsSync(pathMod.join(retentionRoot, "perf-live", "fixture-run", "stdout.txt"))
+  ? ok("the whole raw report and both raw streams are retained immutably beside the run record")
+  : fail(`report retention wrong: ${JSON.stringify({ retainedCopy, exists: fs.existsSync(retainedCopy), rawReportPath: retainedResult.rawReportPath, retainedLog: retainedResult.retainedLog })}`);
+JSON.parse(fs.readFileSync(pathMod.join(retentionRoot, "perf-live", "fixture-run", "observation.json"), "utf8"))
+  .artifacts?.[0]?.sourcePath === retainedReportPath
+  ? ok("the retained run record names the CLI's own output path as the artifact's source")
+  : fail("the retained observation record does not name the report's source path");
+perfLiveArgv(["perf", "live", "run"], cliOperationOptions("0.5.0", "perf-live"),
+  { packageName: "com.example.fixture", durationSec: 15, device: "fixture-serial", reportPath: "/tmp/r.json" })
+  .join(" ").includes("--save --output")
+  ? ok("perfLiveArgv keeps --output paired with --save (LIVE050 refuses an unpaired --output)")
+  : fail("perfLiveArgv emitted --output without --save");
+
+// The router's own refusal of `monitor`, replayed through the fake CLI from the retained template.
+const monitorProbe = createFakePerfCli({});
+const monitorReply = await monitorProbe.run(["perf", "monitor", "run", "--app", "com.example.fixture"], {});
+monitorReply.code === 3 && /Unknown perf subcommand: monitor\./.test(monitorReply.stderr)
+  && classifyPicoCliFailure(monitorReply.stderr, "") === "flag-or-version-drift"
+  ? ok("the fake CLI rejects `perf monitor run` exactly as the 0.5.0 router does, and we classify it as drift")
+  : fail(`monitor rejection wrong: ${JSON.stringify(monitorReply)}`);
+
+// Capability refusal: no spawn, the CLI's own reason, and the byte-pinned setup sentence.
+const refusalRuntime = (capability) => ({
+  capability: () => capability,
+  options: () => cliOperationOptions("0.5.0", "perf-live"),
+  run: async () => { throw new Error("a refused capability must never spawn"); },
+  retain: () => ({ retained: false, error: "unused" }),
+  cliPath: "/fixture/pico-cli",
+  cliRaw: "pico-cli/0.5.0 (fixture)",
+  cliVersion: "0.5.0",
+});
+const gatedCapability = {
+  operation: "perf-live",
+  state: "unavailable",
+  argvPrefix: ["perf", "live", "run"],
+  reason: "utilities-not-installed: `perf live run --help` exited 3 at the CLI's utilities gate: Error: Perf utilities 0.2.0 are not installed. Run `pico-cli setup` to install.",
+  evidence: [{ argv: ["perf", "live", "run", "--help"], exitCode: 3, timedOut: false, outputTruncated: false, stdoutPath: "/fixture/evidence/stdout.txt", stderrPath: "/fixture/evidence/stderr.txt", stdoutSha256: "0".repeat(64), stderrSha256: "1".repeat(64) }],
+};
+const gatedResult = await collectPerfLive({ packageName: "com.example.fixture", durationSec: 15, device: "fixture-serial", reportPath: pathMod.join(c4Tmp, "never.json") }, refusalRuntime(gatedCapability));
+gatedResult.status === "failed" && gatedResult.failureClass === "setup-required"
+  && gatedResult.note === "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry."
+  && gatedResult.setupCommand?.path === "/fixture/pico-cli"
+  && gatedResult.measurement === "missing"
+  && gatedResult.capability?.reason === gatedCapability.reason
+  && JSON.stringify(gatedResult.capability?.evidence) === JSON.stringify(["/fixture/evidence/stdout.txt", "/fixture/evidence/stderr.txt"])
+  ? ok("an unprovisioned profiler refuses without spawning and returns the neutral setup sentence plus its evidence paths")
+  : fail(`gated perf refusal wrong: ${JSON.stringify(gatedResult)}`);
+const envCapability = { ...gatedCapability, reason: "environment: `perf live run --help` exited 3 because the CLI's environment is incomplete: Error: [warn] PICO_HOME is not set." };
+const envResult = await collectPerfLive({ packageName: "com.example.fixture", durationSec: 15, device: "fixture-serial", reportPath: pathMod.join(c4Tmp, "never2.json") }, refusalRuntime(envCapability));
+envResult.failureClass === "environment" && /profiler payload/.test(envResult.note ?? "")
+  && /PICO_HOME/.test(envResult.note ?? "") && !/pico-cli\s+setup/i.test(envResult.note ?? "")
+  && envResult.setupCommand === undefined
+  ? ok("an environment refusal returns the PICO_HOME remedy for perf-live and never prescribes setup")
+  : fail(`environment perf refusal wrong: ${JSON.stringify(envResult)}`);
+// PERF_ENV050's resolver checks PICO_CLI_PROFILER_ENTRY_PATH before reading PICO_HOME, so the
+// remedy names it as the explicit alternative and keeps it distinct from SDK tools-root selection.
+/PICO_CLI_PROFILER_ENTRY_PATH/.test(envResult.note ?? "") && /separate selection/.test(envResult.note ?? "")
+  ? ok("the perf environment remedy names the explicit profiler-entry alternative and keeps it separate from the SDK tools root")
+  : fail(`profiler-entry reconciliation missing from the environment remedy: ${JSON.stringify(envResult.note)}`);
+const noRouteResult = await collectPerfLive(
+  { packageName: "com.example.fixture", durationSec: 15, device: "fixture-serial", reportPath: pathMod.join(c4Tmp, "never3.json") },
+  {
+    ...refusalRuntime({ operation: "perf-live", state: "unavailable", argvPrefix: null, reason: "no-route: 0.4.x: no 0.4.x live-collection route is dispatched", evidence: [] }),
+    options: () => cliOperationOptions("0.4.4", "perf-live"),
+    familyEvidence: () => [{
+      operation: "trace-record",
+      state: "unavailable",
+      argvPrefix: ["perf", "trace", "record"],
+      reason: "utilities-not-installed: `perf trace record --help` exited 1 at the CLI's utilities gate",
+      evidence: [],
+    }],
+  },
+);
+noRouteResult.status === "failed" && noRouteResult.failureClass === "setup-required"
+  && noRouteResult.note === "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry."
+  ? ok("a line with no live route adopts the perf family's own utilities-gate answer (one gate per family: PERF_ENV044/PERF_ENV050)")
+  : fail(`no-route family classification wrong: ${JSON.stringify(noRouteResult)}`);
+const noRouteNoFamily = await collectPerfLive(
+  { packageName: "com.example.fixture", durationSec: 15, device: "fixture-serial", reportPath: pathMod.join(c4Tmp, "never4.json") },
+  { ...refusalRuntime({ operation: "perf-live", state: "unavailable", argvPrefix: null, reason: "no-route: 0.4.x: no 0.4.x live-collection route is dispatched", evidence: [] }), options: () => null, familyEvidence: () => [] },
+);
+noRouteNoFamily.failureClass === "flag-or-version-drift" && noRouteNoFamily.status === "failed"
+  ? ok("without perf-family evidence a missing live route is reported as version drift, never as setup-required")
+  : fail(`no-route drift classification wrong: ${JSON.stringify(noRouteNoFamily)}`);
+let rediscoveries = 0;
+const unknownResult = await collectPerfLive(
+  { packageName: "com.example.fixture", durationSec: 15, device: "fixture-serial", reportPath: pathMod.join(c4Tmp, "never5.json") },
+  {
+    ...refusalRuntime({ operation: "perf-live", state: "unknown", argvPrefix: null, reason: "no-discovery: no bounded discovery evidence is bound to this execution target", evidence: [] }),
+    rediscover: async () => { rediscoveries += 1; return { operation: "perf-live", state: "unknown", argvPrefix: null, reason: "no-discovery: still nothing", evidence: [] }; },
+  },
+);
+rediscoveries === 1 && unknownResult.status === "failed"
+  ? ok("an unknown capability triggers exactly one bounded rediscovery and then refuses")
+  : fail(`unknown-capability rediscovery wrong: ${JSON.stringify({ rediscoveries, unknownResult })}`);
+// A supported route whose line declares no option spellings must never dispatch a half-built argv.
+const optionlessRunner = createFakePerfCli({ reportFixture: syntheticReport("0.2.0-complete") });
+const optionlessResult = await collectPerfLive(
+  { packageName: "com.example.fixture", durationSec: 15, device: "fixture-serial", reportPath: pathMod.join(c4Tmp, "never6.json") },
+  { capability: () => liveCapability, options: () => null, run: optionlessRunner.run, retain: () => ({ retained: false, error: "unused" }), cliPath: "/fixture/pico-cli", cliRaw: "pico-cli/9.9.9", cliVersion: "9.9.9" },
+);
+optionlessResult.status === "failed" && optionlessResult.failureClass === "flag-or-version-drift"
+  && optionlessRunner.calls.length === 0 && /package\/duration\/device\/save\/output/.test(optionlessResult.note ?? "")
+  ? ok("a live route with no declared option spellings refuses instead of dispatching a half-built argv")
+  : fail(`argv-completeness guard wrong: ${JSON.stringify({ optionlessResult, calls: optionlessRunner.calls.length })}`);
+const optionlessTrace = await runPerfTrace({ action: "query", sessionId: "s", sql: "select 1;" }, {
+  capability: () => ({ operation: "trace-query", state: "supported", argvPrefix: ["perf", "trace", "query"], reason: "help-names-operation: ok", evidence: [] }),
+  options: () => null,
+  run: async () => { throw new Error("an incomplete trace argv must never spawn"); },
+  retain: () => ({ retained: false, error: "unused" }),
+  inspectArtifact: () => ({ exists: true, regularFile: true, bytes: 1 }),
+  cliPath: "/fixture/pico-cli", cliRaw: "pico-cli/9.9.9", cliVersion: "9.9.9",
+});
+optionlessTrace.status === "failed" && optionlessTrace.failureClass === "flag-or-version-drift"
+  ? ok("a trace route with no declared option spellings refuses without spawning")
+  : fail(`trace argv-completeness guard wrong: ${JSON.stringify(optionlessTrace)}`);
+
+// Stale pre-existing output must never be read as this run's measurement.
+const stalePath = pathMod.join(c4Tmp, "stale-report.json");
+fs.writeFileSync(stalePath, readSynthetic("0.2.0-complete"));
+const staleRunner = createFakePerfCli({ reportFixture: syntheticReport("0.2.0-complete") });
+const staleResult = await collectPerfLive(
+  { packageName: "com.example.fixture", durationSec: 15, device: "fixture-serial", reportPath: stalePath },
+  { capability: () => liveCapability, options: () => cliOperationOptions("0.5.0", "perf-live"), run: staleRunner.run, retain: () => ({ retained: false, error: "unused" }), cliPath: "/fixture/pico-cli", cliRaw: "pico-cli/0.5.0", cliVersion: "0.5.0" },
+);
+staleResult.status === "failed" && staleResult.measurement === "missing" && staleRunner.calls.length === 0
+  && /already existed/i.test(staleResult.note ?? "")
+  ? ok("a report path that already existed before the run is refused, and nothing is spawned")
+  : fail(`stale-output refusal wrong: ${JSON.stringify({ staleResult, calls: staleRunner.calls.length })}`);
+
+// A profiler that exits 0 without writing the report is a failed measurement, never an ok one.
+const silentRunner = createFakePerfCli({ reportFixture: null });
+const silentResult = await collectPerfLive(
+  { packageName: "com.example.fixture", durationSec: 15, device: "fixture-serial", reportPath: pathMod.join(c4Tmp, "missing-report.json") },
+  { capability: () => liveCapability, options: () => cliOperationOptions("0.5.0", "perf-live"), run: silentRunner.run, retain: () => ({ retained: false, error: "unused" }), cliPath: "/fixture/pico-cli", cliRaw: "pico-cli/0.5.0", cliVersion: "0.5.0" },
+);
+silentResult.status === "failed" && silentResult.measurement === "missing"
+  ? ok("exit 0 with no report file is a failed measurement (a nonempty file is not assumed)")
+  : fail(`missing-report handling wrong: ${JSON.stringify(silentResult)}`);
+
+// --- the report adapter, on synthetic bytes built from the published reporter.d.ts ---------
+const adapt = (raw, overrides = {}) => adaptPerfReport({
+  raw,
+  requestedPackage: "com.example.fixture",
+  requestedDevice: "fixture-serial",
+  producerVersion: "0.5.0",
+  preexisting: false,
+  ...overrides,
+});
+const adaptCases = [
+  ["missing file", adapt(null, { readError: "ENOENT: no such file or directory" }), "failed", "missing", null],
+  ["empty JSON object", adapt("{}"), "failed", "missing", null],
+  ["malformed JSON", adapt("{not json"), "failed", "missing", null],
+  ["truncated JSON", adapt(readSynthetic("0.2.0-complete").slice(0, 200)), "failed", "missing", null],
+  ["unknown report version", adapt(readSynthetic("unknown-version")), "failed", "missing", null],
+  // The schema line IS identified here (metadata.package exists); only the identity check fails.
+  ["mismatched package", adapt(readSynthetic("0.2.0-wrong-package")), "failed", "missing", "0.2.0"],
+  ["0.2.0 complete", adapt(readSynthetic("0.2.0-complete")), "ok", "complete", "0.2.0"],
+  ["0.1.0 complete", adapt(readSynthetic("0.1.0-complete")), "ok", "complete", "0.1.0"],
+  ["0.2.0 SKIP / INSUFFICIENT_DATA", adapt(readSynthetic("0.2.0-skip")), "ok", "missing", "0.2.0"],
+  ["0.2.0 runtime FPS without app frames", adapt(readSynthetic("0.2.0-no-app-frames")), "ok", "missing", "0.2.0"],
+];
+for (const [label, result, status, measurement, version] of adaptCases) {
+  result.status === status && result.measurement === measurement && result.reportVersion === version
+    ? ok(`report adapter: ${label} -> ${status}/${measurement}`)
+    : fail(`report adapter ${label} wrong: ${JSON.stringify({ status: result.status, measurement: result.measurement, reportVersion: result.reportVersion, reason: result.reason })}`);
+}
+adapt(readSynthetic("0.2.0-complete"), { preexisting: true }).status === "failed"
+  ? ok("report adapter refuses a report file that predates the run even when its contents parse")
+  : fail("preexisting report was accepted");
+adapt(readSynthetic("0.2.0-no-app-frames")).view?.summary?.sysFps?.avg === 88.6
+  && adapt(readSynthetic("0.2.0-no-app-frames")).measurement === "missing"
+  ? ok("Spatial Runtime FPS is reported but never counted as an app-FPS measurement")
+  : fail("runtime FPS was treated as an app measurement");
+const gpuBlindAdaptation = adapt(readSynthetic("0.2.0-no-app-frames"));
+gpuBlindAdaptation.missingCounters.includes("gpuUsage") && gpuBlindAdaptation.missingCounters.includes("appFps")
+  ? ok("all-zero GPU counters are reported as missing counters, never as an idle GPU")
+  : fail(`missing-counter reporting wrong: ${JSON.stringify(gpuBlindAdaptation.missingCounters)}`);
+adapt(readSynthetic("0.2.0-complete")).view?.rawData === undefined
+  && JSON.stringify(adapt(readSynthetic("0.2.0-complete")).view ?? {}).length < 4000
+  ? ok("the returned view is bounded and excludes the unbounded rawData array")
+  : fail("the report view is not bounded");
+adapt(readSynthetic("0.2.0-complete"), { requestedDevice: "other-serial" }).status === "ok"
+  ? ok("a device serial the 0.2.0 schema never records is not treated as a mismatch")
+  : fail("an absent device field was treated as a mismatch");
+adapt(JSON.stringify({ ...JSON.parse(readSynthetic("0.2.0-complete")), metadata: { ...JSON.parse(readSynthetic("0.2.0-complete")).metadata, device: "other-serial" } })).status === "failed"
+  ? ok("a device field that IS present and disagrees with the requested serial fails the identity check")
+  : fail("a mismatched device serial was accepted");
+
+// --- the observable score boundary (unchanged contract) ------------------------------------
+expect("scorePicoCliPerfAxis keeps its documented null boundaries", () => {
+  assert.equal(scorePicoCliPerfAxis({ status: "ok", summary: {} }, 16.7).perf, null);
+  assert.equal(scorePicoCliPerfAxis({ status: "ok", summary: { appFps: { p5: 0, avg: 0 } } }, 16.7).perf, null);
+});
+scorePicoCliPerfAxis({ status: "ok", measurement: "missing", summary: { appFps: { avg: 71.2, p5: 62 } } }, 16.7).perf === null
+  ? ok("an explicit missing measurement scores null even when an appFps block is present")
+  : fail("measurement:'missing' was scored");
+scorePicoCliPerfAxis(adapt(readSynthetic("0.2.0-skip")), 16.7).perf === null
+  ? ok("a SKIP / INSUFFICIENT_DATA report is never a passing budget")
+  : fail("SKIP report scored against the budget");
+scorePicoCliPerfAxis({ status: "ok", measurement: "partial", summary: { appFps: { avg: 71.2, p5: 62 } } }, 16.7).perf === 1
+  ? ok("a partial measurement still scores its measured app FPS")
+  : fail("partial measurement was not scored");
+
+// --- trace load / query envelopes ----------------------------------------------------------
+const queryEnvelope = {success:true, exitCode:0, resource:"trace", action:"query",
+  data:{sessionId:"fixture-session", rpcEndpoint:"http://127.0.0.1:19001", rows:[{value:1}]}};
+const validatedQueryResult = validateTraceQueryEnvelope(`${JSON.stringify(queryEnvelope)}\n`, { sessionId: "fixture-session" });
+expect("trace query unwraps data.rows and never returns the envelope as rows", () => {
+  assert.deepEqual(validatedQueryResult.rows, queryEnvelope.data.rows);
+  assert.notDeepEqual(validatedQueryResult.rows, queryEnvelope);
+});
+validatedQueryResult.status === "ok" && validatedQueryResult.sessionId === "fixture-session"
+  ? ok("a successful query envelope validates success/resource/action/session before unwrapping")
+  : fail(`query envelope validation wrong: ${JSON.stringify(validatedQueryResult)}`);
+const emptyRows = validateTraceQueryEnvelope(JSON.stringify({ ...queryEnvelope, data: { ...queryEnvelope.data, rows: [] } }), { sessionId: "fixture-session" });
+emptyRows.status === "ok" && Array.isArray(emptyRows.rows) && emptyRows.rows.length === 0
+  ? ok("an empty successful rows array is a measurement, distinct from unavailable rows")
+  : fail(`empty rows mishandled: ${JSON.stringify(emptyRows)}`);
+const queryFailureCases = [
+  ["success:false with exit/error metadata", JSON.stringify({ success: false, exitCode: 1, resource: "trace", action: "query", data: null, error: "Session not found: fixture-session" }), /Session not found/],
+  ["wrong session", JSON.stringify({ ...queryEnvelope, data: { ...queryEnvelope.data, sessionId: "other-session" } }), /session/i],
+  ["wrong resource", JSON.stringify({ ...queryEnvelope, resource: "live" }), /resource/i],
+  ["wrong action", JSON.stringify({ ...queryEnvelope, action: "load" }), /action/i],
+  ["rows absent", JSON.stringify({ ...queryEnvelope, data: { sessionId: "fixture-session", rpcEndpoint: "x" } }), /rows/i],
+  ["empty output", "", /no .*envelope|empty/i],
+  ["malformed output", "Daemon is not running on port 9500", /envelope/i],
+  ["truncated JSON", JSON.stringify(queryEnvelope).slice(0, 40), /envelope/i],
+];
+for (const [label, stdout, pattern] of queryFailureCases) {
+  const outcome = validateTraceQueryEnvelope(stdout, { sessionId: "fixture-session" });
+  outcome.status === "failed" && pattern.test(outcome.reason ?? "") && outcome.rows === undefined
+    ? ok(`trace query rejects ${label} without inventing rows`)
+    : fail(`trace query ${label} wrong: ${JSON.stringify(outcome)}`);
+}
+
+const loadEnvelope = { success: true, exitCode: 0, resource: "trace", action: "load", data: { sessionId: "sess-42", rpcEndpoint: "http://127.0.0.1:19001", traceFile: "/tmp/t.perfetto-trace", spatialDiagnose: true }, error: null, formattedOutput: null };
+const validatedLoad = validateTraceLoadEnvelope(`${JSON.stringify(loadEnvelope)}\n`);
+validatedLoad.status === "ok" && validatedLoad.sessionId === "sess-42" && validatedLoad.rpcEndpoint === "http://127.0.0.1:19001"
+  ? ok("trace load validates its envelope's success/resource/action before trusting data.sessionId")
+  : fail(`load envelope validation wrong: ${JSON.stringify(validatedLoad)}`);
+for (const [label, stdout] of [
+  ["a failure envelope", JSON.stringify({ success: false, exitCode: 1, resource: "trace", action: "load", data: null, error: "Trace file not found: /tmp/missing" })],
+  ["a wrong-action envelope", JSON.stringify({ ...loadEnvelope, action: "query" })],
+  ["a missing sessionId", JSON.stringify({ ...loadEnvelope, data: { rpcEndpoint: "x" } })],
+  ["empty output", ""],
+  ["truncated JSON", JSON.stringify(loadEnvelope).slice(0, 30)],
+]) {
+  const outcome = validateTraceLoadEnvelope(stdout);
+  outcome.status === "failed" && outcome.sessionId === undefined
+    ? ok(`trace load refuses ${label} instead of extracting an id`)
+    : fail(`trace load ${label} wrong: ${JSON.stringify(outcome)}`);
+}
+// LEGACY contract, kept separately: the default human renderer's exact label (TRACE_LOAD_HUMAN).
+const humanLoadOutput = [
+  "[TraceLoad] Session: 9f2c1b7e",
+  "[TraceLoad] RPC endpoint: http://127.0.0.1:19001",
+  "[TraceLoad] Trace file: /tmp/t.perfetto-trace",
+  "[TraceLoad] Next:",
+  '  perf trace query --session 9f2c1b7e --sql "select 1;"',
+  "  perf session close 9f2c1b7e",
+].join("\n");
+parseTraceLoadHumanSession(humanLoadOutput) === "9f2c1b7e"
+  && parseTraceLoadHumanSession("[TraceLoad] Failed: Trace file not found: /tmp/missing") === null
+  && parseTraceLoadHumanSession("session id: guessed-from-prose") === null
+  ? ok("the legacy human-label parser reads the exact [TraceLoad] Session: line and nothing else")
+  : fail(`legacy load label parser wrong: ${JSON.stringify(parseTraceLoadHumanSession(humanLoadOutput))}`);
+validateTraceLoadEnvelope(humanLoadOutput).status === "failed"
+  ? ok("the default human load output is not accepted as a JSON session result")
+  : fail("human load output was accepted as an envelope");
+parseProfilerEnvelope("noise\n" + JSON.stringify(loadEnvelope) + "\nmore noise").status === "ok"
+  ? ok("the envelope parser finds the envelope line amid the CLI's own prose")
+  : fail("envelope line was not located amid prose");
+
+// Trace argv: explicit long options, per-line package flag, --envelope before the resource.
+const traceRecordArgs = traceArgv("record", ["perf", "trace", "record"], cliOperationOptions("0.5.0", "trace-record"),
+  { packageName: "com.example.fixture", durationSec: 20, device: "fixture-serial", outputPath: "/tmp/t.perfetto-trace" });
+expect("trace record uses the 0.2.0 canonical long options", () => {
+  assert.deepEqual(traceRecordArgs, ["perf", "trace", "record", "--duration", "20", "--output", "/tmp/t.perfetto-trace",
+    "--device", "fixture-serial", "--package", "com.example.fixture"]);
+});
+expect("trace record on the 0.4.x line uses --app (profiler 0.1.0 declares no --package)", () => {
+  assert.deepEqual(
+    traceArgv("record", ["perf", "trace", "record"], cliOperationOptions("0.4.4", "trace-record"),
+      { packageName: "com.example.fixture", durationSec: 20, device: "fixture-serial", outputPath: "/tmp/t.perfetto-trace" }),
+    ["perf", "trace", "record", "--duration", "20", "--output", "/tmp/t.perfetto-trace", "--device", "fixture-serial", "--app", "com.example.fixture"],
+  );
+});
+expect("trace decode keeps its positional file with explicit --format/--output", () => {
+  assert.deepEqual(
+    traceArgv("decode", ["perf", "trace", "decode"], cliOperationOptions("0.5.0", "trace-decode"),
+      { tracePath: "/tmp/t.perfetto-trace", format: "json", outputPath: "/tmp/t.json" }),
+    ["perf", "trace", "decode", "/tmp/t.perfetto-trace", "--format", "json", "--output", "/tmp/t.json"],
+  );
+});
+expect("trace load requests the machine envelope, and the global flag precedes the resource", () => {
+  assert.deepEqual(
+    traceArgv("load", ["perf", "trace", "load"], cliOperationOptions("0.5.0", "trace-load"), { tracePath: "/tmp/t.perfetto-trace" }),
+    ["perf", "--envelope", "trace", "load", "/tmp/t.perfetto-trace"],
+  );
+});
+expect("trace query requests the envelope and passes --session/--sql", () => {
+  assert.deepEqual(
+    traceArgv("query", ["perf", "trace", "query"], cliOperationOptions("0.5.0", "trace-query"), { sessionId: "sess-42", sql: "select 1;" }),
+    ["perf", "--envelope", "trace", "query", "--session", "sess-42", "--sql", "select 1;"],
+  );
+});
+
+// runPerfTrace: capability refusal, envelope success and a preserved raw failure.
+const traceCapability = (state, reason) => ({ operation: "trace-load", state, argvPrefix: ["perf", "trace", "load"], reason, evidence: [] });
+const traceRuntime = (overrides = {}) => ({
+  capability: () => traceCapability("supported", "help-names-operation: `perf trace load --help` exited 0"),
+  options: (operation) => cliOperationOptions("0.5.0", operation),
+  run: async () => ({ code: 0, signal: null, stdout: JSON.stringify(loadEnvelope), stderr: "", timedOut: false, outputTruncated: false }),
+  retain: () => ({ retained: false, error: "unused" }),
+  inspectArtifact: () => ({ exists: true, regularFile: true, bytes: 128 }),
+  cliPath: "/fixture/pico-cli",
+  cliRaw: "pico-cli/0.5.0 (fixture)",
+  cliVersion: "0.5.0",
+  ...overrides,
+});
+const loadResult = await runPerfTrace({ action: "load", tracePath: "/tmp/t.perfetto-trace" }, traceRuntime());
+loadResult.status === "ok" && loadResult.sessionId === "sess-42" && loadResult.sessionSource === "envelope"
+  ? ok("runPerfTrace load returns the validated envelope session id and names its source")
+  : fail(`runPerfTrace load wrong: ${JSON.stringify(loadResult)}`);
+const traceRefusal = await runPerfTrace({ action: "load", tracePath: "/tmp/t.perfetto-trace" }, traceRuntime({
+  capability: () => traceCapability("unavailable", "utilities-not-installed: `perf trace load --help` exited 3 at the CLI's utilities gate"),
+  run: async () => { throw new Error("a refused trace capability must never spawn"); },
+}));
+traceRefusal.status === "failed" && traceRefusal.failureClass === "setup-required"
+  && traceRefusal.note === "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry."
+  ? ok("runPerfTrace refuses an unprovisioned trace route without spawning, with the neutral setup sentence")
+  : fail(`runPerfTrace refusal wrong: ${JSON.stringify(traceRefusal)}`);
+const queryResult = await runPerfTrace({ action: "query", sessionId: "fixture-session", sql: "select 1;" }, traceRuntime({
+  capability: () => ({ operation: "trace-query", state: "supported", argvPrefix: ["perf", "trace", "query"], reason: "help-names-operation: ok", evidence: [] }),
+  run: async () => ({ code: 0, signal: null, stdout: JSON.stringify(queryEnvelope), stderr: "", timedOut: false, outputTruncated: false }),
+}));
+JSON.stringify(queryResult.rows) === JSON.stringify([{ value: 1 }]) && queryResult.status === "ok"
+  ? ok("runPerfTrace query returns data.rows, not the profiler envelope")
+  : fail(`runPerfTrace query wrong: ${JSON.stringify(queryResult)}`);
+const truncatedQuery = await runPerfTrace({ action: "query", sessionId: "fixture-session", sql: "select 1;" }, traceRuntime({
+  capability: () => ({ operation: "trace-query", state: "supported", argvPrefix: ["perf", "trace", "query"], reason: "help-names-operation: ok", evidence: [] }),
+  run: async () => ({ code: 0, signal: null, stdout: JSON.stringify(queryEnvelope).slice(0, 30), stderr: "", timedOut: false, outputTruncated: true }),
+}));
+truncatedQuery.status === "failed" && truncatedQuery.rows === undefined && truncatedQuery.outputTruncated === true
+  ? ok("a truncated query stream fails with the raw output preserved and no invented rows")
+  : fail(`truncated query wrong: ${JSON.stringify(truncatedQuery)}`);
+fs.rmSync(c4Tmp, { recursive: true, force: true });
+
 console.log(`\npico-cli lane test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);
