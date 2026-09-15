@@ -987,7 +987,11 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
               const appFps = p?.summary?.appFps;
               const p5 = typeof appFps?.p5 === "number" ? appFps.p5 : null;
               const avg = typeof appFps?.avg === "number" ? appFps.avg : null;
-              if (p5 === null || avg === null || avg === 0) {
+              // C4: the wrapper now grades its own report. measurement:'missing' carries the
+              // profiler's OWN SKIP/INSUFFICIENT_DATA verdict and the no-app-frames case, so it is
+              // unmeasurable here — Spatial Runtime/compositor FPS never stands in for app FPS,
+              // and an absent counter is never read as an idle one.
+              if (p?.measurement === "missing" || p5 === null || avg === null || avg === 0) {
                 outcomes.push({
                   kind: "perf",
                   status: "unmeasurable",
@@ -1003,6 +1007,8 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
                   ...(typeof appFps?.p10 === "number" ? { p10: appFps.p10 } : {}),
                   ...(typeof appFps?.p50 === "number" ? { p50: appFps.p50 } : {}),
                   avg,
+                  ...(typeof p?.measurement === "string" ? { measurement: p.measurement } : {}),
+                  ...(Array.isArray(p?.missingCounters) && p.missingCounters.length ? { missingCounters: p.missingCounters } : {}),
                   ...(typeof p?.jankWindowCount === "number" ? { jankWindows: p.jankWindowCount } : {}),
                   ...(p?.reportPath ? { reportPath: p.reportPath } : {}),
                 });

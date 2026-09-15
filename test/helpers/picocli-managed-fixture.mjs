@@ -83,6 +83,14 @@ if (role === "managed-cli") {
       process.exit(replay.code ?? 0);
     }
   }
+  if (cliArgs.at(-1) === "--help" && cliArgs[0] === "perf" && process.env.FAKE_PICO_OPERATION_MODE === "setup-required") {
+    // The perf family resolves its utilities gate ONCE, before delegating any perf argv, so on an
+    // unprovisioned host a perf CHILD HELP fails too — that is what the retained observations show
+    // (0.4.4 invocation 012 exited 1; 0.5.0 invocations 137-141 exited 3). Fixture text, never real
+    // CLI bytes. Every other route's help still succeeds, because only the perf payload is missing.
+    process.stderr.write("Error: Perf utilities are not installed. Run \`pico-cli setup\` to install.\\n");
+    process.exit(/^v?0\\.[0-4](\\.|$)/.test(version) ? 1 : 3);
+  }
   if (cliArgs.at(-1) === "--help") {
     // Fixture help (never real CLI bytes) shaped like a real child help: a usage line that names
     // the probed route, so bounded capability discovery has something to classify. Tests that need
@@ -103,7 +111,9 @@ if (role === "managed-cli") {
     process.exit(1);
   }
   if (process.env.FAKE_PICO_OPERATION_MODE === "empty-artifact" || process.env.FAKE_PICO_OPERATION_MODE === "directory-artifact") {
-    const outputIndex = cliArgs.indexOf("-o");
+    // The real CLI/profiler declares "-o, --output <path>", so both spellings name one option and
+    // the fixture must honor whichever a wrapper chose (C4 moved the trace wrappers to --output).
+    const outputIndex = Math.max(cliArgs.indexOf("-o"), cliArgs.indexOf("--output"));
     if (outputIndex >= 0 && cliArgs[outputIndex + 1]) {
       const outputPath = cliArgs[outputIndex + 1];
       if (process.env.FAKE_PICO_OPERATION_MODE === "directory-artifact") {

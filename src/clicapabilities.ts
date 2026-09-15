@@ -78,10 +78,24 @@ export type CliOperationRoute = {
    * every entry cites the retained help that advertises (or lacks) the flag.
    */
   nativeDurationFlag: CliRouteDurationFlag | null;
+  /**
+   * The exact option spellings this route's line declares for the roles a wrapper needs, or null
+   * when the line has no route. Never derived from an option's name, from a sibling route, or from
+   * a version comparison: every entry cites the vendored profiler declaration it was read from.
+   */
+  options: CliRouteOptions | null;
 };
 
 /** A duration flag advertised by a route's retained help, with the evidence that advertises it. */
 export type CliRouteDurationFlag = { flag: string; provenance: string };
+
+/**
+ * Option spellings for one route, keyed by the role the wrapper needs (`package`, `duration`,
+ * `device`, `output`, `save`, `format`, `session`, `sql`, `envelope`). A role is present only when
+ * the line's own declaration advertises it, so a missing role means "this line does not offer it",
+ * never "guess a spelling".
+ */
+export type CliRouteOptions = { names: Readonly<Record<string, string>>; provenance: string };
 
 export type CliVersionLine = "0.4.x" | "0.5.x";
 
@@ -106,7 +120,60 @@ const USAGE_SECTION_PATTERN = /\busage\b/i;
 // (`mcp:dev-knowledge`, `knowledge:server`) are single argv tokens and are deliberately not used;
 // the removed spaced `mcp dev-knowledge` route is never resurrected on 0.5.x, and the former
 // `perf monitor run` route is rejected by the 0.5.0 router and appears in no table.
-type RouteTable = Record<CliOperation, { argv: readonly string[] | null; provenance: string; exitZeroHelpObserved: boolean; nativeDurationFlag?: CliRouteDurationFlag }>;
+type RouteTable = Record<CliOperation, { argv: readonly string[] | null; provenance: string; exitZeroHelpObserved: boolean; nativeDurationFlag?: CliRouteDurationFlag; options?: CliRouteOptions }>;
+
+// Profiler option facts. The perf family is delegated to a VENDORED profiler package, so the
+// option spellings belong to that package's version, not to the pico-cli version: 0.4.4 bundles
+// `package/vendor/profiler-cli/pspp-profiler-cli-0.1.0.tgz` (sha256 13d029ef…4a0cfe2) and 0.5.0
+// bundles `pspp-profiler-cli-0.2.0.tgz` (sha256 9e78d481…0eac85d). Both nested archives were read
+// in memory from the official tarballs in
+// evidence/2026-09-15-cli050-sdk61-evolution-audit-001/ (Python tarfile; nothing extracted, nothing
+// executed), at `package/dist/index.js:2` unless another member is named. `--envelope` is a GLOBAL
+// program option on both lines (`createProgram()`: .option("--envelope","Output a machine-readable
+// JSON envelope")), and commander is configured with neither allowUnknownOption nor
+// passThroughOptions, so it must precede the resource token.
+const PROFILER_0_1_PROVENANCE = "profiler 0.1.0 (bundled with pico-cli 0.4.4), package/dist/index.js:2";
+const PROFILER_0_2_PROVENANCE = "profiler 0.2.0 (bundled with pico-cli 0.5.0), package/dist/index.js:2";
+
+const LIVE_OPTIONS_0_2: CliRouteOptions = {
+  // LiveRunAction.registerOptions: --package (canonical) / --app (deprecated alias, warns),
+  // --device <device_id>, "-t, --duration <seconds>", "-o, --output <path> (requires --save or
+  // --report-mode)", --save. Excerpt LIVE050. LiveRunAction.execute refuses an --output that is not
+  // paired with --save/--report-mode, so the two are emitted together or not at all.
+  names: { package: "--package", duration: "--duration", device: "--device", output: "--output", save: "--save" },
+  provenance: `${PROFILER_0_2_PROVENANCE} LiveRunAction.registerOptions/execute (excerpt LIVE050)`,
+};
+const TRACE_RECORD_OPTIONS_0_1: CliRouteOptions = {
+  // TraceRecordAction.registerOptions on 0.1.0 declares "-a, --app <package>"; it has no --package.
+  names: { package: "--app", duration: "--duration", device: "--device", output: "--output" },
+  provenance: `${PROFILER_0_1_PROVENANCE} TraceRecordAction.registerOptions ("-a, --app <package>", "-t, --duration", "-d, --device", "-o, --output")`,
+};
+const TRACE_RECORD_OPTIONS_0_2: CliRouteOptions = {
+  // 0.2.0 renames the short alias's long form: "-a, --package <package>" plus "--app <package>
+  // Deprecated alias for --package".
+  names: { package: "--package", duration: "--duration", device: "--device", output: "--output" },
+  provenance: `${PROFILER_0_2_PROVENANCE} TraceRecordAction.registerOptions ("-a, --package <package>", "-t, --duration", "-d, --device", "-o, --output")`,
+};
+const TRACE_DECODE_OPTIONS: CliRouteOptions = {
+  // TraceDecodeAction.registerOptions is unchanged across both lines: "-f, --format <type>" and
+  // "-o, --output <path>", with the trace file as the (optional) positional argument.
+  names: { format: "--format", output: "--output" },
+  provenance: `${PROFILER_0_1_PROVENANCE} / ${PROFILER_0_2_PROVENANCE} TraceDecodeAction.registerOptions ("-f, --format", "-o, --output")`,
+};
+const TRACE_LOAD_OPTIONS: CliRouteOptions = {
+  // TraceLoadAction takes the trace file positionally; the session result is machine-readable only
+  // through the global --envelope flag. Its default rendering is renderTraceLoad's human
+  // "[TraceLoad] Session: <id>" label (excerpt TRACE_LOAD_HUMAN), which is not a JSON result.
+  names: { envelope: "--envelope" },
+  provenance: `${PROFILER_0_1_PROVENANCE} / ${PROFILER_0_2_PROVENANCE} createProgram global --envelope + TraceLoadAction (excerpts TRACE_LOAD_HUMAN, TRACE_JSON_ENVELOPE)`,
+};
+const TRACE_QUERY_OPTIONS: CliRouteOptions = {
+  // TraceQueryAction declares --session and --sql on both lines. 0.2.0 additionally declares
+  // outputMode:"envelope" (excerpt TRACE_QUERY_SCHEMA) so it always emits the envelope; 0.1.0 does
+  // not, so the global flag is passed on both lines rather than inferred from the version.
+  names: { session: "--session", sql: "--sql", envelope: "--envelope" },
+  provenance: `${PROFILER_0_1_PROVENANCE} / ${PROFILER_0_2_PROVENANCE} TraceQueryAction.registerOptions ("--session", "--sql") + createProgram global --envelope (excerpts TRACE_QUERY_SCHEMA, TRACE_QUERY_ROWS)`,
+};
 
 const ROUTES_0_4: RouteTable = {
   // exitZeroHelpObserved cites the fixture index entry that holds the exit-0 help for the route.
@@ -128,10 +195,10 @@ const ROUTES_0_4: RouteTable = {
   },
   // The four trace routes have no retained exit-0 help: the only 0.4.4 perf observation (index.json
   // 0.4.4/012) exited 1 at the utilities gate, so the provisioned 0.1.0 profiler help was never seen.
-  "trace-record": { argv: ["perf", "trace", "record"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012", exitZeroHelpObserved: false },
-  "trace-decode": { argv: ["perf", "trace", "decode"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012", exitZeroHelpObserved: false },
-  "trace-load": { argv: ["perf", "trace", "load"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012", exitZeroHelpObserved: false },
-  "trace-query": { argv: ["perf", "trace", "query"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012", exitZeroHelpObserved: false },
+  "trace-record": { argv: ["perf", "trace", "record"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012", exitZeroHelpObserved: false, options: TRACE_RECORD_OPTIONS_0_1 },
+  "trace-decode": { argv: ["perf", "trace", "decode"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012", exitZeroHelpObserved: false, options: TRACE_DECODE_OPTIONS },
+  "trace-load": { argv: ["perf", "trace", "load"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012", exitZeroHelpObserved: false, options: TRACE_LOAD_OPTIONS },
+  "trace-query": { argv: ["perf", "trace", "query"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012", exitZeroHelpObserved: false, options: TRACE_QUERY_OPTIONS },
 };
 
 const ROUTES_0_5: RouteTable = {
@@ -160,11 +227,12 @@ const ROUTES_0_5: RouteTable = {
     argv: ["perf", "live", "run"],
     provenance: "PERF_ROUTER050 permits live: run/start/stop; 0.5.0 invocation 139 (`perf live --help`) exited 3 at the utilities gate, so evidence decides reachability",
     exitZeroHelpObserved: false,
+    options: LIVE_OPTIONS_0_2,
   },
-  "trace-record": { argv: ["perf", "trace", "record"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate", exitZeroHelpObserved: false },
-  "trace-decode": { argv: ["perf", "trace", "decode"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate", exitZeroHelpObserved: false },
-  "trace-load": { argv: ["perf", "trace", "load"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate", exitZeroHelpObserved: false },
-  "trace-query": { argv: ["perf", "trace", "query"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate", exitZeroHelpObserved: false },
+  "trace-record": { argv: ["perf", "trace", "record"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate", exitZeroHelpObserved: false, options: TRACE_RECORD_OPTIONS_0_2 },
+  "trace-decode": { argv: ["perf", "trace", "decode"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate", exitZeroHelpObserved: false, options: TRACE_DECODE_OPTIONS },
+  "trace-load": { argv: ["perf", "trace", "load"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate", exitZeroHelpObserved: false, options: TRACE_LOAD_OPTIONS },
+  "trace-query": { argv: ["perf", "trace", "query"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate", exitZeroHelpObserved: false, options: TRACE_QUERY_OPTIONS },
 };
 
 /** 0.4.x and older lines use the 0.4.4 table; 0.5.x and every newer line is probed with the newest
@@ -186,7 +254,23 @@ export function cliOperationRoutes(version: string): CliOperationRoute[] {
     nativeDurationFlag: table[operation].nativeDurationFlag
       ? { ...table[operation].nativeDurationFlag as CliRouteDurationFlag }
       : null,
+    options: cloneRouteOptions(table[operation].options ?? null),
   }));
+}
+
+function cloneRouteOptions(options: CliRouteOptions | null): CliRouteOptions | null {
+  return options ? { names: { ...options.names }, provenance: options.provenance } : null;
+}
+
+/**
+ * The option spellings the resolved line declares for an operation, or null when the line has no
+ * route for it. Like cliOperationNativeDurationFlag this is a POSITIVE claim about the installed
+ * package, so an unparseable version answers null rather than inheriting the newest table. A caller
+ * must still hold a `supported` capability for the same target before dispatching.
+ */
+export function cliOperationOptions(version: string, operation: CliOperation): CliRouteOptions | null {
+  if (!/^v?\d+\.\d+(?:\.|$)/.test(version.trim())) return null;
+  return cliOperationRoutes(version).find((route) => route.operation === operation)?.options ?? null;
 }
 
 /**
@@ -442,9 +526,10 @@ export function verifyOperationCapability(
     argvPrefix: capability.argvPrefix,
     provenance: "stored record",
     exitZeroHelpObserved: tableRoute?.exitZeroHelpObserved ?? false,
-    // Re-verification only re-classifies the retained bytes; the dispatch-time duration flag is
-    // read from the live route table, never from a stored record.
+    // Re-verification only re-classifies the retained bytes; the dispatch-time duration flag and
+    // option spellings are read from the live route table, never from a stored record.
     nativeDurationFlag: null,
+    options: null,
   }, observed);
   if (recomputed.state !== capability.state) {
     return {

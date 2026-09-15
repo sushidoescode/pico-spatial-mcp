@@ -1,0 +1,29 @@
+{
+  "metadata": {
+    "package": "com.example.fixture",
+    "report_id": "synthetic-0200-skip",
+    "durationSeconds": 15,
+    "totalSamples": 0,
+    "timestamp": "2026-09-15T00:00:00.000Z",
+    "timeAlignment": {
+      "strategy": "logcat-anchor-with-hb-fallback",
+      "heartbeatMs": 1000
+    }
+  },
+  "diagnosis": {
+    "result": "SKIP",
+    "category": "INSUFFICIENT_DATA",
+    "suggestion": "Skip for no App FPS or Spatial Runtime FPS was collected"
+  },
+  "summary": {
+    "appFps": { "avg": 0, "max": 0, "min": 0, "p5": 0, "p10": 0, "p50": 0, "dropsCount": 0 },
+    "sysFps": { "avg": 0, "max": 0, "min": 0, "p5": 0, "p10": 0, "p50": 0 },
+    "gpuUsage": { "avg": 0, "max": 0 },
+    "gpuFreq": { "avg": 0, "max": 0 },
+    "systemCpu": { "avg": 0, "max": 0 },
+    "appCpu": { "avg": 0, "max": 0 },
+    "gpuTemp": { "start": 0, "end": 0, "max": 0, "trend": "stable" }
+  },
+  "jankWindows": [],
+  "rawData": []
+}

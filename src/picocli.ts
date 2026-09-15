@@ -1001,6 +1001,12 @@ const PICO_CLI_PROFILER_OPERATIONS: ReadonlySet<CliOperation> = new Set<CliOpera
  * `operation` makes the payload clause operation-conditional: the retained excerpt that shows the
  * PICO_HOME read (PERF_ENV050) is the profiler-entry resolver, so claiming "profiler payload" for a
  * watch or capture run would attribute a cause we have not observed for it.
+ *
+ * For a perf/trace operation the same resolver checks PICO_CLI_PROFILER_ENTRY_PATH FIRST and
+ * returns immediately when it is set, so that variable is the explicit alternative to a PICO_HOME
+ * root and is named as such (PERF_ENV050 / PERF_ENV044). It is a different question from the SDK
+ * tools-root selection this server performs for its own build/emulator lanes: the CLI resolves its
+ * profiler payload under its own layout, and this server sets neither variable.
  */
 export function describePicoCliEnvironmentFailure(
   stderr: string,
@@ -1016,7 +1022,9 @@ export function describePicoCliEnvironmentFailure(
     + "Set PICO_HOME to the absolute PICO SDK root for the MCP server process (the root validate_toolchain resolves), "
     + "restart the MCP server, and retry. This server never sets PICO_HOME implicitly; "
     + (profilerScoped
-      ? "whether the profiler payload itself is provisioned is a separate question answered by the CLI's own utilities message, not by this classification."
+      ? "the CLI's documented alternative is an explicit absolute PICO_CLI_PROFILER_ENTRY_PATH, which its resolver honors before reading PICO_HOME at all — "
+        + "this server sets neither, and the root it resolves for its own SDK build/emulator lanes is a separate selection. "
+        + "Whether the profiler payload itself is provisioned is a further separate question answered by the CLI's own utilities message, not by this classification."
       : "which payload this operation could not resolve is answered by the CLI's own output, not by this classification.");
 }
 
@@ -1042,6 +1050,12 @@ export type PicoCliObservationRetentionInput = {
   result: Pick<PicoCliCommandResult, "code" | "signal" | "stdout" | "stderr" | "timedOut" | "outputTruncated"> & { spawnError?: string };
   /** Extra immutable facts recorded beside the bytes (coverage, requested window, provenance). */
   metadata?: Record<string, unknown>;
+  /**
+   * Whole artifacts produced by the same run, copied into the run directory under the given file
+   * name so the evidence survives even if the CLI's own output path is later overwritten. Written
+   * with the same `wx` + fsync rules as the streams; a name containing a path separator is refused.
+   */
+  artifacts?: Array<{ name: string; bytes: Buffer; sourcePath?: string }>;
   /** Injected for deterministic run directories in tests; production uses a fresh UUID. */
   runId?: string;
   now?: () => number;
@@ -1058,6 +1072,8 @@ export type PicoCliRetainedObservation =
       stderrSha256: string;
       stdoutBytes: number;
       stderrBytes: number;
+      /** Retained copies of whole run artifacts, in the order they were supplied. */
+      artifacts: Array<{ name: string; path: string; bytes: number; sha256: string; sourcePath?: string }>;
       outputTruncated: boolean;
     }
   | { retained: false; error: string };
@@ -1094,6 +1110,21 @@ export function retainPicoCliObservation(
     const recordPath = path.join(directory, OBSERVATION_RECORD_FILE);
     writeImmutableBytes(stdoutPath, stdoutBytes);
     writeImmutableBytes(stderrPath, stderrBytes);
+    const artifacts: Array<{ name: string; path: string; bytes: number; sha256: string; sourcePath?: string }> = [];
+    for (const artifact of input.artifacts ?? []) {
+      if (artifact.name.includes("/") || artifact.name.includes("\\") || artifact.name === "." || artifact.name === "..") {
+        throw new Error(`retained artifact name ${JSON.stringify(artifact.name)} must be a plain file name`);
+      }
+      const artifactPath = path.join(directory, artifact.name);
+      writeImmutableBytes(artifactPath, artifact.bytes);
+      artifacts.push({
+        name: artifact.name,
+        path: artifactPath,
+        bytes: artifact.bytes.length,
+        sha256: createHash("sha256").update(artifact.bytes).digest("hex"),
+        ...(artifact.sourcePath ? { sourcePath: artifact.sourcePath } : {}),
+      });
+    }
     const record = {
       schemaVersion: 1,
       operation: input.operation,
@@ -1106,6 +1137,7 @@ export function retainPicoCliObservation(
       ...(input.result.spawnError ? { spawnError: input.result.spawnError } : {}),
       stdout: { path: stdoutPath, bytes: stdoutBytes.length, sha256: createHash("sha256").update(stdoutBytes).digest("hex") },
       stderr: { path: stderrPath, bytes: stderrBytes.length, sha256: createHash("sha256").update(stderrBytes).digest("hex") },
+      ...(artifacts.length ? { artifacts } : {}),
       ...(input.metadata ? { metadata: input.metadata } : {}),
     };
     writeImmutableBytes(recordPath, Buffer.from(`${JSON.stringify(record, null, 2)}\n`, "utf8"));
@@ -1119,6 +1151,7 @@ export function retainPicoCliObservation(
       stderrSha256: record.stderr.sha256,
       stdoutBytes: record.stdout.bytes,
       stderrBytes: record.stderr.bytes,
+      artifacts,
       outputTruncated: input.result.outputTruncated,
     };
   } catch (error) {

@@ -1,0 +1,29 @@
+{
+  "metadata": {
+    "package": "com.example.fixture",
+    "report_id": "synthetic-0200-no-app-frames",
+    "durationSeconds": 15,
+    "totalSamples": 15,
+    "timestamp": "2026-09-15T00:00:00.000Z",
+    "timeAlignment": {
+      "strategy": "logcat-anchor-with-hb-fallback",
+      "heartbeatMs": 1000
+    }
+  },
+  "diagnosis": {
+    "result": "FAIL",
+    "category": "SPR",
+    "suggestion": "There is a bottleneck in system resources. View Spatial Runtime FPS origin data and further analyze the cause of lag using Trace."
+  },
+  "summary": {
+    "appFps": { "avg": 0, "max": 0, "min": 0, "p5": 0, "p10": 0, "p50": 0, "dropsCount": 0 },
+    "sysFps": { "avg": 88.6, "max": 90, "min": 72, "p5": 74, "p10": 80, "p50": 90 },
+    "gpuUsage": { "avg": 0, "max": 0 },
+    "gpuFreq": { "avg": 0, "max": 0 },
+    "systemCpu": { "avg": 31.4, "max": 60 },
+    "appCpu": { "avg": 0, "max": 0 },
+    "gpuTemp": { "start": 0, "end": 0, "max": 0, "trend": "stable" }
+  },
+  "jankWindows": [],
+  "rawData": []
+}

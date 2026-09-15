@@ -810,5 +810,42 @@ if (typeof spatialbench.scorePanelReadyEvidence !== "function") {
   else fail(`panel-structural report fixture has inconsistent score/max: ${consoleRow}`);
 }
 
+// ── C4: the pico-cli perf axis never turns a missing measurement into a score ──────────────────────
+// Synthetic report fixtures (test/fixtures/picocli/synthetic/README.md names the published
+// reporter.d.ts members they encode); no CLI, profiler, emulator or device is involved.
+const assert = (await import("node:assert/strict")).default;
+const { scorePicoCliPerfAxis, adaptPerfReport } = await import("../dist/perfcli.js");
+const syntheticReport = (name) => JSON.parse(fs.readFileSync(
+  path.join(ROOT, "test", "fixtures", "picocli", "synthetic", `live-report-${name}.json`), "utf8"));
+const adaptSynthetic = (name) => adaptPerfReport({
+  raw: JSON.stringify(syntheticReport(name)),
+  requestedPackage: "com.example.fixture",
+  requestedDevice: "fixture-serial",
+  producerVersion: "0.5.0",
+  preexisting: false,
+});
+
+try {
+  assert.equal(scorePicoCliPerfAxis({ status: "ok", summary: {} }, 16.7).perf, null);
+  assert.equal(scorePicoCliPerfAxis({ status: "ok", summary: { appFps: { p5: 0, avg: 0 } } }, 16.7).perf, null);
+  ok("bench perf axis: the documented scorePicoCliPerfAxis null boundaries still hold");
+} catch (e) { fail(`bench perf axis boundaries moved: ${e instanceof Error ? e.message : String(e)}`); }
+
+const skipScore = scorePicoCliPerfAxis(adaptSynthetic("0.2.0-skip"), 16.7);
+if (skipScore.perf === null && /not measured/i.test(skipScore.note)) ok("bench perf axis: a SKIP/INSUFFICIENT_DATA report is not measured, never a pass");
+else fail(`bench perf axis scored a SKIP report: ${JSON.stringify(skipScore)}`);
+
+const runtimeOnlyScore = scorePicoCliPerfAxis(adaptSynthetic("0.2.0-no-app-frames"), 16.7);
+if (runtimeOnlyScore.perf === null) ok("bench perf axis: Spatial Runtime FPS never stands in for app FPS");
+else fail(`bench perf axis scored runtime FPS as app FPS: ${JSON.stringify(runtimeOnlyScore)}`);
+
+const measuredScore = scorePicoCliPerfAxis(adaptSynthetic("0.2.0-complete"), 16.7);
+if (measuredScore.perf === 1 && /p5=62/.test(measuredScore.note)) ok("bench perf axis: a complete 0.2.0 report scores its measured appFps p5 against the budget floor");
+else fail(`bench perf axis mis-scored a complete report: ${JSON.stringify(measuredScore)}`);
+
+const legacyScore = scorePicoCliPerfAxis(adaptSynthetic("0.1.0-complete"), 16.7);
+if (legacyScore.perf === 1) ok("bench perf axis: the 0.1.0 report schema (metadata.app) still scores");
+else fail(`bench perf axis dropped the 0.1.0 schema: ${JSON.stringify(legacyScore)}`);
+
 console.log(`\nSpatialBench test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);
