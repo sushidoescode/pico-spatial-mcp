@@ -302,6 +302,47 @@ export function parseJavaProperties(text: string): PropertyEntry[] {
   return entries;
 }
 
+/**
+ * java.util.Properties.store semantics, the exact inverse of parseJavaProperties above.
+ *
+ * Interpolating a path straight into `key=value` is wrong for any path a real machine can
+ * produce: a Windows `C:\...` root, a volume with a space, a directory containing `#` or a
+ * non-ASCII character each parse back as something else, and Gradle reads local.properties
+ * with `Properties.load`, which applies exactly these rules. `\uXXXX` for everything outside
+ * printable ASCII also makes the written file byte-encoding-independent.
+ *
+ * Keys escape spaces; values escape only a LEADING space (Java's `escapeSpace` flag). Both
+ * escape `\`, `=`, `:`, `#`, `!` and the control characters, so the result is always one
+ * physical line with no accidental continuation or comment.
+ */
+function escapeJavaPropertyToken(raw: string, escapeSpace: boolean): string {
+  let out = "";
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i]!;
+    const code = ch.charCodeAt(0);
+    if (code > 61 && code < 127) {
+      out += ch === "\\" ? "\\\\" : ch;
+      continue;
+    }
+    switch (ch) {
+      case " ": out += i === 0 || escapeSpace ? "\\ " : " "; break;
+      case "\t": out += "\\t"; break;
+      case "\n": out += "\\n"; break;
+      case "\r": out += "\\r"; break;
+      case "\f": out += "\\f"; break;
+      case "=": case ":": case "#": case "!": out += `\\${ch}`; break;
+      default:
+        out += code < 0x20 || code > 0x7e ? `\\u${code.toString(16).padStart(4, "0")}` : ch;
+    }
+  }
+  return out;
+}
+
+/** One `key=value` line that parseJavaProperties (and Gradle's Properties.load) reads back verbatim. */
+export function serializeJavaProperty(key: string, value: string): string {
+  return `${escapeJavaPropertyToken(key, true)}=${escapeJavaPropertyToken(value, false)}`;
+}
+
 // ------------------------------------------------------------- root selection
 
 export interface RootCandidate {
