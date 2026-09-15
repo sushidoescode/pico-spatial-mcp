@@ -90,6 +90,13 @@ exit 0`);
       HOME: home,
       PICO_HOME: toolsRoot,
       PATH: `${fakeBin}:/usr/bin:/bin`,
+      // Name the fixture's own adb EXPLICITLY. Putting fakeBin first on PATH is not enough: this
+      // child inherits process.env, and src/adb.ts fails closed on an explicit $PICO_ADB — so an
+      // operator (or a battery run) with PICO_ADB set in their environment made every boot case
+      // die on the inherited value instead of using the fake beside it. Declaring it here makes the
+      // fixture's hermeticity a property of the fixture rather than of PATH order and of the
+      // absence of a host variable.
+      PICO_ADB: fakeAdb,
       ANDROID_HOME: "/poisoned/server/sdk",
       ANDROID_SDK_ROOT: "/poisoned/server/sdk",
       PICO_TEST_DEVICE_MARKER: marker,
