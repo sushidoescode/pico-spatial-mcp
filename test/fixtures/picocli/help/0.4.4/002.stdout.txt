@@ -1,0 +1,26 @@
+pico-cli
+
+Usage:
+  pico-cli [command] [options]
+
+Options:
+  -h, --help     Show this message and exit.
+  -v, --version  Print version information and exit.
+
+Commands:
+  setup     Initialize local AI tool integrations and skills
+  project   Create and bootstrap Spatial projects
+  emulator  Emulator lifecycle, setup, and diagnostics
+  device    Device connectivity and inspection commands
+  app       Install, launch, and inspect apps
+  files     Push, pull, and manage device files
+  capture   Capture screenshots and recordings
+  log       Read logcat output from the current target
+  shell     Run a one-off shell command on the current target
+  plugin    Update installed tool integrations
+  doctor    Top-level environment diagnostics and module doctor routing
+  update    Check for and install pico-cli updates
+  editor    Spatial Editor lifecycle commands
+  mcp       MCP and dev knowledge utilities
+  perf      Spatial app performance utilities
+  web       WebApp service setup and launch utilities

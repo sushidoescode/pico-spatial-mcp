@@ -1,0 +1,16 @@
+Usage:
+  $ pico-cli project context doctor --project <path> [options]
+
+Options:
+  --project <path>   [required] Project directory to inspect 
+  --plugin <name>    Plugin context name to inspect (default: pico-spatial-agentic-tools)
+  --tool <tool>      Agent host to inspect (claude-code | cursor | codex | copilot | traecli | all) (default: codex)
+  --source <path>    Plugin workspace/source root containing published plugin context 
+  --fix              Copy and link project-local agent context routing when incomplete (default: false)
+  --format <format>  Output format (plain, json) (default: plain)
+  -h, --help         Display this message 
+
+Examples:
+  $ pico-cli project context doctor --project apps/demo
+  $ pico-cli project context doctor --project apps/demo --tool traecli
+  $ pico-cli project context doctor --project apps/demo --format json

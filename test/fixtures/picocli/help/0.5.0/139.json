@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 perf live --help",
+  "argv": [
+    "perf",
+    "live",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:06.850Z",
+  "endedAt": "2026-09-15T09:12:06.951Z",
+  "code": 3,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc"
+}

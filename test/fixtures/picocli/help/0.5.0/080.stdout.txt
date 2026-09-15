@@ -1,0 +1,14 @@
+Description:
+Install or update PICO development knowledge
+
+Usage:
+  $ pico-cli knowledge <command> [options]
+
+Commands:
+  doctor          Check knowledge server configurations and dependencies
+  list            List installed PICO development knowledge versions
+  pull [version]  Install or update the PICO development knowledge
+  server          Start the PICO development knowledge MCP server
+
+Options:
+  -h, --help  Show this message and exit.

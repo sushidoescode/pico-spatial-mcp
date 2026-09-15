@@ -1,0 +1,10 @@
+Usage:
+  $ pico-cli app watch-crash <package>
+
+Options:
+  -d, --device <device>       Target device id (overrides PICO_CLI_DEVICE) 
+  --start                     Start the app before watching (am start) (default: false)
+  --activity <activity>       Optional activity (e.g. .MainActivity) 
+  --interval <seconds>        Polling interval seconds for PID changes (default: 2)
+  --launch-timeout <seconds>  Seconds to wait for the app process to appear before giving up (default: 30)
+  -h, --help                  Display this message 
