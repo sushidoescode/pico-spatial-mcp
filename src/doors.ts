@@ -366,11 +366,34 @@ export interface DoorToolDependencies {
 }
 
 export function registerDoorTools(server: McpServer, dependencies?: DoorToolDependencies) {
+  // The injection seam has two lanes and one rule: supplying `dependencies` at all means "this
+  // server must never spawn the real inner full-surface server". Two partial shapes follow from
+  // that rule, and both are spelled out here because each once read as a reasonable default:
+  //   - `{ call }` WITHOUT `callRaw` (a call-only fixture): the two raw-lane doors, pico_look and
+  //     pico_verify_app, forward the inner CallToolResult verbatim and have no seam to forward
+  //     through. doorCallRaw used to fall back to `inner()` for them — the exact bypass the C5 base
+  //     RED run demonstrated, where pico_look on a fixture server reached the real emulator — so it
+  //     now REFUSES with a fixture error before any `inner()` call.
+  //   - `{ call, callRaw }`: `dependencies.call` is IGNORED. The domain lane is derived from
+  //     `callRaw` with the production decoder so a lane fixture exercises the real decoding rather
+  //     than a stand-in; a caller-supplied `call` beside a `callRaw` is never consulted.
+  // With no `dependencies` at all (production), both lanes come from the shared inner client.
   const injected: Partial<InnerLanes> | null = dependencies?.callRaw
     ? lanesOf(dependencies.callRaw, async () => {})
     : dependencies?.call ? { call: dependencies.call } : null;
   const doorCall = async (): Promise<InnerLanes["call"]> => injected?.call ?? (await inner()).call;
-  const doorCallRaw = async (): Promise<InnerLanes["callRaw"]> => injected?.callRaw ?? (await inner()).callRaw;
+  const doorCallRaw = async (): Promise<InnerLanes["callRaw"]> => {
+    if (injected?.callRaw) return injected.callRaw;
+    if (dependencies) {
+      throw new Error(
+        "registerDoorTools was given a call-only fixture (dependencies.call without dependencies.callRaw): "
+        + "the raw-lane doors pico_look and pico_verify_app forward the inner CallToolResult verbatim and "
+        + "have no seam to forward through, so this call is refused rather than spawning the real inner "
+        + "full-surface server. Inject dependencies.callRaw to exercise these two doors.",
+      );
+    }
+    return (await inner()).callRaw;
+  };
   const doorFailure = (e: unknown) =>
     okJson({ status: "error", error: e instanceof Error ? e.message : String(e), fix: "Run pico_doctor to check the local toolchain; if healthy, retry — the inner server log is on stderr." });
   /** Domain-lane door: the handler's value is JSON-wrapped exactly as before. When that value IS an

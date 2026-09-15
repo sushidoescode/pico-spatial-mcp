@@ -194,6 +194,55 @@ if (doorsModule.registerDoorTools.length < 2) {
   }
 }
 
+// ── partial injection (fix wave, 2026-09-15) — no process ──
+// A call-only fixture server (`{ call }` without `callRaw`) has no seam for the two raw-lane doors.
+// Before this fix doorCallRaw fell back to inner(), so pico_look on such a server spawned the REAL
+// inner full-surface server — the bypass the C5 base RED run demonstrated. The adapter must now
+// refuse at the seam with its own failure envelope naming the missing callRaw. PICO_ADB is pinned
+// to an exit-1 stub for the block, so a run against an old adapter is RED without touching
+// hardware (its pico_look would come back as a forwarded screencap failure, not this envelope).
+{
+  const partialTmp = fs.mkdtempSync(path.join(os.tmpdir(), "pico-door-partial-"));
+  const partialAdbStub = path.join(partialTmp, "adb");
+  fs.writeFileSync(partialAdbStub, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const previousPartialAdb = process.env.PICO_ADB;
+  process.env.PICO_ADB = partialAdbStub;
+  const domainCalls = [];
+  const callOnly = async (name, args = {}) => { domainCalls.push({ name, args }); return { status: "ok", fixture: name }; };
+  const partialServer = new McpServer({ name: "doors-partial-fixture", version: "0.0.0" });
+  doorsModule.registerDoorTools(partialServer, { call: callOnly });
+  const [partialClientTransport, partialServerTransport] = InMemoryTransport.createLinkedPair();
+  await partialServer.connect(partialServerTransport);
+  const partialClient = new Client({ name: "doors-partial-test", version: "0.0.0" });
+  await partialClient.connect(partialClientTransport);
+  try {
+    const rawDoors = [
+      ["pico_look", {}],
+      ["pico_verify_app", { apkPath: "/tmp/fixture.apk", packageName: "com.example.fixture", serial: "fixture-partial-0001" }],
+    ];
+    for (const [name, args] of rawDoors) {
+      const result = await partialClient.callTool({ name, arguments: args });
+      let payload = null;
+      try { payload = JSON.parse(result.content?.[0]?.text ?? ""); } catch { payload = null; }
+      const error = payload?.error ?? "";
+      if (payload?.status === "error" && /callRaw/.test(error) && /pico_look/.test(error) && /pico_verify_app/.test(error)
+          && /call-only/.test(error) && domainCalls.length === 0)
+        ok(`${name} on a call-only fixture server refuses with the door failure envelope naming the missing callRaw seam (no inner call, no domain call)`);
+      else fail(`${name} on a call-only fixture server did not refuse at the seam: ${JSON.stringify({ result, domainCalls }).slice(0, 400)}`);
+    }
+    // …while the domain lane on the same server still runs through the injected call.
+    const domain = await partialClient.callTool({ name: "pico_emulator", arguments: { action: "status" } });
+    const domainOut = (() => { try { return JSON.parse(domain.content?.[0]?.text ?? ""); } catch { return null; } })();
+    if (!domain.isError && domainOut?.fixture === "emulator_status" && domainCalls.length === 1 && domainCalls[0].name === "emulator_status")
+      ok("a call-only fixture server still serves domain-lane doors through the injected call");
+    else fail(`the domain lane on a call-only fixture server drifted: ${JSON.stringify({ domain, domainCalls }).slice(0, 300)}`);
+  } finally {
+    await partialClient.close();
+    if (previousPartialAdb === undefined) delete process.env.PICO_ADB; else process.env.PICO_ADB = previousPartialAdb;
+    fs.rmSync(partialTmp, { recursive: true, force: true });
+  }
+}
+
 // ── C5 result lanes (2026-09-15) — no process ──
 // The door adapter must never launder an inner tool's isError into a success payload, and the
 // artifact-forwarding doors (pico_look, pico_verify_app) must carry image/resource blocks and
