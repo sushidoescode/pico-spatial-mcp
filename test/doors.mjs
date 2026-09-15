@@ -9,6 +9,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { VERIFY_APK_TEARDOWN_MS } from "../dist/verifyapk.js";
 import * as doorsModule from "../dist/doors.js";
 import { decodeDomainValue } from "../dist/innerclient.js";
@@ -267,10 +268,10 @@ if (doorsModule.registerDoorTools.length < 2) {
     // raw lane — structured failure keeps isError AND structuredContent, and the door's args reach the tool
     const blocked = { content: [{ type: "text", text: "launch blocked by incumbent" }], structuredContent: { status: "attention", launched: false }, isError: true };
     responses.set("verify_pico_apk", blocked);
-    const verify = await laneClient.callTool({ name: "pico_verify_app", arguments: { apkPath: "/tmp/fixture.apk", packageName: "com.example.fixture" } });
+    const verify = await laneClient.callTool({ name: "pico_verify_app", arguments: { apkPath: "/tmp/fixture.apk", packageName: "com.example.fixture", serial: "fixture-lane-0001" } });
     const verifyArgs = rawCalls.at(-1);
     if (verify.isError === true && sameJson(verify.content, blocked.content) && sameJson(verify.structuredContent, blocked.structuredContent)
-        && verifyArgs?.name === "verify_pico_apk" && sameJson(verifyArgs.args, { apkPath: "/tmp/fixture.apk", packageName: "com.example.fixture" }))
+        && verifyArgs?.name === "verify_pico_apk" && sameJson(verifyArgs.args, { apkPath: "/tmp/fixture.apk", packageName: "com.example.fixture", serial: "fixture-lane-0001" }))
       ok("pico_verify_app forwards a structured failure verbatim (isError + structuredContent) with its args intact");
     else fail(`pico_verify_app lost the structured failure: ${JSON.stringify({ verify, verifyArgs }).slice(0, 400)}`);
 
@@ -843,58 +844,108 @@ fs.rmSync(managedHarness.root, { recursive: true, force: true });
   else fail(`self-spawns without a surface pin (doors-by-default breaks their inner calls): ${offenders.join(", ")}`);
 }
 
-// v27.8 Unity hello-XR finding: an immersive container tears down asynchronously. Re-launching
-// immediately after force-stop is rejected with "current full space don't allow start fullscreen",
-// even for the SAME package. Exercise the real verify_pico_apk tool with a fake adb that only
-// admits the launch after the tested two-second handoff window.
-const verifyTmp = fs.mkdtempSync(path.join(os.tmpdir(), "pico-verifyapk-race-"));
+// ── external-APK OBSERVATION through the real registered tool, over a stub adb ─────────────────
+// Three properties, exercised end to end against `dist/index.js` with $PICO_ADB pinned to a stub:
+//   1. v27.8 immersive-container finding: an immersive container tears down asynchronously, so an
+//      immediate re-launch is rejected with "current full space don't allow start fullscreen" even
+//      for the SAME package. The observation must wait out VERIFY_APK_TEARDOWN_MS.
+//   2. A rejected launch stays a structured, non-clean result.
+//   3. C6: a FOREIGN app in the foreground is a CONFLICT carrying the evidence. It is NOT stopped,
+//      and the device's global log is never cleared.
+// The stub is itself a tripwire: it exits non-zero on a log-clear, on a missing `-s <serial>`, and
+// records every force-stop target, so "no foreign app was stopped" is asserted from what the stub
+// actually saw rather than assumed from reading the source.
+const verifyTmp = fs.mkdtempSync(path.join(os.tmpdir(), "pico-verifyapk-observe-"));
 const fakeAdb = path.join(verifyTmp, "adb");
 const fakeState = path.join(verifyTmp, "state.json");
 const fixturePng = path.resolve("golden/showcase-6cards.golden.png");
+const fixtureApk = path.join(verifyTmp, "fixture.apk");
+fs.writeFileSync(fixtureApk, "doors-observation-fixture-apk-bytes");
+const observeSerial = `fixture-doors-${process.pid}`;
 const fixturePackage = `com.example.immersive.fixture${process.pid}`;
 const rejectPackage = `com.example.immersive.reject${process.pid}`;
 const blockedPackage = `com.example.immersive.blocked${process.pid}`;
+const INCUMBENT = "com.example.incumbent";
 fs.writeFileSync(fakeAdb, `#!/usr/bin/env node
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const statePath = process.env.VERIFYAPK_FAKE_STATE;
-const args = process.argv.slice(2).join(" ");
+const argv = process.argv.slice(2);
 const read = () => { try { return JSON.parse(fs.readFileSync(statePath, "utf8")); } catch { return {}; } };
 const write = (value) => fs.writeFileSync(statePath, JSON.stringify(value));
-if (args.includes(" install -r ")) process.stdout.write("Success\\n");
-else if (args.includes(" am force-stop ")) {
-  if (args.includes("com.example.incumbent")) write({ ...read(), incumbentStopped: true });
-  else write({ ...read(), forcedAt: Date.now(), alive: false });
+const state = read();
+state.calls = [...(state.calls || []), argv.join(" ")];
+
+// TRIPWIRE: an explicit target is mandatory. No serial, no device command.
+if (argv[0] !== "-s" || !argv[1]) { state.missingSerial = argv.join(" "); write(state); process.exit(98); }
+state.serials = Array.from(new Set([...(state.serials || []), argv[1]]));
+const sub = argv.slice(2);
+const joined = sub.join(" ");
+
+// TRIPWIRE: clearing the device's global log is never ordinary verification.
+if (sub.includes("logcat") && sub.includes("-c")) {
+  state.clearedLogcat = true; write(state);
+  process.stderr.write("FIXTURE VIOLATION: the global log was cleared\\n");
+  process.exit(97);
 }
-else if (args.includes(" logcat -c")) process.exit(0);
-else if (args.includes(" dumpsys activity activities")) process.stdout.write("    topResumedActivity=ActivityRecord{1a2b3c u0 com.example.incumbent/.MainActivity t42}\\n");
-else if (args.includes(" am start ")) {
-  const state = read();
-  if (args.includes(".blocked")) {
-    // am start reports success while the incumbent full-space app blocks the real start; only
-    // logcat shows the block. The app comes alive only after the incumbent is force-stopped.
-    write({ ...state, alive: !!state.incumbentStopped, blockedLaunches: (state.blockedLaunches || 0) + 1 });
-    process.stdout.write("Starting: Intent\\n");
+
+const last = argv[argv.length - 1];
+if (joined.startsWith("install -r ")) { state.apkPath = last; write(state); process.stdout.write("Success\\n"); }
+else if (joined.startsWith("shell am force-stop ")) {
+  state.stops = [...(state.stops || []), last];
+  state.forcedAt = Date.now();
+  state.alive = false;
+  write(state);
+}
+else if (joined.startsWith("shell pm path ")) { write(state); process.stdout.write("package:/data/app/~~fixture==/base.apk\\n"); }
+else if (joined.startsWith("shell toybox sha256sum ")) {
+  write(state);
+  const digest = crypto.createHash("sha256").update(fs.readFileSync(state.apkPath)).digest("hex");
+  process.stdout.write(digest + "  " + last + "\\n");
+}
+else if (joined.includes("/proc/sys/kernel/random/boot_id")) { write(state); process.stdout.write("fixture-boot-0001\\n"); }
+else if (joined.startsWith("shell am start")) {
+  const component = argv[argv.indexOf("-n") + 1] || "";
+  const pkg = component.split("/")[0];
+  state.launchedPackage = pkg;
+  state.launchAfterMs = Date.now() - (state.forcedAt || Date.now());
+  if (pkg.includes(".reject")) {
+    state.alive = false; write(state);
+    process.stdout.write("Warning: current full space don't allow start fullscreen\\n");
   } else {
-    const internalForceStop = args.includes(" am start -S ");
-    const launchAfterMs = internalForceStop ? 0 : Date.now() - (state.forcedAt ?? Date.now());
-    const forcedRejection = args.includes(".reject");
-    const alive = !internalForceStop && !forcedRejection && launchAfterMs >= 1900;
-    write({ ...state, launchAfterMs, alive, internalForceStop, forcedRejection });
-    process.stdout.write(alive ? "Starting: Intent\\n" : "Warning: current full space don't allow start fullscreen\\n");
+    // The happy package only comes alive once the immersive container has finished tearing down.
+    state.alive = pkg.includes(".blocked") ? true : state.launchAfterMs >= 1900;
+    write(state);
+    process.stdout.write("Starting: Intent\\n");
   }
 }
-else if (args.includes(" pidof ")) {
-  if (read().alive) process.stdout.write("4242\\n"); else process.exit(1);
+else if (joined.startsWith("shell pidof ")) {
+  write(state);
+  if (state.alive) process.stdout.write("4242\\n"); else process.exit(1);
 }
-else if (args.includes(" logcat -d")) {
-  const state = read();
-  if (state.blockedLaunches && !state.incumbentStopped) process.stdout.write("E ContainerManager: current full space don't allow start fullscreen\\n");
-  else process.stdout.write("UNITY_HELLO_XR status=ready\\n");
+else if (/\\/proc\\/\\d+\\/stat/.test(joined)) {
+  write(state);
+  process.stdout.write("4242 (fixture) S 1 2 3 4 -1 4194304 100 0 0 0 10 20 0 0 20 0 15 0 555000\\n");
 }
-else if (args.includes(" exec-out screencap -p")) process.stdout.write(fs.readFileSync(process.env.VERIFYAPK_FAKE_PNG));
+else if (joined.startsWith("shell dumpsys activity activities")) {
+  write(state);
+  // The blocked scenario has a FOREIGN app resumed; everything else resumes the launched package.
+  const foreground = String(state.launchedPackage || "").includes(".blocked")
+    ? ${JSON.stringify(INCUMBENT)}
+    : state.launchedPackage;
+  process.stdout.write("    topResumedActivity=ActivityRecord{1a2b3c u0 " + foreground + "/.MainActivity t42}\\n");
+}
+else if (joined.startsWith("shell logcat")) {
+  state.logcatArgs = [...(state.logcatArgs || []), joined];
+  write(state);
+  process.stdout.write("09-15 10:00:00.000  4242  4242 I UNITY_HELLO_XR: status=ready\\n");
+}
+else if (joined.startsWith("exec-out screencap -p")) { write(state); process.stdout.write(fs.readFileSync(process.env.VERIFYAPK_FAKE_PNG)); }
+else { write(state); process.stderr.write("FIXTURE: unmodelled device command " + joined + "\\n"); process.exit(96); }
 `);
 fs.chmodSync(fakeAdb, 0o755);
 
+const observationRoot = path.join(verifyTmp, "observations");
 const verifyTransport = new StdioClientTransport({
   command: "node",
   args: ["dist/index.js"],
@@ -902,68 +953,82 @@ const verifyTransport = new StdioClientTransport({
     ...process.env,
     PICO_MCP_SURFACE: "full",
     PICO_ADB: fakeAdb,
+    HOME: verifyTmp,
+    PICO_HOME: verifyTmp,
     VERIFYAPK_FAKE_STATE: fakeState,
     VERIFYAPK_FAKE_PNG: fixturePng,
   },
 });
-const verifyClient = new Client({ name: "verifyapk-race-test", version: "0.0.0" });
+const verifyClient = new Client({ name: "verifyapk-observation-test", version: "0.0.0" });
 await verifyClient.connect(verifyTransport);
-const verify = await verifyClient.callTool({
-  name: "verify_pico_apk",
-  arguments: {
-    apkPath: path.join(verifyTmp, "fixture.apk"),
-    packageName: fixturePackage,
-    activity: "com.example.MainActivity",
-    expectLogcatContains: "UNITY_HELLO_XR status=",
-    settleSec: 0,
-  },
-});
-const verifyOut = JSON.parse(verify.content[0].text);
-const launchAfterMs = JSON.parse(fs.readFileSync(fakeState, "utf8")).launchAfterMs;
-if (VERIFY_APK_TEARDOWN_MS === 2000 && verifyOut.status === "ok" && verifyOut.processAlive === true && launchAfterMs >= 1900)
-  ok(`verify_pico_apk waits for immersive teardown before relaunch (${launchAfterMs}ms)`);
-else fail(`verify_pico_apk raced immersive teardown: ${JSON.stringify({ verifyOut, launchAfterMs }).slice(0, 300)}`);
+const observeApk = async (packageName) => {
+  const response = await verifyClient.callTool({
+    name: "verify_pico_apk",
+    arguments: {
+      apkPath: fixtureApk,
+      packageName,
+      serial: observeSerial,
+      activity: "com.example.MainActivity",
+      settleSec: 0,
+    },
+  });
+  return JSON.parse(response.content[0].text);
+};
 
-const rejected = await verifyClient.callTool({
-  name: "verify_pico_apk",
-  arguments: {
-    apkPath: path.join(verifyTmp, "fixture.apk"),
-    packageName: rejectPackage,
-    activity: "com.example.MainActivity",
-    settleSec: 0,
-  },
-});
-const rejectedOut = JSON.parse(rejected.content[0].text);
-if (rejectedOut.status === "attention" && rejectedOut.launched === false
+const verifyOut = await observeApk(fixturePackage);
+const afterHappy = JSON.parse(fs.readFileSync(fakeState, "utf8"));
+if (VERIFY_APK_TEARDOWN_MS === 2000 && verifyOut.status === "observed" && afterHappy.launchAfterMs >= 1900
+    && verifyOut.identity.process.pid === 4242 && verifyOut.capture.status === "captured")
+  ok(`verify_pico_apk waits for immersive teardown before relaunch (${afterHappy.launchAfterMs}ms) and observes the process`);
+else fail(`verify_pico_apk raced immersive teardown: ${JSON.stringify({ verifyOut, launchAfterMs: afterHappy.launchAfterMs }).slice(0, 400)}`);
+
+// The identity the observation is built on is OBSERVED, and it is explicitly not a receipt.
+if (verifyOut.scope === "external-apk-observation" && verifyOut.scope !== "fleet-native-debug"
+    && verifyOut.identity.serial.value === observeSerial
+    && verifyOut.identity.installedApk.sha256 === createHash("sha256").update(fs.readFileSync(fixtureApk)).digest("hex")
+    && verifyOut.identity.bootId.value === "fixture-boot-0001"
+    && typeof verifyOut.runDirectory === "string" && verifyOut.runDirectory.includes("external-apk-observation")
+    && fs.existsSync(verifyOut.capture.artifactPath))
+  ok("verify_pico_apk returns observed identity (serial, installed digest, boot id) and publishes the capture into a run directory");
+else fail(`verify_pico_apk identity incomplete: ${JSON.stringify(verifyOut).slice(0, 600)}`);
+
+const rejectedOut = await observeApk(rejectPackage);
+if (rejectedOut.status === "inconclusive" && rejectedOut.launched === false
     && rejectedOut.errors.some((error) => error.includes("current full space don't allow start fullscreen")))
-  ok("verify_pico_apk reports the full-space rejection as a structured launch error");
-else fail(`verify_pico_apk hid the full-space rejection: ${JSON.stringify(rejectedOut).slice(0, 300)}`);
+  ok("verify_pico_apk reports the full-space rejection as a structured, non-clean result");
+else fail(`verify_pico_apk hid the full-space rejection: ${JSON.stringify(rejectedOut).slice(0, 400)}`);
 
-// v31 incumbent recovery: the launch "succeeds" while the incumbent full-space app blocks the real
-// start (only logcat shows it). verify_pico_apk must force-stop the incumbent, wait out the
-// container teardown, relaunch ONCE, and record the recovery — mirroring fleet_build's
-// launch_blocked path.
-const blocked = await verifyClient.callTool({
-  name: "verify_pico_apk",
-  arguments: {
-    apkPath: path.join(verifyTmp, "fixture.apk"),
-    packageName: blockedPackage,
-    activity: "com.example.MainActivity",
-    settleSec: 0,
-  },
-});
-const blockedOut = JSON.parse(blocked.content[0].text);
+// C6 REPLACEMENT of the v31 incumbent-recovery fixture. The old contract expected this tool to
+// force-stop whatever foreign app held the foreground and relaunch. Ordinary verification does not
+// get to stop an app it was not given: the foreign foreground is now the RESULT, with its evidence.
+const blockedOut = await observeApk(blockedPackage);
 const blockedState = JSON.parse(fs.readFileSync(fakeState, "utf8"));
-if (blockedOut.status === "ok" && blockedOut.processAlive === true && blockedState.incumbentStopped === true
-    && (blockedOut.recoveryNotes ?? []).some((n) => n.includes("com.example.incumbent") && n.includes("relaunched once")))
-  ok("verify_pico_apk force-stops the full-space incumbent and relaunches once (recovery recorded)");
-else fail(`verify_pico_apk incumbent recovery broken: ${JSON.stringify({ blockedOut, blockedState }).slice(0, 400)}`);
+if (blockedOut.status === "conflict" && blockedOut.conflict?.foregroundPackage === "com.example.incumbent"
+    && blockedOut.conflict.expectedPackage === blockedPackage
+    && String(blockedOut.conflict.evidence).includes("com.example.incumbent")
+    && blockedOut.capture.status === "not-attributable")
+  ok("verify_pico_apk reports a foreign foreground as a conflict carrying the observed evidence");
+else fail(`verify_pico_apk mishandled the foreign incumbent: ${JSON.stringify(blockedOut).slice(0, 600)}`);
+
+if (!(blockedState.stops || []).includes("com.example.incumbent")
+    && (blockedState.stops || []).every((pkg) => [fixturePackage, rejectPackage, blockedPackage].includes(pkg)))
+  ok(`ordinary verification stopped only the packages it was given (${(blockedState.stops || []).length} force-stops, none foreign)`);
+else fail(`verify_pico_apk stopped an app it was not given: ${JSON.stringify(blockedState.stops)}`);
+
+if (blockedState.clearedLogcat === undefined && (blockedState.logcatArgs || []).length === 3
+    && (blockedState.logcatArgs || []).every((args) => args.includes("-d") && args.includes("-t")))
+  ok("verification never cleared the global log and read it bounded, once per observation");
+else fail(`log handling regressed: ${JSON.stringify({ cleared: blockedState.clearedLogcat, logcatArgs: blockedState.logcatArgs })}`);
+
+if (blockedState.missingSerial === undefined && (blockedState.serials || []).join(",") === observeSerial)
+  ok(`every device command named the explicit serial (${observeSerial}) — no default target was used`);
+else fail(`serial handling regressed: ${JSON.stringify({ missingSerial: blockedState.missingSerial, serials: blockedState.serials })}`);
+
+if (!fs.existsSync(path.join("/tmp/pico-render/verifyapk", `${fixturePackage}.png`)))
+  ok("no capture was written to the old package-keyed mutable /tmp path");
+else fail(`the mutable /tmp capture path is still written: /tmp/pico-render/verifyapk/${fixturePackage}.png`);
 
 await verifyClient.close();
-for (const packageName of [fixturePackage, rejectPackage, blockedPackage]) {
-  const artifact = path.join("/tmp/pico-render/verifyapk", `${packageName}.png`);
-  try { fs.unlinkSync(artifact); } catch {}
-}
 fs.rmSync(verifyTmp, { recursive: true, force: true });
 
 console.log(`\nDoors test done. Failures: ${failures}`);
