@@ -1,0 +1,3127 @@
+{
+  "schemaVersion": 1,
+  "createdAtUtc": "2026-09-15T09:30:58.830610+00:00",
+  "scope": "All files in this new audit evidence directory except this manifest; document hashes are in AUDIT_VALIDATION_001.json. Two large official archives remain local and ignored.",
+  "files": [
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/AUDIT_VALIDATION_001.json",
+      "bytes": 1495,
+      "sha256": "36e1dc9a5edcf34cc4151f447f1862746226cf86037c3f8f9c95cc7eea096900",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/CLI050_STATIC_EXCERPTS_001.json",
+      "bytes": 59750,
+      "sha256": "260bb5e7f9612214e1df50cceca6fe4cde740c22a8c880bf346c9ae688db60f9",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/CLI050_STATIC_PACKAGE_AUDIT.md",
+      "bytes": 17734,
+      "sha256": "bfbcdafb3707a61b412e67533be10f085cc540ed740f49adf09aec2f47e91242",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/CLI_PACKAGE_0.4.4.json",
+      "bytes": 759,
+      "sha256": "498de50d0d314309200a05b082c1be16d0232dfb5016124811c79e2f2eeb6ed2",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/CLI_PACKAGE_0.5.0.json",
+      "bytes": 761,
+      "sha256": "0b1ee26afb8814916aa9e4821601e85732b7c7f6d238f5f0c6912951c15fb8d9",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/CLI_README_0.4.4.md",
+      "bytes": 1975,
+      "sha256": "631764adc586ffe578faf5f37fd3dbc5517aaf8ccf81eab2ea87c10d36d4aa7f",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/CLI_README_0.5.0.md",
+      "bytes": 1975,
+      "sha256": "631764adc586ffe578faf5f37fd3dbc5517aaf8ccf81eab2ea87c10d36d4aa7f",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/DOCUMENT_REVIEW_001.md",
+      "bytes": 1904,
+      "sha256": "7ab46edc37e8ad4aa6cdd44c9e2f5e9e5c701fc8868985ca1f6fc7f9a9b9e14d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/FINAL_CONSUMER_COVERAGE_AUDIT.md",
+      "bytes": 7748,
+      "sha256": "b46e221c84fcccdc7777c29cc7c3918b75edacd4929b67b09944158453281b61",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/FINAL_CONSUMER_EXCERPTS_001.json",
+      "bytes": 13265,
+      "sha256": "28614abc9529bf12fd1c35d548d1b16a4de69ee5938724b6ecaf3be65d39ebc4",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/HELP_COMPARISON_001.json",
+      "bytes": 15484,
+      "sha256": "3521353c563ccc71dfa1ed5c4d420cc130abc4bfbd520561e96217b8f02dfd94",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/HELP_COMPARISON_002.json",
+      "bytes": 15484,
+      "sha256": "8fbc7a3b8bf4866bd9cd29e1f1d653257a5bc8aebf14abb2551339a32ad19f94",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/HELP_COMPARISON_RUN_001.json",
+      "bytes": 503,
+      "sha256": "daaf32a2f6a89e2ba9764f880a71bb835362ab1f0aa34753f38949140033667b",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/HELP_COMPARISON_RUN_002.json",
+      "bytes": 705,
+      "sha256": "72c15bdde9785783d5d13076afac817e94d202da509213749ba6e413a9e68f2b",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/HELP_COMPARISON_STDERR_001.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/HELP_COMPARISON_STDERR_002.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/HELP_COMPARISON_STDOUT_001.log",
+      "bytes": 110,
+      "sha256": "001d8cbddf0ec2933cdead2d104f834b465124b31b67e6bc4f1bd81a60120872",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/HELP_COMPARISON_STDOUT_002.log",
+      "bytes": 110,
+      "sha256": "4efc67093bc9fe72e16e72c9a8674bb8601393aa8710a3c9331585054b9035f0",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/MCP_VALUE_AND_RELIABILITY_AUDIT.md",
+      "bytes": 13532,
+      "sha256": "c565aff4e5d1552c081c370e33555ee4c85bf691d833712858b9e5e6dd023350",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/PACKAGE_INVENTORY_0.4.4.json",
+      "bytes": 1788,
+      "sha256": "5ad1792d9bb6d713fd9dfeec82177b59aa1840c01c9093265a0724ab0e8703b5",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/PACKAGE_INVENTORY_0.5.0.json",
+      "bytes": 3129,
+      "sha256": "df18a8721bc2df7952fec71954af3a4419d48526be921346f574116e14bfa65d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/PICO_DOCTOR_001.json",
+      "bytes": 9292,
+      "sha256": "0d5f7ea89eafa2c101e2676b58e1ed1a427b2d737eebac6c44111898c18a97db",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/PICO_FIX_001.json",
+      "bytes": 1185,
+      "sha256": "ef714ca131532a0ba9cba292faba1593b2c4ded4443ae9d67f6caf201fa5d6cc",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/PICO_FIX_HELP_UTILITIES_002.json",
+      "bytes": 2117,
+      "sha256": "bc945a8649c9960c27f4a58515520acea792fd40395486da7cb42c0ab43fdc3a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/RAW_HELP_INDEX_002.json",
+      "bytes": 95504,
+      "sha256": "c2dbe09c4fc2779708b615a1ada5e6360eb58c934a9a6e6868dfb6c10a7ae4d0",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/README.md",
+      "bytes": 6417,
+      "sha256": "60972fd243c6de7e6eddd5eee5b3dd7ee57fdbf064e648e9a88fc6d9c4498286",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/REGISTRY_001.json",
+      "bytes": 12516,
+      "sha256": "596a281687abbd3640783cf654d0925f132e21dffab846e5b1013f9d525f15f2",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/RELEASE_AND_GATE_AUDIT.md",
+      "bytes": 9492,
+      "sha256": "3cad24358ce949d57064e1175e8ff76ef401fdb7a20865378ac092ac71d5e469",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/RELEASE_IDENTITY_001.json",
+      "bytes": 2190,
+      "sha256": "e7bdad334e0656f00deae2546c9102899ef21c1eea72b93e0c6ad3e7ec54facd",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/SDK61_KNOWLEDGE_AND_TOOLCHAIN_AUDIT.md",
+      "bytes": 21028,
+      "sha256": "7b556f4e210fe868a5f479d508c77826d7f820b431939f42765f909da40973aa",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/compare-picocli-surfaces-retained-audit-002.mjs",
+      "bytes": 24567,
+      "sha256": "e9126f41ed9e9e16c1619695e8748b6fefc599561d213dfe8eb2b43c70deb943",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/picoxr-pico-cli-0.4.4.tgz",
+      "bytes": 37470411,
+      "sha256": "0eabffe9b6a92c9a96fe61ea38f3213b0971216f0db7c4d19f9da46660ba9524",
+      "localArchiveExcludedFromGit": true
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/picoxr-pico-cli-0.5.0.tgz",
+      "bytes": 38104171,
+      "sha256": "a2afe604b3435a83debe1a42706fa4fe0b9e14d026c857873e8fc21f6ac68642",
+      "localArchiveExcludedFromGit": true
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/001.json",
+      "bytes": 432,
+      "sha256": "3cae89bd8908f799e4ce8c760ca2ce09137ee3d7f2fead67e504d5e5dbe143af",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/001.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/001.stdout.txt",
+      "bytes": 50,
+      "sha256": "99ca71c8950c00f8295b9e1cccfd0ff6fcafd3acb17cf8a7aa82dc752f4eb4a6",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/002.json",
+      "bytes": 427,
+      "sha256": "711283684b971ea04b5f1ee4c75d7618fe096684d94925bf42e09dfa8654f823",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/002.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/002.stdout.txt",
+      "bytes": 1007,
+      "sha256": "c78b513f95bd5ad1e1b3bb0867265d7d9743b81a7b6d6a27a5ae92c268cf5941",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/003.json",
+      "bytes": 433,
+      "sha256": "ed47fb08a2ac0ab9f5ccd223d6e3ec0f697f7a8466eba11b4204ad60cf92339e",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/003.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/003.stdout.txt",
+      "bytes": 722,
+      "sha256": "3638cf44e6f62d2b766eff0cb714b8b5fff8d2ebb0109d1d21476bdda28219d6",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/004.json",
+      "bytes": 441,
+      "sha256": "428e3638019d22056cee31073c8bae095bc959944cfff343c3da6c3a45efa82d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/004.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/004.stdout.txt",
+      "bytes": 253,
+      "sha256": "2f2e3bc11bde7eb35c87b871fa77c0cf1d5cbae6ba32c2da87c28147205df3f0",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/005.json",
+      "bytes": 439,
+      "sha256": "66c324907a90da68f527c696d4751887931db1dd9ab1caefe37278dc963524a5",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/005.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/005.stdout.txt",
+      "bytes": 552,
+      "sha256": "481d9a4b23ad46c55db7871133b44ab6311bad33ae610772aab750d823bf8d0b",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/006.json",
+      "bytes": 439,
+      "sha256": "f0a458d6d8a2477a59f3964d668c7a1fa2b3eb3f3265613441ab840731b07fa5",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/006.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/006.stdout.txt",
+      "bytes": 603,
+      "sha256": "b2073e7d78e7636e5e0a3e7eeb663bef5c38727b885b2288d7efeeed09fdc2aa",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/007.json",
+      "bytes": 439,
+      "sha256": "e4351fa6f80941bbe5c920721f7e70b46bd50847e18047732e73ced45cb81438",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/007.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/007.stdout.txt",
+      "bytes": 830,
+      "sha256": "d1803678eddd8f53656a460e16e0d4146cded0c09409cba91255fae4cb97a209",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/008.json",
+      "bytes": 443,
+      "sha256": "7bbe45f0d9d3dd82d5c6c228250bd421b7133600d91586a498e771848f234ee9",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/008.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/008.stdout.txt",
+      "bytes": 1005,
+      "sha256": "fec175ab4f129700be2b07b9a9187157af077b507643086b7b7aca74b936aad5",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/009.json",
+      "bytes": 437,
+      "sha256": "b3c34faaef9091b077c404d37110e3a900156d6e9d1557bee719f123d3b2f18b",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/009.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/009.stdout.txt",
+      "bytes": 646,
+      "sha256": "0ee24338370485ca37f758a183d87d467a498df496c9b89d870340a845a1ce84",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/010.json",
+      "bytes": 433,
+      "sha256": "8b39fdc469ff87f4d059f58cbe8407e73b69ee6dbd428e398ae3b98a6a44cb72",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/010.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/010.stdout.txt",
+      "bytes": 914,
+      "sha256": "edf65124dfc1b0095ffc10ff79b8495cde967ffe76a23bb275c4a604414d07bf",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/011.json",
+      "bytes": 433,
+      "sha256": "d6ceea502de2389ebbdfd4daacdf021f810799fa964b0b71ad504b590ce0de13",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/011.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/011.stdout.txt",
+      "bytes": 229,
+      "sha256": "f767b20cb09e821855cfc9c53943438ee254afc6c8351498832784dcaf3c90e7",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/012.json",
+      "bytes": 435,
+      "sha256": "bcb619ef16089a9e9f971e03906670140543f658461c794a9e0a056c5b5fcb89",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/012.stderr.txt",
+      "bytes": 80,
+      "sha256": "d22fe9b905cc5a56866b8ea4d8e88fe33e0e640078a9678aa882c179df943477",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/012.stdout.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/013.json",
+      "bytes": 439,
+      "sha256": "47532d11a7f5ce813a04e3c171e69517c373276ee3a516ecf99f933ad4b3c987",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/013.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/013.stdout.txt",
+      "bytes": 397,
+      "sha256": "364f964f8c14a9741de2984947bde3df88d3d491faa5939dae8061c5c6d0686d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/014.json",
+      "bytes": 441,
+      "sha256": "e4212fed4dad29c4d11f0dff69f0ee2c23711ac65a672242933a37e632b92527",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/014.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/014.stdout.txt",
+      "bytes": 220,
+      "sha256": "d3b2582ed1ffc364d30eeae116db35b3279ca8e637400d84e7aad459d325eb73",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/015.json",
+      "bytes": 437,
+      "sha256": "55f0fae68b8259107999e1cfec5c33feb9be760e8e4fb11bafb5b40690597707",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/015.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/015.stdout.txt",
+      "bytes": 168,
+      "sha256": "d624eb8d2ba9acc7de80397f2537cf4710197c9c5f0497e0775f4c1d37780ba0",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/016.json",
+      "bytes": 439,
+      "sha256": "5020bd59cbbebfee3b6ff6617bd4cab577bfd8101ee76d5ce80c1d561cfc8942",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/016.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/016.stdout.txt",
+      "bytes": 418,
+      "sha256": "257c4a1f72f2f0f246036d95ca79280d894cf4035802b7c81d46fd3b3d10c6b6",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/017.json",
+      "bytes": 433,
+      "sha256": "e9505d581ea4c8a918fb4765f617a972c6b2dedcb7be2efb6ab28be05cb76290",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/017.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/017.stdout.txt",
+      "bytes": 209,
+      "sha256": "5b1e8aa93465d58ba6b7727c241b037648329925bbb5cca1190e3c42800580c7",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/018.json",
+      "bytes": 450,
+      "sha256": "f27901ed3a2a50724e1e61b8212c8f344a135ee6b1e64bc92d3c12590f3ffe61",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/018.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/018.stdout.txt",
+      "bytes": 241,
+      "sha256": "6598b0ee05b1b15d4bd8d4a5e4bce6f78c433f514ce8befc527251747594a0ae",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/019.json",
+      "bytes": 456,
+      "sha256": "b655f9d3c31e2ec9b9e0372ee49fae08fa645f48f04b6caa39ea794d68c7a03e",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/019.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/019.stdout.txt",
+      "bytes": 422,
+      "sha256": "781285347086ffeb4ad4ac059aba017c2203a6f85fccb61131ff6c5b7c611a7a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/020.json",
+      "bytes": 454,
+      "sha256": "ae0b82e9239c8ac4c0cd03e2b18388f8148ac4cc8194006a8c4ac468a11de7d8",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/020.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/020.stdout.txt",
+      "bytes": 381,
+      "sha256": "47c222c75e0d9e3ba405ad1b4b6166b6c76070bdd1f89183191521ffa9dd680a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/021.json",
+      "bytes": 450,
+      "sha256": "d80f6427ef9bb526e83431a6be7f356e217e6bb51f6b47903661fe6b0981229d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/021.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/021.stdout.txt",
+      "bytes": 231,
+      "sha256": "f64c73f7cab35890d1d7a4b48bb345212b1eb6e8e8a13b3f3ceb3b8eee72d904",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/022.json",
+      "bytes": 454,
+      "sha256": "c655a585d8fd6a703ca2ab888774918361471df17eb3edb61646c0f54c044603",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/022.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/022.stdout.txt",
+      "bytes": 925,
+      "sha256": "62f68aeaf728821082b7547405f040517b828ce40985f87a46e6e40ad785b348",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/023.json",
+      "bytes": 450,
+      "sha256": "dd6cc940fa0439957490069152e9633ceb3d136124212bf684860f40843e25ff",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/023.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/023.stdout.txt",
+      "bytes": 171,
+      "sha256": "7ef847a29c0f8f23ab900f55948124b9820df3b116aaea3669b4bf69d72e51ca",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/024.json",
+      "bytes": 460,
+      "sha256": "7fe14dab89049fd7abcd137fa12bfd925e60313125f2570616d7e843c28cd8e1",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/024.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/024.stdout.txt",
+      "bytes": 176,
+      "sha256": "b02e128d24982d070f320cabd9852c8e22d5f2040784d6e7a15bd03ef6457cba",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/025.json",
+      "bytes": 464,
+      "sha256": "aed1d5668a0d815fca4cf50552263b910e8f1dcb04f9b92102306cc0e5829bd3",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/025.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/025.stdout.txt",
+      "bytes": 533,
+      "sha256": "66665f115a9b01205d6f2cd361cd1bae20d9878e936c1f261f576a198f41d20c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/026.json",
+      "bytes": 462,
+      "sha256": "a68e351533c5513d079577d8d2befe183722629c7e52286dba1f07edc5f6a9f0",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/026.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/026.stdout.txt",
+      "bytes": 253,
+      "sha256": "edc531b100e9aab1873a6bf3c316dd755e96b52bc3c604fce1ab233b48ad2540",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/027.json",
+      "bytes": 470,
+      "sha256": "804c8223425bc085422d9e75c574574c66c6b51ff586ce97a8f38d7dc21ffbb9",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/027.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/027.stdout.txt",
+      "bytes": 183,
+      "sha256": "c06e28e7054360a926d2ae9ca593da42ae36f7407805455fc5eedb062b4f3cfc",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/028.json",
+      "bytes": 462,
+      "sha256": "2805151b44eef7c82cde37731a0bc9ba676c5dbafdbb6a78ed158596c88061ec",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/028.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/028.stdout.txt",
+      "bytes": 205,
+      "sha256": "e7f6844ab240357a820577f921bce5437b54575a0b7ca942f0fb6af1e69f3caa",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/029.json",
+      "bytes": 462,
+      "sha256": "11379e7fa75bc025594dbe60ed14df47a868e190e87b9989db53586697516915",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/029.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/029.stdout.txt",
+      "bytes": 91,
+      "sha256": "c40bb20ff0b0d6f59ac3a21c0724dcb60c43bb4c98183c737eb57dee9913c4ec",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/030.json",
+      "bytes": 468,
+      "sha256": "b068cac92fd5eef954ad0700cb1394901ceecd2f6d89ea8473e7ac80d1a1264d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/030.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/030.stdout.txt",
+      "bytes": 94,
+      "sha256": "b4db1bf1302ea0defb94396ce17badea39d6dda444238d7186219ec3a3ad5a47",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/031.json",
+      "bytes": 456,
+      "sha256": "c4580bb2551945e4b9fd053a34647f02ec2669447146fe7ca7513f55af043a31",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/031.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/031.stdout.txt",
+      "bytes": 202,
+      "sha256": "30374af57380afa01c15ec60bd2e55de696c8ee6637efb60d5c7225bc09ba627",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/032.json",
+      "bytes": 456,
+      "sha256": "84f50fa3583306d117c174912432e2cd66cc8d8638061d19c06c1d3d50e32659",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/032.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/032.stdout.txt",
+      "bytes": 222,
+      "sha256": "02c748b22ba2be6e1ca5261343d2881dfa220771b2d8c2ca9c9b5913864ab63a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/033.json",
+      "bytes": 458,
+      "sha256": "951733559d5c935f8066e2eb64cfffeaeb5f1311837c548cd395bc30cee89798",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/033.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/033.stdout.txt",
+      "bytes": 264,
+      "sha256": "b070d4eec6c6713f3f130a0970e3c2a68986242caa240ee440b9c484b272d69c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/034.json",
+      "bytes": 458,
+      "sha256": "494198c16bdcdab5352bab9c48e883f7cb3372db575dbc6091d1e8b4746b873f",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/034.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/034.stdout.txt",
+      "bytes": 139,
+      "sha256": "88272fc03c115bc65658176d1ccb65492066f47c1c8aa38338984a775b6101a0",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/035.json",
+      "bytes": 466,
+      "sha256": "8d8a565a1485ebd045f16c1c1451ab490978e0cd2fa2eb1828031cc8629f3bc5",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/035.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/035.stdout.txt",
+      "bytes": 83,
+      "sha256": "32d87a12cc06c6ee849b03b48a0adbd83d17b7b98165d19d16fd993f9f1b3d66",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/036.json",
+      "bytes": 460,
+      "sha256": "dffb6dfe6a559e720e84ced36c743ca740978533d0a94a1573660cda2e50c618",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/036.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/036.stdout.txt",
+      "bytes": 256,
+      "sha256": "e1a665a8d832a695446b77ea1be29bcc665b956105d33d66ba81b315679a5602",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/037.json",
+      "bytes": 462,
+      "sha256": "233d7222133c80c62ecb497994b46c1b86639f469652fdd484ea579dcdd422a2",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/037.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/037.stdout.txt",
+      "bytes": 492,
+      "sha256": "5f69a5b53baae10465ec391c37888a7cc822d0903a42d0a000f511509eb50439",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/038.json",
+      "bytes": 456,
+      "sha256": "e8bf3d90141a020c8e49f032ec3c9b95732c7d729a8202ca7a94316d69344e01",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/038.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/038.stdout.txt",
+      "bytes": 1010,
+      "sha256": "dc2e42de112aff10fa12330607c09abe2f93d2a95b5413d265abe3112e560bc3",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.json",
+      "bytes": 458,
+      "sha256": "923cc06bddf95d461a75e2fd9ee49a0e3d5da1131165ffb0fb7d932016b0493c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.stdout.txt",
+      "bytes": 1277,
+      "sha256": "53d62f29772a93d2691e1ba87df09e16beb31d3ebfc06fc4339b35b72a2b15a6",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/040.json",
+      "bytes": 460,
+      "sha256": "58c5caca7b929873f610f7f26dff4a56e0c2ebc527d17296ce9cd5aa0eee20da",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/040.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/040.stdout.txt",
+      "bytes": 153,
+      "sha256": "d41f1d25d7d39f26472f8a62901c5732954ca6cb4dda887fd529e4adbef19931",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/041.json",
+      "bytes": 456,
+      "sha256": "dd34a48b78a71f814973df3f6e85ac3281eee8f708130b7973a373855ce06c02",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/041.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/041.stdout.txt",
+      "bytes": 334,
+      "sha256": "7c448033776990a74f41ca8fd3dcfad1269aa071c338aea69af7a887113b0d89",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/042.json",
+      "bytes": 483,
+      "sha256": "ce99b5df7137ec630affb67e192efe58889e30e60bf5ab24172d403c56a738bb",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/042.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/042.stdout.txt",
+      "bytes": 702,
+      "sha256": "ecda5a340afcb78a653041945a424165a89d856f24576ce6bb3272cf2b29d48c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/043.json",
+      "bytes": 466,
+      "sha256": "a08f94a10403fd2b7ce8a3400d32f5c6a2c4dd0602b2d02a0b851d845df25a30",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/043.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/043.stdout.txt",
+      "bytes": 137,
+      "sha256": "ebe875e9718835c08ba87cd68a6bc29d11c00080e116a2405eeaa1bfa3f929e5",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/044.json",
+      "bytes": 464,
+      "sha256": "52d732ba452941899c2f67fcc3d5274950f940a51a7f761590b1f85aeb0d0e3b",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/044.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/044.stdout.txt",
+      "bytes": 856,
+      "sha256": "52e091466a545c9c2d596bca8cfd42b55d6a15d4a975c6c0d2b2b43cbf051386",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/045.json",
+      "bytes": 464,
+      "sha256": "de642c088001595a739b51f12422e1bc97596b1712a9cb37689ae70603960aee",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/045.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/045.stdout.txt",
+      "bytes": 509,
+      "sha256": "a6719e739e827307d3b9f25414a8e4d523362b5e9902d8222740e248fa9c1fa6",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/046.json",
+      "bytes": 476,
+      "sha256": "033aa45e30d9dae2612f8af7ad8fe44940ea777d0b6cdd3f64378a6c576136a3",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/046.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/046.stdout.txt",
+      "bytes": 364,
+      "sha256": "e9f2c3685a13fdbe908503c35f36122dadf9ce3ac2ad811f06a5b84467187fbd",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/047.json",
+      "bytes": 464,
+      "sha256": "e17cb2c9179d16c35ca35996cd9651f4f451919084cfb84ead97799b8887784d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/047.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/047.stdout.txt",
+      "bytes": 238,
+      "sha256": "f8287382b96a34d7c1d1bf97a55abb1e5a8c784075518f332c6ec673830601ad",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/048.json",
+      "bytes": 470,
+      "sha256": "2658d9d3b80229475fd8ac63bb266d07a0a5868e55e9ab1abc9b27c38dce4e40",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/048.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/048.stdout.txt",
+      "bytes": 476,
+      "sha256": "72de8636b0faf1645cb9cd6b3fd2582442edbe2de7f149f408eb66da7413d1d7",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/049.json",
+      "bytes": 466,
+      "sha256": "77a1a889710a0d0192db35dc5f8096c5960f19704c7ac8fb01b47d8088431a48",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/049.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/049.stdout.txt",
+      "bytes": 776,
+      "sha256": "ef165eaeda9ad2c15633af097029bd3296e91fb2385a1a6b100e23df35ea83aa",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/050.json",
+      "bytes": 460,
+      "sha256": "9fe9ee809bfbf23ecec7f84a31e3c4dd669ee47ca6d61d6c0e888b841137e2ff",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/050.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/050.stdout.txt",
+      "bytes": 356,
+      "sha256": "a5dce5a1b545ffe2fd640cbfd913cf325336e5853d24bd1fac9a782232056b64",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/051.json",
+      "bytes": 462,
+      "sha256": "67815da1bda92cf2076785626173f0a0a7b992a4d9646f65ef773ca92b98c87e",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/051.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/051.stdout.txt",
+      "bytes": 371,
+      "sha256": "305017d82145c78d91f637b511b29df02cd4f74422a9608b23d3220b97b9a160",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/052.json",
+      "bytes": 462,
+      "sha256": "c16ae74cef9e8476ffe3129508a02fc3ab89eb83f0b88a5962ca3fe3d3cc605a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/052.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/052.stdout.txt",
+      "bytes": 1627,
+      "sha256": "96b7de300b79abd0aca6e51db3108cb637ca86d5c49b50c5c859a6b320e115a6",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/053.json",
+      "bytes": 464,
+      "sha256": "eb895b856af20e42df59277c3561cc0067edb92caa9b540627ee0f5c48766c61",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/053.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/053.stdout.txt",
+      "bytes": 358,
+      "sha256": "03e1af0ab85f065d8acbf7cd0e69298d5d005e875a92fd421f6451c7ef180005",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/054.json",
+      "bytes": 460,
+      "sha256": "e0cbe319d8c2e17cfd31118034d7ed4563032a4d20e41f71dbda8d956090970e",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/054.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/054.stdout.txt",
+      "bytes": 474,
+      "sha256": "2994c48daddd35bb084c314cff2facf837a56d1af1fe2f84f2dbf55d80787c8b",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/055.json",
+      "bytes": 452,
+      "sha256": "5221785235efe03ae6d4403d327e8f140275e40bc3541e9bca2f773c83651523",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/055.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/055.stdout.txt",
+      "bytes": 139,
+      "sha256": "158d0bfb2ec3df4f57870e2653cde1b77827b2ec6566d24d4cf0b03c76a95877",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/056.json",
+      "bytes": 450,
+      "sha256": "c5beff00b6cbd1c8923aedf587edd416c05ce66974fd720972cb920c48a20602",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/056.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/056.stdout.txt",
+      "bytes": 202,
+      "sha256": "dfda6f55b001a8203ea5ca38146aeb1479bf2d9db973fc59100270e082324584",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/057.json",
+      "bytes": 456,
+      "sha256": "824d2337400e86f78c7fb6aed072f0134cb86b31b82ac0e60d012c2b36d4f595",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/057.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/057.stdout.txt",
+      "bytes": 218,
+      "sha256": "994d0ef855692310bb0e21842475381b664d0a0f7df5d6d4ab6f527677aaa2ea",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/058.json",
+      "bytes": 454,
+      "sha256": "58afa0b77e912b73f67017d188ce6361f03501a78c8f88270165327801045344",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/058.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/058.stdout.txt",
+      "bytes": 148,
+      "sha256": "4698d347d068c5a93c00a4637709ee6132bcbce484358c5558a7a1ea97cccc68",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/059.json",
+      "bytes": 454,
+      "sha256": "7b9f53d8a166cb3cc452d8f5fdfacb3e8981732b30591c3344be614bdec7c863",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/059.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/059.stdout.txt",
+      "bytes": 148,
+      "sha256": "4fcc14161f147de5271e90896d5fec0bc67b671fbe315d681149d270ec11dd7a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/060.json",
+      "bytes": 450,
+      "sha256": "7df1e4d97e1905c5b8102b8829bf44e212b85c184fd2842233e085dfbcd14759",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/060.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/060.stdout.txt",
+      "bytes": 306,
+      "sha256": "2afcb8d5ffdd196f05241a9c26f6be4f55f7183a9191bf4a8ad1b7e12d014a13",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/061.json",
+      "bytes": 454,
+      "sha256": "4e4ce3e65dc7287735bec1acb1fafffb9e2fb789f50d8d1976f08c357e2cb581",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/061.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/061.stdout.txt",
+      "bytes": 210,
+      "sha256": "8f1e14fb8545a6636daddcd2a193c6c00ad211ea47978b2f485f0669e236811f",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/062.json",
+      "bytes": 468,
+      "sha256": "7b0769ab293493fc4936eca851f29806dcdd1446f4e3f7adab25bf1e34f707a9",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/062.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/062.stdout.txt",
+      "bytes": 84,
+      "sha256": "33b0e8a01533cfd426d699e41f003193a45efa03e99af617c759b8bf6625ce55",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/063.json",
+      "bytes": 454,
+      "sha256": "233feb7d38a2202285badb16398ea84a47996f10b1dd80ee72cf2f5e16ff1816",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/063.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/063.stdout.txt",
+      "bytes": 150,
+      "sha256": "882980141bb41b9eda757574ef03526536286cfcf3c662f36abed22670ff6e9d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/064.json",
+      "bytes": 458,
+      "sha256": "a1866ab1eb0a265efdadfc889917b491392b0c98d02d5ee131e8bfc18a5ba24c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/064.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/064.stdout.txt",
+      "bytes": 724,
+      "sha256": "788c8b9862f84b1c6b81d6cf1b0244a9c2311316194cf5c996e10b48cd48a6e0",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/065.json",
+      "bytes": 460,
+      "sha256": "2d06e61fd878688a06d6c545c7eddf440a8fbf117288f2f0673768d41648eebd",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/065.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/065.stdout.txt",
+      "bytes": 655,
+      "sha256": "607da84b7fa9249c7e68869bf8e54b303f461dfc94b1f7d64ae43c3988fb0422",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/066.json",
+      "bytes": 460,
+      "sha256": "9389f962eb1c22dfce3bba5222f12d0a45dbc4301f7a506be267e4eab5ae8610",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/066.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/066.stdout.txt",
+      "bytes": 628,
+      "sha256": "f12daeb6cabc036f6f8117ec9199f824ff26c6605472310875db786bec5247d9",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/067.json",
+      "bytes": 485,
+      "sha256": "542b3a968a981d00b426385ca8c5e44346fc43a5c742507c4881e612080f3b7b",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/067.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/067.stdout.txt",
+      "bytes": 857,
+      "sha256": "167790513e1c6a0b0cdb6747adf4695c01afeab12aa7cd381498c0629628d3e7",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/068.json",
+      "bytes": 462,
+      "sha256": "6712e6a54778778406a88c63aaead53346a56d616ca8c919e431c3eb4d5b7e3f",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/068.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/068.stdout.txt",
+      "bytes": 1363,
+      "sha256": "d2bc7045b147ff1b60d36d2721cd2f8c7f763115dec006cf66cb06759b70062c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/069.json",
+      "bytes": 454,
+      "sha256": "ad6ec41db29676f079d2f519a579a1ae05ae56f70f9c7593aab3c832a5b6ed3d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/069.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/069.stdout.txt",
+      "bytes": 470,
+      "sha256": "8a0a48a4bbfd97b8820d21cf61c7b7c6a2e29b26f14aad9385dcebddb39c81e9",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/070.json",
+      "bytes": 452,
+      "sha256": "f9d8cd2e6c204cb835ab1c01e1642569c25b316fb8489a0b46c253b320516aba",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/070.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/070.stdout.txt",
+      "bytes": 110,
+      "sha256": "6cd939872b0cab6f276ca47c608bd9be2be692473525ed2c988d92fafd8d2630",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/071.json",
+      "bytes": 432,
+      "sha256": "b7347bee991d311bc5dd01baa9de15655e2a0d5c109a4ae8a99c5c07025ee3ca",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/071.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/071.stdout.txt",
+      "bytes": 50,
+      "sha256": "c6ae8abc9aaa50b0cf693d085f9f2f7bf1704fdf32b64378e04cbeefe0f11c9f",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/072.json",
+      "bytes": 427,
+      "sha256": "8d274f5c956797970d82025143ac981e0885de88394a15f83e0b943ca1df0ced",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/072.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/072.stdout.txt",
+      "bytes": 2446,
+      "sha256": "a0db6d6644f616bcab467fb02eae191754f2705b2314e275d6aafcbe240d9e32",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/073.json",
+      "bytes": 433,
+      "sha256": "d79d9aef9b0e2356788af93bc041949c595968d8cad5eb2926916f92fee6bf87",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/073.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/073.stdout.txt",
+      "bytes": 791,
+      "sha256": "5ba86da9eff3918ab8b0faa55141a8a2159c4033f2a0c2c6317d4de04a3632d1",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/074.json",
+      "bytes": 441,
+      "sha256": "ead68f38214af49875cfbe05502f58ed6280c33b2b52cf104004796c015e0090",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/074.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/074.stdout.txt",
+      "bytes": 304,
+      "sha256": "405a5924ddafaa3b38d57a8cd4dc0d65f4af1fee0d671781c1f2dcb855a24609",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/075.json",
+      "bytes": 439,
+      "sha256": "a07cb181884ac47359da2baeb3ae3c8b2b8d12ee6ab36855f00af27feb6b04eb",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/075.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/075.stdout.txt",
+      "bytes": 614,
+      "sha256": "9e657e9dabb0b7a667b062fc102cc45d808b2115a14fde61423dd3ff1bf338f7",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/076.json",
+      "bytes": 439,
+      "sha256": "c21a165c90266c6e2747477fe8fd1ae1769ef44d6ab9aaf0674f91962f1079e4",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/076.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/076.stdout.txt",
+      "bytes": 656,
+      "sha256": "dd1580a096bfd1af17e8634ec2c51597249017160f2b9d633aa0a05c540acf45",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/077.json",
+      "bytes": 439,
+      "sha256": "adec32693642562d5552945144f59dad8aa6d74e56871bcb5514d615f800836e",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/077.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/077.stdout.txt",
+      "bytes": 867,
+      "sha256": "c86f7dabc4a62b6ed3d1782bd8384eb3858af8e836984909f3dc3daa298685e7",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/078.json",
+      "bytes": 443,
+      "sha256": "11ca0552c1264456170292cf454f580c6c4f29a188c932334abe394aebcf37ac",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/078.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/078.stdout.txt",
+      "bytes": 1058,
+      "sha256": "d885fad4cf49a29fad0dcd149fabd026555fa97724bd5cd8b12543e065a71b04",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/079.json",
+      "bytes": 437,
+      "sha256": "54065f8584bdd8f2b8d2accd5e6dd1c536b52e1ea6128f0936938b86ac34738a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/079.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/079.stdout.txt",
+      "bytes": 698,
+      "sha256": "5e6d82ed58e1778d1cb47ce7a12f0895280dda0538f413efa20aaafca411e9f4",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/080.json",
+      "bytes": 445,
+      "sha256": "d3126e1eb3885d1b40ddaef0932294215992b4240c4f0377ea3727f350ed58f6",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/080.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/080.stdout.txt",
+      "bytes": 447,
+      "sha256": "1461c9b77721cd7c2186a71f98964550d1e6421d7d45587b852ac5db51f763ab",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/081.json",
+      "bytes": 433,
+      "sha256": "fe507656002bc6eca0217daf3baa6f0b53288b028be70563babade9d577e7254",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/081.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/081.stdout.txt",
+      "bytes": 1149,
+      "sha256": "6048395e9fb1ab38c1fcf49aae51c0f4578259412595885056b104c058e6d697",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/082.json",
+      "bytes": 435,
+      "sha256": "5afcaef6d02b46a29dff133ee4420dd06f971d4b4460ac640117a1d778f4d312",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/082.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/082.stdout.txt",
+      "bytes": 395,
+      "sha256": "6c5eb0447e727c79b51a94b280649c8d7a951aa9f1472ac9178aa56a03c00c0e",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/083.json",
+      "bytes": 439,
+      "sha256": "8b9bd448d8865d30162f18547684387be5aa20eb5daadac87cb651e590fa96e3",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/083.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/083.stdout.txt",
+      "bytes": 668,
+      "sha256": "4c511a5182c084476486644af697ea648c40c1863ef06ad3219ef1bee338829d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/084.json",
+      "bytes": 441,
+      "sha256": "853f9df5e4f89ee9faeeb69064542acafe264fbe55f18f054716209a3b7c4365",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/084.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/084.stdout.txt",
+      "bytes": 264,
+      "sha256": "95d23440ba3e848d1251a25d75983b8ea99b1d6353aa7c774fe688203d3169eb",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/085.json",
+      "bytes": 437,
+      "sha256": "ec47409af229c90147b03e5b331ac2f77c8985c921e97b3da908552f3f7aaecd",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/085.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/085.stdout.txt",
+      "bytes": 224,
+      "sha256": "0365a16a6ccc5a81e92cc0e2d7d3272c1f88d2883d8dc491e2f16b1498e0165d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/086.json",
+      "bytes": 445,
+      "sha256": "45e442751c13af04f5a1ae3a3b7382d6b3e632fa719adbdff277e59c433500ff",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/086.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/086.stdout.txt",
+      "bytes": 537,
+      "sha256": "a32bf920fb1950d70ad983d99d22297ba1ca7bb588b94bcd370a77bbcf881f15",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/087.json",
+      "bytes": 439,
+      "sha256": "0428d337247a8c486b830ede6704d3baab83201077c069a441d2d2d592800f0b",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/087.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/087.stdout.txt",
+      "bytes": 437,
+      "sha256": "1132556a8b2c968879568b8d4242b5ee9ef4ea307bbc1b00d36dd34d4a2f5c06",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/088.json",
+      "bytes": 433,
+      "sha256": "82706af18098813ad1617c2f587432417826247ac2d2b32596e571f68123846e",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/088.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/088.stdout.txt",
+      "bytes": 257,
+      "sha256": "497b3bd3e4bfa6e8952eb89f8e090e0cd12f362da7e6d964500161661e363f55",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/089.json",
+      "bytes": 450,
+      "sha256": "cb985c9e768aef192bcbad6f7e8d834541be67d4b76ddd57f807485774b6f6bc",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/089.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/089.stdout.txt",
+      "bytes": 324,
+      "sha256": "1a728d284d51e9b29e0e4162ac41d2ac30f741fed072317fce0ca0992588c5ec",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/090.json",
+      "bytes": 456,
+      "sha256": "842cf2e39b8a3866866abd2ae9360a7b1927746f9577023c3d639a6cd0a434e4",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/090.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/090.stdout.txt",
+      "bytes": 477,
+      "sha256": "73b3edccaa6b125b359bc973e1fa7f07e31f3a46d9641c6036b57246d1700c17",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/091.json",
+      "bytes": 454,
+      "sha256": "89f409e90d0982840b13c315d4ea722fcca6d94b8f2e5f1db9e34a128fdf7055",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/091.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/091.stdout.txt",
+      "bytes": 438,
+      "sha256": "641e54c82120b1a4134bf71e3916ec73c0f883cca9539368aa4a7da73d5de307",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/092.json",
+      "bytes": 450,
+      "sha256": "31783dcacdaa6e317af220e096e8abd02773fd3f4b77404206dba14179e7d456",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/092.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/092.stdout.txt",
+      "bytes": 300,
+      "sha256": "cb7fd714c3fecb003f6f0282762e5498a363315cca848ac3943d6a1cd76606b7",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/093.json",
+      "bytes": 454,
+      "sha256": "10b4d87abf64d90a3d7d5f0191f64ad0764245cfe8570721dd05dc0dcaadb1d1",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/093.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/093.stdout.txt",
+      "bytes": 1245,
+      "sha256": "3e0300271e7c97ee78b20a627665799c2bf996abf1eb4cf586eded4157070bde",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/094.json",
+      "bytes": 450,
+      "sha256": "91b034d546ba221ace72219775db22613432185bf5f9f23bffae266636d187db",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/094.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/094.stdout.txt",
+      "bytes": 227,
+      "sha256": "0fc819b7cb10efcd61a392658c38689f33e0f67ec7c146bfbe32031237f418c5",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/095.json",
+      "bytes": 460,
+      "sha256": "6d25ac032e48739d74314ba00b095a6b9a5426c2e2537fdc79b037170c68e7e6",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/095.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/095.stdout.txt",
+      "bytes": 239,
+      "sha256": "c6ce239cf99020cc1b24120c572d9f634fa1e8be6738c824f6e29afcb20b4e48",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/096.json",
+      "bytes": 464,
+      "sha256": "f19d3f6c2e1c31b9ddc0b0efa8ab20dd7f609d86537d38933ac24ae08a9c9b91",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/096.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/096.stdout.txt",
+      "bytes": 768,
+      "sha256": "7004a564f043c78505ea95e1b3291f3001b595fb14f854d6d989e666afa6aa8a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/097.json",
+      "bytes": 462,
+      "sha256": "3c4e365583debdd9b5e60e6b4cec9beae101b6004d9fb98b6b5fd349d217310d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/097.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/097.stdout.txt",
+      "bytes": 388,
+      "sha256": "618d97626543b9fb43039b9a163ecec7a5167daefde127061d7e3c9d051712ea",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/098.json",
+      "bytes": 470,
+      "sha256": "0dd1f0c8b027652f52273e8fb1313f49596932d10b0c5099fc7c554bc49166fe",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/098.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/098.stdout.txt",
+      "bytes": 249,
+      "sha256": "d03c230f409555530e7c5c9bb360a9dfc6ef8ef4b94d23f7df012ec556017d27",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/099.json",
+      "bytes": 462,
+      "sha256": "fbef339e02aed315d181e87366cfdae38c9e9569be3aeb0ccab107680c173ee8",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/099.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/099.stdout.txt",
+      "bytes": 276,
+      "sha256": "872770856f0f7907100269639e5c71434dfc1be28217099338da334108681f3c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/100.json",
+      "bytes": 462,
+      "sha256": "d64b908f133a059791ac5d416a98a10155461ce9a1016a53b2e200e0d815c721",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/100.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/100.stdout.txt",
+      "bytes": 134,
+      "sha256": "a83bc0281eef0fde54595e3665f3f40e5e4247d00a699633ef81e3e0f3f19e35",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/101.json",
+      "bytes": 468,
+      "sha256": "6188eff17623859422b31a4b53a5e061dff3bfb2adb73ff46d3ca74d48eb45de",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/101.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/101.stdout.txt",
+      "bytes": 223,
+      "sha256": "8d2b6e51415f935e9811e7c29eede815c9425eb7346bea0867ccd5367037b99b",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/102.json",
+      "bytes": 456,
+      "sha256": "357f3fe72eb2aa21b65692b58d3dfb9b3c899b3bd651dc8e05e575c395fecc79",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/102.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/102.stdout.txt",
+      "bytes": 267,
+      "sha256": "9ca98eaa794ce32561df17bc6be753b6b0563131fcbcc10ac96ce28800e8b2b8",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/103.json",
+      "bytes": 456,
+      "sha256": "0d857c5d80f4b7646e00922869d96e88bccd556daaf92b9dde518a19b7882cfb",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/103.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/103.stdout.txt",
+      "bytes": 243,
+      "sha256": "00066ff9d4dcbce5240279da70cecefe64fae461e67a6758d004e8597c71d134",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/104.json",
+      "bytes": 458,
+      "sha256": "99f4df3c95105cfda97c5d107d56c2a738073e82d4e19e4e6b4cfc135cc91e82",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/104.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/104.stdout.txt",
+      "bytes": 332,
+      "sha256": "eeaf7d228609281e2d5981421b3d637a07f92dbf84134b9d788c7c72646df8ff",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/105.json",
+      "bytes": 458,
+      "sha256": "0346444453a491b8123b5a4d67c0642ba36325ea76ee0719d359a71f52dcd92d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/105.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/105.stdout.txt",
+      "bytes": 183,
+      "sha256": "44c1ae5a7afad7cb677d966442ba7840d8d9e710a5e2d6cb9e1d893976187664",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/106.json",
+      "bytes": 466,
+      "sha256": "65813dbfc857f0f91c750b9cdb59e8812ec4f3e86060665ab684c90e943a4311",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/106.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/106.stdout.txt",
+      "bytes": 140,
+      "sha256": "c9c3275dd64caa25d5317215eb7e8e98c99b284e0d178a5da866697c55a1abce",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/107.json",
+      "bytes": 460,
+      "sha256": "7e52093a0eb53e1d2480da9b551de6f2769e07c8b33ea96b000b598dcd96b80d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/107.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/107.stdout.txt",
+      "bytes": 303,
+      "sha256": "f3fea60cb31f113ba5d583a72d24d0287fc2f2ff979d577b9eff130b474249dc",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/108.json",
+      "bytes": 462,
+      "sha256": "c3297327a296abbcf8d98186d51cab797b26870c4fb471743781c3daaac3d3db",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/108.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/108.stdout.txt",
+      "bytes": 520,
+      "sha256": "d0fe05ab9a059e6f801fca3217e3d8bff87fe50f53f1e1b3f761aa70ef50f003",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/109.json",
+      "bytes": 456,
+      "sha256": "63fd5af154e66de63137b681941fb731a23609b92384469412c2bbc0cfa000eb",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/109.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/109.stdout.txt",
+      "bytes": 1339,
+      "sha256": "666f6a11229903abc763caf2d4d9747ef3619eb1b098f31f9bb24d7809f696a6",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/110.json",
+      "bytes": 458,
+      "sha256": "62a0e8f90c91c7d15bdb6cf6c3afbd452343f4e296e1ae8dd6305a890dd8f77d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/110.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/110.stdout.txt",
+      "bytes": 1463,
+      "sha256": "c235252ff04ba26f06c93d911ebffd3a0fd3553e5df5f77b4125bb5b3780d8e5",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/111.json",
+      "bytes": 460,
+      "sha256": "694d361400c63f6d7529dc9796b0af22e9511b478fe9c723d2dae7dd82973981",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/111.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/111.stdout.txt",
+      "bytes": 218,
+      "sha256": "75d6c99daaa1919b1184571d59b1dfcc06acd977366d5959522fbc14189f732a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/112.json",
+      "bytes": 456,
+      "sha256": "6b0cb037fc054132f20b48e77392ac4648e352bdc439932cdac12b546264e9a6",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/112.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/112.stdout.txt",
+      "bytes": 418,
+      "sha256": "c6db496c1487213e41e659445155cafa9c96da882e7ff4d29674affd54e3fbe1",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/113.json",
+      "bytes": 456,
+      "sha256": "2115ab715683720436d026a6e8002e5055e99f81b52a2abb67a0c9e460dbfbb5",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/113.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/113.stdout.txt",
+      "bytes": 310,
+      "sha256": "632008433d23f8094e0734d610d02fe7e0709282488c7311d68a851fe0b9d9aa",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/114.json",
+      "bytes": 466,
+      "sha256": "2f3685308f03dff7ae0e0ea2bff0702d7e5291a0f53bc914960af21b84c7fb29",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/114.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/114.stdout.txt",
+      "bytes": 401,
+      "sha256": "313df649f116f6e80de512ff3cd6b39f1db11b5fb0fa4ab6be067d045bd520d6",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/115.json",
+      "bytes": 464,
+      "sha256": "8b538481fb5db62cf7bbb67be7e5b6f8e7d26ab84a039927f7e46a9349405879",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/115.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/115.stdout.txt",
+      "bytes": 929,
+      "sha256": "5bc5287392f98e27e9b4f12740d76603a17b74ec4902ff79f42ed4b609279a42",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/116.json",
+      "bytes": 464,
+      "sha256": "b4049926ae53247d5121549d3003f9c3c3c0ef2ccb579c68ed0cf7653e7f9988",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/116.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/116.stdout.txt",
+      "bytes": 546,
+      "sha256": "b62ae00e3accdfc92133fe0be5c65e93afdc8d2f3cf6d4e5b6ea9704ef4aeae7",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/117.json",
+      "bytes": 476,
+      "sha256": "f2334822143a6874daabb91bdc066550e1cde225caca81c9949d3710ac4dc319",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/117.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/117.stdout.txt",
+      "bytes": 434,
+      "sha256": "e10a37b0e6f1f5a6b0c1de8498e2f62612217b61a87012d9220ef6207f692abf",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/118.json",
+      "bytes": 464,
+      "sha256": "57b12618e15d09db4cc0735bc6ea31df1b50de4833fe2c6146ac60eedb416f1c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/118.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/118.stdout.txt",
+      "bytes": 309,
+      "sha256": "d5090b87c42757acf1069274dd2854b4530f970b6413641c43a377dbb3fe8c8c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/119.json",
+      "bytes": 470,
+      "sha256": "7060d6bc5425a1e3223216bec0791d0c653091b8fdd5eb9ef3448cdf011c27bc",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/119.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/119.stdout.txt",
+      "bytes": 556,
+      "sha256": "b09760586467b51a26a5224c62b34e7784848ef6f97248243d2b039f8d4d858d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/120.json",
+      "bytes": 466,
+      "sha256": "8267798d476660c9978d3852318b5663eae3067493e918db8dc80feb49ebb3e5",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/120.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/120.stdout.txt",
+      "bytes": 872,
+      "sha256": "d2247668f8994fe42559f59826595b0300d2f93ffacd78608da73d509130331e",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/121.json",
+      "bytes": 460,
+      "sha256": "ccbdc9b99a134738fbdbfc0355eea49d34780544840fd055a8b6ceb6e314ce0c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/121.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/121.stdout.txt",
+      "bytes": 415,
+      "sha256": "62992e6fc38e378ac1164dac8434863d0bc0f2f381f7fa9e154c51416cd6248b",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/122.json",
+      "bytes": 462,
+      "sha256": "6cae3349881ef0e713fe26bf58a681a8506f3646a71d717024628dba7c6976d9",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/122.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/122.stdout.txt",
+      "bytes": 297,
+      "sha256": "777be5a1c667636c0cd03815477d670b5a4dfd290b77a34b71069e2186c7d9d5",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/123.json",
+      "bytes": 462,
+      "sha256": "f7a7074c1c200c1262ed7079e57d2a8bfbee7644db9ae6722c7a3b23c7432483",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/123.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/123.stdout.txt",
+      "bytes": 1636,
+      "sha256": "a4870874f9e0985e671189881ef892a0a5de6b7add9417876bf912bdb57c7c0d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/124.json",
+      "bytes": 464,
+      "sha256": "54b741432a97f80e3abf6f5346b7755c4c4e32241bbe8e138e18005223747ad7",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/124.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/124.stdout.txt",
+      "bytes": 414,
+      "sha256": "218d8eff79cce17b9c74888f4eefbd3b451594dc45ce3e67911ff6fa16061e4c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/125.json",
+      "bytes": 460,
+      "sha256": "846a758a303bb2d0cd9c5cef33c1393e8bad67df913a8a0a06537943dcbd88f3",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/125.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/125.stdout.txt",
+      "bytes": 512,
+      "sha256": "71f6a89f6c8d109604fb8fe735bf5d2c6ee2a9e1dfc96547488d71e42bf0bb98",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/126.json",
+      "bytes": 452,
+      "sha256": "99796f063547a47546ac64f51ec3456c47520557b892a86bd5b0a4684b7789e0",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/126.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/126.stdout.txt",
+      "bytes": 195,
+      "sha256": "d7256fdc130131b6d158df1dc903e1f7397fbf825a2d83ed5f8903f7a3708d20",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/127.json",
+      "bytes": 450,
+      "sha256": "25ad1c27e36821e9a9bdf58c0a7131aa5d2b77810a0705fa56c01f8d62d14cf2",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/127.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/127.stdout.txt",
+      "bytes": 240,
+      "sha256": "76a460ca3a2b9472f135346ace4c20dfc10aac66c43c86c6c2df146fdb269a4e",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/128.json",
+      "bytes": 456,
+      "sha256": "7913887fdceabf891edd40d0d32d2d22c41dc258cdebb055df48e11076b7cbd5",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/128.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/128.stdout.txt",
+      "bytes": 265,
+      "sha256": "3a329ab6020ec2639e3461221db388c8c2fe838e83146d618af2279640cfe05b",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/129.json",
+      "bytes": 454,
+      "sha256": "e82901dfdd0218ace63ed37fb696d75433aa0dc3c1fca7490f3aa27dcbc308cf",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/129.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/129.stdout.txt",
+      "bytes": 219,
+      "sha256": "ff8fe3ac7f1ed6632a52498b58c5449d4714eece40939455d01b2571006da9e7",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/130.json",
+      "bytes": 454,
+      "sha256": "0f5dde3bedd724472fc9abb8f65149ac9788b62c5f171ebfccc740d3c8bad54c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/130.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/130.stdout.txt",
+      "bytes": 217,
+      "sha256": "4381b77e51799b3f4696a3c6353e8f5bc4544a04dae79bc48077e6c7ac774a82",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/131.json",
+      "bytes": 450,
+      "sha256": "574f8af64ac1a68de89c35d58c656f8bcaaaf5ea18b6ebb0a7772206cac6459a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/131.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/131.stdout.txt",
+      "bytes": 427,
+      "sha256": "bdc5874f469cc39f1e13ca1bbd8336b05a344927341fb01e1162518e1c3dcdbd",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/132.json",
+      "bytes": 454,
+      "sha256": "7bcc9154f67674ff0acb55508932a4d34c499bd42999393dea25744bb2ed037e",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/132.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/132.stdout.txt",
+      "bytes": 274,
+      "sha256": "4c91424ed926b90ee734032343c14e36e5ef3f5b309b0c3245cfd030ae72ae83",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/133.json",
+      "bytes": 466,
+      "sha256": "750da504baaf369784c1d9d487d75fa0c0f6b70126d63d79695b99297437836d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/133.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/133.stdout.txt",
+      "bytes": 225,
+      "sha256": "d9004996c69da6059e558a119b549fcb823d66cb3fb46d58e548c9b5f8e37592",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/134.json",
+      "bytes": 462,
+      "sha256": "ff50c6222fca97f2bc52e33da37bed7b63373c43b52c1841d78c07d7bab4a80d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/134.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/134.stdout.txt",
+      "bytes": 309,
+      "sha256": "00eae69ecbe52dbd0e8b8a4c05bd28b0d1294c525c9a743a38581fb09b33cb8a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/135.json",
+      "bytes": 462,
+      "sha256": "f102170c9cc52acb109300a53bce541c2b2539d3a828095d4e427d5cf4883f73",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/135.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/135.stdout.txt",
+      "bytes": 724,
+      "sha256": "8cd11174a15effc25269034d9549f050270b81d10435c61f95c20540d8da8b1a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/136.json",
+      "bytes": 466,
+      "sha256": "563a9d8c5a45ec42fb7f61d86a76eb5b2292d1f48b27069e880d7f2ad2715855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/136.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/136.stdout.txt",
+      "bytes": 144,
+      "sha256": "95956385ff8dbc5a563d3720feec198eb24551724daa6cfe6977b6a8e716537b",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/137.json",
+      "bytes": 456,
+      "sha256": "2591807daba4caa1cb73de2314740017b1b83c752466e89862c3cbcca2ec3a80",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/137.stderr.txt",
+      "bytes": 80,
+      "sha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/137.stdout.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/138.json",
+      "bytes": 456,
+      "sha256": "f9965346c12bc3078cfd2a5ff4f13334529bb4292cd3be77b65d41e3c1b10d60",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/138.stderr.txt",
+      "bytes": 80,
+      "sha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/138.stdout.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/139.json",
+      "bytes": 452,
+      "sha256": "c6a3d6c828faf75bdc5d89fe35fe3f22e4b663862f950dc0be4b3f1fcb218404",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/139.stderr.txt",
+      "bytes": 80,
+      "sha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/139.stdout.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/140.json",
+      "bytes": 458,
+      "sha256": "f4b685291b269381932acef08b0c3f431735eafe67bbe7ab5dff938b0349e732",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/140.stderr.txt",
+      "bytes": 80,
+      "sha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/140.stdout.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/141.json",
+      "bytes": 454,
+      "sha256": "8967df64bd72afb4d2b94b68382416c7c7860494066735ba04c85d0b5c3c6f52",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/141.stderr.txt",
+      "bytes": 80,
+      "sha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/141.stdout.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/142.json",
+      "bytes": 458,
+      "sha256": "4134ed085fc6df57e56ff6f41e759290fc1c1e9ddf10fc0db0a9aba38fc06cc4",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/142.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/142.stdout.txt",
+      "bytes": 812,
+      "sha256": "38b76a916c3aee6a7a6f2b1057292850fdde7d19763586ad487d5be57cdc52b5",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/143.json",
+      "bytes": 460,
+      "sha256": "c48ea89c68cd593518bc380432cbcefa00fb56a447884429126896260497408a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/143.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/143.stdout.txt",
+      "bytes": 1199,
+      "sha256": "4c474566cfc98042d3b94f6bab96432aafeecc14c2ebceb7073fd6cf926e88e0",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/144.json",
+      "bytes": 462,
+      "sha256": "b39655e83c761e7738a4f038d09ba12459f6ea8ac6f0b1641a84fff44646fae0",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/144.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/144.stdout.txt",
+      "bytes": 1727,
+      "sha256": "b2c697674fbe805456aa221d27d167c6902c43a76e9297c07a034def8716c1d8",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/145.json",
+      "bytes": 466,
+      "sha256": "846487305740e974070be0a7083b441c415e02d61ff91c70f1deb9f374235764",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/145.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/145.stdout.txt",
+      "bytes": 1650,
+      "sha256": "68e11f225528997beaadfb98a74b0be0ae8240fbf8818b3d6b60fb17d25bb117",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/146.json",
+      "bytes": 460,
+      "sha256": "aab875aeb42e7efb89e7e12709350b3d94c980fc8a380f927452015ade227c53",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/146.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/146.stdout.txt",
+      "bytes": 1431,
+      "sha256": "ced15f9c3bfcdf3626a93e4b975ae01176e59284d605715fa64ac63ab8c8c5ff",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/147.json",
+      "bytes": 464,
+      "sha256": "8cf16182b5a595e32686eaa5a50e691a5a8a7a4770c6a8e4d0635c25b8009c47",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/147.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/147.stdout.txt",
+      "bytes": 240,
+      "sha256": "9a24bc5a0f774873a02583742818a9e972526ccbbb4b6802bb62fb6e6c0b8e7e",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/148.json",
+      "bytes": 462,
+      "sha256": "07941f823b40cf999d64bb838e25722d22c06995e477ac2a40ba42568bb5eef8",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/148.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/148.stdout.txt",
+      "bytes": 1603,
+      "sha256": "89f54278c8a46133cdc4fd17362033e7dcfe92ad76aaea555bdc0b0a88fc01db",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/149.json",
+      "bytes": 466,
+      "sha256": "d6e1280053800cb4b897759fe89ff670c86fe14200b0e130d266dd2f362ecd22",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/149.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/149.stdout.txt",
+      "bytes": 470,
+      "sha256": "1e2302d9d42e9c9ba8f34be7c6eb4f7d0ad8afe2849e0689e1f07f1e331ebdca",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/150.json",
+      "bytes": 464,
+      "sha256": "3e5b66875ca5ec16140ffc3060a9e2feff42005dd8dc160247a19ec399afcd4c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/150.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/150.stdout.txt",
+      "bytes": 310,
+      "sha256": "14cb335553270b0c92eaa17b0f0bfc18b60041de93ab16c285efb2ffdbf6d0b8",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/151.json",
+      "bytes": 468,
+      "sha256": "a1f6e0666ddbe69f6830551775ec1e49da591e2eb873f23dc33e4fbcc956f112",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/151.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/151.stdout.txt",
+      "bytes": 484,
+      "sha256": "467d1b24effd75e456fb07c410ce8758c8ff1f4f31ce99eecebb8e2c2f4752a0",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/152.json",
+      "bytes": 470,
+      "sha256": "efda1d59c8c1500c2c85881f8f2010f696b9b8b0f34dca1c665286dea2e3f5ec",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/152.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/152.stdout.txt",
+      "bytes": 429,
+      "sha256": "ec79a3f42fd0127b1cb70b3982112b52df681bbd715e508e17dd9670228b6904",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/153.json",
+      "bytes": 464,
+      "sha256": "5fe7b8790101132a9e9c1cc51e36fcc102bb0170c64863671c7695c83aa24d81",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/153.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/153.stdout.txt",
+      "bytes": 485,
+      "sha256": "2619c3c585d7cd79c62cd51e8398319f0e2aa4e82409295d5b8dd38ca443e44a",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/154.json",
+      "bytes": 454,
+      "sha256": "e3a771c99548620ad2416458adf2a6049708da3dbe14c0b92cfc3f94b6e6fe68",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/154.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/154.stdout.txt",
+      "bytes": 530,
+      "sha256": "a6cbc006efd7a987c586a694bb51fb9aaf698c14630971bf60fa4c0a36d323b0",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/155.json",
+      "bytes": 452,
+      "sha256": "1a74eb3b7ad14cb9b42910ebe980b6830285dd41662b80c6dd32aa7fd36e9068",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/155.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/155.stdout.txt",
+      "bytes": 157,
+      "sha256": "3c755ab7848f007c18b845e836246a883ff34398eb5aefdd708ce7815a7ef386",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/156.json",
+      "bytes": 483,
+      "sha256": "17cd91e4d6be25eded9007ec64a53491d3a7dda6f8d096d90cbaba96fec46792",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/156.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/156.stdout.txt",
+      "bytes": 835,
+      "sha256": "be967b4ff33d09e99ce57fcdf0b2d22e88280fbae95922046db24c2f4288be30",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/157.json",
+      "bytes": 485,
+      "sha256": "5a725710005cf77222f5c769d15da44f4e7ea2454def667a406830964e3e1715",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/157.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/157.stdout.txt",
+      "bytes": 754,
+      "sha256": "87a260f82aa6ec19289f213d49dff0ddd6d9e844f9a2a8da150b9c31ca9befc6",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/158.json",
+      "bytes": 487,
+      "sha256": "60ff6bc0c4bb118679fa7c0ecd61940d36191f7bc912d89ae46e44edabb4d6c3",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/158.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/158.stdout.txt",
+      "bytes": 372,
+      "sha256": "df81b3cec60ec4bc5d92dcb61f6f3c5f6e356bb03c90b044eb3c0ba9d1ae56a3",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/159.json",
+      "bytes": 491,
+      "sha256": "e1c8c2d8f6aed7086762ecfa2a042edda1b711f9c25eb1f05a342ab8e8e5e26c",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/159.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/159.stdout.txt",
+      "bytes": 380,
+      "sha256": "b9232902db486c015e417436fad2b8f0b3afcb1df1cf82d9efc05d07aa1b0a2f",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/160.json",
+      "bytes": 493,
+      "sha256": "00ad6b397e39f4d5dc143678c8521e2f4943d8b89987743c18809a3c927a024d",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/160.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/160.stdout.txt",
+      "bytes": 823,
+      "sha256": "9f562c8fa4540bab1816fef9f7f6635ab7036bb553a7bb47f8249a09b4884193",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/161.json",
+      "bytes": 491,
+      "sha256": "affc8bad8d3db6dc25abec4cd89d82a58178afa214ac38f3b39da61dc7a95105",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/161.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/161.stdout.txt",
+      "bytes": 382,
+      "sha256": "a131a8b892aba369f278d4aa34361afa5e26828a0a2f227515669958b419c44e",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/162.json",
+      "bytes": 491,
+      "sha256": "9f4ff43c844d31b7310e5a1247ec87100df3e690ee5f3a6f07ca994e21fd7d14",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/162.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/162.stdout.txt",
+      "bytes": 497,
+      "sha256": "2b92b28a17a736d76ea68906969ee3fc357d38c7298ef07beeac0c60b3912c0b",
+      "localArchiveExcludedFromGit": false
+    },
+    {
+      "path": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/validate_audit.py",
+      "bytes": 6177,
+      "sha256": "6c6ddec9ea4476c3a55808278d85aeaa27b0731c4599fc140d20a11040545802",
+      "localArchiveExcludedFromGit": false
+    }
+  ]
+}

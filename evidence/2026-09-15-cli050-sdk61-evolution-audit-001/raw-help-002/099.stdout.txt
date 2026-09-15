@@ -1,0 +1,10 @@
+Description:
+Show battery information for the preferred current device
+
+Usage:
+  $ pico-cli device battery
+
+Options:
+  -d, --device <device>  Target device id
+  --format <format>      Output format (plain | json) (default: plain)
+  -h, --help             Display this message

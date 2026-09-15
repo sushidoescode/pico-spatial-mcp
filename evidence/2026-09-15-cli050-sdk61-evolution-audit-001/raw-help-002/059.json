@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 files push --help",
+  "argv": [
+    "files",
+    "push",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:53.328Z",
+  "endedAt": "2026-09-15T09:11:53.424Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "4fcc14161f147de5271e90896d5fec0bc67b671fbe315d681149d270ec11dd7a",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

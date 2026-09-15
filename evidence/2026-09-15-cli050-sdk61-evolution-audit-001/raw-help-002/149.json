@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 spatialml doctor --help",
+  "argv": [
+    "spatialml",
+    "doctor",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:07.901Z",
+  "endedAt": "2026-09-15T09:12:08.009Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "1e2302d9d42e9c9ba8f34be7c6eb4f7d0ad8afe2849e0689e1f07f1e331ebdca",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

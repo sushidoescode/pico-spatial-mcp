@@ -1,0 +1,6 @@
+Usage:
+  $ pico-cli files push <local> <remote>
+
+Options:
+  -d, --device <device>  Target device id 
+  -h, --help             Display this message 

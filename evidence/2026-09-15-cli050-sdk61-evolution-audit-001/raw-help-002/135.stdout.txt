@@ -1,0 +1,18 @@
+Description:
+Install or update the PICO development knowledge
+
+Usage:
+  $ pico-cli knowledge pull [version]
+
+Options:
+  --format <format>      Output format (plain | json) (default: plain)
+  --source <source>      Download source (auto | internal | cn | global) (default: auto)
+  --platform <platform>  Knowledge platform to record in .pico-env.json (default: spatial)
+  --projectRoot <path>   Project root for local .pico-env.json; defaults to global
+                         ~/.pico/.pico-env.json
+  -h, --help             Display this message
+
+Examples:
+  $ pico-cli knowledge pull
+  $ pico-cli knowledge pull 0.13 --platform spatial --projectRoot /path/to/project
+  $ pico-cli knowledge pull --source auto --format json

@@ -1,0 +1,11 @@
+{
+  "status": "fulfilled",
+  "value": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"matchedSymptom\": null,\n  \"nextAction\": \"Apply the highest-confidence lint or diagnosis match; if none applies, solve and record the new lesson.\",\n  \"diagnosis\": {\n    \"status\": \"no-symptom-match\",\n    \"note\": \"The error text matched no diagnosis-KB symptom — the retained-lessons lint below still applies.\"\n  },\n  \"errorLessons\": {\n    \"clean\": true,\n    \"counts\": {\n      \"errors\": 0,\n      \"warnings\": 0,\n      \"projectErrors\": 0\n    },\n    \"violations\": [],\n    \"vault\": {\n      \"status\": \"ok\",\n      \"sdkVersion\": \"0.13.3\",\n      \"typesIndexed\": 552,\n      \"findings\": [],\n      \"note\": \"Emitted SDK usage resolves against the agent-vault api-reference (types, enum values, ctor arity; ui.* composables not validated).\"\n    },\n    \"note\": \"Clean against the retained-lessons rulebook.\"\n  },\n  \"fix\": \"Apply the highest-confidence match; if nothing matches, this is a NEW gotcha — solve it, then re-call pico_fix with {recordLesson:{...}} so it can never recur.\"\n}"
+      }
+    ]
+  }
+}

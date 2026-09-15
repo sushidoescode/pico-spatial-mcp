@@ -1,0 +1,7 @@
+Usage:
+  $ pico-cli files ls [remote]
+
+Options:
+  -d, --device <device>  Target device id 
+  -l, --long             Show detailed listing (default: false)
+  -h, --help             Display this message 

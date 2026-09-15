@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 device disconnect --help",
+  "argv": [
+    "device",
+    "disconnect",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:02.833Z",
+  "endedAt": "2026-09-15T09:12:02.937Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "8d2b6e51415f935e9811e7c29eede815c9425eb7346bea0867ccd5367037b99b",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

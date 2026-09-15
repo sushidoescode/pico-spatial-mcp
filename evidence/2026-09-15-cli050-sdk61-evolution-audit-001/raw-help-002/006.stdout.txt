@@ -1,0 +1,14 @@
+Usage:
+  $ pico-cli doctor
+
+Options:
+  --format <format>      Output format (plain, json) (default: plain)
+  --platform <platform>  Development platform to inspect (spatial, unity) (default: spatial)
+  --tool <tool>          Agent host to inspect (codex, traecli, claude-code, cursor, copilot, all) 
+  --project <path>       Project directory to enable the project context check (skipped when omitted) 
+  --fix                  Run supported targeted fixes for error checks (default: false)
+  -h, --help             Display this message 
+
+Examples:
+  $ pico-cli doctor
+  $ pico-cli doctor --format json

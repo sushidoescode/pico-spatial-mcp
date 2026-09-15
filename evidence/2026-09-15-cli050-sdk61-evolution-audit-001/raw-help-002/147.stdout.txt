@@ -1,0 +1,11 @@
+Description:
+Inspect and repair project-local agent context routing
+
+Usage:
+  $ pico-cli project context <command> [options]
+
+Commands:
+  doctor  Check project-local agent context routing
+
+Options:
+  -h, --help  Show this message and exit.

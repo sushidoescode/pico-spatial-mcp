@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 files pull --help",
+  "argv": [
+    "files",
+    "pull",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:05.800Z",
+  "endedAt": "2026-09-15T09:12:05.904Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "ff8fe3ac7f1ed6632a52498b58c5449d4714eece40939455d01b2571006da9e7",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

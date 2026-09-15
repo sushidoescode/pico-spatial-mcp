@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 knowledge doctor --help",
+  "argv": [
+    "knowledge",
+    "doctor",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:06.222Z",
+  "endedAt": "2026-09-15T09:12:06.326Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "d9004996c69da6059e558a119b549fcb823d66cb3fb46d58e548c9b5f8e37592",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

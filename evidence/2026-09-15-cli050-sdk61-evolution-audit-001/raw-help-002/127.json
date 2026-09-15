@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 files ls --help",
+  "argv": [
+    "files",
+    "ls",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:05.592Z",
+  "endedAt": "2026-09-15T09:12:05.697Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "76a460ca3a2b9472f135346ace4c20dfc10aac66c43c86c6c2df146fdb269a4e",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

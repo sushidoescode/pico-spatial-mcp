@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 plugin install --help",
+  "argv": [
+    "plugin",
+    "install",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:07.367Z",
+  "endedAt": "2026-09-15T09:12:07.473Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "b2c697674fbe805456aa221d27d167c6902c43a76e9297c07a034def8716c1d8",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 editor stop --help",
+  "argv": [
+    "editor",
+    "stop",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:03.995Z",
+  "endedAt": "2026-09-15T09:12:04.099Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "c6db496c1487213e41e659445155cafa9c96da882e7ff4d29674affd54e3fbe1",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

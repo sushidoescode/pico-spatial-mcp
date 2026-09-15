@@ -1,0 +1,13 @@
+Description:
+[hidden] List installed PICO development knowledge versions
+
+Usage:
+  $ pico-cli knowledge list
+
+Options:
+  --format <format>  Output format (plain | json) (default: plain)
+  -h, --help         Display this message
+
+Examples:
+  $ pico-cli knowledge list
+  $ pico-cli knowledge list --format json

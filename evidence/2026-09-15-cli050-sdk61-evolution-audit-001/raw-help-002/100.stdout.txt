@@ -1,0 +1,8 @@
+Description:
+Connect to a device over WiFi
+
+Usage:
+  $ pico-cli device connect <address>
+
+Options:
+  -h, --help  Display this message

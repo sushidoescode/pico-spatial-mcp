@@ -1,0 +1,16 @@
+{
+  "label": "0.4.4 log --help",
+  "argv": [
+    "log",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:48.511Z",
+  "endedAt": "2026-09-15T09:11:48.608Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "edf65124dfc1b0095ffc10ff79b8495cde967ffe76a23bb275c4a604414d07bf",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

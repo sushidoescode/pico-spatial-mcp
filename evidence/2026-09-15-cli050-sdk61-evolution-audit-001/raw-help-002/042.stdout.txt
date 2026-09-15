@@ -1,0 +1,11 @@
+Usage:
+  $ pico-cli editor sync component
+
+Options:
+  --component <name>       Kotlin Component class name, for example PadBtnComponent 
+  --app-root <path>        Spatial app root. Defaults to the current working directory. 
+  --editor-project <path>  Spatial Editor project directory or .spatialproject file. Defaults to the unique project under editor-asset/src/main/res3d. 
+  --file <path>            Explicit Kotlin file path when multiple same-name candidates exist. 
+  --dry-run                Parse and print the declaration without writing component.json. (default: false)
+  --format <format>        Output format (plain, json) (default: json)
+  -h, --help               Display this message 

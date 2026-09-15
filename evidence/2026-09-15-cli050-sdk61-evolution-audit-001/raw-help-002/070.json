@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 web setup --help",
+  "argv": [
+    "web",
+    "setup",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:54.412Z",
+  "endedAt": "2026-09-15T09:11:54.511Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "6cd939872b0cab6f276ca47c608bd9be2be692473525ed2c988d92fafd8d2630",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

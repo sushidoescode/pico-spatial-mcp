@@ -1,0 +1,12 @@
+Usage:
+  $ pico-cli emulator delete-image
+
+Options:
+  --format <format>  Output format (plain, json) (default: plain)
+  -y, --yes          Assume yes for prompts (default: false)
+  -h, --help         Display this message 
+
+Examples:
+  $ pico-cli emulator delete-image
+  $ pico-cli emulator delete-image --yes
+  $ pico-cli emulator delete-image --format json --yes

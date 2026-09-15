@@ -1,0 +1,19 @@
+Description:
+Create a local support bundle with authorized transcript and plugin usage audit
+
+Usage:
+  $ pico-cli plugin audit
+
+Options:
+  --cwd <path>    Project directory to inspect (defaults to current working directory)
+  --out <path>    Output directory for the support bundle
+  --transcript    Include the selected Claude Code session transcript and usage extraction
+  --yes           Confirm that transcript export is authorized and privacy-reviewed
+  --session <id>  Claude Code session id to export; defaults to newest transcript for the project
+  -h, --help      Display this message
+
+Examples:
+  $ pico-cli plugin audit
+  $ pico-cli plugin audit --transcript --yes
+  $ pico-cli plugin audit --cwd /path/to/project --transcript --yes
+  $ pico-cli plugin audit --session <session-id> --transcript --yes

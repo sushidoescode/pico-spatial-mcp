@@ -1,0 +1,17 @@
+Description:
+Stop the running emulator
+
+Usage:
+  $ pico-cli emulator stop
+
+Options:
+  --format <format>  Output format (plain | json) (default: plain)
+  --adb-device <id>  Target adb device id (e.g. emulator-5554)
+  --avd <name>       Target managed AVD name (e.g. Pico_Emulator_0_11)
+  -h, --help         Display this message
+
+Examples:
+  $ pico-cli emulator stop
+  $ pico-cli emulator stop --avd Pico_Emulator_0_11
+  $ pico-cli emulator stop --adb-device emulator-5554
+  $ pico-cli emulator stop --format json

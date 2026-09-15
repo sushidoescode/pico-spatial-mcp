@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 project create --help",
+  "argv": [
+    "project",
+    "create",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:07.794Z",
+  "endedAt": "2026-09-15T09:12:07.900Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "89f54278c8a46133cdc4fd17362033e7dcfe92ad76aaea555bdc0b0a88fc01db",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

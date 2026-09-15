@@ -1,0 +1,9 @@
+Description:
+Stop an app on the preferred current device
+
+Usage:
+  $ pico-cli app stop <package>
+
+Options:
+  -d, --device <device>  Target device id (overrides automatic selection)
+  -h, --help             Display this message

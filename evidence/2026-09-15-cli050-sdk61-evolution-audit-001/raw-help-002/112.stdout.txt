@@ -1,0 +1,12 @@
+Description:
+Stop the running Spatial Editor and MCP Server
+
+Usage:
+  $ pico-cli editor stop
+
+Options:
+  --pid <editorPid>  Stop a specific editor instance by its editor PID (required when multiple
+                     CLI-managed instances exist)
+  --force            Allow stopping editors that were not spawned by pico-cli (e.g. double-click
+                     launches)
+  -h, --help         Display this message

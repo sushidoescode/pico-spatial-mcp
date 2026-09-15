@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 capture screenshot --help",
+  "argv": [
+    "capture",
+    "screenshot",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:02.522Z",
+  "endedAt": "2026-09-15T09:12:02.626Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "d03c230f409555530e7c5c9bb360a9dfc6ef8ef4b94d23f7df012ec556017d27",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

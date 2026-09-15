@@ -1,0 +1,15 @@
+Description:
+SpatialML setup, pipeline, and model workflows
+
+Usage:
+  $ pico-cli spatialml <command> [options]
+
+Commands:
+  doctor    Check SpatialML project configuration and workspace state
+  model     Inspect a LiteRT model with pyspatialml
+  onboard   Assess SpatialML SDK onboarding and route to the owning SDK workflow
+  pipeline  Search PICO Pipeline Zoo packages with model-card summaries
+  setup     Configure an existing Native OpenXR, Unity, or Kotlin project for SpatialML
+
+Options:
+  -h, --help  Show this message and exit.

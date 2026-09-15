@@ -1,0 +1,10 @@
+Usage:
+  pico-cli plugin <command> [options]
+
+Commands:
+  audit   Create a local support bundle with authorized transcript and plugin usage audit
+  doctor  Diagnostics for configured plugin hosts and installed plugins (read-only by default; use --fix to repair missing plugins)
+  update  Advanced: update managed plugins (defaults to all tools)
+
+Options:
+  -h, --help  Show this message and exit.

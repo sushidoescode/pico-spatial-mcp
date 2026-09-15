@@ -1,0 +1,23 @@
+Description:
+Read-only diagnosis of env-recorded plugin resources and release freshness
+
+Usage:
+  $ pico-cli plugin doctor
+
+Options:
+  --agent-tool <tools...>  Agent Hosts to inspect; omitted or all targets every Host recorded in the
+                           selected scope (all | claude-code | codex | cursor | copilot | traecli)
+  --scope <scope>          Optional exact setup scope; omit to use the nearest local env or fall
+                           back to global (global | local)
+  --platform <platform>    Optional expected platform used only to detect mismatches; platform
+                           switching belongs to setup (spatial | unity)
+  --project <path>         Exact project for an explicit scope; invalid without --scope, selects
+                           local state or global AGENTS context
+  --format <format>        Output format (plain | json) (default: plain)
+  -h, --help               Display this message
+
+Examples:
+  $ pico-cli plugin doctor
+  $ pico-cli plugin doctor --agent-tool codex traecli
+  $ pico-cli plugin doctor --scope local --project /absolute/path/to/project --agent-tool all
+  $ pico-cli plugin doctor --scope global --platform spatial --format json

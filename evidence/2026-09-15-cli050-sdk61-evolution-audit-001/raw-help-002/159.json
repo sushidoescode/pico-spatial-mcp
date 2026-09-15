@@ -1,0 +1,18 @@
+{
+  "label": "0.5.0 spatialml model visualize --help",
+  "argv": [
+    "spatialml",
+    "model",
+    "visualize",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:08.976Z",
+  "endedAt": "2026-09-15T09:12:09.080Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "b9232902db486c015e417436fad2b8f0b3afcb1df1cf82d9efc05d07aa1b0a2f",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

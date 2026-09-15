@@ -1,0 +1,9 @@
+Description:
+Run a shell command on the preferred current device
+
+Usage:
+  $ pico-cli shell [commands...]
+
+Options:
+  --device <device>  Target device id (overrides PICO_CLI_DEVICE)
+  -h, --help         Display this message

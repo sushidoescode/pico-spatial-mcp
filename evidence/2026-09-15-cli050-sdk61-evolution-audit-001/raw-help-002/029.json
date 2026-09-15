@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 device connect --help",
+  "argv": [
+    "device",
+    "connect",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:50.367Z",
+  "endedAt": "2026-09-15T09:11:50.467Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "c40bb20ff0b0d6f59ac3a21c0724dcb60c43bb4c98183c737eb57dee9913c4ec",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

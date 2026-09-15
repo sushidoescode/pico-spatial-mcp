@@ -1,0 +1,12 @@
+Description:
+Capture screenshots and recordings
+
+Usage:
+  $ pico-cli capture <command> [options]
+
+Commands:
+  record      Capture a screen recording from the preferred current device
+  screenshot  Capture a screenshot from the preferred current device
+
+Options:
+  -h, --help  Show this message and exit.

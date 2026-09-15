@@ -1,0 +1,35 @@
+Description:
+Create a new PICO project
+
+Usage:
+  $ pico-cli project create --name <text> --package <text> --template <text> [options]
+
+Options:
+  --dir <path>       Output directory (default: current directory)
+  --name <text>      [required] Project name
+  --package <text>   [required] Package name, e.g. com.example.app
+  --sdk-type <text>  Override the SDK type; defaults to the platform recorded in .pico-env.json
+                     (spatial | unity)
+  --template <text>  [required] Template mode (spatial: planar/volumetric/stage; unity:
+                     PICOSpatial/OpenXR/PICOXR)
+  --sdk <text>       SDK version override
+  --force            Allow overwriting an existing Gradle project in the output directory
+  -h, --help         Display this message
+
+Examples:
+  # Panel-first app with mostly 2D UI
+  $ pico-cli project create --template planar --name demo --package com.example.demo
+  # 3D model viewer or product showcase
+  $ pico-cli project create --template volumetric --dir apps/demo --name demo --package
+    com.example.demo
+  # Immersive or room-scale spatial experience
+  $ pico-cli project create --template stage --name demo --package com.example.demo --force
+  # PICO Spatial Unity app
+  $ pico-cli project create --sdk-type unity --template PICOSpatial --name demo --package
+    com.example.demo
+  # OpenXR runtime app
+  $ pico-cli project create --sdk-type unity --template OpenXR --name demo --package
+    com.example.demo
+  # PICO XR runtime app
+  $ pico-cli project create --sdk-type unity --template PICOXR --dir apps/demo --name demo --package
+    com.example.demo

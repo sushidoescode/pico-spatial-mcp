@@ -1,0 +1,98 @@
+[
+  {
+    "name": "package/LICENSE",
+    "size": 485
+  },
+  {
+    "name": "package/vendor/primer-cli/primer-cli-0.0.2-alpha.4.tar.gz",
+    "size": 18596720
+  },
+  {
+    "name": "package/dist/chunk-3YPY6V4Y.js",
+    "size": 707
+  },
+  {
+    "name": "package/dist/chunk-7BFDMO3Z.js",
+    "size": 16390
+  },
+  {
+    "name": "package/dist/chunk-7K7WZEGR.js",
+    "size": 14924
+  },
+  {
+    "name": "package/dist/chunk-F77WARQK.js",
+    "size": 15890
+  },
+  {
+    "name": "package/dist/chunk-KYUN3NGW.js",
+    "size": 4985
+  },
+  {
+    "name": "package/dist/chunk-MPHQDRS4.js",
+    "size": 6421
+  },
+  {
+    "name": "package/dist/chunk-UB5A7PRP.js",
+    "size": 2457
+  },
+  {
+    "name": "package/dist/graphify-BLRYRMTJ.js",
+    "size": 5790
+  },
+  {
+    "name": "package/dist/index.js",
+    "size": 441051
+  },
+  {
+    "name": "package/dist/install-XX2IZX3O.js",
+    "size": 582
+  },
+  {
+    "name": "package/dist/internal-7YC7NCGB.js",
+    "size": 21191
+  },
+  {
+    "name": "package/dist/public-KDCBOK5V.js",
+    "size": 1273
+  },
+  {
+    "name": "package/dist/tools-VKNGR2TV.js",
+    "size": 876
+  },
+  {
+    "name": "package/dist/unity-45TOYVS2.js",
+    "size": 573
+  },
+  {
+    "name": "package/dist/uv-J6VLN7UQ.js",
+    "size": 587
+  },
+  {
+    "name": "package/package.json",
+    "size": 759
+  },
+  {
+    "name": "package/README.md",
+    "size": 1975
+  },
+  {
+    "name": "package/scripts/migrate-agent-vault-metadata.mjs",
+    "size": 5866
+  },
+  {
+    "name": "package/vendor/profiler-cli/pspp-profiler-cli-0.1.0.tgz",
+    "size": 84558
+  },
+  {
+    "name": "package/dist/index.d.ts",
+    "size": 500
+  },
+  {
+    "name": "package/ThirdPartyNoticeText.txt",
+    "size": 175839
+  },
+  {
+    "name": "package/vendor/primer-cli/primer-cli-0.0.2-alpha.4.zip",
+    "size": 18576898
+  }
+]

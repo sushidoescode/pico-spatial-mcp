@@ -1,0 +1,18 @@
+{
+  "label": "0.5.0 spatialml pipeline verify --help",
+  "argv": [
+    "spatialml",
+    "pipeline",
+    "verify",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:09.292Z",
+  "endedAt": "2026-09-15T09:12:09.398Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "2b92b28a17a736d76ea68906969ee3fc357d38c7298ef07beeac0c60b3912c0b",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

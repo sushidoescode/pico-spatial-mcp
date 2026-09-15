@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 emulator delete-image --help",
+  "argv": [
+    "emulator",
+    "delete-image",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:52.044Z",
+  "endedAt": "2026-09-15T09:11:52.142Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "e9f2c3685a13fdbe908503c35f36122dadf9ce3ac2ad811f06a5b84467187fbd",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

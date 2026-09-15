@@ -1,0 +1,17 @@
+Description:
+Diagnose, audit, and update agent plugins
+
+Usage:
+  $ pico-cli plugin <command> [options]
+
+Commands:
+  audit      Create a local support bundle with authorized transcript and plugin usage audit
+  doctor     Read-only diagnosis of env-recorded plugin resources and release freshness
+  install    Install or repair Agent Host plugin resources in an environment already initialized by
+             setup
+  uninstall  Uninstall plugins and resources recorded in an explicit setup scope
+  update     Update plugins already recorded by setup; does not initialize dependencies or switch
+             platforms
+
+Options:
+  -h, --help  Show this message and exit.

@@ -1,0 +1,9 @@
+Description:
+Pull a file or directory from the preferred current device
+
+Usage:
+  $ pico-cli files pull <remote> [local]
+
+Options:
+  -d, --device <device>  Target device id
+  -h, --help             Display this message

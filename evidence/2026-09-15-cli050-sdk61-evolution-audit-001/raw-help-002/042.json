@@ -1,0 +1,18 @@
+{
+  "label": "0.4.4 editor sync component --help",
+  "argv": [
+    "editor",
+    "sync",
+    "component",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:51.653Z",
+  "endedAt": "2026-09-15T09:11:51.752Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "ecda5a340afcb78a653041945a424165a89d856f24576ce6bb3272cf2b29d48c",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 plugin doctor --help",
+  "argv": [
+    "plugin",
+    "doctor",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:07.260Z",
+  "endedAt": "2026-09-15T09:12:07.366Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "4c474566cfc98042d3b94f6bab96432aafeecc14c2ebceb7073fd6cf926e88e0",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

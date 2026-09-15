@@ -1,0 +1,9 @@
+Usage:
+  pico-cli project <command> [options]
+
+Commands:
+  context doctor  Check project-local agent context routing
+  create          Create a new Spatial SDK project
+
+Options:
+  -h, --help  Show this message and exit.

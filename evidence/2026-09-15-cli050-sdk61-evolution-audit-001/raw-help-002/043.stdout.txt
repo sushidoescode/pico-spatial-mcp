@@ -1,0 +1,6 @@
+Usage:
+  $ pico-cli editor uninstall
+
+Options:
+  -y, --yes   Assume yes for prompts (default: false)
+  -h, --help  Display this message 

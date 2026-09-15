@@ -1,0 +1,16 @@
+{
+  "label": "0.5.0 web --help",
+  "argv": [
+    "web",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:01.449Z",
+  "endedAt": "2026-09-15T09:12:01.556Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "497b3bd3e4bfa6e8952eb89f8e090e0cd12f362da7e6d964500161661e363f55",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

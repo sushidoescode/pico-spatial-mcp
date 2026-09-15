@@ -1,0 +1,17 @@
+Description:
+Connect to and inspect PICO devices
+
+Usage:
+  $ pico-cli device <command> [options]
+
+Commands:
+  battery               Show battery information for the preferred current device
+  connect <address>     Connect to a device over WiFi
+  disconnect [address]  Disconnect from a device over WiFi
+  info                  Show information about the preferred current device
+  list                  List connected devices
+  props                 Show system properties for the preferred current device
+  shell <cmd>           Execute a raw ADB shell command
+
+Options:
+  -h, --help  Show this message and exit.

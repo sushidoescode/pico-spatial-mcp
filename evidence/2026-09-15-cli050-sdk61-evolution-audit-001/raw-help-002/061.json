@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 files stat --help",
+  "argv": [
+    "files",
+    "stat",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:53.524Z",
+  "endedAt": "2026-09-15T09:11:53.622Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "8f1e14fb8545a6636daddcd2a193c6c00ad211ea47978b2f485f0669e236811f",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

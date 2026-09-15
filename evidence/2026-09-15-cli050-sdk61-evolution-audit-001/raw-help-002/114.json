@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 editor uninstall --help",
+  "argv": [
+    "editor",
+    "uninstall",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:04.198Z",
+  "endedAt": "2026-09-15T09:12:04.305Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "313df649f116f6e80de512ff3cd6b39f1db11b5fb0fa4ab6be067d045bd520d6",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

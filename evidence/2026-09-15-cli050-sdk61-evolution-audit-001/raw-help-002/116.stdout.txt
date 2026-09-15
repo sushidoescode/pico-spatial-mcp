@@ -1,0 +1,17 @@
+Description:
+Delete CLI-created PICO emulator AVDs from the local host
+
+Usage:
+  $ pico-cli emulator delete
+
+Options:
+  --format <format>  Output format (plain | json) (default: plain)
+  --avd <name>       Delete a specific CLI-created PICO AVD
+  --all              Delete all CLI-created PICO AVDs
+  -y, --yes          Assume yes for prompts
+  -h, --help         Display this message
+
+Examples:
+  $ pico-cli emulator delete --avd Pico_Emulator_0_11
+  $ pico-cli emulator delete --all --yes
+  $ pico-cli emulator delete --format json --all --yes

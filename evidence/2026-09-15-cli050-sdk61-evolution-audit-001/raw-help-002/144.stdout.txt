@@ -1,0 +1,30 @@
+Description:
+Install or repair Agent Host plugin resources in an environment already initialized by setup
+
+Usage:
+  $ pico-cli plugin install
+
+Options:
+  --agent-tool <tools...>  [required] Agent Hosts to install; all targets every supported Host and
+                           must be used alone (all | claude-code | codex | cursor | copilot |
+                           traecli)
+  --scope <scope>          [required] Plugin resource scope (global | local)
+  --platform <platform>    [required] Desired platform for every selected Host; same-platform
+                           records are repaired and different-platform records are blocked (spatial
+                           | unity)
+  --project <path>         Target application project root for AGENTS context; also contains local
+                           resources/state in local scope and defaults to the exact current
+                           directory
+  --format <format>        Output format (plain | json) (default: plain)
+  -y, --yes                Skip confirmation before installing or repairing plugin resources
+  -h, --help               Display this message
+
+Examples:
+  $ pico-cli plugin install --scope global --agent-tool codex --platform spatial
+  $ pico-cli plugin install --scope global --agent-tool codex traecli --platform spatial
+  $ pico-cli plugin install --scope global --project /absolute/path/to/project --agent-tool codex
+    --platform spatial
+  $ pico-cli plugin install --scope global --agent-tool all --platform spatial --yes
+  $ pico-cli plugin install --scope local --agent-tool traecli --platform spatial --yes
+  $ pico-cli plugin install --scope local --project /absolute/path/to/project --agent-tool all
+    --platform unity --yes

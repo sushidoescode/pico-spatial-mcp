@@ -1,0 +1,7 @@
+Usage:
+  $ pico-cli device list
+
+Options:
+  -l, --long         Show extended device info (default: false)
+  --format <format>  Output format (table, json, plain) (default: table)
+  -h, --help         Display this message 

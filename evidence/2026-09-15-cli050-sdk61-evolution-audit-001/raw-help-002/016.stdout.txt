@@ -1,0 +1,13 @@
+Usage:
+  $ pico-cli update
+
+Options:
+  --check            Check for an update without modifying the installation (default: false)
+  -y, --yes          Skip confirmation before updating (default: false)
+  --format <format>  Output format (plain, json) (default: plain)
+  -h, --help         Display this message 
+
+Examples:
+  $ pico-cli update --check
+  $ pico-cli update --yes
+  $ pico-cli update --check --format json

@@ -1,0 +1,15 @@
+Usage:
+  pico-cli app <command> [options]
+
+Commands:
+  info <package>         Show information for an installed app on the preferred current device
+  install <path>         Install an APK to the preferred current device
+  launch <package>       Launch an app on the preferred current device
+  list                   List installed packages on the preferred current device
+  logcat                 View logs on the preferred current device
+  stop <package>         Stop an app on the preferred current device
+  uninstall <package>    Uninstall an app from the preferred current device
+  watch-crash <package>  Monitor a package for crashes and surface key exception logs
+
+Options:
+  -h, --help  Show this message and exit.

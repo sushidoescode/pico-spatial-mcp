@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 emulator create --help",
+  "argv": [
+    "emulator",
+    "create",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:51.851Z",
+  "endedAt": "2026-09-15T09:11:51.946Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "52e091466a545c9c2d596bca8cfd42b55d6a15d4a975c6c0d2b2b43cbf051386",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

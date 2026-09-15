@@ -1,0 +1,18 @@
+Description:
+Run pico-cli environment diagnostics and supported targeted fixes
+
+Usage:
+  $ pico-cli doctor
+
+Options:
+  --format <format>        Output format (plain | json) (default: plain)
+  --platform <platform>    Development platform to inspect (spatial, unity) (default: spatial)
+  --agent-tool <tools...>  Agent Hosts to inspect in Host-dependent checks (all | claude-code |
+                           codex | cursor | copilot | traecli)
+  --fix                    Run supported targeted fixes for error checks
+  -h, --help               Display this message
+
+Examples:
+  $ pico-cli doctor
+  $ pico-cli doctor --format json
+  $ pico-cli doctor --fix

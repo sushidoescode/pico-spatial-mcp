@@ -1,0 +1,10 @@
+Description:
+List installed packages on the preferred current device
+
+Usage:
+  $ pico-cli app list
+
+Options:
+  -d, --device <device>  Target device id (overrides automatic selection)
+  --format <format>      Output format (plain | json) (default: plain)
+  -h, --help             Display this message

@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 editor pack --help",
+  "argv": [
+    "editor",
+    "pack",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:51.262Z",
+  "endedAt": "2026-09-15T09:11:51.358Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "dc2e42de112aff10fa12330607c09abe2f93d2a95b5413d265abe3112e560bc3",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

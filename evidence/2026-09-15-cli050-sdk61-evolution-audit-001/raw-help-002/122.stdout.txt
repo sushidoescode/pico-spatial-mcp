@@ -1,0 +1,13 @@
+Description:
+Prepare PICO Emulator development prerequisites
+
+Usage:
+  $ pico-cli emulator setup
+
+Options:
+  --format <format>  Output format (plain | json) (default: plain)
+  -h, --help         Display this message
+
+Examples:
+  $ pico-cli emulator setup
+  $ pico-cli emulator setup --format json

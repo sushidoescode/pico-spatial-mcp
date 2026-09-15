@@ -1,0 +1,14 @@
+Description:
+Configure an existing Native OpenXR, Unity, or Kotlin project for SpatialML
+
+Usage:
+  $ pico-cli spatialml setup [--project <path>] [--format plain|json]
+
+Options:
+  --project <path>   Native OpenXR, Unity, or Kotlin Spatial SDK project directory (default: .)
+  --format <format>  Output format (plain | json) (default: plain)
+  -h, --help         Display this message
+
+Examples:
+  $ pico-cli spatialml setup
+  $ pico-cli spatialml setup --project apps/demo --format json

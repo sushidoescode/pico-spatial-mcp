@@ -1,0 +1,5 @@
+Usage:
+  $ pico-cli editor bootstrap
+
+Options:
+  -h, --help  Display this message 

@@ -1,0 +1,10 @@
+Description:
+Create a directory on the preferred current device
+
+Usage:
+  $ pico-cli files mkdir <remote>
+
+Options:
+  -d, --device <device>  Target device id
+  -p, --parents          Create parent directories as needed
+  -h, --help             Display this message

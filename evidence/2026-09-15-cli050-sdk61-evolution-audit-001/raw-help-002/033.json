@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 device props --help",
+  "argv": [
+    "device",
+    "props",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:50.757Z",
+  "endedAt": "2026-09-15T09:11:50.854Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "b070d4eec6c6713f3f130a0970e3c2a68986242caa240ee440b9c484b272d69c",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

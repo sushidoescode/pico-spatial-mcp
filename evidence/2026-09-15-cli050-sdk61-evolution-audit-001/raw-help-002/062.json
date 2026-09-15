@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 mcp dev-knowledge --help",
+  "argv": [
+    "mcp",
+    "dev-knowledge",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:53.622Z",
+  "endedAt": "2026-09-15T09:11:53.721Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "33b0e8a01533cfd426d699e41f003193a45efa03e99af617c759b8bf6625ce55",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

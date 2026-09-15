@@ -1,0 +1,15 @@
+Description:
+Run performance diagnostics and trace workflows
+
+Usage:
+  $ pico-cli perf [global-options] <command>
+
+Commands:
+  daemon   Manage the daemon process
+  session  Manage sessions
+  doctor   Check and install profiler dependencies
+  live     Collect live performance data
+  trace    Record, decode, query, and analyze performance traces
+
+Options:
+  -h, --help  display help for command

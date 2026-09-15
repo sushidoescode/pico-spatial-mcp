@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 editor doctor --help",
+  "argv": [
+    "editor",
+    "doctor",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:51.050Z",
+  "endedAt": "2026-09-15T09:11:51.153Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "e1a665a8d832a695446b77ea1be29bcc665b956105d33d66ba81b315679a5602",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

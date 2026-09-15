@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 editor bootstrap --help",
+  "argv": [
+    "editor",
+    "bootstrap",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:03.355Z",
+  "endedAt": "2026-09-15T09:12:03.459Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "c9c3275dd64caa25d5317215eb7e8e98c99b284e0d178a5da866697c55a1abce",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,12 @@
+Description:
+Inspect and visualize LiteRT models with pyspatialml
+
+Usage:
+  $ pico-cli spatialml model <command> [options]
+
+Commands:
+  inspect <model>    Inspect a LiteRT model with pyspatialml
+  visualize <model>  Visualize a LiteRT model with pyspatialml
+
+Options:
+  -h, --help  Show this message and exit.

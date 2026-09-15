@@ -1,0 +1,16 @@
+{
+  "label": "0.5.0 emulator --help",
+  "argv": [
+    "emulator",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:00.393Z",
+  "endedAt": "2026-09-15T09:12:00.500Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "d885fad4cf49a29fad0dcd149fabd026555fa97724bd5cd8b12543e065a71b04",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

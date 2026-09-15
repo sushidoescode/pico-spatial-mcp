@@ -1,0 +1,14 @@
+Description:
+Verify a SpatialML Pipeline Zoo package with pyspatialml
+
+Usage:
+  $ pico-cli spatialml pipeline verify [--package <path>] [--format plain|json]
+
+Options:
+  --package <path>   SpatialML package directory or zip path (default: .)
+  --format <format>  Output format (plain | json) (default: plain)
+  -h, --help         Display this message
+
+Examples:
+  $ pico-cli spatialml pipeline verify
+  $ pico-cli spatialml pipeline verify --package Assets/SpatialMLPipelineZoo/pose --format json

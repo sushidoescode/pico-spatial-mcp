@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 editor install --help",
+  "argv": [
+    "editor",
+    "install",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:03.572Z",
+  "endedAt": "2026-09-15T09:12:03.681Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "d0fe05ab9a059e6f801fca3217e3d8bff87fe50f53f1e1b3f761aa70ef50f003",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

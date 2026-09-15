@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 app install --help",
+  "argv": [
+    "app",
+    "install",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:01.660Z",
+  "endedAt": "2026-09-15T09:12:01.764Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "73b3edccaa6b125b359bc973e1fa7f07e31f3a46d9641c6036b57246d1700c17",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,115 @@
+{
+  "method": "Static Python tarfile in-memory reads only. UTF-8 byte offsets zero-based, lines one-based. No package execution.",
+  "excerpts": [
+    {
+      "id": "TRACE_RECORD_ARGS",
+      "member": "package/vendor/profiler-cli/pspp-profiler-cli-0.2.0.tgz!package/dist/index.js",
+      "lineStart": 2,
+      "lineEnd": 2,
+      "byteStart": 129450,
+      "byteEndExclusive": 130200,
+      "memberSha256": "ff9c9115f7bf3c5f0424df2234432d6b3cf80ece52380431aeeb801f8cf1921e",
+      "excerptSha256": "90d54334d6d51e6e7537c5cb46e6ed1a6f16513e59a8849063c4cbbc25a2bb84",
+      "excerpt": "tom .pbtx file\",\"default\").option(\"--adb <path>\",\"Path to adb executable (optional, overrides ADB_PATH/PROFILER_ADB/PATH)\").option(\"-d, --device <id>\",\"Target device ID\").option(\"-a, --package <package>\",\"Target application package name\").option(\"--app <package>\",\"Deprecated alias for --package\").option(\"-t, --duration <seconds>\",\"Recording duration in seconds\",\"60\").option(\"--detach\",\"Start daemon-managed detached recording and return immediately\").option(\"--port <port>\",\"Daemon port for --detach mode\",\"9500\").option(\"-o, --output <path>\",\"Output trace file path\",\"./trace.perfetto-trace\")}}var C=__nccwpck_require__(612);var F=__nccwpck_require__.n(C);var O=__nccwpck_require__(5);var k=__nccwpck_require__.n(O);const R={\"linux-amd64\":{fileNa"
+    },
+    {
+      "id": "TRACE_DECODE_ARGS",
+      "member": "package/vendor/profiler-cli/pspp-profiler-cli-0.2.0.tgz!package/dist/index.js",
+      "lineStart": 2,
+      "lineEnd": 2,
+      "byteStart": 133289,
+      "byteEndExclusive": 134789,
+      "memberSha256": "ff9c9115f7bf3c5f0424df2234432d6b3cf80ece52380431aeeb801f8cf1921e",
+      "excerptSha256": "cdcb46677d25124f53b3891f1231240b82feb575f93d84907375e7c735b5cfa7",
+      "excerpt": "class TraceDecodeAction extends BaseAction{constructor(){super(...arguments);this.definition={name:\"decode\",description:\"Convert perfetto-trace file to json/systrace using traceconv\",acceptFileArg:true,fileArgDescription:\"Path to trace file (.perfetto-trace)\",fileArgOptional:true};this.params=[{name:\"session\",type:\"string\",required:false,description:\"Session id (use traceFile associated with the session)\",aliases:[\"--session\"]},{name:\"port\",type:\"number\",required:false,default:9500,description:\"Daemon port (required when using --session)\",aliases:[\"-p\",\"--port\"]},{name:\"format\",type:\"string\",required:false,default:\"json\",description:\"Output format: json | systrace | ctrace\",aliases:[\"-f\",\"--format\"]},{name:\"output\",type:\"string\",required:false,description:\"Output file path (default: stdout)\",aliases:[\"-o\",\"--output\"]},{name:\"traceconv\",type:\"string\",required:false,description:\"Path to traceconv binary (optional; will auto-download to perfetto cache by default)\",aliases:[\"--traceconv\"]},{name:\"truncate\",type:\"string\",required:false,description:\"Truncate trace: start | end\",aliases:[\"--truncate\"]},{name:\"fullSort\",type:\"boolean\",required:false,default:false,description:\"Force full trace sorting (traceconv --full-sort)\",aliases:[\"--full-sort\"]}]}async execute(e){const{actionParams:t,logger:r}=e;const n=t.session;const s=t.port||9500;const i=t.format||\"json\";const a=t.output;const o=t.traceconv;const c=t.truncate;const l=Boolean(t.fullSort);const u=t._;const p=u?.[0];if(n&&p){ret"
+    },
+    {
+      "id": "TRACE_LOAD_HUMAN",
+      "member": "package/vendor/profiler-cli/pspp-profiler-cli-0.2.0.tgz!package/dist/index.js",
+      "lineStart": 2,
+      "lineEnd": 2,
+      "byteStart": 104222,
+      "byteEndExclusive": 104627,
+      "memberSha256": "ff9c9115f7bf3c5f0424df2234432d6b3cf80ece52380431aeeb801f8cf1921e",
+      "excerptSha256": "e6e48c3d047b56dcb6893e73e56a5ceaca21ba4d87c0d469c156d3b33f04e5ee",
+      "excerpt": "function renderTraceLoad(e){const t=e;const r=[`[TraceLoad] Session: ${t.sessionId}`,`[TraceLoad] RPC endpoint: ${t.rpcEndpoint}`];if(t.traceFile){r.push(`[TraceLoad] Trace file: ${t.traceFile}`)}r.push(\"[TraceLoad] Next:\",`  perf trace query --session ${t.sessionId} --sql \"select 1;\"`,`  perf session close ${t.sessionId}`);return r.join(\"\\n\")}function renderTraceAnalysisTable(e){const t=e;const r=[`[T"
+    },
+    {
+      "id": "TRACE_QUERY_SCHEMA",
+      "member": "package/vendor/profiler-cli/pspp-profiler-cli-0.2.0.tgz!package/dist/index.js",
+      "lineStart": 2,
+      "lineEnd": 2,
+      "byteStart": 139888,
+      "byteEndExclusive": 140838,
+      "memberSha256": "ff9c9115f7bf3c5f0424df2234432d6b3cf80ece52380431aeeb801f8cf1921e",
+      "excerptSha256": "6f69f92df9d52c6544a95b8e5fcf60bd0a47b0fb4777cc70d3e22fb5b995d271",
+      "excerpt": "class TraceQueryAction extends BaseAction{constructor(){super(...arguments);this.definition={name:\"query\",description:\"Run SQL query via trace session (sessionId required)\",outputMode:\"envelope\",acceptFileArg:false};this.params=[{name:\"session\",type:\"string\",required:true,description:\"Target session id\",aliases:[\"--session\"]},{name:\"sql\",type:\"string\",required:false,description:\"SQL to execute\",aliases:[\"--sql\"]},{name:\"sqlFile\",type:\"string\",required:false,description:\"Path to SQL file to execute\",aliases:[\"--sql-file\"]},{name:\"execute\",type:\"boolean\",required:false,default:false,description:\"Use /execute instead of /query\",aliases:[\"--execute\"]},{name:\"port\",type:\"number\",required:false,default:9500,description:\"Daemon port\",aliases:[\"-p\",\"--port\"]}]}async execute(e){const{actionParams:t,logger:r}=e;const debug=(...e)=>{if(process.env.PROFILER_DEBUG===\"1\"){r.log(\"[DEBUG][TraceQuery]\",...e)}};const n=t.session||\"\";const s=t.sql||\"\";con"
+    },
+    {
+      "id": "TRACE_QUERY_ROWS",
+      "member": "package/vendor/profiler-cli/pspp-profiler-cli-0.2.0.tgz!package/dist/index.js",
+      "lineStart": 2,
+      "lineEnd": 2,
+      "byteStart": 141805,
+      "byteEndExclusive": 142135,
+      "memberSha256": "ff9c9115f7bf3c5f0424df2234432d6b3cf80ece52380431aeeb801f8cf1921e",
+      "excerptSha256": "e7987096c4d1c23eb0d4b06b788b01774cc853a99f083e3b44eb695a43062a5e",
+      "excerpt": "({type:I.Vy.Execute,sql:c});return this.success({sessionId:n,rpcEndpoint:t.rpcEndpoint,executed:true})}debug(\"engine.query\");const s=await r.run({type:I.Vy.Query,sql:c});return this.success({sessionId:n,rpcEndpoint:t.rpcEndpoint,rows:s})}catch(e){const t=e instanceof Error?e.message:String(e);r.error(`[TraceQuery] Failed: ${t}`)"
+    },
+    {
+      "id": "TRACE_JSON_ENVELOPE",
+      "member": "package/vendor/profiler-cli/pspp-profiler-cli-0.2.0.tgz!package/dist/index.js",
+      "lineStart": 2,
+      "lineEnd": 2,
+      "byteStart": 108380,
+      "byteEndExclusive": 109440,
+      "memberSha256": "ff9c9115f7bf3c5f0424df2234432d6b3cf80ece52380431aeeb801f8cf1921e",
+      "excerptSha256": "de2da7d5fec30bb602fdd1b7a92caf21f65e3fb51d1d33a21ffa981c9c10763a",
+      "excerpt": "function buildJsonEnvelope(e,t){return{success:Boolean(t.success),exitCode:resolveProcessExitCode(t),resource:e.resourceName,action:e.actionName,data:t.data??null,error:t.error??null,formattedOutput:t.formattedOutput??null}}function shouldEmitEnvelope(e){return e.commonParams.envelope===true||e.outputMode===\"envelope\"}function writeOutput(e,t){const r=shouldEmitEnvelope(e);if(r){const r=buildJsonEnvelope(e,t);const n=process.stdout.isTTY?2:0;process.stdout.write(`${JSON.stringify(r,null,n)}\\n`)}else{if(t.formattedOutput){process.stdout.write(`${t.formattedOutput}\\n`)}else if(t.success&&t.data!==undefined){const r=renderHumanOutput(e,t);if(r!==undefined){process.stdout.write(`${r}\\n`)}else if(typeof t.data===\"object\"){process.stdout.write(`${JSON.stringify(t.data,null,2)}\\n`)}else{process.stdout.write(`${t.data}\\n`)}}if(!t.success){process.stderr.write(`Error: ${t.error??\"Unknown error\"}\\n`)}}}function buildActionContextFromCommanderArgs(e){const{resourceName:t,actionName:r,outputMode:n,args:s,rawArgs:i=process.argv,cwd:a=process.cwd(),logger:o}"
+    },
+    {
+      "id": "EMULATOR_STATUS_ARGS",
+      "member": "package/dist/index.js",
+      "lineStart": 81,
+      "lineEnd": 81,
+      "byteStart": 340607,
+      "byteEndExclusive": 341398,
+      "memberSha256": "a96a15b934a9c40b6f43a8ba6b70d12cc7bb341a1e353cb0f8df9e73cb78aada",
+      "excerptSha256": "07018081dab7b87a2da911dbf0f471ddf86c4b251f03da30807c40b1895986b9",
+      "excerpt": "{name:\"emulator status\",description:\"Detect emulator status via process and adb\",alias:[\"emulator:status\"],examples:[\"emulator status\",\"emulator status --adb-device emulator-5554\",\"emulator status --format json\"],options:[{name:\"--adb-device <id>\",description:\"Target adb device id (e.g. emulator-5554)\"},{name:\"--format <format>\",description:\"Output format (plain, json)\",choices:[\"plain\",\"json\"],default:\"plain\"}],action:async(e,t)=>{let[o]=t;await XO({adbDeviceId:o.adbDevice?String(o.adbDevice):void 0,format:String(o.format)})},contract:{id:\"emulator.status\",group:\"emulator\",handler:\"emulatorStatusCommand\",formats:[\"plain\",\"json\"],defaultFormat:\"plain\",outputModes:[\"text\",\"json\"],sideEffects:[\"host-read\",\"device-read\"],jsonShape:\"tool-result\",testCoverage:{json:\"required\"}}},{name:"
+    },
+    {
+      "id": "EMULATOR_STATUS_RESULT",
+      "member": "package/dist/index.js",
+      "lineStart": 85,
+      "lineEnd": 85,
+      "byteStart": 363753,
+      "byteEndExclusive": 364438,
+      "memberSha256": "a96a15b934a9c40b6f43a8ba6b70d12cc7bb341a1e353cb0f8df9e73cb78aada",
+      "excerptSha256": "39977ff3cb29973abb5d831a33ada63294d6ed4604b796f8cc895a1ef83beece",
+      "excerpt": "=void 0}}A(n.processRunning||n.adbOnline?\"SUCCESS\":\"PARTIAL\"),v({toolName:\"emulator.status\",status:n.processRunning||n.adbOnline?\"SUCCESS\":\"PARTIAL\",summary:n.processRunning||n.adbOnline?\"Collected emulator runtime status.\":\"No running emulator process or online adb target was detected.\",data:{...n,guestProperties:i},meta:{candidateCount:n.candidates.length}})}catch(n){v({toolName:\"emulator.status\",status:\"FAILED\",summary:G(n),data:null,errors:[{code:We(n),message:G(n)}]})}return}let o=await Wa(t||void 0);A(o.processRunning||o.adbOnline?\"SUCCESS\":\"PARTIAL\");let r;if(o.adbOnline&&o.adbDeviceId){let n=new W(o.adbDeviceId);try{r={roBootQemu:(await n.getProp(\"ro.boot.qemu\")).trim("
+    },
+    {
+      "id": "EMULATOR_INSTALL_ARGS",
+      "member": "package/dist/index.js",
+      "lineStart": 81,
+      "lineEnd": 81,
+      "byteStart": 339179,
+      "byteEndExclusive": 340640,
+      "memberSha256": "a96a15b934a9c40b6f43a8ba6b70d12cc7bb341a1e353cb0f8df9e73cb78aada",
+      "excerptSha256": "47df5255a9818fc9b5aac282b9e5f21c2fe6b005d24d63c0c330f3434474ee5e",
+      "excerpt": "{name:\"emulator install [bundleVersion]\",description:\"Download or update the PICO emulator bundle without creating an AVD\",alias:[\"emulator:install\"],examples:[\"emulator install\",\"emulator install x.x.x\",\"emulator install --source global\",\"emulator install --format json\"],options:[{name:\"--format <format>\",description:\"Output format (plain, json)\",choices:[\"plain\",\"json\"],default:\"plain\"},{name:\"--source <source>\",description:`Download source (${Ma()})`,choices:Un(),default:\"auto\"},{name:\"--config-url <url>\",description:\"Override remote sdk_config URL for emulator downloads\"},{name:\"--artifact-url <url>\",description:\"Download emulator bundle directly from this archive URL\"},{name:\"--artifact-checksum <sha1>\",description:\"Optional SHA-1 checksum for --artifact-url\"},{name:\"-y, --yes\",description:\"Assume yes for prompts\",default:!1}],action:async(e,t)=>{let[o,r]=t;await ZO({format:String(r.format),downloadSource:r.source,version:o?String(o):void 0,configUrl:r.configUrl?String(r.configUrl):void 0,artifactUrl:r.artifactUrl?String(r.artifactUrl):void 0,artifactChecksum:r.artifactChecksum?String(r.artifactChecksum):void 0,yes:!!r.yes,signal:e.signal})},contract:{id:\"emulator.install\",group:\"emulator\",handler:\"emulatorInstallCommand\",formats:[\"plain\",\"json\"],defaultFormat:\"plain\",outputModes:[\"text\",\"json\"],sideEffects:[\"host-read\",\"host-write\",\"network\"],jsonShape:\"tool-result\",testCoverage:{json:\"required\"}}},{name:\"emulator status\",descripti"
+    },
+    {
+      "id": "CLI_RESULT_SCHEMA",
+      "member": "package/dist/chunk-IRAF5R7A.js",
+      "lineStart": 12,
+      "lineEnd": 12,
+      "byteStart": 529,
+      "byteEndExclusive": 1099,
+      "memberSha256": "9b557a1f7dcc6de7c3e6f8f06aae36fb2672d24227b03e1d0527ee9807d8fc1e",
+      "excerptSha256": "7759590726a9da7688060211faec995cc10fb0df4e3c98ce18bb8422ff6aaa6f",
+      "excerpt": "var m={SUCCESS:0,FAILED:3,PARTIAL:4},u=new s,i=new s;async function T(e){let t={exitCode:0};await u.run(t,e),t.exitCode!==0&&(process.exitCode=t.exitCode)}function R(e){return i.run(!0,e)}function x(){return i.getStore()===!0}function d(e){let t=u.getStore();t&&(t.exitCode=m[e])}function S(e){console.log(JSON.stringify({tool_name:e.toolName,tool_status:e.status,summary:e.summary,data:e.data,errors:e.errors||[],resources:e.resources||[],meta:{format:\"json\",truncated:!1,...e.meta||{}}},null,2)),d(e.status)}function a(e){if(!e?.aborted)return;if(e.reason instanceof E"
+    }
+  ]
+}

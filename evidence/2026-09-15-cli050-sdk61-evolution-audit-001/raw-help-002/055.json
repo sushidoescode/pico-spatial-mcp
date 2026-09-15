@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 files cat --help",
+  "argv": [
+    "files",
+    "cat",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:52.934Z",
+  "endedAt": "2026-09-15T09:11:53.035Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "158d0bfb2ec3df4f57870e2653cde1b77827b2ec6566d24d4cf0b03c76a95877",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

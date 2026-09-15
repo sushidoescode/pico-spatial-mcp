@@ -1,0 +1,13 @@
+Description:
+Search PICO Pipeline Zoo packages with model-card summaries
+
+Usage:
+  $ pico-cli spatialml pipeline search <query> [--format plain|json]
+
+Options:
+  --format <format>  Output format (plain | json) (default: plain)
+  -h, --help         Display this message
+
+Examples:
+  $ pico-cli spatialml pipeline search pose
+  $ pico-cli spatialml pipeline search face --format json

@@ -1,0 +1,47 @@
+   ⢀⣤⣶⣾⣿⣿⣿⣷⣶⣤⡀
+ ⢀⣴⣿⣿⣋⡉   ⠉⠙⢿⣿⣦⡀      ⣤⣤⣤⣤⣤⣤⣀⡀   ⣤⣤    ⢀⣠⣤⣤⣀⡀   ⣀⣠⣤⣤⣀
+ ⣾⣿⡿⠿⠿⠿⣿⣦⣄   ⠙⣿⣷      ⣿⣿⠛⠛⠛⠛⠿⣿⣦  ⣿⣿  ⢠⣾⣿⠟⠛⠛⠿⠟ ⣠⣾⡿⠟⠛⠻⢿⣷⣆
+⢸⣿⡏ ⢀⣤  ⠙⣿⣧⡀  ⢹⣿⡇     ⣿⣿     ⣹⣿⠆ ⣿⣿  ⣿⣿⠁     ⢠⣿⡟     ⢻⣿⡆
+⢸⣿⣇ ⠈⠛   ⠈⠻⣿⣄ ⣸⣿⡇     ⣿⣿⣶⣶⣶⣶⣾⣿⠟  ⣿⣿  ⣿⣿⡀     ⠘⣿⣧     ⣼⣿⠇
+ ⢿⣿⣄       ⠙⢿⣷⣿⡿      ⣿⣿⠉⠉⠉⠉⠉    ⣿⣿  ⠘⢿⣿⣦⣤⣤⣶⣦ ⠙⢿⣷⣦⣤⣴⣾⡿⠋
+ ⠈⠻⣿⣷⣄⣀   ⣀⣠⣾⣿⠟⠁      ⠛⠛         ⠛⠛    ⠈⠙⠛⠛⠉⠁   ⠉⠙⠛⠛⠉
+   ⠈⠛⠿⢿⣿⣿⣿⡿⠿⠛⠁
+
+PICO CLI · Spatial development toolkit
+Build, run, and troubleshoot PICO Spatial apps with confidence
+One command line for project setup, app workflows, and environment diagnostics.
+
+Usage:
+  $ pico-cli [command] [options]
+
+Quick start:
+  pico-cli setup           Required once for every new project
+  pico-cli doctor [--fix]  Run live checks; --fix repairs supported issues
+
+Core workflows:
+  Create  project templates · editor 3D assets
+  Run     emulator start → app install → app launch
+  Debug   app logcat · capture screenshot · perf trace
+
+Commands:
+  setup      Required once per new project to initialize PICO tooling
+  doctor     Diagnose modules and project readiness; fix supported issues
+  project    Create PICO projects and inspect project context
+  editor     Manage Spatial Editor and package 3D assets
+  emulator   Manage the PICO Emulator lifecycle, setup, and diagnostics
+  device     Connect to and inspect PICO devices
+  app        Install, launch, and inspect apps
+  files      Push, pull, and manage device files
+  capture    Capture screenshots and recordings
+  log        Read logcat output from the current target
+  shell      Run a one-off shell command on the current target
+  perf       Record, query, and inspect performance traces
+  plugin     Diagnose, audit, and update agent plugins
+  knowledge  Install or update PICO development knowledge
+  web        Set up and launch PICO Web apps
+  spatialml  SpatialML setup, pipeline, and model workflows
+  update     Check for and install pico-cli updates
+
+Options:
+  -h, --help     Show this message and exit.
+  -v, --version  Print version information and exit.

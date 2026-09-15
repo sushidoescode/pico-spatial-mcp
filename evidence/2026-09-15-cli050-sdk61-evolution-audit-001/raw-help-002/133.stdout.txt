@@ -1,0 +1,9 @@
+Description:
+Check knowledge server configurations and dependencies
+
+Usage:
+  $ pico-cli knowledge doctor
+
+Options:
+  --format <format>  Output format (plain | json) (default: plain)
+  -h, --help         Display this message

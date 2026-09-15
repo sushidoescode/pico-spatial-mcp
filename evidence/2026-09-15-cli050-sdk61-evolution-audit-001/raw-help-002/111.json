@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 editor status --help",
+  "argv": [
+    "editor",
+    "status",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:03.892Z",
+  "endedAt": "2026-09-15T09:12:03.995Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "75d6c99daaa1919b1184571d59b1dfcc06acd977366d5959522fbc14189f732a",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

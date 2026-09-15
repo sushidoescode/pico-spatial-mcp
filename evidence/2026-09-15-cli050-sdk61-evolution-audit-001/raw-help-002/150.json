@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 spatialml model --help",
+  "argv": [
+    "spatialml",
+    "model",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:08.009Z",
+  "endedAt": "2026-09-15T09:12:08.118Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "14cb335553270b0c92eaa17b0f0bfc18b60041de93ab16c285efb2ffdbf6d0b8",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

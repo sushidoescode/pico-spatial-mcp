@@ -1,0 +1,10 @@
+Description:
+List files on the preferred current device
+
+Usage:
+  $ pico-cli files ls [remote]
+
+Options:
+  -d, --device <device>  Target device id
+  -l, --long             Show detailed listing
+  -h, --help             Display this message

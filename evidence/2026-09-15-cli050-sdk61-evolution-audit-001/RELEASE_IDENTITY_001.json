@@ -1,0 +1,53 @@
+{
+  "startedAtUtc": "2026-09-15T09:03:54.594911+00:00",
+  "completedAtUtc": "2026-09-15T09:04:03.532653+00:00",
+  "registryUrl": "https://registry.npmjs.org/@picoxr%2fpico-cli",
+  "latestAtRead": "0.5.0",
+  "registryBytes": 12516,
+  "registrySha256": "596a281687abbd3640783cf654d0925f132e21dffab846e5b1013f9d525f15f2",
+  "packages": [
+    {
+      "version": "0.4.4",
+      "publishedAt": "2026-08-22T09:15:35.452Z",
+      "dist": {
+        "shasum": "72963b0e7da1e79541d7069651a89c6f560e4b10",
+        "tarball": "https://registry.npmjs.org/@picoxr/pico-cli/-/pico-cli-0.4.4.tgz",
+        "fileCount": 24,
+        "integrity": "sha512-OVRkxDji8sHnmGm3kUMwGPUN07E3yHDbDKHGcSSAO2dkhujsMc4lFTEUwR2MDZB8MSPD4zMNeRdonLTFwNthmg==",
+        "signatures": [
+          {
+            "sig": "MEUCIQC37XKO2u/ajaRUPOI/tm/5IgfJcdwzY61S8VsZqzZUqAIgA3I/pVxY8yWEl/63VSuioHe0tRZuTSwtW4XtHgSQiY8=",
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+          }
+        ],
+        "unpackedSize": 37977297
+      },
+      "saved": "picoxr-pico-cli-0.4.4.tgz",
+      "bytes": 37470411,
+      "sha256": "0eabffe9b6a92c9a96fe61ea38f3213b0971216f0db7c4d19f9da46660ba9524",
+      "integrityVerified": true
+    },
+    {
+      "version": "0.5.0",
+      "publishedAt": "2026-09-10T04:15:42.541Z",
+      "dist": {
+        "integrity": "sha512-+VmUZNlzNkgI5FPV+LWkHGcnCLOhkz/GzVcp804WBkYCpz/alispnjTxV00hDIpQ1NseWp32ky2I7PC6bfEmJA==",
+        "shasum": "173f137e7b75cb5669d3afdf0cf0808e596c3414",
+        "tarball": "https://registry.npmjs.org/@picoxr/pico-cli/-/pico-cli-0.5.0.tgz",
+        "fileCount": 42,
+        "unpackedSize": 39074565,
+        "signatures": [
+          {
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+            "sig": "MEUCICRaLw/c3P97aR8ZvsWgfcvc2L40UW76ckWovD/3RR6SAiEA0X6FhPWArx/x0ibVg48uWdhv+TUddfqSrP5OtF30dX0="
+          }
+        ]
+      },
+      "saved": "picoxr-pico-cli-0.5.0.tgz",
+      "bytes": 38104171,
+      "sha256": "a2afe604b3435a83debe1a42706fa4fe0b9e14d026c857873e8fc21f6ac68642",
+      "integrityVerified": true
+    }
+  ],
+  "scope": "Public registry GET and immutable tarball inspection; no activation/install/setup."
+}

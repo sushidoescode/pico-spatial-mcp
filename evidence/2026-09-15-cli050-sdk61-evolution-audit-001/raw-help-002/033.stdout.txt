@@ -1,0 +1,8 @@
+Usage:
+  $ pico-cli device props
+
+Options:
+  -d, --device <device>  Target device id 
+  --format <format>      Output format (plain, json) (default: plain)
+  -e, --filter <filter>  Filter keys or values by substring 
+  -h, --help             Display this message 

@@ -1,0 +1,6 @@
+Usage:
+  $ pico-cli shell [commands...]
+
+Options:
+  -d, --device <device>  Target device id (overrides PICO_CLI_DEVICE) 
+  -h, --help             Display this message 

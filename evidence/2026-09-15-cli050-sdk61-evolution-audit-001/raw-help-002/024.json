@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 app uninstall --help",
+  "argv": [
+    "app",
+    "uninstall",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:49.880Z",
+  "endedAt": "2026-09-15T09:11:49.978Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "b02e128d24982d070f320cabd9852c8e22d5f2040784d6e7a15bd03ef6457cba",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}
