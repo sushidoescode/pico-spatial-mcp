@@ -638,6 +638,10 @@ gatedResult.status === "failed" && gatedResult.failureClass === "setup-required"
   && JSON.stringify(gatedResult.capability?.evidence) === JSON.stringify(["/fixture/evidence/stdout.txt", "/fixture/evidence/stderr.txt"])
   ? ok("an unprovisioned profiler refuses without spawning and returns the neutral setup sentence plus its evidence paths")
   : fail(`gated perf refusal wrong: ${JSON.stringify(gatedResult)}`);
+gatedResult.capability?.operation === "perf-live" && gatedResult.familyGate === undefined
+  && gatedResult.remediationLimit === undefined
+  ? ok("an evidence-backed perf-live gate needs no family answer and claims no remediation limit")
+  : fail(`gated perf disclosure wrong: ${JSON.stringify({ capability: gatedResult.capability, familyGate: gatedResult.familyGate, remediationLimit: gatedResult.remediationLimit })}`);
 const envCapability = { ...gatedCapability, reason: "environment: `perf live run --help` exited 3 because the CLI's environment is incomplete: Error: [warn] PICO_HOME is not set." };
 const envResult = await collectPerfLive({ packageName: "com.example.fixture", durationSec: 15, device: "fixture-serial", reportPath: pathMod.join(c4Tmp, "never2.json") }, refusalRuntime(envCapability));
 envResult.failureClass === "environment" && /profiler payload/.test(envResult.note ?? "")
@@ -668,11 +672,28 @@ noRouteResult.status === "failed" && noRouteResult.failureClass === "setup-requi
   && noRouteResult.note === "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry."
   ? ok("a line with no live route adopts the perf family's own utilities-gate answer (one gate per family: PERF_ENV044/PERF_ENV050)")
   : fail(`no-route family classification wrong: ${JSON.stringify(noRouteResult)}`);
+// The adopted gate must never REPLACE the probed operation's own evidence: `capability` always
+// describes perf-live (with its no-route reason), the sibling gate is disclosed separately, and the
+// limit sentence says what the byte-pinned setup note cannot — that provisioning the payload would
+// still leave this line without a live route.
+noRouteResult.capability?.operation === "perf-live"
+  && /^no-route:/.test(noRouteResult.capability?.reason ?? "")
+  && noRouteResult.capability?.argvPrefix === null
+  && noRouteResult.familyGate?.operation === "trace-record"
+  && /^utilities-not-installed:/.test(noRouteResult.familyGate?.reason ?? "")
+  && JSON.stringify(noRouteResult.familyGate?.argvPrefix) === JSON.stringify(["perf", "trace", "record"])
+  && /no live-collection route at all/.test(noRouteResult.remediationLimit ?? "")
+  && /would still leave this wrapper without a route/.test(noRouteResult.remediationLimit ?? "")
+  ? ok("the adopted family gate is disclosed beside — never instead of — the probed perf-live capability, with the remediation limit stated")
+  : fail(`family-gate disclosure wrong: ${JSON.stringify({ capability: noRouteResult.capability, familyGate: noRouteResult.familyGate, remediationLimit: noRouteResult.remediationLimit })}`);
 const noRouteNoFamily = await collectPerfLive(
   { packageName: "com.example.fixture", durationSec: 15, device: "fixture-serial", reportPath: pathMod.join(c4Tmp, "never4.json") },
   { ...refusalRuntime({ operation: "perf-live", state: "unavailable", argvPrefix: null, reason: "no-route: 0.4.x: no 0.4.x live-collection route is dispatched", evidence: [] }), options: () => null, familyEvidence: () => [] },
 );
 noRouteNoFamily.failureClass === "flag-or-version-drift" && noRouteNoFamily.status === "failed"
+  && noRouteNoFamily.capability?.operation === "perf-live" && noRouteNoFamily.familyGate === undefined
+  && /no live-collection route at all/.test(noRouteNoFamily.remediationLimit ?? "")
+  && noRouteNoFamily.setupCommand === undefined
   ? ok("without perf-family evidence a missing live route is reported as version drift, never as setup-required")
   : fail(`no-route drift classification wrong: ${JSON.stringify(noRouteNoFamily)}`);
 let rediscoveries = 0;

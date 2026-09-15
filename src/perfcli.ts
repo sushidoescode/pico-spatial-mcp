@@ -75,6 +75,18 @@ const DEFAULT_PERF_DEVICE = "emulator-5554";
 /** File name of the whole raw report copied into the immutable observation run directory. */
 const RETAINED_REPORT_FILE = "live-report.json";
 
+/**
+ * What a refusal on a line with NO live-collection route does not establish. Deliberately a
+ * separate field: the setup sentence is byte-pinned and source/freshness-neutral, so the limit
+ * cannot be folded into it, and a caller that reads only the failure class would otherwise be told
+ * to provision a payload and retry an operation this line still could not dispatch afterwards.
+ */
+const NO_LIVE_ROUTE_LIMIT =
+  "The resolved pico-cli line advertises no live-collection route at all (perf-live resolved as no-route), "
+  + "so provisioning the missing utility payload would still leave this wrapper without a route to dispatch here; "
+  + "the adopted failure class comes from a sibling perf route's own gate (familyGate) and is evidence about the "
+  + "shared payload, not about the live route. Live collection is routed on the 0.5.x line.";
+
 /** How much of the requested measurement the returned report actually contains. */
 export type PerfMeasurement = "complete" | "partial" | "missing";
 
@@ -111,16 +123,25 @@ export type PerfDiagnoseResult = {
   picoCli?: PicoCliProvenance;
   setupCommand?: { path: string; args: string[] };
   outputTruncated?: boolean;
-  /** Why dispatch was refused, with the retained bounded-help evidence paths behind the decision. */
-  capability?: {
-    operation: string;
-    state: OperationCapability["state"];
-    reason: string;
-    argvPrefix: string[] | null;
-    evidence: string[];
-  };
+  /** Why dispatch was refused, ALWAYS for the operation this wrapper probed (perf-live), with the
+   * retained bounded-help evidence paths behind the decision. */
+  capability?: PerfCapabilityDisclosure;
+  /** The sibling perf route whose retained gate answer this refusal adopted, when one was adopted.
+   * It is evidence about the shared utilities payload, never about the live route itself. */
+  familyGate?: PerfCapabilityDisclosure;
+  /** What the adopted failureClass does NOT establish. Present whenever the resolved line has no
+   * live-collection route at all, because provisioning the payload would not create one. */
+  remediationLimit?: string;
   retainedLog?: Record<string, unknown>;
   retainedLogError?: string;
+};
+
+export type PerfCapabilityDisclosure = {
+  operation: string;
+  state: OperationCapability["state"];
+  reason: string;
+  argvPrefix: string[] | null;
+  evidence: string[];
 };
 
 export type PerfReportView = {
@@ -358,7 +379,7 @@ export type PerfDiagnoseRuntime = {
   cliVersion: string | null;
 };
 
-function capabilityDisclosure(capability: OperationCapability): PerfDiagnoseResult["capability"] {
+function capabilityDisclosure(capability: OperationCapability): PerfCapabilityDisclosure {
   return {
     operation: capability.operation,
     state: capability.state,
@@ -392,14 +413,19 @@ export async function collectPerfLive(
     const family = capability.argvPrefix === null && /^no-route:/.test(capability.reason)
       ? perfFamilyGate(runtime.familyEvidence?.() ?? [])
       : null;
-    const classified = family ?? capability;
+    const noRoute = capability.argvPrefix === null && /^no-route:/.test(capability.reason);
+    // The gate that OBSERVED the condition supplies the class and the environment remedy; the
+    // operation this wrapper actually probed supplies the disclosed capability. Collapsing the two
+    // (as the first C4 cut did) made the result name a sibling route as its own evidence and
+    // promised that setup + retry would fix an operation this line cannot run even after setup.
+    const gateSource = family ?? capability;
     const failureClass = family
       ? capabilityFailureClass(family)
-      : capability.argvPrefix === null && /^no-route:/.test(capability.reason)
+      : noRoute
         ? "flag-or-version-drift"
         : capabilityFailureClass(capability);
     const environmentGuidance = failureClass === "environment"
-      ? describePicoCliEnvironmentFailure(classified.reason, "", PERF_OPERATION)
+      ? describePicoCliEnvironmentFailure(gateSource.reason, "", PERF_OPERATION)
       : null;
     const note = failureClass === "setup-required"
       ? SETUP_REQUIRED_NOTE
@@ -417,7 +443,9 @@ export async function collectPerfLive(
       ...(failureClass === "setup-required" ? { setupCommand: { path: runtime.cliPath, args: ["setup"] } } : {}),
       reportPath: request.reportPath,
       producerVersion: runtime.cliVersion,
-      capability: capabilityDisclosure(classified),
+      capability: capabilityDisclosure(capability),
+      ...(family ? { familyGate: capabilityDisclosure(family) } : {}),
+      ...(noRoute ? { remediationLimit: NO_LIVE_ROUTE_LIMIT } : {}),
       honesty: HONESTY,
     };
   }
@@ -695,7 +723,9 @@ export function registerPerfCliTools(server: McpServer) {
         producerVersion: z.string().nullable().optional().describe("The resolved pico-cli version whose bundled profiler wrote the report."),
         view: z.unknown().optional().describe("Bounded selection of the report: metadata, diagnosis, summary and the top jank windows. The unbounded per-sample rawData array is excluded."),
         missingCounters: z.array(z.string()).optional().describe("Declared summary groups that are absent or all-zero — 'not measured', never 'measured zero' and never 'GPU idle'."),
-        capability: z.record(z.unknown()).optional().describe("Why dispatch was refused, with the retained bounded-help evidence paths behind the decision."),
+        capability: z.record(z.unknown()).optional().describe("Why dispatch was refused — ALWAYS for the operation this wrapper probed (perf-live), with the retained bounded-help evidence paths behind the decision."),
+        familyGate: z.record(z.unknown()).optional().describe("The sibling perf route whose retained gate answer this refusal adopted. Evidence about the shared utilities payload, never about the live route itself."),
+        remediationLimit: z.string().optional().describe("What the adopted failure class does NOT establish. Present when the resolved line has no live-collection route at all, because provisioning the payload would not create one."),
         retainedLog: z.record(z.unknown()).optional().describe("Immutable raw stdout/stderr of the bounded run, with hashes."),
         retainedLogError: z.string().optional(),
         metadata: z.unknown().optional(),
