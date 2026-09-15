@@ -1248,7 +1248,9 @@ export class KnowledgeBridge {
       const refused = capability
         ?? unknownCapability(KNOWLEDGE_OPERATION, "no-discovery: no knowledge-server capability was resolved for this execution target");
       const failureClass = capabilityFailureClass(refused);
-      const environmentGuidance = failureClass === "environment" ? describePicoCliEnvironmentFailure(refused.reason, "") : null;
+      // Named operation: without it the remedy is worded as a PROFILER-payload problem, which a
+      // knowledge-server refusal is not.
+      const environmentGuidance = failureClass === "environment" ? describePicoCliEnvironmentFailure(refused.reason, "", KNOWLEDGE_OPERATION) : null;
       return {
         status: "refused",
         provenance,
@@ -1400,7 +1402,7 @@ export class KnowledgeBridge {
           });
         }
         const environmentGuidance = provenance && managedFailure === "environment"
-          ? describePicoCliEnvironmentFailure(startupStderr, errorMessage(error))
+          ? describePicoCliEnvironmentFailure(startupStderr, errorMessage(error), KNOWLEDGE_OPERATION)
           : null;
         if (environmentGuidance) {
           // The CLI read its environment before it could serve anything. The remedy names the

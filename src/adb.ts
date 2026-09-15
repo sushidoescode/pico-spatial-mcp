@@ -28,6 +28,13 @@ import { IdentityCache } from "./identitycache.js";
  *      subprocess, so the lookup is identical on Windows and costs no process.
  *   3. the SELECTED toolchain's bundled `adb` component — the S1 selection, so it follows the
  *      installation this server is otherwise using instead of a hardcoded version directory.
+ *      Scope of that selection: the bundled candidate resolves from the HOST tools root
+ *      (`resolveRootCandidate({}, io)` — explicit toolsRoot, then $PICO_HOME, then the platform
+ *      default) with NO `androidProjectRoot`. A project's `spatial.tools.dir` in local.properties
+ *      therefore selects the packer for that project's pack operations but never this adb: adb is
+ *      a host-level tool, one per process, not a per-project one. `src/preflight.ts` builds its
+ *      `adbInspection` the same way (`resolveHostToolchain({ required: ["adb"] })`, no project
+ *      root), so the doctor's adb row and every consumer name the same bundled candidate.
  *
  * Caching: keyed on the winning candidate's identity (source + path + size + mtime), so a
  * replaced or removed adb, a changed `$PICO_ADB`, a changed PATH or a toolchain switch is
