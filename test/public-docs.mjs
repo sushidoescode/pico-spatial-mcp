@@ -108,6 +108,13 @@ test("selection never reads the filesystem, so an untracked note cannot join the
   assert.deepEqual(relativeLinkFailures({ root, files: selected }), []);
 });
 
+test("a path that climbs out of the checkout is never public documentation", (t) => {
+  const { root } = makeFixture(t);
+  // git never emits a `..` segment, but --packaged consumes a hand-written inventory.
+  const trackedPaths = ["docs/../../elsewhere.md", "docs/../README.md", "../sneaky.md", "/absolute.md", "docs/a.md"];
+  assert.deepEqual(publicMarkdownFiles({ root, trackedPaths }), ["docs/a.md"]);
+});
+
 test("publicMarkdownFiles refuses a caller that supplies no tracked paths", (t) => {
   const { root } = makeFixture(t);
   assert.throws(() => publicMarkdownFiles({ root }), /trackedPaths/);

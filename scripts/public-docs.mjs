@@ -70,13 +70,19 @@ export function parsePackagedInventory(text) {
  *
  * Sorted with the default comparator (code-unit order, locale-independent) and deduplicated, so the
  * set is byte-identical on every machine.
+ *
+ * A `..` segment is refused. `git ls-files` never emits one, so this changes nothing in the default
+ * path; it matters for `--packaged`, where a hand-written inventory could otherwise name
+ * `docs/../../elsewhere.md` and pull a document from outside the checkout into the public set.
  */
 export function publicMarkdownFiles(options = {}) {
   const { trackedPaths } = options;
   if (!Array.isArray(trackedPaths) || trackedPaths.some((entry) => typeof entry !== "string")) {
     throw new TypeError("publicMarkdownFiles requires trackedPaths: string[] — the output of `git ls-files -z`");
   }
-  const selected = trackedPaths.filter((p) => p.endsWith(".md") && (!p.includes("/") || p.startsWith("docs/")));
+  const selected = trackedPaths.filter((p) => p.endsWith(".md")
+    && (!p.includes("/") || p.startsWith("docs/"))
+    && !p.split("/").includes(".."));
   return [...new Set(selected)].sort();
 }
 
