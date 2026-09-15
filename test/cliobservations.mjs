@@ -358,7 +358,7 @@ test("raw stdout and stderr are retained immutably with hashes and byte counts",
 });
 
 test("optional start and activity are preserved and nothing launches implicitly", async () => {
-  const quiet = await observe({ request: { packageName: "com.example.fixture", durationSec: 60 } });
+  const quiet = await observe({ request: { packageName: "com.example.fixture", durationSec: 60, device: "fixture-serial" } });
   assert.equal(quiet.seen.argv.includes("--start"), false, JSON.stringify(quiet.seen.argv));
   assert.equal(quiet.seen.argv.includes("--activity"), false);
   const started = await observe({
@@ -432,6 +432,41 @@ test("the wrapper no longer claims the CLI has no duration flag or streams indef
   assert.match(description, /observed/i);
   const watchedSec = metadata.watch_crash?.outputSchema?.shape?.watchedSec?.description ?? "";
   assert.match(watchedSec, /observed/i);
+});
+
+// Mirrors the capture_record case in test/verifyapk-observation.mjs: the target is checked BEFORE
+// any CLI resolution, so a caller who cannot name a device never triggers a registry lookup,
+// provisioning, or a managed-store write — and there is no default left in the compiled output for
+// a future edit to fall back to.
+test("watch_crash refuses to watch without an explicit device, before any CLI work", async () => {
+  const { registerPicoCliTools } = await import("../dist/picoclitools.js");
+  const handlers = {};
+  const metadata = {};
+  registerPicoCliTools({ registerTool: (name, meta, fn) => { metadata[name] = meta; handlers[name] = fn; } });
+
+  const payload = JSON.parse((await handlers.watch_crash({ packageName: "com.example.fixture", durationSec: 30 })).content[0].text);
+  assert.equal(payload.status, "failed");
+  assert.equal(payload.failureClass, "runtime");
+  assert.match(payload.note, /device is required/i);
+  assert.match(payload.note, /no default target/i);
+  assert.equal(payload.packageName, "com.example.fixture");
+  // `picoCli` provenance only ever appears after a successful ensure, so its absence is evidence
+  // the refusal came first: no registry lookup, no provisioning, no managed-store write.
+  assert.ok(!("picoCli" in payload), "the refusal must precede CLI resolution entirely");
+  // A whitespace-only serial is the case the schema cannot reject, so the handler must.
+  const blank = JSON.parse((await handlers.watch_crash({ packageName: "com.example.fixture", device: "   " })).content[0].text);
+  assert.equal(blank.status, "failed");
+  assert.match(blank.note, /device is required/i);
+
+  // The schema is the first line of defence: a client omitting `device` is refused by the protocol,
+  // not merely by the handler.
+  assert.equal(metadata.watch_crash.inputSchema.device.isOptional(), false, "device must be required in the registered schema");
+
+  const source = fs.readFileSync(new URL("../dist/picoclitools.js", import.meta.url), "utf8");
+  assert.ok(!/emulator-5554/.test(source), "no wrapper in this module may carry a default serial");
+  assert.ok(!/request\.device \?\?/.test(source), "watch_crash must not fall back to a default device");
+  assert.ok(/watchArgv\(request\.packageName, request\.device,/.test(source),
+    "the declared target must reach watchArgv unmodified");
 });
 
 test.after(() => { fs.rmSync(tempRoot, { recursive: true, force: true }); });

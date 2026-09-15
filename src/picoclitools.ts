@@ -427,7 +427,10 @@ export function registerPicoCliTools(server: McpServer) {
       inputSchema: {
         packageName: z.string().describe("Package to watch, e.g. com.example.knockdownxr"),
         durationSec: z.number().min(5).max(300).optional().describe("Requested watch window in seconds (default 30). Passed to the CLI as --monitor-timeout where that flag exists; otherwise only an outer watchdog bounds the child."),
-        device: z.string().optional().describe("REQUIRED adb device serial. There is no default: an observation names the device it watched."),
+        // Required in the SCHEMA, not merely in the prose: a client that omits it is refused by
+        // the protocol before the handler runs. The handler's own refusal still covers the empty /
+        // whitespace-only string, which the schema cannot reject.
+        device: z.string().describe("REQUIRED adb device serial. There is no default: an observation names the device it watched."),
         start: z.boolean().optional().describe("Pass --start so pico-cli launches the app before watching (default false)."),
         activity: z.string().optional().describe("Optional activity for --start, e.g. .MainActivity"),
         intervalSec: z.number().min(1).max(30).optional().describe("PID-poll interval seconds (CLI default 2)."),

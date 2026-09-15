@@ -8,8 +8,15 @@ spec: [CLI_050_SDK61_EVOLUTION_HANDOFF_2026-09-15.md](../CLI_050_SDK61_EVOLUTION
 **This is a compatibility checkpoint, not an acceptance.** Nineteen tasks made this server's CLI
 routes, SDK selection and release machinery correct against pico-cli 0.5 and Spatial SDK 6.1 *as
 declared*. No 0.5.0 command ran through this host's managed CLI, no emulator or device was used for
-verification, and **not one frame was captured or looked at**. Every claim below carries its evidence
-class, and the strongest class earned anywhere in this checkpoint is `host-executed`.
+verification, and **not one frame was captured or looked at**. The strongest evidence class earned
+anywhere in this checkpoint is `host-executed`.
+
+Where a claim's strength is not obvious it is labelled with its evidence class, and the sections
+that exist to state strength — the class table below, the capability matrix, the battery results,
+the distributable and the open items — label every row. Two sections are deliberately unlabelled
+because a uniform label would add noise rather than precision: the "Why 38.0.0" list and the
+per-task before/after table are **`source-inspected` throughout**, describing changes as the code
+and commits show them, and neither asserts anything about runtime behavior.
 
 ## Evidence classes
 
@@ -435,8 +442,9 @@ The ledger records the same limit: **this checkpoint must not claim the emulator
 
 ### Incident 2 — R4 and C5, base RED runs: the real SDK, the real device list, the host scratch frame
 
-R4's RED run of the *old* smoke, under an empty temp `HOME`, still reached the real host SDK and the
-real attached devices. From `task-R4-report.md`, verbatim from the captured stdout:
+R4's RED run of the *old* smoke, under an empty temp `HOME`, still reached the real host SDK, the
+real attached devices **and the user's personal project checkout**. From `task-R4-report.md`,
+verbatim from the captured stdout:
 
 > ```
 > === validate_toolchain [ok] ===
@@ -446,10 +454,35 @@ real attached devices. From `task-R4-report.md`, verbatim from the captured stdo
 >   "adb": "/opt/homebrew/bin/adb",
 > === emulator_list [ok] ===
 > { "adbDevices": [ "2G0YC5ZF7Z056Q\tdevice", "emulator-5554\tdevice" ] }
+> === inspect_bundle (existing claimsight bundle) [FAIL] ===
+> No such file: …/empty-home/AndroidStudioProjects/claimsight/editor-asset/build/spatial/bundle/editor-asset.bundle
+> === pack_bundle (claimsight scenes -> /tmp) [FAIL] ===
+> spatialbundle pack failed (exit 19, bundle missing).
+> Command: /Users/sushantsrikrish/Library/PICO/sdk/6.1/editor/spatialbundle/spatialbundle pack -s …/empty-home/AndroidStudioProjects/claimsight/…
+> === inspect_bundle (freshly packed) [FAIL] ===
+> === scene_schemas (first 1k chars) [FAIL] ===
 > ```
 
-That listing named a **physical PICO device (`2G0YC5ZF7Z056Q`)** attached to this host, alongside the
-emulator. It was a read-only listing; nothing was installed, launched or stopped on either.
+R4's own summary of what that run was:
+
+> That is the expected Claimsight/host-probe failure, preserved: **a hardcoded personal checkout with
+> no existence guard, a real `spatialbundle` binary executed, and a real hardware serial enumerated.**
+
+Two distinct things happened, and the disposition is different for each:
+
+- **The device listing was read-only.** It named a **physical PICO device (`2G0YC5ZF7Z056Q`)**
+  attached to this host alongside the emulator. Nothing was installed, launched or stopped on either.
+- **A third-party binary really executed against the user's personal project.** The run spawned the
+  host's **real PICO 6.1 packer**
+  (`/Users/sushantsrikrish/Library/PICO/sdk/6.1/editor/spatialbundle/spatialbundle pack -s …`)
+  with a scenes path under the hardcoded `AndroidStudioProjects/claimsight` checkout — a path smoke
+  had no existence guard for and no business touching. It **failed with exit 19 and produced no
+  bundle**, so nothing was written there, but that is the outcome of the run rather than a limit the
+  test imposed: the binary was invoked and the personal checkout was read.
+
+This is the defect R4 then removed — smoke now builds its whole environment (fixture home, empty
+tools root, fake `adb` and Gradle, refusing `npm`) so it cannot select host tooling at all, and the
+real-SDK lane became a separate, explicitly-invoked non-gate command taking three absolute paths.
 
 C5's base RED run of `test/doors.mjs`, from `task-C5-report.md`:
 
@@ -528,7 +561,7 @@ should *name* the tools it uses, rather than arranging for the right one to be f
 | `capture_canonical` / `pico_look` keep the `emulator-5554` default and the fixed `/tmp/pico-render/canonical.png` path | Ruled for this checkpoint: `pico_look` is *by design* the emulator LOOK door with no inputs. The mutable canonical path is a known immutability gap — two `pico_look` calls overwrite each other's frame. The ledger's looked-byte hash check still protects claims, because `record_verification` re-captures and demands byte equality. Closing it means giving `pico_look` a target and a run-unique path, i.e. a second breaking change. |
 | `capture_record`'s parameter is `device`, not `serial` | Deliberate. `capture_frame`, `verify_pico_apk` and `watch_crash` use `serial`/`device` inconsistently; renaming `capture_record`'s would be a second break in one release for no behavioral gain. Its **requirement** is what changed. |
 | `watch_crash`'s numbers are fixture-derived | `watchedSec`, `observation.coverage` and `assessment` are exercised only against fake children and a scripted monotonic clock. **No watch has ever run against a real `pico-cli` line or a real device**, so no observed-vs-requested number here is evidence about CLI behavior. On 0.4.x the CLI's internal bound cannot be set at all, so coverage there is capped at partial/unknown by construction. |
-| `verify_pico_apk`'s inner `inputSchema` marks `serial` optional while its prose says REQUIRED | The handler refuses without it; the schema is the softer of the two statements. Cosmetic, recorded. |
+| `verify_pico_apk` and `capture_record` still mark their target **optional in the schema** while the prose says REQUIRED | Both handlers refuse without it, so behavior is correct; the schema is just the softer of the two statements, and a client sees the refusal as a typed result rather than a protocol validation error. `watch_crash` was tightened to `z.string()` in this round and is the model: required in the schema, with the handler's refusal still covering the empty / whitespace-only string a schema cannot reject. The other two are a one-line change each, left for whoever owns the next surface sweep. |
 | `docs/claims/claims.json` was not annotated | Its `attestation` for P21 describes the removed `status=ok`/`processAlive`/`crashed` shape and the logcat clear. The file is **generated** from the trust ledgers by `generate_claims_page`, not hand-maintained, and the attestation is a verbatim historical record. Hand-editing it would rewrite history *and* be overwritten on the next regeneration. It is already a month stale (see `test:claims` above). Correction lands when the page is next regenerated on the ledger-owning machine — and that regeneration must be made with the Mission Replay question settled first. |
 | `gates.yml` has one raw step the inventory cannot see | The macOS lane runs `node --test test/homeenvironmenthost.mjs` directly rather than through a named gate, so `AGENTS.md`'s "one inventory owns every gate command" is true of every *named* gate but not of that line. |
 | **`test:claims` reads host state as if it were repository state** | Its snapshot-freshness assertion regenerates from `~/.pico-mcp/ledgers`, so it passes in CI (no corpus → self-skip) and fails on any maintainer machine whose ledgers moved since the tracked snapshot was generated — independently of what that maintainer changed. **Open item: make `test:claims` hermetic against a fixture ledger**, so the gate tests the generator and the tracked snapshot rather than the developer's private corpus. Until then it is red on this host by ruling (see the battery section), and `docs/claims/claims.json` stays untouched. |
