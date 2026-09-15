@@ -19,26 +19,45 @@ const syntheticGates = {
   "test:win": { host: "windows", scope: "fixture", commands: [["node", "win.mjs"]] },
 };
 
-test("the battery plan runs this host's gates and reports the rest as skipped", () => {
+test("the battery plan skips by scope, not by lane: only another OS's native contracts are off-limits", () => {
+  // `host` is a CI lane assignment, not an exclusivity claim. A fixture or installed-artifact gate
+  // runs everywhere, whatever lane owns it; only a native contract belongs to one OS.
   assert.deepEqual(batteryPlan({ platform: "linux", gates: syntheticGates }), {
     host: "linux",
-    run: ["smoke", "test:linux"],
-    skipped: [{ name: "test:mac", host: "macos" }, { name: "test:win", host: "windows" }],
+    run: ["smoke", "test:linux", "test:win"],
+    skipped: [{ name: "test:mac", host: "macos" }],
   });
-  assert.deepEqual(batteryPlan({ platform: "darwin", gates: syntheticGates }).run, ["test:mac"]);
-  assert.deepEqual(batteryPlan({ platform: "win32", gates: syntheticGates }).run, ["test:win"]);
+  assert.deepEqual(batteryPlan({ platform: "darwin", gates: syntheticGates }), {
+    host: "macos",
+    run: ["smoke", "test:linux", "test:mac", "test:win"],
+    skipped: [],
+  });
+  assert.deepEqual(batteryPlan({ platform: "win32", gates: syntheticGates }).skipped, [{ name: "test:mac", host: "macos" }]);
 });
 
 test("the repository plan derives from the inventory, not from package-script discovery", () => {
+  const crossPlatform = Object.entries(GATES)
+    .filter(([, gate]) => gate.scope !== "native-contract")
+    .map(([name]) => name);
+
   const linux = batteryPlan({ platform: "linux" });
   assert.ok(linux.run.includes("smoke"), linux.run.join(", "));
   assert.ok(linux.run.includes("test:knowledge-lifecycle"), "the focused Knowledge lifecycle regression must stay in the battery");
   assert.ok(linux.run.includes("test:runrevision"), "the revision suites must stay in the battery");
-  assert.ok(linux.skipped.some((entry) => entry.name === "test:vcamtransport-native" && entry.host === "macos"));
+  assert.ok(linux.run.includes("test:picocli-win"), "a Windows-lane fixture suite is still cross-platform work");
+  assert.ok(linux.run.includes("test:tarball"), "the installed-artifact gate runs on every host");
+  assert.deepEqual(linux.skipped, [
+    { name: "test:vcamtransport-native", host: "macos" },
+    { name: "test:vcamreader-native", host: "macos" },
+  ], "only the other OS's native contracts are skipped");
+  assert.deepEqual(linux.run, crossPlatform);
 
+  // macOS owns both native contracts, so a Mac runs the entire inventory.
   const macos = batteryPlan({ platform: "darwin" });
-  assert.ok(macos.run.includes("test:vcamreader-native"));
-  assert.ok(macos.skipped.some((entry) => entry.name === "smoke" && entry.host === "linux"));
+  assert.deepEqual(macos.run, Object.keys(GATES));
+  assert.deepEqual(macos.skipped, []);
+
+  assert.deepEqual(batteryPlan({ platform: "win32" }).run, crossPlatform);
 
   for (const plan of [linux, macos, batteryPlan({ platform: "win32" })]) {
     assert.equal(plan.run.length + plan.skipped.length, Object.keys(GATES).length, "every gate is either run or explicitly skipped");

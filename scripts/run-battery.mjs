@@ -12,18 +12,22 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 /**
  * What this host can actually run, and what it cannot.
  *
- * The battery used to discover `test:`-prefixed package scripts, which meant it ran the two macOS
- * CMIO contracts on Linux, where their shell scripts print "skipped" and exit 0 — green output for
- * a suite that tested nothing. The inventory already records which CI lane owns each gate, so the
- * plan splits on that instead: off-platform gates are reported as skipped and never run, and the
- * summary states how many, so nobody can read a short PASS as a whole-battery PASS.
+ * The split is by SCOPE, not by host. `host` records which CI lane owns a gate — it is a lane
+ * assignment, not an exclusivity claim: `fixture` and `installed-artifact` gates are deterministic
+ * and cross-platform, and a developer on any OS should run all of them. Only `native-contract`
+ * gates are genuinely OS-bound, and those are exactly the ones the battery used to run everywhere
+ * by discovering `test:`-prefixed package scripts: off their own OS the two CMIO shell scripts
+ * print "skipped" and exit 0 — green output for a contract that compiled nothing.
+ *
+ * So a native contract assigned to another OS is skipped and named, and the summary states how
+ * many, which is the one case where a short PASS could otherwise read as a whole-battery PASS.
  */
 export function batteryPlan({ platform = process.platform, gates = GATES } = {}) {
   const host = hostFamilyForPlatform(platform);
   const run = [];
   const skipped = [];
   for (const [name, gate] of Object.entries(gates)) {
-    if (gate.host === host) run.push(name);
+    if (gate.scope !== "native-contract" || gate.host === host) run.push(name);
     else skipped.push({ name, host: gate.host });
   }
   return { host, run, skipped };

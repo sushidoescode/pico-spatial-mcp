@@ -21,7 +21,9 @@ Evidence ranking: `structural` < `auto_judged` < `vision_verified` < `device_ver
 
 ## Gotchas — the expensive ones
 
-**Tests import `dist/`, and nothing rebuilds it.** 60 of 82 files in `test/` import `../dist/*.js`;
+**Tests import `dist/`, and nothing rebuilds it.** 60 of the 83 `test/*.mjs` files carry a
+static or dynamic import specifier starting `../dist/`
+(`grep -lE '(from|import\()[[:space:]]*"\.\./dist/' test/*.mjs | wc -l`);
 `dist/` is gitignored and there is no `pretest` hook. Edit `src/`, run a test, and you get
 byte-identical output because the test never saw your change. **Run `npm run build` first, every
 time.** Same trap in plugin form: `scripts/plugin-bootstrap.mjs` only builds when `dist/index.js`
@@ -40,7 +42,8 @@ real SDK is present that excuse expires and those checks become hard failures.
 
 **One inventory owns every gate command and its CI lane.** `scripts/gate-inventory.mjs` holds
 `GATES`; each `test:*`/`smoke` script is only `node scripts/run-gate.mjs <name>`, and `run-gate`
-refuses a gate whose `dist/` is stale before spawning anything. `validateGateInventory` is what
+refuses a gate whose `dist/` is stale before spawning anything — except the two `native-contract`
+shell gates, which compile native sources and never load `dist/`. `validateGateInventory` is what
 `test:lint` and `test:distribution-adoption` check, and the published counts are derived from it —
 so a gate that no lane runs (`test:runrevision` was exactly that, four revision suites regressing
 invisibly) now fails a gate instead of a doc. Adding one is three edits: an entry, a one-line

@@ -16,6 +16,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -31,7 +32,14 @@ import {
   parseWorkflowLanes,
   validateGateInventory,
 } from "../scripts/gate-inventory.mjs";
-import { STALE_BUILD_MESSAGE, gateLaunch, runArgv, runGate } from "../scripts/run-gate.mjs";
+import {
+  GATE_KILL_GRACE_MS,
+  GATE_TIMEOUT_MS,
+  STALE_BUILD_MESSAGE,
+  gateLaunch,
+  runArgv,
+  runGate,
+} from "../scripts/run-gate.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const readPackageJson = () => JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
@@ -282,6 +290,7 @@ function fakeSpawn(record, outcomes = []) {
   return (command, args, options) => {
     record.push({ command, args, options });
     const child = new EventEmitter();
+    child.kill = () => {};
     const outcome = outcomes.shift() ?? { code: 0 };
     queueMicrotask(() => {
       if (outcome.error) child.emit("error", outcome.error);
@@ -357,9 +366,13 @@ test("commands run sequentially, with no shell, inheriting stdio, in the given r
     assert.equal(call.options.stdio, "inherit");
     assert.equal(call.options.cwd, "/tmp/some checkout");
     assert.deepEqual(call.options.env, { PICO_FIXTURE: "1" });
-    assert.equal(typeof call.options.timeout, "number");
-    assert.ok(call.options.timeout > 0, "every gate child must be bounded");
+    assert.equal(
+      call.options.timeout,
+      undefined,
+      "the runner owns the SIGTERM->SIGKILL ladder; spawn's one-signal timeout is not a bound",
+    );
   }
+  assert.ok(GATE_TIMEOUT_MS > 0 && GATE_KILL_GRACE_MS > 0, "both rungs of the bound must be positive");
 });
 
 test("the first nonzero exit propagates and stops the remaining commands", async () => {
@@ -404,6 +417,45 @@ test("runArgv resolves nonzero without throwing when the child cannot start", as
     }),
     1,
   );
+});
+
+test("a real child that ignores SIGTERM is still bounded: SIGKILL lands after the grace", async () => {
+  // Node's `timeout` option sends one SIGTERM and then waits forever, so this fixture — which
+  // installs a SIGTERM handler and holds the loop open — would hang the lane under it. The runner's
+  // own ladder must escalate, and the gate must settle nonzero within timeout + grace.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "run-gate-stubborn-"));
+  const stubborn = path.join(scratch, "ignores-sigterm.mjs");
+  fs.writeFileSync(stubborn, [
+    'process.on("SIGTERM", () => {});',
+    "setInterval(() => {}, 1_000);",
+    "",
+  ].join("\n"));
+
+  try {
+    const started = Date.now();
+    const exit = await runArgv(["node", stubborn], { root: scratch, env: process.env, timeoutMs: 300, graceMs: 700 });
+    const elapsed = Date.now() - started;
+    assert.equal(exit, 1, "a timed-out child must fail its gate");
+    assert.ok(elapsed >= 300, `must not settle before the timeout (took ${elapsed}ms)`);
+    assert.ok(elapsed < 300 + 700 + 6_000, `must settle inside timeout + grace + slack (took ${elapsed}ms)`);
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("a timed-out gate stops before its remaining commands", async () => {
+  const record = [];
+  const stalls = () => {
+    record.push({});
+    const child = new EventEmitter();
+    child.kill = (signal) => { if (signal === "SIGKILL") child.emit("close", null, "SIGKILL"); };
+    return child;
+  };
+  const exit = await runGate("test:eye", {
+    root: repoRoot, env: {}, verify: fresh, timeoutMs: 10, graceMs: 10, spawnChild: stalls,
+  });
+  assert.equal(exit, 1);
+  assert.equal(record.length, 1, "the second command must not run after the first was killed");
 });
 
 test("only npm goes through the Windows launch shim; node and sh are spawned directly", () => {
