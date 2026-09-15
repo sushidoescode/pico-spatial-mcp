@@ -79,6 +79,7 @@
     "test:conformance": "node scripts/run-gate.mjs test:conformance",
     "test:buildfreshness": "node scripts/run-gate.mjs test:buildfreshness",
     "test:plugin-bootstrap-freshness": "node scripts/run-gate.mjs test:plugin-bootstrap-freshness",
+    "test:observation": "node scripts/run-gate.mjs test:observation",
     "test:picocli-win": "node scripts/run-gate.mjs test:picocli-win"
   },
   "engines": {

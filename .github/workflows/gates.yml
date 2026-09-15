@@ -147,6 +147,8 @@ jobs:
         run: npm run test:buildfreshness
       - name: Plugin bootstrap freshness (a host cache rebuilds when its source moved)
         run: npm run test:plugin-bootstrap-freshness
+      - name: External-APK observation (artifact inspection + foreign-app observation without ownership)
+        run: npm run test:observation
 
   vcam-native:
     runs-on: macos-latest

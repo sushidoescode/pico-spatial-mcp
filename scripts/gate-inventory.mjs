@@ -98,6 +98,14 @@ export const GATES = Object.freeze({
   "test:conformance": { host: "linux", scope: "fixture", commands: [["node", "test/conformance.mjs"], ["node", "--test", "test/boundaryprobe.mjs", "test/boundaryexperiment.mjs"]] },
   "test:buildfreshness": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/buildfreshness.mjs"]] },
   "test:plugin-bootstrap-freshness": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/plugin-bootstrap-freshness.mjs"]] },
+  // External-APK observation and media inspection (C6) as ONE gate: both suites answer the same
+  // question — what an artifact and a foreign app actually are, observed without owning them.
+  // NOT test/observation.mjs (the emulator observation suite), which stays in test:emulator-restart.
+  "test:observation": {
+    host: "linux",
+    scope: "fixture",
+    commands: [["node", "--test", "test/artifactinspection.mjs", "test/verifyapk-observation.mjs"]],
+  },
   "test:picocli-win": { host: "windows", scope: "fixture", commands: [["node", "--test", "test/picocli-autoinstall.mjs", "test/buildrun-smoke-fixture.mjs", "test/run-battery.mjs"]] },
 });
 
