@@ -21,7 +21,7 @@ Evidence ranking: `structural` < `auto_judged` < `vision_verified` < `device_ver
 
 ## Gotchas — the expensive ones
 
-**Tests import `dist/`, and nothing rebuilds it.** 68 of the 95 `test/*.mjs` files carry a
+**Tests import `dist/`, and nothing rebuilds it.** 70 of the 97 `test/*.mjs` files carry a
 static or dynamic import specifier starting `../dist/`
 (`grep -lE '(from|import\()[[:space:]]*"\.\./dist/' test/*.mjs | wc -l`);
 `dist/` is gitignored and there is no `pretest` hook. Edit `src/`, run a test, and you get
