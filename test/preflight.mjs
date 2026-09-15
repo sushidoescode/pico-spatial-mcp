@@ -187,7 +187,7 @@ const picoCalls = [];
 const structuredStatusIO = { ...healthyIO, exec: (cmd, args) => {
   picoCalls.push([cmd, args]);
   if (cmd === "pico-cli" && args[0] === "-v") return { ok: true, stdout: "pico-cli/0.3.0\n" };
-  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: true, stdout: '{"tool_status":"SUCCESS","data":{},"errors":[]}' };
+  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: true, code: 0, stdout: '{"tool_name":"emulator.status","tool_status":"SUCCESS","data":{},"errors":[]}' };
   return healthyIO.exec(cmd, args);
 } };
 const structuredStatus = runPreflightChecks(structuredStatusIO).find((c) => c.name === "pico-cli-emulator-status");
@@ -196,7 +196,7 @@ structuredStatus?.status === "pass" && picoCalls.some(([cmd, args]) => cmd === "
   : fail(`structured pico-cli status wrong: ${JSON.stringify({ structuredStatus, picoCalls })}`);
 const nestedFixIO = { ...healthyIO, exec: (cmd, args) => {
   if (cmd === "pico-cli" && args[0] === "-v") return { ok: true, stdout: "pico-cli/0.3.0\n" };
-  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: true, stdout: JSON.stringify({ tool_status: "FAILED", errors: [{ fix: "Start the Spatial Editor" }], checks: [{ nextAction: "Retry after boot" }] }) };
+  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: false, code: 3, stdout: JSON.stringify({ tool_name: "emulator.status", tool_status: "FAILED", errors: [{ fix: "Start the Spatial Editor" }], checks: [{ nextAction: "Retry after boot" }] }) };
   return healthyIO.exec(cmd, args);
 } };
 const nestedFix = runPreflightChecks(nestedFixIO).find((c) => c.name === "pico-cli-emulator-status");
@@ -214,6 +214,7 @@ const failedEnvelopeIO = { ...healthyIO, exec: (cmd, args) => {
     return {
       ok: false,
       stdout: JSON.stringify({
+        tool_name: "emulator.status",
         tool_status: "FAILED",
         summary: "The emulator status check found a missing bundle.",
         errors: [{
@@ -345,9 +346,9 @@ for (const policyCase of [
   const harness = createManagedRuntimeHarness();
   const externalCli = path.join(harness.root, process.platform === "win32" ? "external-pico-cli.cmd" : "external-pico-cli");
   if (process.platform === "win32") {
-    fs.writeFileSync(externalCli, "@echo off\r\nif \"%1\"==\"-v\" (echo pico-cli/0.2.9& exit /b 0)\r\necho {\"tool_status\":\"SUCCESS\",\"data\":{},\"errors\":[]}& exit /b 0\r\n");
+    fs.writeFileSync(externalCli, "@echo off\r\nif \"%1\"==\"-v\" (echo pico-cli/0.2.9& exit /b 0)\r\necho {\"tool_name\":\"emulator.status\",\"tool_status\":\"SUCCESS\",\"data\":{},\"errors\":[]}& exit /b 0\r\n");
   } else {
-    fs.writeFileSync(externalCli, "#!/bin/sh\nif [ \"$1\" = \"-v\" ]; then printf 'pico-cli/0.2.9\\n'; else printf '{\"tool_status\":\"SUCCESS\",\"data\":{},\"errors\":[]}\\n'; fi\n", { mode: 0o755 });
+    fs.writeFileSync(externalCli, "#!/bin/sh\nif [ \"$1\" = \"-v\" ]; then printf 'pico-cli/0.2.9\\n'; else printf '{\"tool_name\":\"emulator.status\",\"tool_status\":\"SUCCESS\",\"data\":{},\"errors\":[]}\\n'; fi\n", { mode: 0o755 });
   }
   harness.env.PICO_MCP_CLI_POLICY = "external";
   harness.env.PICO_MCP_CLI_PATH = externalCli;
@@ -378,12 +379,65 @@ if (cachedCli?.status === "pass"
     && cachedCalls.some((call) => call.role === "managed-cli" && call.args.join(" ") === "0.4.2 -v")
     && cachedCalls.some((call) => call.role === "managed-cli" && call.args.join(" ") === "0.4.2 emulator status --format json")
     && cachedCalls.filter((call) => call.role === "npm").length === 0
+    && !cachedCalls.some((call) => call.role === "managed-cli" && call.args.at(-1) === "--help")
+    && !cachedCalls.some((call) => call.role === "managed-cli" && call.args.slice(1).join(" ") === "setup")
+    && !fs.existsSync(path.join(cachedManaged.managedRoot, "capabilities"))
     && published.shimPath.includes(path.join("versions", "0.4.2")))
-  ok("preflight_env inspects cached managed CLI and emulator status without registry/install");
+  ok("preflight_env inspects cached managed CLI and emulator status without registry/install/setup or capability discovery");
 else fail(`preflight_env cached managed-store contract broken: ${JSON.stringify({ cachedCli, cachedStatus, cachedCalls }).slice(0, 500)}`);
 
 fs.rmSync(emptyManaged.root, { recursive: true, force: true });
 fs.rmSync(cachedManaged.root, { recursive: true, force: true });
 
+
+// ---------------------------------------------------------------------------------------------
+// C1 emulator-status consumer block (appended; keep at the end of this file).
+// pico-cli's shared serializer emits tool_name/tool_status and maps SUCCESS:0, FAILED:3, PARTIAL:4
+// (source-inspected CLI_RESULT_SCHEMA / EMULATOR_STATUS_RESULT excerpts, 2026-09-15 audit). The
+// consumer must require tool_name emulator.status and check exit/envelope consistency, while every
+// independent gate (node, adb, jdk, ...) keeps its own verdict.
+{
+  const fixtureText = (name) => fs.readFileSync(new URL(`./fixtures/picocli/emulator-status-${name}.json`, import.meta.url), "utf8");
+  const statusIO = (emulator) => ({
+    ...healthyIO,
+    exec: (cmd, args) => {
+      if (cmd === "pico-cli" && args[0] === "-v") return { ok: true, code: 0, stdout: "pico-cli/0.5.0\n" };
+      if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return emulator;
+      return healthyIO.exec(cmd, args);
+    },
+  });
+  const cases = [
+    { label: "SUCCESS with exit 0", result: { ok: true, code: 0, stdout: fixtureText("success"), stderr: "" }, want: "pass" },
+    { label: "SUCCESS with exit 3 is inconsistent", result: { ok: false, code: 3, stdout: fixtureText("success"), stderr: "" }, want: "warn", detail: /exit.*3|3.*exit/i },
+    { label: "SUCCESS without an observed exit code but a failed process", result: { ok: false, stdout: fixtureText("success"), stderr: "" }, want: "warn", detail: /non-zero|exit/i },
+    { label: "wrong tool envelope", result: { ok: true, code: 0, stdout: fixtureText("success").replace('"emulator.status"', '"device.list"'), stderr: "" }, want: "warn", detail: /tool_name/ },
+    { label: "missing tool_name", result: { ok: true, code: 0, stdout: fixtureText("success").replace(/"tool_name": "emulator.status",\n/, ""), stderr: "" }, want: "warn", detail: /tool_name/ },
+    { label: "PARTIAL with exit 4", result: { ok: false, code: 4, stdout: fixtureText("partial"), stderr: "" }, want: "warn", detail: /degraded/, notDetail: /mismatch|inconsistent/i },
+    { label: "FAILED with exit 3", result: { ok: false, code: 3, stdout: fixtureText("failed"), stderr: "" }, want: "warn", detail: /failed/, notDetail: /mismatch|inconsistent/i },
+    { label: "malformed JSON", result: { ok: true, code: 0, stdout: "not-json", stderr: "" }, want: "warn", detail: /structured emulator status unavailable/ },
+    { label: "timeout", result: { ok: false, code: null, timedOut: true, stdout: "", stderr: "" }, want: "warn", detail: /timed out/i },
+    { label: "spawn error", result: { ok: false, code: null, spawnError: "spawn ENOENT", stdout: "", stderr: "" }, want: "warn", detail: /spawn ENOENT/ },
+    { label: "managed integrity rejection", result: { ok: false, code: null, spawnError: "pre-spawn validation failed: managed pico-cli publication identity could not be revalidated: managed publication content changed after resolution", stdout: "", stderr: "" }, want: "warn", detail: /integrity/i, fix: /ensure_pico_cli/ },
+  ];
+  for (const item of cases) {
+    const checks = runPreflightChecks(statusIO(item.result));
+    const row = checks.find((check) => check.name === "pico-cli-emulator-status");
+    const cliRow = checks.find((check) => check.name === "pico-cli");
+    const independent = ["node", "adb", "jdk", "emulator", "calibration"].every((name) => checks.find((check) => check.name === name)?.status === "pass");
+    const detailOk = !item.detail || item.detail.test(row?.detail ?? "");
+    const notDetailOk = !item.notDetail || !item.notDetail.test(row?.detail ?? "");
+    const fixOk = item.want === "pass" ? row?.fix === null : (typeof row?.fix === "string" && row.fix.length > 10 && (!item.fix || item.fix.test(row.fix)));
+    if (row?.status === item.want && detailOk && notDetailOk && fixOk && cliRow?.status === "pass" && independent) ok(`emulator-status consumer: ${item.label} => ${item.want}`);
+    else fail(`emulator-status consumer (${item.label}): ${JSON.stringify({ row, cliRow: cliRow?.status, independent })}`);
+  }
+  // The PARTIAL warning keeps the envelope's own remediation with deterministic precedence.
+  const partialWithFix = JSON.parse(fixtureText("partial"));
+  partialWithFix.errors = [{ message: "guest properties unavailable", fix: "Wait for boot completion, then re-run preflight_env" }];
+  const partialRow = runPreflightChecks(statusIO({ ok: false, code: 4, stdout: JSON.stringify(partialWithFix), stderr: "" }))
+    .find((check) => check.name === "pico-cli-emulator-status");
+  partialRow?.status === "warn" && partialRow.fix === "Wait for boot completion, then re-run preflight_env" && /degraded/.test(partialRow.detail)
+    ? ok("PARTIAL/4 keeps the expected degraded warning and the envelope's remediation")
+    : fail(`PARTIAL remediation lost: ${JSON.stringify(partialRow)}`);
+}
 console.log(`\nPreflight test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

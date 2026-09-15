@@ -6,22 +6,36 @@ import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import {
+  externalCliCapabilityIdentity,
   inspectManagedPicoCli,
+  managedPicoCliCapabilityIdentity,
   managedPicoCliExecutionHandle,
+  readCliCapabilityEvidence,
   resolveManagedPicoCli,
   validateManagedPicoCliExecution,
+  type CliCapabilityReport,
   type ManagedPicoCliExecutionHandle,
   type ManagedPicoCliIO,
   type ManagedPicoCliOptions,
   type PicoCliEnsureResult,
 } from "./picoclimanaged.js";
+import {
+  PICO_CLI_ENVIRONMENT_PATTERN,
+  PICO_CLI_USAGE_DRIFT_PATTERN,
+  PICO_CLI_UTILITIES_GATE_PATTERN,
+  resolveOperationCapability,
+  unknownCapability,
+  type CliOperation,
+  type OperationCapability,
+} from "./clicapabilities.js";
 
 export {
   PICO_CLI_PACKAGE,
   PICO_CLI_PATH_ENV,
   PICO_CLI_POLICY_ENV,
 } from "./picoclimanaged.js";
-export type { ManagedPicoCliOptions, PicoCliEnsureResult } from "./picoclimanaged.js";
+export type { CliCapabilityReport, ManagedPicoCliOptions, PicoCliEnsureResult } from "./picoclimanaged.js";
+export type { CliOperation, OperationCapability } from "./clicapabilities.js";
 
 // Node's native spawn/execFile cannot reliably execute npm's `.cmd` shims on Windows. cross-spawn
 // does that without `shell:true` interpolation (some pico-cli argv, notably trace SQL, is user
@@ -160,6 +174,7 @@ export type PicoCliExecutionGuards = {
 };
 
 const executionTargetHandles = new WeakMap<object, ManagedPicoCliExecutionHandle>();
+const executionTargetCapabilities = new WeakMap<object, CliCapabilityReport>();
 
 let probeMemo: PicoCliProbe | null = null;
 
@@ -211,6 +226,7 @@ export type PicoCliFailureClass =
   | "cli-unusable"
   | "flag-or-version-drift"
   | "setup-required"
+  | "environment"
   | "latest-unknown"
   | "update-failed"
   | "cli-disabled"
@@ -772,7 +788,26 @@ export function picoCliFromEnsure(result: PicoCliEnsureResult): PicoCliExecution
     if (!handle) return null;
     executionTargetHandles.set(target, handle);
   }
+  if (result.capabilities) executionTargetCapabilities.set(target, result.capabilities);
   return target;
+}
+
+/**
+ * Per-operation availability for an execution target. The bound report is honored only when the
+ * target's freshly derived identity matches the report's entire identity and the operation's
+ * evidence bytes still verify; anything else is `unknown` with the exact reason, so a wrapper can
+ * refuse dispatch or ask for fresh bounded discovery (ensure_pico_cli).
+ */
+export function picoCliOperationCapability(cli: PicoCliExecutionTarget, operation: CliOperation): OperationCapability {
+  const report = executionTargetCapabilities.get(cli) ?? null;
+  const handle = cli.source === "managed" ? executionTargetHandles.get(cli) : undefined;
+  const identity = cli.source === "managed"
+    ? (handle ? managedPicoCliCapabilityIdentity(handle) : null)
+    : externalCliCapabilityIdentity(cli.path, cli.version ?? "");
+  if (!identity) {
+    return unknownCapability(operation, "stale-identity: the execution target's package identity could not be derived; request fresh bounded discovery (ensure_pico_cli)");
+  }
+  return resolveOperationCapability({ set: report, target: identity, operation, readEvidence: readCliCapabilityEvidence });
 }
 
 function managedHomeFromSnapshot(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string {
@@ -931,20 +966,36 @@ export function extractPicoCliRemediations(value: unknown, cap = 32): string[] {
 
 /**
  * Classify a FAILED pico-cli invocation honestly. A "…are not installed. Run `pico-cli setup`"
- * refusal is the 0.4.x utilities gate (measured 2026-08-12 on 0.4.2: the whole perf family exits 1
- * with "Perf utilities 0.1.0 are not installed" until a one-time `pico-cli setup`) — that is a
- * provisioning gap with an exact user-run remedy, not drift and not a device problem. Usage dumps /
- * unknown-option complaints mean the wrapped flags no longer match the installed CLI (drift —
+ * refusal is the utilities gate (measured 2026-08-12 on 0.4.2; retained 2026-09-15 as 0.4.4
+ * invocation 012 exit 1 and 0.5.0 invocations 137-141 exit 3): a provisioning gap with an exact
+ * user-run remedy, not drift and not a device problem. "PICO_HOME is not set" / "must be an
+ * absolute path" (0.5.0 profiler resolution, source-inspected PERF_ENV050) is an environment
+ * problem: the CLI read its environment before locating any payload, so provisioning is not
+ * assumed to be its fix. Usage dumps, unknown-option complaints and the 0.5.0 router's
+ * "Unknown perf subcommand" mean the wrapped argv no longer matches the installed CLI (drift —
  * retrying unchanged cannot help); anything else is a runtime failure whose cause lives in the
  * CLI's own output, not in a guess of ours.
  */
 export function classifyPicoCliFailure(
   stderr: string,
   stdout: string,
-): "flag-or-version-drift" | "setup-required" | "runtime" {
-  const text = `${stderr}\n${stdout}`.toLowerCase();
-  if (/not installed[\s\S]{0,120}pico-cli setup/.test(text)) return "setup-required";
-  return /unknown option|unknown command|unknown argument|missing required|\busage:/.test(text)
-    ? "flag-or-version-drift"
-    : "runtime";
+): "flag-or-version-drift" | "setup-required" | "environment" | "runtime" {
+  const text = `${stderr}\n${stdout}`;
+  if (PICO_CLI_UTILITIES_GATE_PATTERN.test(text)) return "setup-required";
+  if (PICO_CLI_ENVIRONMENT_PATTERN.test(text)) return "environment";
+  return PICO_CLI_USAGE_DRIFT_PATTERN.test(text) ? "flag-or-version-drift" : "runtime";
+}
+
+/**
+ * Exact guidance for an `environment` failure, or null when the output shows no such condition.
+ * It names the variable the CLI read and what it must contain; it never prescribes running
+ * setup, because an unset environment root is not evidence that the payload is absent.
+ */
+export function describePicoCliEnvironmentFailure(stderr: string, stdout: string): string | null {
+  const text = `${stderr}\n${stdout}`;
+  if (!PICO_CLI_ENVIRONMENT_PATTERN.test(text)) return null;
+  return "pico-cli read PICO_HOME before locating its profiler payload and found it unset or not absolute. "
+    + "Set PICO_HOME to the absolute PICO SDK root for the MCP server process (the root validate_toolchain resolves), "
+    + "restart the MCP server, and retry. This server never sets PICO_HOME implicitly; whether the profiler payload "
+    + "itself is provisioned is a separate question answered by the CLI's own utilities message, not by this classification.";
 }

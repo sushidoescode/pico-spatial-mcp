@@ -1,0 +1,482 @@
+import crypto from "node:crypto";
+
+/**
+ * clicapabilities.ts — per-operation availability of the resolved @picoxr/pico-cli, derived from
+ * bounded `--help` observations and bound to the exact package identity that produced them.
+ *
+ * Package activation (picoclimanaged.ts) answers "which exact pico-cli bytes run". This module
+ * answers "which MCP-wrapped operations that package can be asked to perform, according to the
+ * linked help evidence". The two stay separate: a missing optional profiler payload makes its
+ * operations `unavailable` without invalidating an otherwise usable package, and `supported` means
+ * supported by the retained discovery evidence — never runtime or visual acceptance.
+ *
+ * A help hash alone never enables an operation. A stored record is honored only after its
+ * evidence bytes are re-read, hash-verified and re-classified (resolveOperationCapability), and
+ * only when the entire recorded identity matches the resolved execution target.
+ */
+
+export type CliOperation = "knowledge-server" | "watch-crash" | "capture-record" | "perf-live"
+  | "trace-record" | "trace-decode" | "trace-load" | "trace-query";
+export type HelpObservation = {
+  argv: string[];
+  exitCode: number | null;
+  timedOut: boolean;
+  outputTruncated: boolean;
+  stdoutPath: string;
+  stderrPath: string;
+  stdoutSha256: string;
+  stderrSha256: string;
+};
+export type OperationCapability = {
+  operation: CliOperation;
+  state: "supported" | "unavailable" | "unknown";
+  argvPrefix: string[] | null;
+  reason: string;
+  evidence: HelpObservation[];
+};
+export type CliCapabilityIdentity = {
+  version: string;
+  executablePath: string;
+  packageJsonSha256: string;
+  executionTreeSha256: string;
+};
+export type CliCapabilitySet = {
+  schemaVersion: 1;
+  identity: CliCapabilityIdentity;
+  checkedAt: string;
+  operations: OperationCapability[];
+};
+
+export const CLI_OPERATIONS: readonly CliOperation[] = [
+  "knowledge-server",
+  "watch-crash",
+  "capture-record",
+  "perf-live",
+  "trace-record",
+  "trace-decode",
+  "trace-load",
+  "trace-query",
+] as const;
+
+export type CliOperationRoute = {
+  operation: CliOperation;
+  /** Discovery argv prefix (`--help` is appended by discovery); null when the line has no route. */
+  argvPrefix: string[] | null;
+  /** Which retained evidence or byte-checked source excerpt establishes (or denies) the route. */
+  provenance: string;
+};
+
+export type CliVersionLine = "0.4.x" | "0.5.x";
+
+/** The 0.4.x utilities gate. Measured 2026-08-12 on 0.4.2, retained 2026-09-15 as invocation 012
+ * (0.4.4, exit 1) and invocations 137-141 (0.5.0, exit 3). Source: PERF_ENV044 / PERF_ENV050. */
+export const PICO_CLI_UTILITIES_GATE_PATTERN = /not installed[\s\S]{0,120}pico-cli setup/i;
+/** 0.5.0 profiler resolution requires an absolute PICO_HOME before any perf delegation
+ * (source-inspected PERF_ENV050; not help-observed on this host). */
+export const PICO_CLI_ENVIRONMENT_PATTERN = /PICO_HOME is not set|PICO_HOME must be an absolute path/i;
+/** Usage dumps and router rejections: the wrapped argv no longer matches the installed CLI.
+ * `Unknown perf subcommand` / `Unknown perf <resource> action` are the 0.5.0 router texts
+ * (source-inspected PERF_ENV050). */
+export const PICO_CLI_USAGE_DRIFT_PATTERN = /unknown (?:perf )?(?:sub)?command|unknown perf \S+ action|unknown option|unknown argument|missing required|\busage:/i;
+
+const USAGE_SECTION_PATTERN = /\busage\b/i;
+
+// Route tables. Every argv below is traceable to retained help bytes copied into
+// test/fixtures/picocli/help/<version>/NNN.* (index.json maps NNN to
+// evidence/2026-09-15-cli050-sdk61-evolution-audit-001/RAW_HELP_INDEX_002.json) or to the
+// byte-checked source excerpts in CLI050_STATIC_EXCERPTS_001.json (K044, K050, WATCH_ARGS050,
+// CAPTURE_ARGS050, PERF_ROUTER050, PERF_ENV050, PERF_ENV044). Colon aliases retained by 0.5.0
+// (`mcp:dev-knowledge`, `knowledge:server`) are single argv tokens and are deliberately not used;
+// the removed spaced `mcp dev-knowledge` route is never resurrected on 0.5.x, and the former
+// `perf monitor run` route is rejected by the 0.5.0 router and appears in no table.
+type RouteTable = Record<CliOperation, { argv: readonly string[] | null; provenance: string }>;
+
+const ROUTES_0_4: RouteTable = {
+  "knowledge-server": {
+    argv: ["mcp", "dev-knowledge"],
+    provenance: "0.4.4 invocation 062 (`mcp dev-knowledge --help`, exit 0) and registration excerpt K044",
+  },
+  "watch-crash": { argv: ["app", "watch-crash"], provenance: "0.4.4 invocation 025 (`app watch-crash --help`, exit 0)" },
+  "capture-record": { argv: ["capture", "record"], provenance: "0.4.4 invocation 026 (`capture record --help`, exit 0)" },
+  "perf-live": {
+    argv: null,
+    provenance: "no 0.4.x live-collection route is dispatched: 0.4.4 invocation 012 (`perf --help`) exited 1 at the "
+      + "utilities gate (PERF_ENV044 fails before delegating any perf argv) and the former `perf monitor run` route is "
+      + "rejected by the 0.5.0 router (PERF_ROUTER050); live collection is routed on 0.5.x only",
+  },
+  "trace-record": { argv: ["perf", "trace", "record"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012" },
+  "trace-decode": { argv: ["perf", "trace", "decode"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012" },
+  "trace-load": { argv: ["perf", "trace", "load"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012" },
+  "trace-query": { argv: ["perf", "trace", "query"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012" },
+};
+
+const ROUTES_0_5: RouteTable = {
+  "knowledge-server": {
+    argv: ["knowledge", "server"],
+    provenance: "0.5.0 invocation 136 (`knowledge server --help`, exit 0) and registration excerpt K050 (spaced `mcp dev-knowledge` removed)",
+  },
+  "watch-crash": { argv: ["app", "watch-crash"], provenance: "0.5.0 invocation 096 (`app watch-crash --help`, exit 0) and WATCH_ARGS050" },
+  "capture-record": { argv: ["capture", "record"], provenance: "0.5.0 invocation 097 (`capture record --help`, exit 0) and CAPTURE_ARGS050" },
+  "perf-live": {
+    argv: ["perf", "live", "run"],
+    provenance: "PERF_ROUTER050 permits live: run/start/stop; 0.5.0 invocation 139 (`perf live --help`) exited 3 at the utilities gate, so evidence decides reachability",
+  },
+  "trace-record": { argv: ["perf", "trace", "record"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate" },
+  "trace-decode": { argv: ["perf", "trace", "decode"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate" },
+  "trace-load": { argv: ["perf", "trace", "load"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate" },
+  "trace-query": { argv: ["perf", "trace", "query"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate" },
+};
+
+/** 0.4.x and older lines use the 0.4.4 table; 0.5.x and every newer line is probed with the newest
+ * retained table. The table only supplies candidate argv: the help evidence decides the state. */
+export function cliVersionLine(version: string): CliVersionLine {
+  const match = /^v?(\d+)\.(\d+)(?:\.|$)/.exec(version.trim());
+  if (match && Number(match[1]) === 0 && Number(match[2]) <= 4) return "0.4.x";
+  return "0.5.x";
+}
+
+export function cliOperationRoutes(version: string): CliOperationRoute[] {
+  const line = cliVersionLine(version);
+  const table = line === "0.4.x" ? ROUTES_0_4 : ROUTES_0_5;
+  return CLI_OPERATIONS.map((operation) => ({
+    operation,
+    argvPrefix: table[operation].argv ? [...table[operation].argv] : null,
+    provenance: `${line}: ${table[operation].provenance}`,
+  }));
+}
+
+export type HelpFailureKind = "utilities-not-installed" | "environment" | "unknown-command" | "nonzero-exit";
+
+/** Classify the text of a nonzero help invocation. Shared with the scheduled surface comparator. */
+export function classifyHelpFailureText(text: string): HelpFailureKind {
+  if (PICO_CLI_UTILITIES_GATE_PATTERN.test(text)) return "utilities-not-installed";
+  if (PICO_CLI_ENVIRONMENT_PATTERN.test(text)) return "environment";
+  if (/unknown (?:perf )?(?:sub)?command|unknown perf \S+ action|unknown option|unknown argument|missing required/i.test(text)) return "unknown-command";
+  return "nonzero-exit";
+}
+
+export type HelpClassification = { state: OperationCapability["state"]; reason: string };
+
+export type HelpClassificationOptions = {
+  spawnError?: string;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+};
+
+function firstLine(text: string): string {
+  return text.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? "";
+}
+
+function operationPhrasePattern(argvPrefix: string[]): RegExp {
+  const escaped = argvPrefix.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`(?:^|[^A-Za-z0-9_-])${escaped.join("[ \\t]+")}(?![A-Za-z0-9_-])`, "m");
+}
+
+/**
+ * Pure classification of one bounded `<argvPrefix> --help` observation. Nonzero exits are read
+ * through their text (utilities gate, environment, router rejection, other); exit-zero output must
+ * contain a usage section that names the exact operation phrase, otherwise it is generic parent
+ * help (`unavailable`) or malformed (`unknown`).
+ */
+export function classifyHelpOutput(
+  operation: CliOperation,
+  argvPrefix: string[],
+  observation: Pick<HelpObservation, "exitCode" | "timedOut" | "outputTruncated">,
+  stdout: string,
+  stderr: string,
+  options: HelpClassificationOptions = {},
+): HelpClassification {
+  const phrase = argvPrefix.join(" ");
+  const probe = `\`${phrase} --help\``;
+  if (options.spawnError) {
+    return { state: "unknown", reason: `incomplete: the bounded ${probe} probe for ${operation} did not complete: ${options.spawnError}` };
+  }
+  if (observation.timedOut) {
+    const bound = options.timeoutMs !== undefined ? `${options.timeoutMs} ms` : "its time bound";
+    return { state: "unknown", reason: `timed-out: ${probe} exceeded ${bound}; ${operation} is not classified from a killed probe` };
+  }
+  if (observation.outputTruncated) {
+    const cap = options.maxOutputBytes !== undefined ? `${options.maxOutputBytes}-byte` : "its byte";
+    return { state: "unknown", reason: `output-truncated: ${probe} exceeded the ${cap} capture cap; ${operation} is not classified from partial output` };
+  }
+  if (observation.exitCode === null) {
+    return { state: "unknown", reason: `incomplete: ${probe} ended without an exit code; ${operation} is not classified` };
+  }
+  const text = `${stdout}\n${stderr}`;
+  if (observation.exitCode !== 0) {
+    const kind = classifyHelpFailureText(text);
+    const detail = firstLine(stderr) || firstLine(stdout);
+    const suffix = detail ? `: ${detail}` : "";
+    switch (kind) {
+      case "utilities-not-installed":
+        return { state: "unavailable", reason: `utilities-not-installed: ${probe} exited ${observation.exitCode} at the CLI's utilities gate${suffix}` };
+      case "environment":
+        return { state: "unavailable", reason: `environment: ${probe} exited ${observation.exitCode} because the CLI's environment is incomplete${suffix}` };
+      case "unknown-command":
+        return { state: "unavailable", reason: `unknown-command: the installed CLI rejected ${probe} (exit ${observation.exitCode})${suffix}` };
+      default:
+        return { state: "unavailable", reason: `nonzero-exit: ${probe} exited ${observation.exitCode} without help${suffix}` };
+    }
+  }
+  if (text.trim().length === 0) {
+    return { state: "unknown", reason: `malformed-help: ${probe} exited 0 with no output` };
+  }
+  if (!USAGE_SECTION_PATTERN.test(text)) {
+    return { state: "unknown", reason: `malformed-help: ${probe} exited 0 but printed no usage section (${firstLine(text).slice(0, 80)})` };
+  }
+  if (!operationPhrasePattern(argvPrefix).test(text)) {
+    const usage = text.split(/\r?\n/).map((line) => line.trim()).find((line) => /pico-cli|usage/i.test(line) && !/^usage:?$/i.test(line)) ?? firstLine(text);
+    return { state: "unavailable", reason: `generic-parent-help: the help rendered for ${probe} does not name \`${phrase}\` (${usage.slice(0, 120)})` };
+  }
+  return { state: "supported", reason: `help-names-operation: ${probe} exited 0 and its usage names \`${phrase}\`` };
+}
+
+export type ObservedHelp = {
+  observation: HelpObservation;
+  stdout: string;
+  stderr: string;
+  spawnError?: string;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+};
+
+export function unknownCapability(operation: CliOperation, reason: string, argvPrefix: string[] | null = null): OperationCapability {
+  return { operation, state: "unknown", argvPrefix: argvPrefix ? [...argvPrefix] : null, reason, evidence: [] };
+}
+
+/** Classify one operation from its route and the observations recorded for that route. */
+export function classifyOperation(route: CliOperationRoute, observations: ObservedHelp[]): OperationCapability {
+  if (route.argvPrefix === null) {
+    return { operation: route.operation, state: "unavailable", argvPrefix: null, reason: `no-route: ${route.provenance}`, evidence: [] };
+  }
+  const argvPrefix = [...route.argvPrefix];
+  if (observations.length === 0) {
+    return unknownCapability(route.operation, `no-discovery: no bounded help observation was recorded for \`${argvPrefix.join(" ")}\``, argvPrefix);
+  }
+  const latest = observations[observations.length - 1];
+  const outcome = classifyHelpOutput(route.operation, argvPrefix, latest.observation, latest.stdout, latest.stderr, {
+    ...(latest.spawnError !== undefined ? { spawnError: latest.spawnError } : {}),
+    ...(latest.timeoutMs !== undefined ? { timeoutMs: latest.timeoutMs } : {}),
+    ...(latest.maxOutputBytes !== undefined ? { maxOutputBytes: latest.maxOutputBytes } : {}),
+  });
+  return {
+    operation: route.operation,
+    state: outcome.state,
+    argvPrefix,
+    reason: outcome.reason,
+    evidence: observations.map((item) => cloneObservation(item.observation)),
+  };
+}
+
+function cloneObservation(observation: HelpObservation): HelpObservation {
+  return { ...observation, argv: [...observation.argv] };
+}
+
+function cloneCapability(capability: OperationCapability): OperationCapability {
+  return {
+    ...capability,
+    argvPrefix: capability.argvPrefix ? [...capability.argvPrefix] : null,
+    evidence: capability.evidence.map(cloneObservation),
+  };
+}
+
+/** `complete` only when every operation reached a terminal classification. */
+export function capabilityCoverage(set: Pick<CliCapabilitySet, "operations">): "complete" | "partial" {
+  return set.operations.every((operation) => operation.state !== "unknown") ? "complete" : "partial";
+}
+
+const IDENTITY_FIELDS: readonly (keyof CliCapabilityIdentity)[] = ["version", "executablePath", "packageJsonSha256", "executionTreeSha256"];
+
+export function sameCliCapabilityIdentity(left: CliCapabilityIdentity, right: CliCapabilityIdentity): boolean {
+  return IDENTITY_FIELDS.every((field) => left[field] === right[field]);
+}
+
+/** Null when identical; otherwise the fields that differ, so a stale record explains itself. */
+export function describeIdentityDrift(recorded: CliCapabilityIdentity, current: CliCapabilityIdentity): string | null {
+  const drifted = IDENTITY_FIELDS.filter((field) => recorded[field] !== current[field]);
+  if (drifted.length === 0) return null;
+  return drifted.map((field) => `${field} changed (recorded ${abbreviate(recorded[field])}, current ${abbreviate(current[field])})`).join("; ");
+}
+
+function abbreviate(value: string): string {
+  return value.length > 24 ? `${value.slice(0, 12)}…${value.slice(-8)}` : value;
+}
+
+/** Content-addressed key for the whole identity (used for the immutable report directory). */
+export function cliCapabilityIdentityKey(identity: CliCapabilityIdentity): string {
+  return crypto.createHash("sha256")
+    .update(JSON.stringify(IDENTITY_FIELDS.map((field) => identity[field])), "utf8")
+    .digest("hex")
+    .slice(0, 24);
+}
+
+export type EvidenceReader = (file: string) => Buffer | null;
+
+export type CapabilityVerification = { status: "ok" } | { status: "rejected"; reason: string };
+
+/**
+ * Re-read, hash-verify and re-classify one record's evidence. The stored state is a cache: it is
+ * honored only when the retained bytes reproduce it.
+ */
+export function verifyOperationCapability(capability: OperationCapability, readEvidence: EvidenceReader): CapabilityVerification {
+  const { operation } = capability;
+  if (capability.argvPrefix === null) {
+    return capability.state === "unavailable" && capability.evidence.length === 0
+      ? { status: "ok" }
+      : { status: "rejected", reason: `report-inconsistent: ${operation} has no route but is stored as ${capability.state} with ${capability.evidence.length} observation(s)` };
+  }
+  if (capability.evidence.length === 0) {
+    return capability.state === "unknown"
+      ? { status: "ok" }
+      : { status: "rejected", reason: `report-inconsistent: ${operation} is stored as ${capability.state} without any help observation` };
+  }
+  const observed: ObservedHelp[] = [];
+  for (const observation of capability.evidence) {
+    const stdout = readEvidence(observation.stdoutPath);
+    if (!stdout) return { status: "rejected", reason: `evidence-missing: ${operation} evidence bytes at ${observation.stdoutPath} could not be read; request fresh bounded discovery (ensure_pico_cli)` };
+    const stderr = readEvidence(observation.stderrPath);
+    if (!stderr) return { status: "rejected", reason: `evidence-missing: ${operation} evidence bytes at ${observation.stderrPath} could not be read; request fresh bounded discovery (ensure_pico_cli)` };
+    if (sha256Hex(stdout) !== observation.stdoutSha256) {
+      return { status: "rejected", reason: `evidence-mismatch: ${operation} stdout bytes at ${observation.stdoutPath} no longer hash to the recorded value` };
+    }
+    if (sha256Hex(stderr) !== observation.stderrSha256) {
+      return { status: "rejected", reason: `evidence-mismatch: ${operation} stderr bytes at ${observation.stderrPath} no longer hash to the recorded value` };
+    }
+    observed.push({ observation, stdout: stdout.toString("utf8"), stderr: stderr.toString("utf8") });
+  }
+  const recomputed = classifyOperation({ operation, argvPrefix: capability.argvPrefix, provenance: "stored record" }, observed);
+  if (recomputed.state !== capability.state) {
+    return {
+      status: "rejected",
+      reason: `report-inconsistent: ${operation} is stored as ${capability.state} but its retained bytes classify as ${recomputed.state} (${recomputed.reason})`,
+    };
+  }
+  return { status: "ok" };
+}
+
+export function verifyCapabilitySet(set: CliCapabilitySet, readEvidence: EvidenceReader): CapabilityVerification {
+  for (const capability of set.operations) {
+    const verification = verifyOperationCapability(capability, readEvidence);
+    if (verification.status !== "ok") return verification;
+  }
+  return { status: "ok" };
+}
+
+/**
+ * The only path from a stored set to a dispatch decision. Missing discovery, a stale identity,
+ * missing or mismatched evidence bytes, and a stored state its bytes cannot reproduce all yield
+ * `unknown`; old capabilities are never applied to a newly resolved target.
+ */
+export function resolveOperationCapability(args: {
+  set: CliCapabilitySet | null;
+  target: CliCapabilityIdentity;
+  operation: CliOperation;
+  readEvidence: EvidenceReader;
+}): OperationCapability {
+  const { set, target, operation, readEvidence } = args;
+  if (!set) {
+    return unknownCapability(operation, "no-discovery: no bounded discovery evidence is bound to this execution target; call ensure_pico_cli for fresh bounded discovery");
+  }
+  const drift = describeIdentityDrift(set.identity, target);
+  if (drift) {
+    return unknownCapability(operation, `stale-identity: the recorded capability identity does not match the resolved execution target (${drift}); request fresh bounded discovery (ensure_pico_cli)`);
+  }
+  const record = set.operations.find((candidate) => candidate.operation === operation);
+  if (!record) {
+    return unknownCapability(operation, `no-discovery: the bound capability report has no record for ${operation}; call ensure_pico_cli for fresh bounded discovery`);
+  }
+  const verification = verifyOperationCapability(record, readEvidence);
+  if (verification.status !== "ok") return unknownCapability(operation, verification.reason, record.argvPrefix);
+  return cloneCapability(record);
+}
+
+const SHA256_HEX = /^[a-f0-9]{64}$/;
+const CAPABILITY_STATES = new Set<OperationCapability["state"]>(["supported", "unavailable", "unknown"]);
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function parseObservation(value: unknown): HelpObservation | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (!isStringArray(record.argv) || record.argv.length === 0) return null;
+  if (record.exitCode !== null && (typeof record.exitCode !== "number" || !Number.isSafeInteger(record.exitCode))) return null;
+  if (typeof record.timedOut !== "boolean" || typeof record.outputTruncated !== "boolean") return null;
+  if (typeof record.stdoutPath !== "string" || typeof record.stderrPath !== "string") return null;
+  if (typeof record.stdoutSha256 !== "string" || !SHA256_HEX.test(record.stdoutSha256)) return null;
+  if (typeof record.stderrSha256 !== "string" || !SHA256_HEX.test(record.stderrSha256)) return null;
+  return {
+    argv: [...record.argv],
+    exitCode: record.exitCode as number | null,
+    timedOut: record.timedOut,
+    outputTruncated: record.outputTruncated,
+    stdoutPath: record.stdoutPath,
+    stderrPath: record.stderrPath,
+    stdoutSha256: record.stdoutSha256,
+    stderrSha256: record.stderrSha256,
+  };
+}
+
+function parseCapability(value: unknown): OperationCapability | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.operation !== "string" || !CLI_OPERATIONS.includes(record.operation as CliOperation)) return null;
+  if (typeof record.state !== "string" || !CAPABILITY_STATES.has(record.state as OperationCapability["state"])) return null;
+  if (record.argvPrefix !== null && !isStringArray(record.argvPrefix)) return null;
+  if (typeof record.reason !== "string") return null;
+  if (!Array.isArray(record.evidence)) return null;
+  const evidence: HelpObservation[] = [];
+  for (const item of record.evidence) {
+    const observation = parseObservation(item);
+    if (!observation) return null;
+    evidence.push(observation);
+  }
+  return {
+    operation: record.operation as CliOperation,
+    state: record.state as OperationCapability["state"],
+    argvPrefix: record.argvPrefix === null ? null : [...(record.argvPrefix as string[])],
+    reason: record.reason,
+    evidence,
+  };
+}
+
+export function parseCliCapabilityIdentity(value: unknown): CliCapabilityIdentity | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.version !== "string" || record.version.length === 0 || record.version.length > 64) return null;
+  if (typeof record.executablePath !== "string" || record.executablePath.length === 0) return null;
+  if (typeof record.packageJsonSha256 !== "string" || !SHA256_HEX.test(record.packageJsonSha256)) return null;
+  if (typeof record.executionTreeSha256 !== "string" || !SHA256_HEX.test(record.executionTreeSha256)) return null;
+  return {
+    version: record.version,
+    executablePath: record.executablePath,
+    packageJsonSha256: record.packageJsonSha256,
+    executionTreeSha256: record.executionTreeSha256,
+  };
+}
+
+/** Versioned reader for schema 1. Returns a fresh, structurally validated copy or null. */
+export function parseCliCapabilitySet(value: unknown): CliCapabilitySet | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (record.schemaVersion !== 1) return null;
+  const identity = parseCliCapabilityIdentity(record.identity);
+  if (!identity) return null;
+  const checkedAtMs = typeof record.checkedAt === "string" ? Date.parse(record.checkedAt) : Number.NaN;
+  if (!Number.isFinite(checkedAtMs) || new Date(checkedAtMs).toISOString() !== record.checkedAt) return null;
+  if (!Array.isArray(record.operations)) return null;
+  const operations: OperationCapability[] = [];
+  const seen = new Set<CliOperation>();
+  for (const item of record.operations) {
+    const capability = parseCapability(item);
+    if (!capability || seen.has(capability.operation)) return null;
+    seen.add(capability.operation);
+    operations.push(capability);
+  }
+  return { schemaVersion: 1, identity, checkedAt: record.checkedAt as string, operations };
+}
+
+export function sha256Hex(bytes: Buffer | string): string {
+  return crypto.createHash("sha256").update(bytes).digest("hex");
+}

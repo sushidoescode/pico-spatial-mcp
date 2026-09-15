@@ -32,6 +32,7 @@ const trackedEnv = [
   "FAKE_REGISTRY_MODE",
   "FAKE_PICO_DRIVER",
   "FAKE_CANARY_FAILURE",
+  "FAKE_PICO_HELP_MAP",
 ];
 
 function runtimeDriverSource() {
@@ -70,6 +71,16 @@ if (role === "managed-cli") {
     process.stdout.write("pico-cli/" + version + " (managed runtime fixture)\\n");
     process.exit(0);
   }
+  if (cliArgs.at(-1) === "--help" && process.env.FAKE_PICO_HELP_MAP) {
+    const helpMap = JSON.parse(fs.readFileSync(process.env.FAKE_PICO_HELP_MAP, "utf8"));
+    const replay = helpMap[cliArgs.slice(0, -1).join(" ")];
+    if (replay) {
+      if (replay.hang) { setInterval(() => {}, 1_000); await new Promise(() => {}); }
+      if (replay.stdoutFile) process.stdout.write(fs.readFileSync(replay.stdoutFile));
+      if (replay.stderrFile) process.stderr.write(fs.readFileSync(replay.stderrFile));
+      process.exit(replay.code ?? 0);
+    }
+  }
   if (cliArgs.at(-1) === "--help") {
     process.stdout.write("fixture help: " + cliArgs.join(" ") + "\\n");
     process.exit(0);
@@ -79,7 +90,7 @@ if (role === "managed-cli") {
     await new Promise(() => {});
   }
   if (cliArgs.join(" ") === "emulator status --format json") {
-    process.stdout.write(JSON.stringify({ tool_status: "SUCCESS", data: { fixture: true }, errors: [] }) + "\\n");
+    process.stdout.write(JSON.stringify({ tool_name: "emulator.status", tool_status: "SUCCESS", data: { fixture: true }, errors: [] }) + "\\n");
     process.exit(0);
   }
   if (process.env.FAKE_PICO_OPERATION_MODE === "setup-required") {
@@ -190,7 +201,7 @@ function shQuote(value) {
   return `'${String(value).replaceAll("'", `'"'"'`)}'`;
 }
 
-function writeCommand(binDir, name, driverPath, role, fixedArgs = []) {
+export function writeCommand(binDir, name, driverPath, role, fixedArgs = []) {
   if (process.platform === "win32") {
     const command = path.join(binDir, `${name}.cmd`);
     const fixed = fixedArgs.map((arg) => ` "${String(arg).replaceAll('"', '""')}"`).join("");
@@ -323,6 +334,13 @@ if (role === "managed-cli") {
   else if (cliArgs[0] === "fixture-mutate-managed-file") {
     fs.appendFileSync(process.env.FAKE_MANAGED_MUTATION_TARGET, "\\nfixture post-spawn mutation\\n");
     process.stdout.write("fake managed pico-cli mutated its published tree\\n");
+  }
+  else if (cliArgs.at(-1) === "--help" && process.env.FAKE_PICO_HELP_MAP && JSON.parse(fs.readFileSync(process.env.FAKE_PICO_HELP_MAP, "utf8"))[cliArgs.slice(0, -1).join(" ")]) {
+    const replay = JSON.parse(fs.readFileSync(process.env.FAKE_PICO_HELP_MAP, "utf8"))[cliArgs.slice(0, -1).join(" ")];
+    if (replay.hang) { setInterval(() => {}, 1_000); await new Promise(() => {}); }
+    if (replay.stdoutFile) process.stdout.write(fs.readFileSync(replay.stdoutFile));
+    if (replay.stderrFile) process.stderr.write(fs.readFileSync(replay.stderrFile));
+    process.exit(replay.code ?? 0);
   }
   else if (cliArgs.at(-1) === "--help" && cliArgs.slice(0, -1).join(" ") === process.env.FAKE_CANARY_FAILURE) {
     process.stderr.write("fixture incompatible: " + cliArgs.join(" ") + "\\n");
@@ -476,6 +494,7 @@ export function publishManagedFixtureVersion(harness, managedRoot, version, {
   cliVersion = version,
   recordText,
   registryIntegrity = null,
+  extraFiles = {},
 } = {}) {
   const versionRoot = path.join(managedRoot, "versions", version);
   const relativeCliPath = path.join("node_modules", ".bin", process.platform === "win32" ? "pico-cli.cmd" : "pico-cli");
@@ -485,6 +504,7 @@ export function publishManagedFixtureVersion(harness, managedRoot, version, {
   fs.mkdirSync(packageRoot, { recursive: true });
   writeCommand(path.dirname(shimPath), "pico-cli", harness.driverPath, "managed-cli", [cliVersion]);
   fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@picoxr/pico-cli", version: packageVersion }));
+  for (const [relativePath, text] of Object.entries(extraFiles)) fs.writeFileSync(path.join(versionRoot, relativePath), text);
   const contentIdentity = managedContentIdentityForFixture(versionRoot);
   fs.writeFileSync(path.join(versionRoot, "install.json"), recordText ?? JSON.stringify({
     schemaVersion: 2,
@@ -557,7 +577,7 @@ fs.openSync = function instrumentedOpenSync(file, flags, ...rest) {
   }
   return descriptor;
 };
-let canaries = 0;
+let versionProbes = 0;
 const io = {
   env: {},
   platform: process.platform,
@@ -566,7 +586,9 @@ const io = {
   randomUUID: () => process.pid + "-" + crypto.randomUUID(),
   run: async (command, args, options = {}) => {
     const result = await runPicoCliCommand(command, args, options);
-    if (args.at(-1) === "--help" && ++canaries === 9) {
+    // Staging is complete once the staged shim answered its -v probe (the cold store has no
+    // published version to probe first); hold every worker there so claim contention is real.
+    if (args.length === 1 && args[0] === "-v" && ++versionProbes === 1) {
       fs.writeFileSync(path.join(barrierRoot, String(process.pid)), "ready");
       const deadline = Date.now() + 15_000;
       while (fs.readdirSync(barrierRoot).length < participants) {

@@ -37,9 +37,21 @@ export type CheckResult = {
   inspection?: PicoCliEnsureResult;
 };
 
+/** One injected command result. `code`, `timedOut` and `spawnError` are optional so legacy
+ * fixtures keep working; production supplies them from the bounded runner so the emulator-status
+ * row can check execution/envelope consistency. */
+export type PreflightExecResult = {
+  ok: boolean;
+  stdout: string;
+  stderr?: string;
+  code?: number | null;
+  timedOut?: boolean;
+  spawnError?: string;
+};
+
 export type PreflightIO = {
   nodeVersion: string;
-  exec: (cmd: string, args: string[]) => { ok: boolean; stdout: string; stderr?: string };
+  exec: (cmd: string, args: string[]) => PreflightExecResult;
   readFile: (p: string) => string | null;
   statMtimeMs: (p: string) => number | null;
   now: () => number;
@@ -88,9 +100,12 @@ async function defaultBoundedIO(): Promise<PreflightIO> {
       if (args.length === 1 && args[0] === "-v") return versionResult;
       if (args.join(" ") === "emulator status --format json" && emulatorResult) {
         return {
-          ok: !emulatorResult.timedOut && emulatorResult.code === 0,
+          ok: !emulatorResult.timedOut && !emulatorResult.spawnError && emulatorResult.code === 0,
           stdout: emulatorResult.stdout,
-          stderr: [emulatorResult.spawnError, emulatorResult.stderr].filter(Boolean).join("\n"),
+          stderr: emulatorResult.stderr,
+          code: emulatorResult.code,
+          timedOut: emulatorResult.timedOut,
+          ...(emulatorResult.spawnError ? { spawnError: emulatorResult.spawnError } : {}),
         };
       }
       return { ok: false, stdout: "", stderr: "unsupported pico-cli preflight command" };
@@ -175,6 +190,57 @@ function calibrationRoute(): string {
   return servingDoors
     ? "run pico_doctor {calibrate:true} — it runs fleet_build(['calib']) then calibrate_capture_camera through the full-surface inner server, no client restart needed"
     : "fleet_build(['calib']) then calibrate_capture_camera";
+}
+
+const EMULATOR_STATUS_TOOL = "emulator.status";
+/** pico-cli's shared result serializer maps tool_status to the process exit code
+ * (source-inspected CLI_RESULT_SCHEMA, 0.5.0 chunk-IRAF5R7A.js:12; 2026-09-15 audit). */
+const EMULATOR_STATUS_EXIT: Record<"SUCCESS" | "PARTIAL" | "FAILED", number> = { SUCCESS: 0, FAILED: 3, PARTIAL: 4 };
+const EMULATOR_STATUS_DIRECT_FIX = "Run `pico-cli emulator status --format json` directly and inspect its diagnostics; this read-only check does not run pico-cli doctor.";
+
+/**
+ * The emulator-status row. A healthy row requires all of: the process completed (no timeout,
+ * spawn error or managed-integrity rejection), a well-formed envelope whose tool_name is
+ * emulator.status, tool_status SUCCESS, and an exit code consistent with that status. PARTIAL and
+ * FAILED stay warnings that surface the envelope's own remediation; every other defect is a
+ * warning that names what was inconsistent instead of a pass.
+ */
+function emulatorStatusCheck(status: PreflightExecResult): CheckResult {
+  const name = "pico-cli-emulator-status";
+  const stderr = status.stderr?.trim() ?? "";
+  if (status.spawnError) {
+    const integrity = /validation failed|identity|publication/i.test(status.spawnError);
+    return integrity
+      ? { name, status: "warn", detail: `managed pico-cli integrity check rejected the emulator status invocation before it could be trusted: ${status.spawnError}`, fix: "Call ensure_pico_cli to re-resolve and revalidate the managed CLI, then re-run preflight_env; if the rejection persists, follow the manual recovery action in its note." }
+      : { name, status: "warn", detail: `structured emulator status unavailable: pico-cli could not start (${status.spawnError})`, fix: EMULATOR_STATUS_DIRECT_FIX };
+  }
+  if (status.timedOut) {
+    return { name, status: "warn", detail: `structured emulator status unavailable: pico-cli emulator status timed out and was killed${stderr ? `; stderr=${stderr}` : ""}`, fix: EMULATOR_STATUS_DIRECT_FIX };
+  }
+  const exitObserved = status.code !== undefined;
+  const processContext = status.ok
+    ? (exitObserved ? `; process exit: ${status.code}` : "")
+    : `; process exit: ${exitObserved ? String(status.code) : "non-zero"}${stderr ? `; stderr=${stderr}` : ""}`;
+  const envelope = parsePicoCliEnvelope(status.stdout);
+  if (envelope.status === "invalid") {
+    return { name, status: "warn", detail: `structured emulator status unavailable: ${envelope.detail}${processContext}`, fix: EMULATOR_STATUS_DIRECT_FIX };
+  }
+  const toolName = envelope.envelope.tool_name;
+  if (toolName !== EMULATOR_STATUS_TOOL) {
+    return { name, status: "warn", detail: `structured emulator status envelope carries tool_name=${typeof toolName === "string" ? toolName : "(missing)"}, expected ${EMULATOR_STATUS_TOOL}; not treating another tool's JSON as emulator status${processContext}`, fix: EMULATOR_STATUS_DIRECT_FIX };
+  }
+  const expectedExit = EMULATOR_STATUS_EXIT[envelope.toolStatus];
+  const exitConsistent = exitObserved ? status.code === expectedExit : (status.ok ? expectedExit === 0 : expectedExit !== 0);
+  const consistency = exitConsistent ? "" : `; exit/status mismatch: envelope ${envelope.toolStatus} expects exit ${expectedExit}`;
+  if (envelope.outcome === "operational") {
+    return exitConsistent
+      ? { name, status: "pass", detail: `pico-cli structured emulator status: operational${processContext}`, fix: null }
+      : { name, status: "warn", detail: `pico-cli structured emulator status: envelope SUCCESS but the process did not exit ${expectedExit}${processContext}${consistency}; not treating an inconsistent execution as healthy`, fix: EMULATOR_STATUS_DIRECT_FIX };
+  }
+  const payload = JSON.stringify(envelope.envelope).slice(0, 1_000);
+  const action = extractPicoCliRemediations(envelope.envelope)[0];
+  const diagnostic = envelope.summary ?? payload;
+  return { name, status: "warn", detail: `pico-cli structured emulator status: ${envelope.outcome}; ${diagnostic}; payload=${payload}${processContext}${consistency}`, fix: action ?? "Run `pico-cli emulator status --format json` directly and address its returned diagnostics; this read-only check does not run pico-cli doctor." };
 }
 
 export function runPreflightChecks(io: PreflightIO): CheckResult[] {
@@ -263,19 +329,7 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
     push(inspectedCli
       ? { name: "pico-cli", status: "pass", detail: picoCliInspectionDetail(inspectedCli), fix: null, inspection: inspectedCli }
       : { name: "pico-cli", status: "pass", detail: cliVersion ? `managed cached version ${cliVersion} (${raw})` : `managed cached CLI (version string unparsed: ${raw || "(empty)"})`, fix: null });
-    const emulatorStatus = io.exec("pico-cli", ["emulator", "status", "--format", "json"]);
-    const envelope = parsePicoCliEnvelope(emulatorStatus.stdout);
-    const processContext = emulatorStatus.ok ? "" : `; process exit: non-zero${emulatorStatus.stderr?.trim() ? `; stderr=${emulatorStatus.stderr.trim()}` : ""}`;
-    if (envelope.status === "invalid") {
-      push({ name: "pico-cli-emulator-status", status: "warn", detail: `structured emulator status unavailable: ${envelope.detail}${processContext}`, fix: "Run `pico-cli emulator status --format json` directly and inspect its diagnostics; this read-only check does not run pico-cli doctor." });
-    } else if (envelope.outcome === "operational") {
-      push({ name: "pico-cli-emulator-status", status: "pass", detail: `pico-cli structured emulator status: operational${processContext}`, fix: null });
-    } else {
-      const payload = JSON.stringify(envelope.envelope).slice(0, 1_000);
-      const action = extractPicoCliRemediations(envelope.envelope)[0];
-      const diagnostic = envelope.summary ?? payload;
-      push({ name: "pico-cli-emulator-status", status: "warn", detail: `pico-cli structured emulator status: ${envelope.outcome}; ${diagnostic}; payload=${payload}${processContext}`, fix: action ?? "Run `pico-cli emulator status --format json` directly and address its returned diagnostics; this read-only check does not run pico-cli doctor." });
-    }
+    push(emulatorStatusCheck(io.exec("pico-cli", ["emulator", "status", "--format", "json"])));
   } else if (inspectedCli?.status === "unavailable") {
     push({
       name: "pico-cli",

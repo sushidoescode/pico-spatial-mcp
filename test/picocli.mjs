@@ -99,7 +99,9 @@ unparsedRow && unparsedRow.status === "pass" && /unparsed/.test(unparsedRow.deta
   : fail(`preflight pico-cli unparsed row: ${JSON.stringify(unparsedRow)}`);
 
 // A successful version probe is followed by the exact read-only structured status argv, never doctor.
-const successEnvelope = '{"tool_status":"SUCCESS","data":{},"errors":[]}';
+// Real 0.4.2/0.5.0 envelopes carry tool_name (test/fixtures/picocli/emulator-status-*.json and the
+// source-inspected EMULATOR_STATUS_RESULT excerpt); the consumer now requires it.
+const successEnvelope = '{"tool_name":"emulator.status","tool_status":"SUCCESS","data":{},"errors":[]}';
 const calls = [];
 const structuredIO = { ...baseIO, exec: (cmd, args) => {
   calls.push([cmd, args]);
@@ -163,6 +165,203 @@ for (const required of ["adb screenrecord", "pico-cli capture record", "empty/in
     ? ok(`capture_record description names ${required}`)
     : fail(`capture_record description is missing ${required}`);
 }
+
+
+// --- C1: per-operation capability classification from retained help bytes (help-observed fixtures).
+// Every byte below is a verbatim copy of evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002
+// (see test/fixtures/picocli/help/index.json for the invocation numbers, versions and hashes).
+const fs = await import("node:fs");
+const crypto = await import("node:crypto");
+const {
+  CLI_OPERATIONS,
+  cliOperationRoutes,
+  classifyHelpOutput,
+  classifyOperation,
+  capabilityCoverage,
+  sameCliCapabilityIdentity,
+  describeIdentityDrift,
+  resolveOperationCapability,
+  unknownCapability,
+  parseCliCapabilitySet,
+} = await import("../dist/clicapabilities.js");
+const { describePicoCliEnvironmentFailure } = await import("../dist/picocli.js");
+
+const helpIndex = JSON.parse(fs.readFileSync(new URL("./fixtures/picocli/help/index.json", import.meta.url), "utf8"));
+const evidenceIndex = JSON.parse(fs.readFileSync(new URL("../evidence/2026-09-15-cli050-sdk61-evolution-audit-001/RAW_HELP_INDEX_002.json", import.meta.url), "utf8"));
+const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+const fixture = (version, invocation) => {
+  const entry = helpIndex.entries.find((item) => item.version === version && item.invocation === invocation);
+  if (!entry) throw new Error(`missing help fixture ${version}/${invocation}`);
+  const stdoutUrl = new URL(`./fixtures/picocli/help/${entry.files["stdout.txt"]}`, import.meta.url);
+  const stderrUrl = new URL(`./fixtures/picocli/help/${entry.files["stderr.txt"]}`, import.meta.url);
+  return {
+    entry,
+    stdoutPath: fs.realpathSync(stdoutUrl),
+    stderrPath: fs.realpathSync(stderrUrl),
+    stdout: fs.readFileSync(stdoutUrl),
+    stderr: fs.readFileSync(stderrUrl),
+  };
+};
+
+// Fixture integrity: the copied bytes must hash to the values the audit index recorded, and the
+// six nonzero results named by the brief must be present as real failure cases.
+let fixtureIntegrity = true;
+for (const entry of helpIndex.entries) {
+  const { stdout, stderr } = fixture(entry.version, entry.invocation);
+  const source = evidenceIndex.invocations.find((item) => item.artifactStem.endsWith(`/${entry.invocation}`));
+  if (sha256(stdout) !== entry.stdoutSha256 || sha256(stderr) !== entry.stderrSha256
+    || !source || source.stdoutSha256 !== entry.stdoutSha256 || source.stderrSha256 !== entry.stderrSha256
+    || source.code !== entry.code || JSON.stringify(source.argv) !== JSON.stringify(entry.argv)) {
+    fixtureIntegrity = false;
+    fail(`help fixture ${entry.version}/${entry.invocation} drifted from the retained evidence`);
+  }
+}
+if (fixtureIntegrity) ok(`${helpIndex.entries.length} help fixtures hash to their retained evidence bytes`);
+JSON.stringify(helpIndex.nonzeroInvocations) === JSON.stringify(evidenceIndex.summary.nonzero.map((item) => item.artifactStem.split("/").at(-1)))
+  && helpIndex.nonzeroInvocations.every((invocation) => helpIndex.entries.some((entry) => entry.invocation === invocation && entry.code !== 0))
+  ? ok("all six nonzero retained results are present as failure fixtures")
+  : fail("the six nonzero retained results are not all captured as fixtures");
+
+// Route tables are version-line specific and never resurrect removed or rejected routes.
+const routes044 = Object.fromEntries(cliOperationRoutes("0.4.4").map((route) => [route.operation, route.argvPrefix]));
+const routes050 = Object.fromEntries(cliOperationRoutes("0.5.0").map((route) => [route.operation, route.argvPrefix]));
+JSON.stringify(routes044["knowledge-server"]) === JSON.stringify(["mcp", "dev-knowledge"])
+  && JSON.stringify(routes050["knowledge-server"]) === JSON.stringify(["knowledge", "server"])
+  ? ok("knowledge-server routes follow the retained 0.4.4 (062) and 0.5.0 (136) help evidence")
+  : fail(`knowledge-server routes wrong: ${JSON.stringify({ routes044, routes050 })}`);
+routes044["perf-live"] === null && JSON.stringify(routes050["perf-live"]) === JSON.stringify(["perf", "live", "run"])
+  ? ok("perf-live is routed only on the 0.5.x line")
+  : fail(`perf-live routes wrong: ${JSON.stringify({ routes044, routes050 })}`);
+["record", "decode", "load", "query"].every((op) =>
+  JSON.stringify(routes044[`trace-${op}`]) === JSON.stringify(["perf", "trace", op])
+  && JSON.stringify(routes050[`trace-${op}`]) === JSON.stringify(["perf", "trace", op]))
+  ? ok("trace-* routes are perf trace <op> on both lines")
+  : fail(`trace routes wrong: ${JSON.stringify({ routes044, routes050 })}`);
+const allRoutes = [...cliOperationRoutes("0.4.4"), ...cliOperationRoutes("0.5.0"), ...cliOperationRoutes("0.6.0")];
+allRoutes.every((route) => route.argvPrefix === null
+  || (!route.argvPrefix.includes("monitor") && !route.argvPrefix.some((token) => token.includes(":")) && route.argvPrefix.every((token) => !token.startsWith("-"))))
+  && cliOperationRoutes("0.5.0").every((route) => route.argvPrefix === null || route.argvPrefix[0] !== "mcp")
+  ? ok("no route uses the rejected perf monitor alias, colon aliases, flags, or the removed 0.5.x mcp group")
+  : fail(`route table contains an unsupported alias: ${JSON.stringify(allRoutes)}`);
+cliOperationRoutes("0.5.0").length === CLI_OPERATIONS.length && cliOperationRoutes("0.4.4").length === CLI_OPERATIONS.length
+  ? ok("every CliOperation has exactly one route entry per version line")
+  : fail("route tables do not cover the operation union");
+
+const observation = (fx, argvPrefix, overrides = {}) => ({
+  argv: [...argvPrefix, "--help"],
+  exitCode: fx.entry.code,
+  timedOut: fx.entry.timedOut,
+  outputTruncated: fx.entry.outputTruncated,
+  stdoutPath: fx.stdoutPath,
+  stderrPath: fx.stderrPath,
+  stdoutSha256: fx.entry.stdoutSha256,
+  stderrSha256: fx.entry.stderrSha256,
+  ...overrides,
+});
+const classify = (operation, argvPrefix, fx, overrides = {}, options = {}) =>
+  classifyHelpOutput(operation, argvPrefix, observation(fx, argvPrefix, overrides), fx.stdout.toString("utf8"), fx.stderr.toString("utf8"), options);
+const expectState = (label, outcome, state, reasonPattern) => {
+  outcome.state === state && reasonPattern.test(outcome.reason)
+    ? ok(`${label}: ${outcome.state} (${outcome.reason.split(":")[0]})`)
+    : fail(`${label}: expected ${state} ${reasonPattern}, got ${JSON.stringify(outcome)}`);
+};
+
+// Successful matching help (help-observed).
+expectState("0.5.0 knowledge server help", classify("knowledge-server", ["knowledge", "server"], fixture("0.5.0", "136")), "supported", /^help-names-operation:/);
+expectState("0.4.4 mcp dev-knowledge help", classify("knowledge-server", ["mcp", "dev-knowledge"], fixture("0.4.4", "062")), "supported", /^help-names-operation:/);
+expectState("0.5.0 app watch-crash help", classify("watch-crash", ["app", "watch-crash"], fixture("0.5.0", "096")), "supported", /^help-names-operation:/);
+expectState("0.4.4 capture record help", classify("capture-record", ["capture", "record"], fixture("0.4.4", "026")), "supported", /^help-names-operation:/);
+// Generic parent help rendered instead of the child's (root help and the perf parent).
+expectState("root help for knowledge-server", classify("knowledge-server", ["knowledge", "server"], fixture("0.5.0", "072")), "unavailable", /^generic-parent-help:/);
+expectState("perf parent help for perf-live", classify("perf-live", ["perf", "live", "run"], fixture("0.5.0", "082")), "unavailable", /^generic-parent-help:/);
+expectState("0.4.4 root help for the removed 0.5.x alias", classify("knowledge-server", ["mcp", "dev-knowledge"], fixture("0.5.0", "072")), "unavailable", /^generic-parent-help:/);
+// Missing utilities: the real nonzero results (0.4.4 exit 1, 0.5.0 exit 3).
+expectState("0.5.0 perf live gate (139)", classify("perf-live", ["perf", "live", "run"], fixture("0.5.0", "139")), "unavailable", /^utilities-not-installed:/);
+expectState("0.5.0 perf trace gate (141)", classify("trace-record", ["perf", "trace", "record"], fixture("0.5.0", "141")), "unavailable", /^utilities-not-installed:/);
+expectState("0.4.4 perf gate (012)", classify("trace-query", ["perf", "trace", "query"], fixture("0.4.4", "012")), "unavailable", /^utilities-not-installed:/);
+// Malformed help, timeout, truncation and an incomplete process are unknown, never supported.
+const emptyFixture = { entry: { code: 0, timedOut: false, outputTruncated: false, stdoutSha256: sha256(""), stderrSha256: sha256("") }, stdoutPath: "/dev/null", stderrPath: "/dev/null", stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+expectState("empty exit-zero output", classify("knowledge-server", ["knowledge", "server"], emptyFixture), "unknown", /^malformed-help:/);
+const fakeHelp = { ...emptyFixture, stdout: Buffer.from("fixture help: knowledge server --help\n") };
+expectState("exit-zero text without a usage section", classify("knowledge-server", ["knowledge", "server"], fakeHelp), "unknown", /^malformed-help:/);
+expectState("timed-out probe", classify("knowledge-server", ["knowledge", "server"], fixture("0.5.0", "136"), { timedOut: true, exitCode: null }, { timeoutMs: 2000 }), "unknown", /^timed-out:/);
+expectState("truncated probe", classify("knowledge-server", ["knowledge", "server"], fixture("0.5.0", "136"), { outputTruncated: true }, { maxOutputBytes: 64 }), "unknown", /^output-truncated:/);
+expectState("probe without an exit code", classify("knowledge-server", ["knowledge", "server"], emptyFixture, { exitCode: null }, { spawnError: "pre-spawn validation failed: fixture" }), "unknown", /^incomplete:/);
+// Router rejections and environment gates (source-derived strings from PERF_ENV050; not help-observed).
+const unknownSub = { ...emptyFixture, entry: { ...emptyFixture.entry, code: 3 }, stderr: Buffer.from("Error: Unknown perf subcommand: monitor. Expected one of: daemon, session, doctor, live, trace. Run `pico-cli perf --help` to see available commands.\n") };
+expectState("unknown perf subcommand", classify("perf-live", ["perf", "monitor", "run"], unknownSub), "unavailable", /^unknown-command:/);
+const picoHome = { ...emptyFixture, entry: { ...emptyFixture.entry, code: 3 }, stderr: Buffer.from("Error: [warn] PICO_HOME is not set. Set PICO_HOME or run pico-cli setup to install primer before running perf.\n") };
+expectState("PICO_HOME unset", classify("trace-record", ["perf", "trace", "record"], picoHome), "unavailable", /^environment:/);
+const otherFailure = { ...emptyFixture, entry: { ...emptyFixture.entry, code: 2 }, stderr: Buffer.from("boom\n") };
+expectState("other nonzero exit", classify("trace-record", ["perf", "trace", "record"], otherFailure), "unavailable", /^nonzero-exit:/);
+
+// classifyOperation: no route is unavailable without evidence; a supported record carries evidence.
+const noRoute = classifyOperation(cliOperationRoutes("0.4.4").find((route) => route.operation === "perf-live"), []);
+noRoute.state === "unavailable" && noRoute.argvPrefix === null && noRoute.evidence.length === 0 && /^no-route:/.test(noRoute.reason)
+  ? ok("perf-live on 0.4.x is unavailable with a no-route reason and no evidence")
+  : fail(`perf-live 0.4.x record wrong: ${JSON.stringify(noRoute)}`);
+const ksFixture = fixture("0.5.0", "136");
+const ksRoute = cliOperationRoutes("0.5.0").find((route) => route.operation === "knowledge-server");
+const ksRecord = classifyOperation(ksRoute, [{ observation: observation(ksFixture, ksRoute.argvPrefix), stdout: ksFixture.stdout.toString("utf8"), stderr: ksFixture.stderr.toString("utf8") }]);
+ksRecord.state === "supported" && ksRecord.evidence.length === 1 && ksRecord.evidence[0].stdoutSha256 === ksFixture.entry.stdoutSha256
+  ? ok("classifyOperation binds the supported record to its help observation")
+  : fail(`knowledge-server record wrong: ${JSON.stringify(ksRecord)}`);
+
+// Aggregate coverage.
+const identity = { version: "0.5.0", executablePath: "/x/pico-cli", packageJsonSha256: sha256("pkg"), executionTreeSha256: sha256("tree") };
+const terminalSet = { schemaVersion: 1, identity, checkedAt: "2026-09-15T00:00:00.000Z", operations: [ksRecord, noRoute] };
+capabilityCoverage(terminalSet) === "complete" && capabilityCoverage({ operations: [ksRecord, unknownCapability("trace-load", "timed-out: fixture")] }) === "partial"
+  ? ok("coverage is complete only when every operation is terminal")
+  : fail("coverage aggregation wrong");
+
+// Identity binding: the entire identity must match, and drift names the field.
+sameCliCapabilityIdentity(identity, { ...identity })
+  && !sameCliCapabilityIdentity(identity, { ...identity, version: "0.5.1" })
+  && !sameCliCapabilityIdentity(identity, { ...identity, executablePath: "/y/pico-cli" })
+  && !sameCliCapabilityIdentity(identity, { ...identity, packageJsonSha256: sha256("other") })
+  && !sameCliCapabilityIdentity(identity, { ...identity, executionTreeSha256: sha256("other") })
+  && /executionTreeSha256/.test(describeIdentityDrift(identity, { ...identity, executionTreeSha256: sha256("other") }) ?? "")
+  && describeIdentityDrift(identity, { ...identity }) === null
+  ? ok("capability identity comparison covers every field and explains drift")
+  : fail("identity comparison is incomplete");
+
+// resolveOperationCapability: no evidence, stale identity, missing or mismatched bytes, and a
+// tampered stored state all degrade to unknown; a help hash alone never enables an operation.
+const readReal = (file) => { try { return fs.readFileSync(file); } catch { return null; } };
+const resolved = resolveOperationCapability({ set: terminalSet, target: identity, operation: "knowledge-server", readEvidence: readReal });
+resolved.state === "supported" && JSON.stringify(resolved.argvPrefix) === JSON.stringify(["knowledge", "server"])
+  ? ok("a verified record with matching identity and evidence bytes resolves as supported")
+  : fail(`verified resolution wrong: ${JSON.stringify(resolved)}`);
+expectState("no discovery evidence", resolveOperationCapability({ set: null, target: identity, operation: "knowledge-server", readEvidence: readReal }), "unknown", /^no-discovery:/);
+expectState("stale identity", resolveOperationCapability({ set: terminalSet, target: { ...identity, executionTreeSha256: sha256("replaced") }, operation: "knowledge-server", readEvidence: readReal }), "unknown", /^stale-identity:/);
+expectState("missing evidence bytes", resolveOperationCapability({ set: terminalSet, target: identity, operation: "knowledge-server", readEvidence: () => null }), "unknown", /^evidence-missing:/);
+expectState("mismatched evidence bytes", resolveOperationCapability({ set: terminalSet, target: identity, operation: "knowledge-server", readEvidence: () => Buffer.from("tampered") }), "unknown", /^evidence-mismatch:/);
+const tamperedSet = { ...terminalSet, operations: [{ ...ksRecord, evidence: [observation(fixture("0.5.0", "141"), ksRoute.argvPrefix)] }] };
+expectState("stored supported state contradicted by its bytes", resolveOperationCapability({ set: tamperedSet, target: identity, operation: "knowledge-server", readEvidence: readReal }), "unknown", /^report-inconsistent:/);
+expectState("operation absent from the set", resolveOperationCapability({ set: terminalSet, target: identity, operation: "trace-load", readEvidence: readReal }), "unknown", /^no-discovery:/);
+parseCliCapabilitySet(JSON.parse(JSON.stringify(terminalSet))) !== null
+  && parseCliCapabilitySet({ ...terminalSet, schemaVersion: 2 }) === null
+  && parseCliCapabilitySet({ ...terminalSet, operations: [{ ...ksRecord, state: "maybe" }] }) === null
+  ? ok("parseCliCapabilitySet accepts schema 1 and rejects unknown schema/state values")
+  : fail("parseCliCapabilitySet validation wrong");
+
+// --- classifyPicoCliFailure: retained bytes plus the 0.5.0 router/environment strings.
+classifyPicoCliFailure(fixture("0.4.4", "012").stderr.toString("utf8"), "") === "setup-required"
+  && classifyPicoCliFailure(fixture("0.5.0", "139").stderr.toString("utf8"), "") === "setup-required"
+  ? ok("retained 0.4.4/0.5.0 utilities gates classify as setup-required")
+  : fail("retained utilities gate bytes did not classify as setup-required");
+classifyPicoCliFailure("Error: Unknown perf subcommand: monitor. Expected one of: daemon, session, doctor, live, trace. Run `pico-cli perf --help` to see available commands.", "") === "flag-or-version-drift"
+  ? ok("0.5.0 router rejection (source-derived PERF_ENV050 text) classifies as flag-or-version-drift")
+  : fail("Unknown perf subcommand should classify as flag-or-version-drift");
+classifyPicoCliFailure("Error: [warn] PICO_HOME is not set. Set PICO_HOME or run pico-cli setup to install primer before running perf.", "") === "environment"
+  && classifyPicoCliFailure("", 'Error: PICO_HOME must be an absolute path, got "sdk".') === "environment"
+  ? ok("PICO_HOME problems classify as environment, not setup-required")
+  : fail(`PICO_HOME classification wrong: ${classifyPicoCliFailure("Error: [warn] PICO_HOME is not set. Set PICO_HOME or run pico-cli setup to install primer before running perf.", "")}`);
+const environmentGuidance = describePicoCliEnvironmentFailure("Error: [warn] PICO_HOME is not set. Set PICO_HOME or run pico-cli setup to install primer before running perf.", "");
+typeof environmentGuidance === "string" && /PICO_HOME/.test(environmentGuidance) && /absolute/.test(environmentGuidance)
+  && !/pico-cli\s+setup/i.test(environmentGuidance) && describePicoCliEnvironmentFailure("adb: device not found", "") === null
+  ? ok("environment guidance names PICO_HOME exactly and never prescribes running setup")
+  : fail(`environment guidance wrong: ${JSON.stringify(environmentGuidance)}`);
 
 console.log(`\npico-cli lane test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);
