@@ -77,6 +77,10 @@ const baseIO = {
   now: () => 1_800_000_000_000,
   home: "/fake-home",
   detectJavaHome: () => null,
+  // Host-environment-derived fields are declared, never inherited: with these omitted the adb and
+  // jdk rows would read this machine's $PICO_ADB / $JAVA_HOME. Every IO below spreads baseIO.
+  adbOverride: null,
+  javaHomeEnv: null,
 };
 const noCliRow = runPreflightChecks(baseIO).find((c) => c.name === "pico-cli");
 noCliRow && noCliRow.status === "warn" && /first CLI use/i.test(`${noCliRow.detail} ${noCliRow.fix}`)

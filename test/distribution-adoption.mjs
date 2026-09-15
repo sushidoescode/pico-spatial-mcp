@@ -800,8 +800,10 @@ test("setup-required wrapper results stay source/freshness-neutral and never exe
       const invocations = [
         ["perf_diagnose", { packageName: "com.example.fixture", durationSec: 5 }],
         ["perf_trace", { action: "record", packageName: "com.example.fixture", durationSec: 5, outputPath: path.join(harness.root, "trace.perfetto-trace") }],
-        ["watch_crash", { packageName: "com.example.fixture", durationSec: 5 }],
-        ["capture_record", { durationSec: 1, outputPath: path.join(harness.root, "capture.mp4") }],
+        ["watch_crash", { packageName: "com.example.fixture", durationSec: 5, device: "fixture-watch-0001" }],
+        // An explicit target is required since 38.0.0; without it the refusal is the device
+        // error, which would mask the setup-required classification this case is about.
+        ["capture_record", { device: "fixture-record-0001", durationSec: 1, outputPath: path.join(harness.root, "capture.mp4") }],
       ];
       for (const [name, args] of invocations) {
         const response = await client.callTool({ name, arguments: args });
@@ -1853,6 +1855,12 @@ test("preflight prints the verified emulator-bundle install route but never runs
     now: () => Date.now(),
     home: "/fake-home",
     detectJavaHome: () => "/fake-jdk",
+    // Declared, not inherited: every host-environment-derived PreflightIO field is pinned so the
+    // adb and jdk rows answer from this fixture instead of reading this machine's $PICO_ADB /
+    // $JAVA_HOME. Without adbOverride an exported PICO_ADB makes the adb row fail and the emulator
+    // row degrade to "cannot check without adb".
+    adbOverride: null,
+    javaHomeEnv: null,
   };
   const emulator = runPreflightChecks(io).find((check) => check.name === "emulator");
   assert.equal(emulator.status, "fail", JSON.stringify(emulator));

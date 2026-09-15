@@ -166,12 +166,14 @@ export function scanForCrashIndicators(text: string): string[] {
 }
 
 const WATCH_OPERATION = "watch-crash" as const;
-const DEFAULT_WATCH_DEVICE = "emulator-5554";
 
 export type WatchCrashRequest = {
   packageName: string;
   durationSec?: number;
-  device?: string;
+  /** REQUIRED adb serial. There is no default: an observation that cannot name the device it
+   *  watched is not evidence about any device, and a defaulted serial watches whatever happens to
+   *  be attached. The registered tool refuses a missing target BEFORE any CLI resolution. */
+  device: string;
   start?: boolean;
   activity?: string;
   intervalSec?: number;
@@ -266,7 +268,7 @@ export async function observeWatchCrash(
   //    flag AND that flag is the one watchArgv writes. Never inferred from a version comparison.
   const durationFlag = runtime.nativeDurationFlag();
   const nativeTimeoutSupported = durationFlag?.flag === "--monitor-timeout";
-  const args = watchArgv(request.packageName, request.device ?? DEFAULT_WATCH_DEVICE, sec, nativeTimeoutSupported);
+  const args = watchArgv(request.packageName, request.device, sec, nativeTimeoutSupported);
   if (request.start) args.push("--start");
   if (request.activity) args.push("--activity", request.activity);
   if (request.intervalSec) args.push("--interval", String(Math.round(request.intervalSec)));
@@ -304,7 +306,7 @@ export async function observeWatchCrash(
     result: r,
     metadata: {
       packageName: request.packageName,
-      device: request.device ?? DEFAULT_WATCH_DEVICE,
+      device: request.device,
       nativeTimeoutSupported,
       ...(durationFlag ? { nativeDurationFlag: durationFlag } : {}),
       watchdogBoundSec,
@@ -390,7 +392,8 @@ export function registerPicoCliTools(server: McpServer) {
         "reported as endedBy:'duration-cap …'. watchedSec is the OBSERVED elapsed window, " +
         "never the requested one — read observation.coverage (complete/partial/unknown) and assessment before treating a " +
         "quiet window as a no-crash result. Bounded raw stdout/stderr are retained immutably (retainedLog) and the crash " +
-        "scan reads that complete log, not the returned tail. Optionally starts the app first (--start/--activity); " +
+        "scan reads that complete log, not the returned tail. Requires an explicit `device` serial — there is no default " +
+        "target, and a missing one is refused before any CLI resolution. Optionally starts the app first (--start/--activity); " +
         "nothing is launched implicitly. Dispatch requires verified `app watch-crash` capability evidence for the resolved " +
         "package. Resolves the latest managed @picoxr/pico-cli lazily and runs its absolute path; successful resolution is " +
         "returned as picoCli provenance. HONESTY: " + WATCH_HONESTY,
@@ -424,13 +427,24 @@ export function registerPicoCliTools(server: McpServer) {
       inputSchema: {
         packageName: z.string().describe("Package to watch, e.g. com.example.knockdownxr"),
         durationSec: z.number().min(5).max(300).optional().describe("Requested watch window in seconds (default 30). Passed to the CLI as --monitor-timeout where that flag exists; otherwise only an outer watchdog bounds the child."),
-        device: z.string().optional().describe("Device serial (default emulator-5554)."),
+        device: z.string().optional().describe("REQUIRED adb device serial. There is no default: an observation names the device it watched."),
         start: z.boolean().optional().describe("Pass --start so pico-cli launches the app before watching (default false)."),
         activity: z.string().optional().describe("Optional activity for --start, e.g. .MainActivity"),
         intervalSec: z.number().min(1).max(30).optional().describe("PID-poll interval seconds (CLI default 2)."),
       },
     },
     async ({ packageName, durationSec, device, start, activity, intervalSec }) => {
+      // Explicit target identity, checked before any CLI work (same rule as capture_record and
+      // capture_frame): a watch that cannot name its device is not evidence about any device, and
+      // a defaulted serial watches whatever is attached.
+      if (!device || !device.trim()) {
+        return okJsonStructured({
+          status: "failed",
+          failureClass: "runtime",
+          note: "device is required: watch_crash names the device the observation watched, and there is no default target. Pass the adb serial of the device to watch.",
+          packageName,
+        });
+      }
       const ensured = await ensurePicoCli();
       if (ensured.status !== "ok") {
         return okJsonStructured({
@@ -443,7 +457,7 @@ export function registerPicoCliTools(server: McpServer) {
       const cli = picoCliFromEnsure(ensured)!;
       const provenance = { picoCli: picoCliProvenance(ensured) };
       const observed = await observeWatchCrash(
-        { packageName, ...(durationSec !== undefined ? { durationSec } : {}), ...(device !== undefined ? { device } : {}),
+        { packageName, device, ...(durationSec !== undefined ? { durationSec } : {}),
           ...(start !== undefined ? { start } : {}), ...(activity !== undefined ? { activity } : {}),
           ...(intervalSec !== undefined ? { intervalSec } : {}) },
         {

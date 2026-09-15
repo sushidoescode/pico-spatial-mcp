@@ -1965,7 +1965,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
     await withServer(harness, "full", async (client) => {
       const invoke = async () => JSON.parse((await client.callTool({
         name: "watch_crash",
-        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+        arguments: { packageName: "com.example.fixture", durationSec: 5, device: "fixture-serial" },
       })).content[0].text);
       const installed = await invoke();
       const present = await invoke();
@@ -2136,7 +2136,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
     await withServer(healthyHarness, "full", async (client) => {
       const healthy = JSON.parse((await client.callTool({
         name: "watch_crash",
-        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+        arguments: { packageName: "com.example.fixture", durationSec: 5, device: "fixture-serial" },
       })).content[0].text);
       assert.equal(healthy.status, "ok", JSON.stringify(healthy));
       assert.match(healthy.endedBy ?? "", /^duration-cap/);
@@ -2154,7 +2154,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
     await withServer(driftHarness, "full", async (client) => {
       const rejected = JSON.parse((await client.callTool({
         name: "watch_crash",
-        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+        arguments: { packageName: "com.example.fixture", durationSec: 5, device: "fixture-serial" },
       })).content[0].text);
       assert.equal(rejected.status, "failed", JSON.stringify(rejected));
       assert.equal(rejected.failureClass, "runtime", JSON.stringify(rejected));
@@ -2169,7 +2169,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
     await withServer(harness, "full", async (client) => {
       const out = JSON.parse((await client.callTool({
         name: "watch_crash",
-        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+        arguments: { packageName: "com.example.fixture", durationSec: 5, device: "fixture-serial" },
       })).content[0].text);
       assert.equal(out.status, "unavailable", JSON.stringify(out));
       assert.equal(out.failureClass, "latest-unknown");
@@ -2184,7 +2184,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
     await withServer(harness, "full", async (client) => {
       const out = JSON.parse((await client.callTool({
         name: "watch_crash",
-        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+        arguments: { packageName: "com.example.fixture", durationSec: 5, device: "fixture-serial" },
       })).content[0].text);
       assert.equal(out.status, "failed", JSON.stringify(out));
       assert.equal(out.failureClass, "setup-required");

@@ -78,7 +78,7 @@ const supported = (argvPrefix = ["app", "watch-crash"]) => ({
  * genuine bound handed to the production runner so a "stuck" child dies in milliseconds.
  */
 async function observe({
-  request = { packageName: "com.example.fixture", durationSec: 60 },
+  request = { packageName: "com.example.fixture", durationSec: 60, device: "fixture-serial" },
   mode = "quiet",
   elapsedSec = 1,
   realTimeoutMs = 4_000,
@@ -208,7 +208,7 @@ test("a 60 second request whose child exits after 1 second reports 1 second, not
   assert.equal(result.crashIndicated, false);
   assert.equal(result.assessment, "inconclusive");
   assert.deepEqual(seen.argv.slice(0, 7),
-    ["app", "watch-crash", "com.example.fixture", "-d", "emulator-5554", "--monitor-timeout", "60"]);
+    ["app", "watch-crash", "com.example.fixture", "-d", "fixture-serial", "--monitor-timeout", "60"]);
   assert.equal(seen.timeoutMs, (60 + WATCH_WATCHDOG_GRACE_SEC) * 1000);
 });
 
@@ -382,7 +382,7 @@ test("an unsupported capability refuses before any spawn and keeps the neutral s
       cliPath: "/abs/fixture/pico-cli",
       cliRaw: "pico-cli/0.5.0 (fixture)",
     };
-    return observeWatchCrash({ packageName: "com.example.fixture", durationSec: 60 }, runtime);
+    return observeWatchCrash({ packageName: "com.example.fixture", durationSec: 60, device: "fixture-serial" }, runtime);
   };
 
   const gated = await refusal({
