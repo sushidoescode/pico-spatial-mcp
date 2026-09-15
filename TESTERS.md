@@ -27,6 +27,28 @@ TypeScript source or `tsconfig.json` in it, so `tsc` will just print its help te
 Requires **Node ≥ 20**. The MCP package itself installs nothing globally; its isolated pico-cli
 policy is described below.
 
+## Where this `.tgz` came from
+
+The archive you were handed is the exact artifact the release checks ran against. It is packed,
+installed into a throwaway directory, driven over stdio, and published only if every check passed.
+Publication can only ever *add*: each release lands under its own version-stamped name and never
+overwrites or removes an earlier archive, so a `.tgz` you already installed from stays exactly
+where it was and stays byte-identical.
+
+If a `pico-spatial-mcp-<version>.tgz.receipt.json` came with it, that is the publication receipt for
+this archive. It records the sha256 and byte count of the artifact, the build that produced the
+payload inside it, the machine the checks ran on, every check with how it was classified, and — the
+part worth reading — a `limitations` list stating plainly what that run did **not** prove. Compare
+the digest against the receipt before you install:
+
+```bash
+shasum -a 256 pico-spatial-mcp-<version>.tgz
+```
+
+Maintainers publish with `npm run test:tarball -- --publish <dir>/pico-spatial-mcp-<version>.tgz`.
+That argument names the destination **file**. It used to name a directory, and emptied that
+directory of archives before copying; a directory argument is now refused outright.
+
 ## Register it with your MCP client
 
 Claude Code (`.mcp.json` in your project, or your user config):

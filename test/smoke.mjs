@@ -1,42 +1,62 @@
-// Smoke test: spawns the built server over stdio and exercises the non-emulator tools
-// against the real local toolchain. Run: npm run smoke
+/**
+ * Smoke: spawns the built server over stdio and checks that every tool registers, that the typed
+ * contracts round-trip, and that `build_and_run` reaches its success path — all against fixtures.
+ * Run: npm run smoke
+ *
+ * This gate is hermetic by construction, not by luck. It builds the server's whole environment
+ * from scratch (`buildRunSmokeFixtureEnv`): an empty PICO tools root, a fixture home, a PATH whose
+ * first entry holds a fake adb, a fake npm that refuses every call, and CLI-backed operations
+ * switched off. Nothing here selects tooling by discovering it on the host, so the result is the
+ * same on a clean CI runner and on a fully-equipped developer machine — which is the property
+ * `test/smoke-isolation.mjs` measures by running this file twice under two different host homes.
+ *
+ * What this gate does NOT do is exercise a real toolchain. `validate_toolchain`, `emulator_list`,
+ * real bundle pack/inspect and SDK/proto discovery live in `test/sdk-integration.mjs`, which is run
+ * explicitly against paths the operator names. See the README's Testing section.
+ */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { materializeBuildRunSmokeFixture } from "./helpers/buildrun-smoke-fixture.mjs";
+import {
+  FIXTURE_SERIAL,
+  buildRunSmokeFixtureEnv,
+  materializeBuildRunSmokeFixture,
+  readBuildRunSmokeFixtureLog,
+} from "./helpers/buildrun-smoke-fixture.mjs";
 
-const CLAIMSIGHT = path.join(os.homedir(), "AndroidStudioProjects/claimsight");
-const EXISTING_BUNDLE = path.join(CLAIMSIGHT, "editor-asset/build/spatial/bundle/editor-asset.bundle");
-// The project root is the directory CONTAINING the <Name>.spatialproject file
-const SCENE_PROJECT = path.join(CLAIMSIGHT, "editor-asset/src/main/res3d/SpatialPackContent");
-const OUT_BUNDLE = path.join(os.tmpdir(), "pico-mcp-smoke", "smoke.bundle");
+const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-smoke-"));
+const fixture = materializeBuildRunSmokeFixture({
+  root: scratch,
+  pngBase64: fs.readFileSync(path.join(repoRoot, "golden", "showcase-6cards.golden.png")).toString("base64"),
+});
+const fixtureEnv = buildRunSmokeFixtureEnv(fixture);
 
-// The smoke exercises full-surface tools; since v36.3 the coded default (env unset) is doors.
-const transport = new StdioClientTransport({ command: "node", args: ["dist/index.js"], env: { ...process.env, PICO_MCP_SURFACE: "full" } });
-const client = new Client({ name: "smoke", version: "0.0.0" });
-await client.connect(transport);
-
+/** Every check this gate ran, in order, so a caller can compare two runs check-for-check. */
+const checks = [];
 let failures = 0;
-// CI runners have no PICO SDK/emulator payload — with SMOKE_SDK_OPTIONAL=1, checks that fail
-// ONLY because the local toolchain is absent count as SKIP (environmental), not FAIL (code).
-const SDK_OPTIONAL = !!process.env.SMOKE_SDK_OPTIONAL;
-// S2: the packer consumers now fail with the toolchain resolver's structured code instead of a
-// hand-written sentence, so this matcher names the codes that mean "this host has no PICO
-// toolchain". Caller-error codes (override-*, android-project-*) are deliberately NOT listed —
-// those are real failures even on a machine with no SDK.
-const ENV_MISS = /No (spatialbundle binary|emulator payload) found under|unavailable\/(component-missing|root-unavailable|version-missing|unsupported-default-root|component-unsupported-platform)/;
-const show = (name, res) => {
-  const text = res.content
-    .map((c) => (c.type === "text" ? c.text : `[${c.type} ${c.data ? Math.round(c.data.length * 0.75) + " bytes" : ""}]`))
-    .join("\n");
-  const envMiss = res.isError && SDK_OPTIONAL && ENV_MISS.test(text);
-  const status = envMiss ? "SKIP (no local PICO SDK)" : res.isError ? "FAIL" : "ok";
-  if (res.isError && !envMiss) failures++;
-  console.log(`\n=== ${name} [${status}] ===\n${text.slice(0, 2500)}`);
+const record = (name, status, detail = "") => {
+  checks.push({ name, status });
+  if (status === "FAIL") failures++;
+  console.log(`\n=== ${name} [${status}] ===${detail ? `\n${detail.slice(0, 2500)}` : ""}`);
 };
+const expect = (name, condition, detail) => record(name, condition ? "ok" : "FAIL", condition ? "" : detail);
+
+async function connect(name) {
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(repoRoot, "dist", "index.js")],
+    env: fixtureEnv,
+  });
+  const client = new Client({ name, version: "0.0.0" });
+  await client.connect(transport);
+  return client;
+}
+
+const client = await connect("smoke");
 
 const tools = await client.listTools();
 console.log(`Tools registered (${tools.tools.length}):`, tools.tools.map((t) => t.name).join(", "));
@@ -65,7 +85,8 @@ const EXPECTED = [
 const MAC_ONLY = new Set(["gui_find_window", "gui_camera", "gui_permissions", "gui_capture"]);
 const missing = EXPECTED.filter((n) => !tools.tools.some((t) => t.name === n))
   .filter((n) => process.platform === "darwin" || !MAC_ONLY.has(n));
-if (missing.length) { console.log("MISSING TOOLS:", missing.join(", ")); failures++; }
+expect("tool registration", missing.length === 0, `MISSING TOOLS: ${missing.join(", ")}`);
+
 const prompts = await client.listPrompts().catch(() => ({ prompts: [] }));
 console.log("Prompts:", prompts.prompts.map((p) => p.name).join(", ") || "(none)");
 
@@ -79,27 +100,28 @@ console.log("Prompts:", prompts.prompts.map((p) => p.name).join(", ") || "(none)
     "perf_diagnose", "perf_trace", "watch_crash", "capture_record", "preflight_env",
   ];
   const untyped = TYPED.filter((n) => !tools.tools.find((t) => t.name === n)?.outputSchema);
-  if (untyped.length) { console.log(`\n=== typed outputSchema [FAIL] ===\nmissing on: ${untyped.join(", ")}`); failures++; }
-  else console.log(`\n=== typed outputSchema [ok] === advertised on all ${TYPED.length} contract tools`);
+  expect("typed outputSchema", untyped.length === 0, `missing on: ${untyped.join(", ")}`);
 
-  // preflight_env round-trips live everywhere (CI included) — the SDK validates its
-  // structuredContent server-side, so a schema/payload mismatch turns this call into an error.
+  // preflight_env round-trips everywhere — the SDK validates its structuredContent server-side, so
+  // a schema/payload mismatch turns this call into an error. Against this fixture environment the
+  // individual checks report problems (no SDK payload, no device, CLI off); the contract is that
+  // the envelope is typed and complete, not that the fixture host is healthy.
   const pf = await client.callTool({ name: "preflight_env", arguments: {} });
-  if (!pf.isError && Array.isArray(pf.structuredContent?.checks) && ["ok", "problems"].includes(pf.structuredContent?.status))
-    console.log("=== preflight_env structuredContent [ok] ===");
-  else { console.log(`=== preflight_env structuredContent [FAIL] === ${JSON.stringify(pf.structuredContent ?? null).slice(0, 200)}`); failures++; }
+  expect("preflight_env structuredContent",
+    !pf.isError && Array.isArray(pf.structuredContent?.checks) && ["ok", "problems"].includes(pf.structuredContent?.status),
+    JSON.stringify(pf.structuredContent ?? null).slice(0, 200));
 
   const diag = await client.callTool({ name: "diagnose", arguments: { symptom: "white_geometry" } });
-  if (!diag.isError && diag.structuredContent?.rootCause && Array.isArray(diag.structuredContent?.fix))
-    console.log("=== diagnose structuredContent [ok] ===");
-  else { console.log(`=== diagnose structuredContent [FAIL] === ${JSON.stringify(diag.structuredContent ?? null).slice(0, 200)}`); failures++; }
+  expect("diagnose structuredContent",
+    !diag.isError && diag.structuredContent?.rootCause && Array.isArray(diag.structuredContent?.fix),
+    JSON.stringify(diag.structuredContent ?? null).slice(0, 200));
 
   const cap = await client.callTool({ name: "capability_report", arguments: { appName: "smoke", features: [{ name: "smoke check", status: "structural", evidence: "smoke test fixture" }] } });
-  if (!cap.isError && cap.structuredContent?.matrix?.structuralOnly?.length === 1 && typeof cap.structuredContent?.summary === "string")
-    console.log("=== capability_report structuredContent [ok] ===");
-  else { console.log(`=== capability_report structuredContent [FAIL] === ${JSON.stringify(cap.structuredContent ?? null).slice(0, 200)}`); failures++; }
+  expect("capability_report structuredContent",
+    !cap.isError && cap.structuredContent?.matrix?.structuralOnly?.length === 1 && typeof cap.structuredContent?.summary === "string",
+    JSON.stringify(cap.structuredContent ?? null).slice(0, 200));
 
-  const evidenceFrame = path.resolve("golden/showcase-6cards.golden.png");
+  const evidenceFrame = path.join(repoRoot, "golden", "showcase-6cards.golden.png");
   const imageTiers = await client.callTool({
     name: "capability_report",
     arguments: {
@@ -110,98 +132,65 @@ console.log("Prompts:", prompts.prompts.map((p) => p.name).join(", ") || "(none)
       ],
     },
   });
-  if (!imageTiers.isError && imageTiers.structuredContent?.matrix?.autoJudged?.length === 0
+  expect("capability_report rejects caller-forged producer tiers",
+    !imageTiers.isError && imageTiers.structuredContent?.matrix?.autoJudged?.length === 0
       && imageTiers.structuredContent?.matrix?.usdHostRender?.length === 0
       && imageTiers.structuredContent?.matrix?.structuralOnly?.length === 2
-      && imageTiers.structuredContent.matrix.structuralOnly.every((row) => /producer provenance/i.test(row.evidence ?? "")))
-    console.log("=== capability_report rejects caller-forged producer tiers [ok] ===");
-  else { console.log(`=== capability_report image-tier input contract [FAIL] === ${JSON.stringify(imageTiers.structuredContent ?? imageTiers.content).slice(0, 300)}`); failures++; }
+      && imageTiers.structuredContent.matrix.structuralOnly.every((row) => /producer provenance/i.test(row.evidence ?? "")),
+    JSON.stringify(imageTiers.structuredContent ?? imageTiers.content).slice(0, 300));
 
   const verifySkipped = await client.callTool({
     name: "verify",
     arguments: { applicationId: "com.example.contractfixture", skipStructural: true, skipVisual: true },
   });
-  if (!verifySkipped.isError && verifySkipped.structuredContent?.structural?.status === "skipped"
-      && verifySkipped.structuredContent?.visual?.status === "skipped")
-    console.log("=== verify structuredContent success path [ok] ===");
-  else { console.log(`=== verify structuredContent success path [FAIL] === ${JSON.stringify(verifySkipped.structuredContent ?? verifySkipped.content).slice(0, 300)}`); failures++; }
+  expect("verify structuredContent success path",
+    !verifySkipped.isError && verifySkipped.structuredContent?.structural?.status === "skipped"
+      && verifySkipped.structuredContent?.visual?.status === "skipped",
+    JSON.stringify(verifySkipped.structuredContent ?? verifySkipped.content).slice(0, 300));
 }
-
-const vt = await client.callTool({ name: "validate_toolchain", arguments: {} });
-if (!vt.isError && !Array.isArray(vt.structuredContent?.problems)) {
-  console.log("=== validate_toolchain structuredContent [FAIL] === missing typed problems array"); failures++;
-}
-show("validate_toolchain", vt);
-show("emulator_list", await client.callTool({ name: "emulator_list", arguments: {} }));
-show("inspect_bundle (existing claimsight bundle)", await client.callTool({
-  name: "inspect_bundle",
-  arguments: { bundlePath: EXISTING_BUNDLE },
-}));
-show("pack_bundle (claimsight scenes -> /tmp)", await client.callTool({
-  name: "pack_bundle",
-  arguments: {
-    sceneDir: path.join(SCENE_PROJECT, "Sources", "Scenes"),
-    projectDir: SCENE_PROJECT,
-    output: OUT_BUNDLE,
-    forceBuild: true,
-  },
-}));
-show("inspect_bundle (freshly packed)", await client.callTool({
-  name: "inspect_bundle",
-  arguments: { bundlePath: OUT_BUNDLE },
-}));
-show("scene_schemas (first 1k chars)", await client.callTool({ name: "scene_schemas", arguments: {} }));
-show("xr_grpc_describe (proto introspection, no emulator needed)", await client.callTool({
-  name: "xr_grpc_describe",
-  arguments: {},
-}));
 
 await client.close();
 
-// Exercise build_and_run's actual non-error MCP return with hermetic fake Gradle/adb programs on
-// POSIX. Windows materializes and gates its .cmd/.bat wrapper-selection contract separately, but
-// does not claim native build_and_run execution: production command orchestration remains unproven.
-{
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-buildrun-contract-"));
-  const pngBase64 = fs.readFileSync(path.resolve("golden/showcase-6cards.golden.png")).toString("base64");
-  const fixture = materializeBuildRunSmokeFixture({ root: scratch, pngBase64 });
-  const { binDir, projectDir } = fixture;
-
-  if (!fixture.executesMcpSuccessPath) {
-    console.log(`=== build_and_run structuredContent success path [SKIP] === ${fixture.scope}`);
-    fs.rmSync(scratch, { recursive: true, force: true });
-  } else {
-    const fakeTransport = new StdioClientTransport({
-      command: "node",
-      args: ["dist/index.js"],
-      env: {
-        ...process.env,
-        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
-        PICO_HOME: path.join(scratch, "empty-pico-home"),
-        PICO_MCP_SURFACE: "full",
-      },
+// Exercise build_and_run's actual non-error MCP return with the fake Gradle/adb programs on POSIX.
+// Windows materializes and gates its .cmd/.bat wrapper-selection contract separately, but does not
+// claim native build_and_run execution: production command orchestration remains unproven.
+if (!fixture.executesMcpSuccessPath) {
+  record("build_and_run structuredContent success path", "SKIP", fixture.scope);
+} else {
+  const fakeClient = await connect("buildrun-contract-smoke");
+  try {
+    const built = await fakeClient.callTool({
+      name: "build_and_run",
+      arguments: { projectDir: fixture.projectDir, packageName: "com.example.contractfixture", serial: FIXTURE_SERIAL, settleSec: 0 },
     });
-    const fakeClient = new Client({ name: "buildrun-contract-smoke", version: "0.0.0" });
-    try {
-      await fakeClient.connect(fakeTransport);
-      const built = await fakeClient.callTool({
-        name: "build_and_run",
-        arguments: { projectDir, packageName: "com.example.contractfixture", serial: "fixture-serial", settleSec: 0 },
-      });
-      const sc = built.structuredContent;
-      if (!built.isError && sc?.installed === true && sc?.launched === true && sc?.health === "ok"
-          && sc?.screenshotIncluded === true && typeof sc?.appearanceRule === "string")
-        console.log("=== build_and_run structuredContent success path [ok] ===");
-      else { console.log(`=== build_and_run structuredContent success path [FAIL] === ${JSON.stringify(sc ?? built.content).slice(0, 500)}`); failures++; }
-    } catch (error) {
-      console.log(`=== build_and_run structuredContent success path [FAIL] === ${error instanceof Error ? error.stack : String(error)}`);
-      failures++;
-    } finally {
-      await fakeClient.close().catch(() => {});
-      fs.rmSync(scratch, { recursive: true, force: true });
-    }
+    const sc = built.structuredContent;
+    expect("build_and_run structuredContent success path",
+      !built.isError && sc?.installed === true && sc?.launched === true && sc?.health === "ok"
+        && sc?.screenshotIncluded === true && typeof sc?.appearanceRule === "string",
+      JSON.stringify(sc ?? built.content).slice(0, 500));
+  } catch (error) {
+    record("build_and_run structuredContent success path", "FAIL", error instanceof Error ? error.stack : String(error));
+  } finally {
+    await fakeClient.close().catch(() => {});
   }
 }
 
+// The isolation claim itself, asserted by this gate rather than only by its caller: nothing the
+// server did during this run touched a device other than the fixture one, and nothing reached npm.
+const log = readBuildRunSmokeFixtureLog(fixture);
+expect("fixture invocation log targets only the fixture",
+  log.calls.every((call) => call.serial === FIXTURE_SERIAL || call.kind === "fixture-gradle")
+    && log.entries.every((entry) => entry.serial === null || entry.serial === FIXTURE_SERIAL),
+  JSON.stringify(log.entries).slice(0, 800));
+expect("no npm invocation", log.npmCalls.length === 0, JSON.stringify(log.npmCalls).slice(0, 500));
+
+fs.rmSync(scratch, { recursive: true, force: true });
+
+// A machine-readable record of the run. test/smoke-isolation.mjs compares two of these check-for-
+// check; the fixture log travels with it so the isolation proof needs no shared temp directory.
+console.log(`\nSMOKE_SUMMARY ${JSON.stringify({ checks, failures, fixture: { calls: log.calls, probes: log.probes, refused: log.refused, npmCalls: log.npmCalls } })}`);
 console.log(`\nSmoke test done. Failures: ${failures}`);
-process.exit(failures ? 1 : 0);
+// exitCode, not exit(): stdout to a pipe is asynchronous, and test/smoke-isolation.mjs parses the
+// SMOKE_SUMMARY line above. Exiting here can truncate it. Both clients are closed, so the loop
+// drains on its own and the process still ends promptly.
+process.exitCode = failures ? 1 : 0;

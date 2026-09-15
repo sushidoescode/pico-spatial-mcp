@@ -48,3 +48,13 @@ evidence-frame-drift-*.png
 # pico-cli host wiring written by `pico-cli setup` (machine-local, like the root CLAUDE.md)
 /.cursor/
 /.pico-env.json
+
+# build-source scratch: the setup lock plus the staging/backup trees a publication owns for its
+# lifetime. Each is removed by the build that created it; none is ever repo content.
+/.pico-source-setup.lock
+/.dist-staging-*
+/.dist-backup-*
+
+# the local record of the last successful `npm ci`: it describes this machine's node_modules, so it
+# is never repo content and never travels with the package
+/.pico-dependencies.json

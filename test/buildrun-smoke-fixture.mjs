@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 import * as fixture from "./helpers/buildrun-smoke-fixture.mjs";
+import { GATES, gateScriptCommand } from "../scripts/gate-inventory.mjs";
 import {
   analyzePackageRuntimeLogs,
   launchResultSucceeded,
@@ -58,14 +60,63 @@ test("Windows fixture materializes quoted adb.cmd and gradlew.bat launchers", ()
 });
 
 test("the native Windows CI lane owns the tracked wrapper-selection contract", () => {
+  // The package script is a dispatcher now (`node scripts/run-gate.mjs test:picocli-win`), so
+  // matching filenames inside its string proves nothing about what Windows actually runs. Inspect
+  // the resolved inventory command instead: all three constituent suites, in order, on Windows.
+  assert.equal(GATES["test:picocli-win"].host, "windows");
+  assert.deepEqual(GATES["test:picocli-win"].commands, [[
+    "node", "--test", "test/picocli-autoinstall.mjs",
+    "test/buildrun-smoke-fixture.mjs", "test/run-battery.mjs",
+  ]]);
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
-  assert.match(pkg.scripts["test:picocli-win"], /test\/buildrun-smoke-fixture\.mjs/);
-  assert.match(pkg.scripts["test:picocli-win"], /test\/run-battery\.mjs/, "native Windows must exercise the battery CLI boundary too");
+  assert.equal(pkg.scripts["test:picocli-win"], gateScriptCommand("test:picocli-win"));
   const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");
   const windowsJob = workflow.match(/^  picocli-windows:\n([\s\S]*?)(?=^  [A-Za-z0-9_-]+:\n)/m)?.[1] ?? "";
   assert.match(windowsJob, /npm run test:picocli-win/);
   assert.match(windowsJob, /no native build_and_run execution/i);
 });
+
+test("the fixture environment names only fixture paths and cannot provision a CLI", () => {
+  const plan = fixture.buildRunSmokeFixturePlan({ root: path.join(os.tmpdir(), "pico-fixture-env"), platform: "linux" });
+  const env = fixture.buildRunSmokeFixtureEnv(plan);
+  assert.equal(env.PICO_HOME, plan.picoHome);
+  assert.equal(env.HOME, plan.homeDir);
+  assert.equal(env.PICO_MCP_SURFACE, "full");
+  assert.equal(env.PICO_MCP_CLI_POLICY, "disabled");
+  assert.equal(env.PATH.split(path.delimiter)[0], plan.binDir, "the fixture bin must win every PATH lookup");
+  assert.equal(env.PATH.split(path.delimiter).includes(path.dirname(process.execPath)), false,
+    "the fixture PATH must not drag in whatever else lives beside the host's Node");
+  assert.equal(Object.values(env).some((value) => String(value).includes(os.homedir())), false,
+    "no fixture environment value may point back into the developer's home");
+});
+
+test("the fixture adb serves one serial, refuses every other target, and logs what it was asked",
+  { skip: process.platform === "win32" }, () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico-fixture-adb-"));
+    try {
+      const plan = fixture.materializeBuildRunSmokeFixture({ root, pngBase64: "" });
+      const call = (...args) => spawnSync(plan.adbPath, args, { encoding: "utf8" });
+
+      assert.equal(call("version").status, 0, "an untargeted version probe is answered");
+      assert.equal(call("devices").status, 1, "device enumeration is refused, not simulated");
+      assert.equal(call("-s", "emulator-5554", "shell", "pidof", "com.example.app").status, 1, "a foreign serial is refused");
+      assert.match(call("-s", "emulator-5554", "shell", "ls").stderr, /serves only fixture-serial/);
+      assert.equal(call("-s", fixture.FIXTURE_SERIAL, "install", "-r", "app.apk").stdout, "Success\n");
+
+      const log = fixture.readBuildRunSmokeFixtureLog(plan);
+      assert.deepEqual(log.entries.map((e) => e.kind), [
+        "fixture-adb-probe", "fixture-adb-refused", "fixture-adb-refused", "fixture-adb-refused", "fixture-adb",
+      ]);
+      assert.deepEqual(log.calls.map((e) => e.serial), [fixture.FIXTURE_SERIAL]);
+      assert.equal(log.refused.every((e) => e.serial === null || e.serial === "emulator-5554"), true);
+      assert.deepEqual(log.npmCalls, []);
+
+      assert.equal(spawnSync(plan.npmPath, ["view", "pico-cli", "version"], { encoding: "utf8" }).status, 66);
+      assert.deepEqual(fixture.readBuildRunSmokeFixtureLog(plan).npmCalls.map((e) => e.argv), [["view", "pico-cli", "version"]]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 
 test("assemble task parsing binds one module and variant", () => {
   assert.deepEqual(parseAssembleTask("assembleDebug"), { modulePath: "app", variantName: "debug" });
@@ -154,19 +205,14 @@ test("POSIX MCP path rejects failed launch and never reports installed/running s
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [path.join(repoRoot, "dist", "index.js")],
-    env: {
-      ...process.env,
-      PATH: `${plan.binDir}${path.delimiter}${process.env.PATH ?? ""}`,
-      PICO_HOME: path.join(root, "empty-pico-home"),
-      PICO_MCP_SURFACE: "full",
-    },
+    env: fixture.buildRunSmokeFixtureEnv(plan),
   });
   const client = new Client({ name: "buildrun-launch-negative", version: "0.0.0" });
   try {
     await client.connect(transport);
     const result = await client.callTool({
       name: "build_and_run",
-      arguments: { projectDir: plan.projectDir, packageName: "com.example.contractfixture", serial: "fixture-serial", settleSec: 0 },
+      arguments: { projectDir: plan.projectDir, packageName: "com.example.contractfixture", serial: fixture.FIXTURE_SERIAL, settleSec: 0 },
     });
     assert.equal(result.isError, true);
     assert.match(result.content?.[0]?.text ?? "", /launch failed|device offline/i);
@@ -184,19 +230,14 @@ test("POSIX MCP path rejects an acknowledged launch with no live package PID", {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [path.join(repoRoot, "dist", "index.js")],
-    env: {
-      ...process.env,
-      PATH: `${plan.binDir}${path.delimiter}${process.env.PATH ?? ""}`,
-      PICO_HOME: path.join(root, "empty-pico-home"),
-      PICO_MCP_SURFACE: "full",
-    },
+    env: fixture.buildRunSmokeFixtureEnv(plan),
   });
   const client = new Client({ name: "buildrun-dead-pid-negative", version: "0.0.0" });
   try {
     await client.connect(transport);
     const result = await client.callTool({
       name: "build_and_run",
-      arguments: { projectDir: plan.projectDir, packageName: "com.example.contractfixture", serial: "fixture-serial", settleSec: 0 },
+      arguments: { projectDir: plan.projectDir, packageName: "com.example.contractfixture", serial: fixture.FIXTURE_SERIAL, settleSec: 0 },
     });
     assert.equal(result.isError, true);
     assert.match(result.content?.[0]?.text ?? "", /no live PID/i);

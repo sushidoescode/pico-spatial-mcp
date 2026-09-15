@@ -15,9 +15,18 @@
  *   [M4] leak scan required a trailing slash and only read 8 extensions -> now byte-scans everything.
  *   [M5] the gate verified a tarball it packed, never the one that ships -> --publish makes the
  *        shipped artifact BE the verified artifact, by construction.
+ *   [M9] --publish DELETED every .tgz already in the destination before copying -> publishing a new
+ *        version destroyed the earlier artifacts testers were still installing from. Publication is
+ *        now scripts/publish-tarball.mjs: an exclusive, non-replacing primitive that adds one file
+ *        and can reach no other. --publish now names the destination FILE, not a directory to prune.
  *
  * Run:  npm run test:tarball
- *       npm run test:tarball -- --publish ~/.pico-mcp/dist
+ *       npm run test:tarball -- --publish ~/releases/<date>/pico-spatial-mcp-<version>.tgz
+ *
+ * --publish <file>  Publish the verified tarball at exactly this path, and write its publication
+ *                   receipt to <file>.receipt.json. Both refuse to replace anything that is already
+ *                   there. The flag took a DIRECTORY before this change and pruned it; a directory
+ *                   is now an error that names the file form to use instead.
  */
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
@@ -25,15 +34,80 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileDigest, publishVerifiedTarball, receiptPathFor, writePublicationReceipt } from "./publish-tarball.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let failures = 0;
-const ok = (m) => console.log(`  ok   ${m}`);
-const fail = (m) => { console.log(`  FAIL ${m}`); failures += 1; };
+/** Every check this run performed, in order, with the classification the receipt publishes. */
+const checks = [];
+const ok = (m) => { checks.push({ name: m, status: "pass" }); console.log(`  ok   ${m}`); };
+const fail = (m) => { checks.push({ name: m, status: "fail" }); console.log(`  FAIL ${m}`); failures += 1; };
+const skip = (m) => { checks.push({ name: m, status: "skip" }); console.log(`  skip ${m}`); };
 const sha256File = (filePath) => crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+/** Honest boundaries of what an installed-artifact run can prove. The receipt publishes these. */
+const limitations = [
+  `installed-artifact checks ran on ${process.platform}/${process.arch} only; no other platform was exercised`,
+  "no host-plugin discovery: the host plugin manifests were not loaded or registered by any host",
+  "no emulator, device or visual claim: nothing here is vision_verified or device_verified",
+];
 
 const publishIdx = process.argv.indexOf("--publish");
-const publishDir = publishIdx > -1 ? process.argv[publishIdx + 1] : null;
+
+/**
+ * [M9] The destination is an exact FILE path. A directory — the old meaning — is refused by name so
+ * nobody re-learns the pruning behaviour by accident.
+ */
+function resolvePublishTarget(raw) {
+  if (typeof raw !== "string" || raw.trim() === "" || raw.startsWith("--")) {
+    throw new Error("--publish needs a destination file path, e.g. --publish ~/releases/<date>/<name>-<version>.tgz");
+  }
+  const target = path.resolve(raw.replace(/^~(?=$|[/\\])/, os.homedir()));
+  const expected = () => `<dir>/${JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")).name}-<version>.tgz`;
+  if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
+    throw new Error(`--publish now names the destination FILE, not a directory: ${target} is a directory. Use ${expected()}`);
+  }
+  if (!target.endsWith(".tgz")) {
+    throw new Error(`--publish needs a .tgz destination file path, not ${target}. Use ${expected()}`);
+  }
+  return target;
+}
+
+/** The build binding carried INSIDE the packed payload — the identity of what actually ships. */
+function packedBuildIdentity(installedDir) {
+  try {
+    const receipt = JSON.parse(fs.readFileSync(path.join(installedDir, "dist", "build-receipt.json"), "utf8"));
+    return {
+      schemaVersion: receipt.schemaVersion ?? null,
+      input: { sha256: receipt.input?.sha256 ?? null, files: receipt.input?.files?.length ?? null },
+      output: { sha256: receipt.output?.sha256 ?? null, files: receipt.output?.files?.length ?? null },
+      typescript: receipt.typescript ?? null,
+      nodeMajor: receipt.nodeMajor ?? null,
+    };
+  } catch (error) {
+    return { unavailable: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Name and version as PACKED, so the receipt cannot describe a later checkout state. */
+function packedPackageIdentity(installedDir) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(installedDir, "package.json"), "utf8"));
+    return { name: pkg.name ?? null, version: pkg.version ?? null };
+  } catch (error) {
+    return { unavailable: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+let publishTarget = null;
+if (publishIdx > -1) {
+  try {
+    publishTarget = resolvePublishTarget(process.argv[publishIdx + 1]);
+  } catch (error) {
+    fail(error.message);
+    console.log(`\nTarball verification done. Failures: ${failures}`);
+    process.exit(1);
+  }
+}
 
 // [M3] Anchors: a count alone cannot see a rename, and a floor cannot see a whole lane vanishing.
 const EXPECTED_TOOLS = 255; // + run_in_app_locomotion_route; macOS has the three-tool host-GUI delta
@@ -101,7 +175,10 @@ try {
   const tarball = fs.readdirSync(sandbox).find((f) => f.endsWith(".tgz"));
   if (!tarball) { fail("npm pack produced no .tgz"); process.exit(1); }
   verifiedTarball = path.join(sandbox, tarball);
-  ok(`packed ${tarball} (${(fs.statSync(verifiedTarball).size / 1024).toFixed(0)} kB)`);
+  // [M5/M9] Taken once, here, BEFORE any check runs. Publication re-derives it independently, so a
+  // tarball that changed under us between verification and publication cannot be published.
+  const verifiedDigest = fileDigest(verifiedTarball);
+  ok(`packed ${tarball} (${(verifiedDigest.bytes / 1024).toFixed(0)} kB, sha256 ${verifiedDigest.sha256})`);
 
   const install = spawnSync("npm", ["install", "--omit=dev", "--no-audit", "--no-fund", verifiedTarball], {
     cwd: sandbox, encoding: "utf8", timeout: 900_000,
@@ -247,6 +324,10 @@ try {
       try { JSON.parse(fs.readFileSync(p, "utf8")); ok(`brief canary parses: ${c}`); }
       catch (e) { fail(`brief canary is not valid JSON: ${c} (${e.message})`); }
     }
+  } else {
+    // The [M1] payload check above already failed for the missing directory; record the content
+    // checks as not run rather than letting them vanish from the receipt without explanation.
+    skip("briefs/ content and canary checks: the installed package has no briefs/ directory");
   }
 
   // [M4] Byte-scan EVERY shipped file. The old version required a trailing slash after the
@@ -380,7 +461,10 @@ try {
   const sdk = await doorsClient.callTool({ name: "pico_sdk", arguments: { symbol: "Entity" } });
   const sdkBody = JSON.parse(sdk.content[0].text);
   if (sdkBody.status === "ok") ok("a door tool completed its inner self-client spawn from a path containing a space");
-  else if (sdkBody.status === "unavailable") ok("spaced-path inner spawn proven (vault absent on this machine; the unavailable answer still round-tripped through the spawned server)");
+  else if (sdkBody.status === "unavailable") {
+    ok("spaced-path inner spawn proven (vault absent on this machine; the unavailable answer still round-tripped through the spawned server)");
+    limitations.push("the doors self-client round-trip ran with the vault absent, so no vault-backed answer was exercised");
+  }
   else fail(`door tool failed in a spaced path: ${JSON.stringify(sdkBody).slice(0, 200)} — module-relative resolution is broken`);
   await doorsClient.close();
 
@@ -403,16 +487,45 @@ try {
     : fail(`env-unset default listed ${defaultTools.tools.length} tools, expected the 18-tool doors surface`);
   await defaultClient.close();
 
+  // [M9] The publication receipt names the build that produced THIS payload, read out of the packed
+  //      copy — not out of whatever the checkout happens to hold afterwards. Assert it here, as a
+  //      check, so a payload with no build binding fails the gate instead of yielding a holed receipt.
+  const packedBuild = packedBuildIdentity(installed);
+  packedBuild.input?.sha256 && packedBuild.output?.sha256
+    ? ok(`packed dist/build-receipt.json binds the payload to source ${packedBuild.input.sha256.slice(0, 12)} / output ${packedBuild.output.sha256.slice(0, 12)}`)
+    : fail(`packed dist/build-receipt.json is missing or unreadable (${packedBuild.unavailable}) — nothing can name the build that produced this payload`);
+
   // [M5] Publish only what passed, so the shipped artifact IS the verified artifact.
-  if (publishDir && failures === 0) {
-    const dest = path.resolve(publishDir.replace(/^~/, os.homedir()));
-    fs.mkdirSync(dest, { recursive: true });
-    for (const old of fs.readdirSync(dest).filter((f) => f.endsWith(".tgz"))) fs.rmSync(path.join(dest, old));
-    const out = path.join(dest, path.basename(verifiedTarball));
-    fs.copyFileSync(verifiedTarball, out);
-    ok(`published the VERIFIED tarball to ${out}`);
-  } else if (publishDir) {
-    fail("not publishing: verification failed");
+  // [M9] ...and only ever ADD. This branch used to rmSync every .tgz in the destination first.
+  if (publishTarget && failures === 0) {
+    const gatingChecks = checks.map((check) => ({ ...check }));
+    try {
+      const published = publishVerifiedTarball({
+        source: verifiedTarball,
+        destination: publishTarget,
+        expectedSha256: verifiedDigest.sha256,
+      });
+      ok(`published the VERIFIED tarball to ${published.path} (${published.bytes} bytes, sha256 ${published.sha256})`);
+      const receipt = writePublicationReceipt({
+        destination: published.path,
+        receipt: {
+          schemaVersion: 1,
+          artifact: { path: published.path, name: path.basename(published.path), sha256: published.sha256, bytes: published.bytes },
+          package: packedPackageIdentity(installed),
+          build: packedBuild,
+          platform: { os: process.platform, arch: process.arch, node: process.version },
+          command: { argv: ["node", path.relative(repoRoot, fileURLToPath(import.meta.url)), ...process.argv.slice(2)] },
+          checks: gatingChecks,
+          limitations,
+        },
+      });
+      ok(`wrote the publication receipt to ${receipt.path}`);
+    } catch (error) {
+      // A refusal is the designed outcome when the destination or its receipt is already taken.
+      fail(`publication refused: ${error.message}`);
+    }
+  } else if (publishTarget) {
+    fail(`not publishing: verification failed; ${publishTarget} and ${receiptPathFor(publishTarget)} were left untouched`);
   }
 } finally {
   fs.rmSync(sandbox, { recursive: true, force: true });
