@@ -1277,6 +1277,55 @@ test("a managed startup failure never retries another knowledge alias", {
   }
 });
 
+test("missing knowledge data and a transport startup failure stay distinct structured results", {
+  concurrency: false,
+  timeout: 60_000,
+}, async () => {
+  const dataHarness = createManagedRuntimeHarness({ latestVersion: "0.5.0", helpMap: HELP_MAPS["0.5.0"] });
+  const startupHarness = createManagedRuntimeHarness({ latestVersion: "0.5.0", helpMap: HELP_MAPS["0.5.0"] });
+  try {
+    // The published knowledge server answers every tools/call with this exact sentence when it
+    // resolves no graph/workspace. The transport started; the data is missing.
+    const missingData = runBridgeScript(dataHarness, SINGLE_CALL_BODY, {
+      env: {
+        FAKE_KNOWLEDGE_DECLARED_SHAPE: "cli-degraded-stub",
+        FAKE_KNOWLEDGE_STUB_REASON: "[0.13] not found. global .pico-env.json (/home/fixture/.pico/.pico-env.json) is stale. Fix: run `pico-cli setup --project .` (local) or `pico-cli setup` (global).",
+        FAKE_KNOWLEDGE_STUB_PROJECT: "/fixture/project",
+      },
+    });
+    assert.equal(missingData.status, "unavailable", JSON.stringify(missingData));
+    assert.equal(missingData.remoteError, true, JSON.stringify(missingData));
+    assert.equal(missingData.transport, undefined, "missing data is not a transport refusal");
+    assert.equal(missingData.failureClass, undefined, "a started server is not a CLI failure class");
+    assert.equal(missingData.knowledgeData?.available, false, JSON.stringify(missingData));
+    assert.match(missingData.knowledgeData?.reason ?? "", /^\[0\.13\] not found\./, JSON.stringify(missingData));
+    assert.match(missingData.knowledgeData?.reason ?? "", /\.pico-env\.json/, JSON.stringify(missingData));
+    assert.equal(
+      missingData.knowledgeData?.remediation,
+      "Run `pico-cli setup --project /fixture/project` to initialize.",
+      JSON.stringify(missingData),
+    );
+    assert.equal(missingData.picoCli?.version, "0.5.0", JSON.stringify(missingData));
+    assert.equal(missingData.picoCli?.source, "managed", JSON.stringify(missingData));
+    assert.deepEqual(knowledgeSpawns(dataHarness).map((call) => call.args), [["knowledge", "server"]]);
+
+    // The same identity, but the child never completes its handshake: a transport startup failure.
+    const startupServer = path.join(startupHarness.root, "exiting-knowledge-server.mjs");
+    fs.writeFileSync(startupServer, 'process.stderr.write("fixture: knowledge server crashed before handshake\\n"); process.exit(9);\n');
+    const startupFailure = runBridgeScript(startupHarness, SINGLE_CALL_BODY, { env: { FAKE_KNOWLEDGE_SERVER: startupServer } });
+    assert.equal(startupFailure.status, "unavailable", JSON.stringify(startupFailure));
+    assert.equal(startupFailure.knowledgeData, undefined, "a startup failure is not a knowledge-data gap");
+    assert.equal(startupFailure.transport, undefined, JSON.stringify(startupFailure));
+    assert.equal(startupFailure.remoteError, undefined, JSON.stringify(startupFailure));
+    assert.equal(startupFailure.failureClass, "runtime", JSON.stringify(startupFailure));
+    assert.match(startupFailure.outputTail ?? "", /crashed before handshake/, JSON.stringify(startupFailure));
+    assert.equal(startupFailure.picoCli?.version, "0.5.0", JSON.stringify(startupFailure));
+  } finally {
+    cleanupManagedHarness(dataHarness);
+    cleanupManagedHarness(startupHarness);
+  }
+});
+
 test("a knowledge server that stops at the environment gate returns the exact PICO_HOME remedy", {
   concurrency: false,
   timeout: 40_000,
@@ -1354,6 +1403,54 @@ process.stdout.write(JSON.stringify({ cold, concurrent, capped, timedOut, recove
     await waitFor(() => [...startPids].every((pid) => !pidAlive(pid)), 2_000, "a managed knowledge generation survived close");
   } finally {
     cleanupManagedHarness(harness);
+  }
+});
+
+test("a started knowledge transport declares no graph API of its own", { timeout: 20_000 }, async () => {
+  // Graph-API reconciliation against the published bytes: the only knowledge-server tool
+  // declaration inside @picoxr/pico-cli 0.4.4/0.5.0 is the degraded server's. The provisioned
+  // server's declarations live in the external `graphify` binary the CLI spawns
+  // (`graphify serve --graph <graph.json> --workspace <dir>`), so a successful transport start
+  // establishes neither our eight actions' input shapes nor any SDK declaration.
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pico knowledge declarations "));
+  const logPath = path.join(tempRoot, "server.jsonl");
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(repoRoot, "test", "fixtures", "fake-knowledge-server.mjs")],
+    env: {
+      ...process.env,
+      FAKE_KNOWLEDGE_LOG: logPath,
+      FAKE_KNOWLEDGE_DECLARED_SHAPE: "cli-degraded-stub",
+      FAKE_KNOWLEDGE_STUB_REASON: "current directory is not a pico-cli setup project",
+      FAKE_KNOWLEDGE_STUB_PROJECT: "/fixture/project",
+    },
+  });
+  const client = new Client({ name: "c2-declaration-probe", version: "1.0.0" });
+  try {
+    await client.connect(transport, { timeout: 5_000, maxTotalTimeout: 5_000 });
+    const listed = await client.listTools(undefined, { timeout: 5_000, maxTotalTimeout: 5_000 });
+    assert.deepEqual(listed.tools.map((tool) => tool.name), ["graph_stats"]);
+    assert.equal(
+      listed.tools[0].description,
+      "[Unavailable] Knowledge graph not configured (current directory is not a pico-cli setup project). Run `pico-cli setup --project /fixture/project` to initialize.",
+    );
+    assert.deepEqual(listed.tools[0].inputSchema, { type: "object", properties: {} });
+    const declared = new Set(listed.tools.map((tool) => tool.name));
+    for (const action of ["query_graph", "get_node", "get_neighbors", "get_community", "god_nodes", "shortest_path", "switch_workspace"]) {
+      assert.equal(declared.has(action), false, `${action} must not be treated as declared by a started transport`);
+    }
+    const called = await client.callTool({ name: "graph_stats", arguments: {} }, undefined, { timeout: 5_000, maxTotalTimeout: 5_000 });
+    assert.equal(called.isError, true, JSON.stringify(called));
+    assert.equal(
+      called.content[0].text,
+      "Knowledge graph not available (current directory is not a pico-cli setup project). Run `pico-cli setup --project /fixture/project` to initialize.",
+    );
+  } finally {
+    await client.close().catch(() => undefined);
+    for (const pid of new Set(readEvents(logPath).map((event) => event.pid))) killFixturePid(pid);
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 

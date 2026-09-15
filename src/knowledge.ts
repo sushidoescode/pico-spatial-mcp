@@ -49,6 +49,19 @@ const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1_024;
 const MAX_STARTUP_STDERR_BYTES = 16 * 1_024;
 const FAILURE_CLASSIFICATION_OVERLAP_CHARS = 256;
 const SETUP_REQUIRED_NOTE = "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry.";
+/**
+ * The published pico-cli knowledge server starts a degraded stdio MCP server when it resolves no
+ * graph/workspace (0.4.4 `package/dist/index.js`, 0.5.0 `package/dist/chunk-BLCMTNZL.js`, both
+ * reached from `serveGraphify`): `initialize` succeeds, `tools/list` declares only an
+ * "[Unavailable]" `graph_stats`, and every `tools/call` answers `isError` with exactly this
+ * sentence. The transport started, so this is a knowledge-DATA gap, not a transport failure — and
+ * a started transport says nothing about the graph API the provisioned server would expose. The
+ * reason text inside the parentheses is version-specific (0.4.4 reports a graph.json path or
+ * "current directory is not a pico-cli setup project"; 0.5.0 reports its .pico-env.json
+ * diagnosis), so it is carried through verbatim instead of being parsed. It can itself contain
+ * parentheses, which is why the reason group is greedy.
+ */
+const KNOWLEDGE_DATA_UNAVAILABLE_PATTERN = /^Knowledge graph not available \(([\s\S]*)\)\.\s+(Run `pico-cli setup(?: --project [^`]*)?` to initialize\.)$/;
 const KNOWLEDGE_GENERATION_TOKEN_ENV = "PICO_MCP_KNOWLEDGE_GENERATION_TOKEN";
 const KNOWLEDGE_GENERATION_TOKEN_PATTERN = /^[1-9]\d*-[a-f0-9]{48}$/;
 const PROCESS_SCAN_TIMEOUT_MS = 250;
@@ -197,6 +210,14 @@ export type KnowledgeTransportRefusal = {
   evidence: string[];
 };
 
+/** The CLI's own report that its knowledge server has no graph/workspace to serve. */
+export type KnowledgeDataGap = {
+  available: false;
+  reason: string;
+  remediation: string;
+  source: "pico-cli knowledge server";
+};
+
 export type KnowledgeResult = (
   | {
       status: "ok";
@@ -227,6 +248,7 @@ export type KnowledgeResult = (
   outputTruncated?: boolean;
   lifecycleWarning?: string;
   transport?: KnowledgeTransportRefusal;
+  knowledgeData?: KnowledgeDataGap;
 };
 
 export type KnowledgeBridgeOptions = {
@@ -920,6 +942,13 @@ function knowledgeTransportRefusal(capability: OperationCapability): KnowledgeTr
   };
 }
 
+/** The CLI's own "this server has no graph to serve" answer, or null for any other tool error. */
+function knowledgeDataGap(text: string): KnowledgeDataGap | null {
+  const match = KNOWLEDGE_DATA_UNAVAILABLE_PATTERN.exec(text.trim());
+  if (!match) return null;
+  return { available: false, reason: match[1], remediation: match[2], source: "pico-cli knowledge server" };
+}
+
 type ManagedTransportResolution =
   | {
       status: "ok";
@@ -1317,6 +1346,20 @@ export class KnowledgeBridge {
           .join("\n") || (response.isError === true ? `${parsedAction} returned an MCP tool error` : "");
         const capped = capUtf8(joined, this.maxOutputBytes);
         const providerTextError = joined.startsWith(`Error executing ${parsedAction}:`);
+        const dataGap = response.isError === true ? knowledgeDataGap(joined) : null;
+        if (dataGap) {
+          // The CLI's own degraded knowledge server: it started and answered, but has no graph or
+          // workspace to serve. Its reason and remediation are reported verbatim; this is not a
+          // transport failure, and it establishes nothing about the graph API or SDK declarations.
+          return withProvenance({
+            status: "unavailable",
+            action: parsedAction,
+            error: capped.text,
+            truncated: capped.truncated,
+            remoteError: true,
+            knowledgeData: dataGap,
+          });
+        }
         if ((response.isError === true || providerTextError) && /\bGraph file not found:/i.test(joined)) {
           return withProvenance({
             status: "unavailable",
