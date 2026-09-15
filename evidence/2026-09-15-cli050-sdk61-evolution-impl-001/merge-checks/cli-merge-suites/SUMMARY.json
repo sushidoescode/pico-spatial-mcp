@@ -1,0 +1,159 @@
+{
+  "root": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15",
+  "startedAt": "2026-09-15T15:28:35.130Z",
+  "head": "23e50ccc73516d872520e2b069341a132584c382",
+  "node": "v25.8.1",
+  "suites": [
+    {
+      "name": "test:prompts",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 739,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/cli-merge-suites/test_prompts.log",
+      "stdoutBytes": 432,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 640.184167"
+      ]
+    },
+    {
+      "name": "test:picocli",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 93533,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/cli-merge-suites/test_picocli.log",
+      "stdoutBytes": 27710,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 93320.163458"
+      ]
+    },
+    {
+      "name": "test:knowledge-lifecycle",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 27544,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/cli-merge-suites/test_knowledge-lifecycle.log",
+      "stdoutBytes": 2748,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 27434.803333"
+      ]
+    },
+    {
+      "name": "test:doors",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 15695,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/cli-merge-suites/test_doors.log",
+      "stdoutBytes": 5664,
+      "stderrBytes": 186,
+      "tail": [
+        "  ok   verify_pico_apk reports the full-space rejection as a structured launch error",
+        "  ok   verify_pico_apk force-stops the full-space incumbent and relaunches once (recovery recorded)",
+        "Doors test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:bench",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 482,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/cli-merge-suites/test_bench.log",
+      "stdoutBytes": 6558,
+      "stderrBytes": 0,
+      "tail": [
+        "  ok   bench perf axis: a complete 0.2.0 report scores its measured appFps p5 against the budget floor",
+        "  ok   bench perf axis: the 0.1.0 report schema (metadata.app) still scores",
+        "SpatialBench test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:vault",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 207,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/cli-merge-suites/test_vault.log",
+      "stdoutBytes": 15179,
+      "stderrBytes": 0,
+      "tail": [
+        "  ok   S5: pico_sdk forwards hint inputs only (got projectRoot, recordPaths, sdkVersion, symbol, vaultRoot)",
+        "  ok   S5: pico_sdk description labels the default historical, names the project hint, and keeps the historical disclosures",
+        "Vault test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:vaultdiff",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 126,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/cli-merge-suites/test_vaultdiff.log",
+      "stdoutBytes": 1569,
+      "stderrBytes": 0,
+      "tail": [
+        "  ok   S5: a side with package.xml reports its declared revision",
+        "  ok   S5: vault_workspaces names its base and separates labels from declared revisions",
+        "Vault-diff test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:projectgen",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 239,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/cli-merge-suites/test_projectgen.log",
+      "stdoutBytes": 3810,
+      "stderrBytes": 0,
+      "tail": [
+        "  ok   a renamed project is a different fingerprint but the same declared BOM",
+        "  ok   generation preserves the project BOM byte-for-byte while recording the 6.1 selection",
+        "Projectgen test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:runreceipt",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 45138,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/cli-merge-suites/test_runreceipt.log",
+      "stdoutBytes": 28801,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 45035.722625"
+      ]
+    },
+    {
+      "name": "test:emulator-restart",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 24767,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/cli-merge-suites/test_emulator-restart.log",
+      "stdoutBytes": 61522,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 1",
+        "ℹ todo 0",
+        "ℹ duration_ms 24664.32725"
+      ]
+    }
+  ],
+  "finishedAt": "2026-09-15T15:32:03.617Z"
+}

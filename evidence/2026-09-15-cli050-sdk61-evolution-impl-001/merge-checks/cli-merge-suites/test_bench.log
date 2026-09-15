@@ -1,0 +1,89 @@
+# npm run test:bench
+# exit=0 signal= elapsedMs=482
+
+## stdout
+  ok   corpus loads exactly 28 briefs from /Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/briefs
+  ok   headless tier: every pipeline brief scores 3/3 (planned+compiled+shape)
+  ok   headless tier: only camerapeek is the explicit 0/0 external implementation
+  ok   headless tier never claims emulator axes (booted/captured/panelReady/eye/perf stay null)
+  ok   the default full SpatialBench core includes the self-contained ambient IBL conformance brief
+  ok   BENCH_CORE membership is unchanged by the MR tier (league-table continuity)
+  ok   BENCH_MR is the additive Mixed-stage tier (mrtable + mrpedestal + mrknock), disjoint from core
+  ok   every MR-tier brief scores 3/3 headless (planned+compiled+shape)
+  ok   every BENCH_MR brief declares stageStyle '1' (Mixed) explicitly
+  ok   report keeps the honesty framing (eye = auto_judged, not vision)
+  ok   unrun axes render as — and skips are marked, not zeroed
+  ok   report gains a perf column + honestly scopes it to UI frames, not 3D pacing
+  ok   report has a structural panelReady axis separate from the eye
+  ok   scorePerfAxis: parsed data under budget -> 1
+  ok   scorePerfAxis: parsed data over budget -> 0
+  ok   scorePerfAxis: no UI frame data -> null (skip, not a fail)
+  ok   panel discovery joins caption container 11 and returns only HudPanelActivity
+  ok   panel discovery exposes the app's real containerId=11
+  ok   panel discovery excludes LaunchActivity container 10 and 48px SystemUI attachments
+  ok   panel discovery rejects an app whose caption window is not shown
+  ok   shorthand .Activity normalizes to and satisfies a fully-qualified expected activity
+  ok   panel discovery emits normalized visible + captionBacked signals
+  ok   missing expected activity yields expectationMet=false plus missingActivities
+  ok   package filtering is exact: com.foo does not match com.foobar
+  ok   panel discovery fails closed on empty input
+  ok   panel discovery fails closed on adb error input
+  ok   audited corpus premise: dashboard declares 0 panels
+  ok   dashboard visual expectation is exactly 6 objects from target layout 'tiles'
+  ok   visual expectation follows object 'metrics' through layoutRef to the exact 6-slot layout
+  ok   ambient is a Full-stage, 3-receiver local-IBL conformance brief with a layout-backed eye target
+  ok   committed ambient asset is a cmgen-style 256² R11F_G11F_B10F cubemap with six faces + roughness mips
+  ok   fleet stages the corpus KTX byte-identically under the declared APK asset path
+  ok   IBL provisioning rejects traversal instead of writing outside app assets
+  ok   a metadata-only KTX cannot spoof six baked faces + a roughness mip chain
+  ok   KTX validation walks metadata entries instead of trusting only the outer byte count
+  ok   supported-format KTX payload sizing rejects uint32 values before padding arithmetic
+  ok   IBL validation accepts only the cmgen R11F_G11F_B10F payload shape it can prove
+  ok   KTX validation caps dimensions before mip arithmetic can wrap signed integers
+  ok   KTX validation rejects oversized files before synchronous read/hash work
+  ok   IBL provisioning rejects a path whose staged spelling would differ from generated runtime Kotlin
+  ok   IBL provisioning rejects Kotlin interpolation characters in an otherwise valid asset path
+  ok   IBL provisioning rejects a symlinked destination parent instead of escaping app assets
+  ok   fleet_build invokes IBL validation/staging before code generation and build
+  ok   ambient compile ledger carries the exact local IBL asset + exponent contract
+  ok   mode=local wires the IBL receiver after procedural props exist, with no unresolved applyStage call
+  ok   mode=stage keeps the existing scene-wide IBL wiring path
+  ok   mode=both applies stage IBL and then attaches local receivers
+  ok   async model IBL targets loaded geometry and the generator invokes the same receiver callback for missing/failed-model placeholders
+  ok   ambient template places a real procedural receiver before applying its declared local IBL
+  ok   local IBL includes physics bodies even when the scene also has data-backed cards
+  ok   AppSpec rejects contradictory multi-scene IBL configs that would overwrite SceneIBL.kt
+  ok   AppSpec and the reusable generator path schema reject missing, unsafe, null, invalid, and out-of-range IBL parameters
+  ok   AppSpec fails closed on multiple layouts in one scene instead of silently compiling only the first
+  ok   identical multi-scene IBL config generates SceneIBL.kt exactly once
+  ok   multi-scene data-less layouts place procedural props without an unresolved SceneDataBinding dependency
+  ok   audited corpus premise: console declares exactly 1 panel
+  ok   panel-only spec routes to panel-structural evidence with no stage eye
+  ok   a verification plan containing only a panel target bypasses the stage eye
+  ok   hybrid console routes tiles to the stage eye and sys to panel evidence
+  ok   scene-attached mission panel remains stage geometry and never becomes HudPanelActivity/panelReady work
+  ok   mission eye expectation carries 9 authored colors that match the generated diorama
+  ok   panel targetRef 'sys' computes to C0_emulator
+  ok   lint recognizes console panel targetRef 'sys'
+  ok   panelReady stays null when the AppSpec expects no panel
+  ok   healthy caption-backed expected activity scores panelReady=1 (structural)
+  ok   a discovered but non-visible panel fails panelReady closed
+  ok   a healthy immersive LaunchActivity cannot impersonate panelReady evidence
+  ok   panel discovery error fails panelReady closed
+  ok   two declared HUD panels cannot be satisfied by one shared runtime window
+  ok   panel-structural fleet evidence scores 6/6 with panelReady separate and eye excluded
+  ok   panel-structural timeout scores runtime failures without adding an eye axis
+  ok   stage-eye timeout retains the failed eye axis and its 6-point maximum
+  ok   report can show panelReady=1 while eye remains unscored
+  ok   fabricated panel-structural report fixture has internally consistent 6/6 arithmetic
+  ok   bench perf axis: the documented scorePicoCliPerfAxis null boundaries still hold
+  ok   bench perf axis: a SKIP/INSUFFICIENT_DATA report is not measured, never a pass
+  ok   bench perf axis: Spatial Runtime FPS never stands in for app FPS
+  ok   bench perf axis: a complete 0.2.0 report scores its measured appFps p5 against the budget floor
+  ok   bench perf axis: the 0.1.0 report schema (metadata.app) still scores
+
+SpatialBench test done. Failures: 0
+
+
+## stderr
+

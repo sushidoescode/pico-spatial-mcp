@@ -1,0 +1,174 @@
+{
+  "root": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15",
+  "startedAt": "2026-09-15T21:22:12.576Z",
+  "head": "c40180bde7a9244827a03ce9f8008d957d58c4f6",
+  "node": "v25.8.1",
+  "suites": [
+    {
+      "name": "test:doors",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 19605,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/c6-merge-suites/test_doors.log",
+      "stdoutBytes": 8259,
+      "stderrBytes": 186,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 38.16925"
+      ]
+    },
+    {
+      "name": "test:eye",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1948,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/c6-merge-suites/test_eye.log",
+      "stdoutBytes": 3814,
+      "stderrBytes": 0,
+      "tail": [
+        "  ok   USD receipt binds exact measured fields and keeps caller prose explicitly unverified",
+        "  ok   ledger rejection is surfaced as non-rendered evidence status with no durable composition proof",
+        "USD render producer test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:picocli",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 98500,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/c6-merge-suites/test_picocli.log",
+      "stdoutBytes": 29725,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 6329.017833"
+      ]
+    },
+    {
+      "name": "test:prompts",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 770,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/c6-merge-suites/test_prompts.log",
+      "stdoutBytes": 432,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 630.151292"
+      ]
+    },
+    {
+      "name": "test:unitygen",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 167,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/c6-merge-suites/test_unitygen.log",
+      "stdoutBytes": 1908,
+      "stderrBytes": 0,
+      "tail": [
+        "  ok   UNITY_EDITOR_PATH honored",
+        "  ok   no editor -> null",
+        "Unitygen test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:sdkselection",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 441,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/c6-merge-suites/test_sdkselection.log",
+      "stdoutBytes": 16791,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 299.122417"
+      ]
+    },
+    {
+      "name": "test:preflight",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1466,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/c6-merge-suites/test_preflight.log",
+      "stdoutBytes": 5163,
+      "stderrBytes": 186,
+      "tail": [
+        "  ok   emulator-status consumer: managed integrity rejection => warn",
+        "  ok   PARTIAL/4 keeps the expected degraded warning and the envelope's remediation",
+        "Preflight test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:ledger",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 28027,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/c6-merge-suites/test_ledger.log",
+      "stdoutBytes": 7705,
+      "stderrBytes": 31,
+      "tail": [
+        "  ok   package_web_pwa returns a scaffolded, not deployment-ready, result for validated inputs",
+        "  ok   public claims output cannot publish broken proof as vision_verified",
+        "Ledger fixture test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:runreceipt",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 43919,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/c6-merge-suites/test_runreceipt.log",
+      "stdoutBytes": 28824,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 43775.913708"
+      ]
+    },
+    {
+      "name": "test:lint",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1299,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/c6-merge-suites/test_lint.log",
+      "stdoutBytes": 7369,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 1067.241041"
+      ]
+    },
+    {
+      "name": "test:docsmeta",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 392,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/c6-merge-suites/test_docsmeta.log",
+      "stdoutBytes": 3407,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 163.9035"
+      ]
+    }
+  ],
+  "finishedAt": "2026-09-15T21:25:29.130Z"
+}

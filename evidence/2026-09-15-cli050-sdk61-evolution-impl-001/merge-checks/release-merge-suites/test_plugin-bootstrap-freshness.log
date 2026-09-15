@@ -1,0 +1,44 @@
+# npm run test:plugin-bootstrap-freshness
+# exit=0 signal= elapsedMs=787
+
+## stdout
+✔ the setup plan is decided by dependency and build freshness, not by directory existence (0.621125ms)
+✔ a source checkout is recognised by its sources and tsconfig, and an installed payload is not (3.725ms)
+✔ the dependency identity is a digest over the lockfile bytes and this Node major (1.111791ms)
+✔ an install is only current when its receipt accounts for the lockfile on disk (2.389875ms)
+✔ npm's own record of the install is accepted when our receipt cannot speak (2.225417ms)
+✔ a packaged payload is verified from its receipt without any source (4.329333ms)
+✔ an unchanged cache starts the server with no npm, no compiler and no setup lock (1.989708ms)
+✔ a deleted dist is rebuilt without reinstalling dependencies (3.063709ms)
+✔ a source edit rebuilds before the server starts (2.920125ms)
+✔ a lockfile edit reinstalls, rebuilds and records the new dependency identity (4.453917ms)
+✔ a cache with neither a receipt nor npm's own record installs once (3.113625ms)
+✔ a cache npm installed and we did not starts with no npm, records it once, then is receipt-fast (5.55425ms)
+✔ a single changed package in npm's record sends the cache through one install (2.990375ms)
+✔ a record npm wrote for another lockfile version, or no record we can parse, is not evidence (6.646042ms)
+✔ an install that changes the installed TypeScript rebuilds output that was current before it (4.821125ms)
+✔ restoring a deleted node_modules does not recompile output the install makes current again (2.867958ms)
+✔ the install and the build it feeds share one setup lease (1.870542ms)
+✔ the planned build runs the checkout's own TypeScript through this node binary with an explicit outDir (2.963542ms)
+✔ a failed install ends bootstrap and never compiles or launches (0.887083ms)
+✔ a failed compilation ends bootstrap, keeps the previous output and never launches (2.291208ms)
+✔ a lockfile that changes during installation is rejected instead of recorded (0.989334ms)
+✔ an installed package with an intact payload launches without npm or a compiler (2.308ms)
+✔ an installed package whose payload was tampered with refuses to launch and asks for a reinstall (2.251042ms)
+✔ two cold bootstraps against one cache install once, build once, and never overlap (52.589ms)
+bootstrap timings: warm 0.397041ms, e2e cold 252ms, e2e warm 54ms, e2e source-edit 85ms
+✔ two changed-lock bootstraps against one cache reinstall once and rebuild once (52.746791ms)
+✔ a waiter that times out on the setup lease launches nothing (6.039041ms)
+✔ a real cold bootstrap compiles, keeps npm and compiler chatter off stdout, then starts warm (393.552209ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 642.156542
+
+
+## stderr
+

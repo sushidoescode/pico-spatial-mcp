@@ -1,0 +1,48 @@
+[run-gate] node test/eye.mjs failed: ENOENT
+[run-gate] node test/eye.mjs was terminated by SIGTERM
+[run-gate] node missing.mjs failed: spawn failed
+✔ GATES declares a host, a scope, and at least one argv array for every gate (0.456208ms)
+✔ the repository's package.json and gates.yml agree with the inventory (0.68775ms)
+✔ every public gate script is routed through run-gate, and nothing else is (0.144375ms)
+✔ the native Windows lane keeps its exact three constituent suites (0.065ms)
+✔ macOS keeps both native CMIO contracts, and only those (0.072833ms)
+✔ test:runrevision is a Linux gate, not an orphan script (0.038416ms)
+✔ the build-freshness and plugin-bootstrap-freshness suites are named Linux fixture gates (0.059125ms)
+✔ multi-command gates keep every && tail as its own sequential argv array (0.054333ms)
+✔ every argv target file that the inventory names exists in the checkout (0.345292ms)
+✔ a gate the workflow stops invoking is reported as missing (0.227625ms)
+✔ a gate invoked twice is reported as a duplicate (0.244333ms)
+✔ a workflow step invoking an unknown gate is reported (0.192833ms)
+✔ a gate run by a lane whose runner OS disagrees with its host is reported (0.200125ms)
+✔ a package script with no host assignment is reported (0.607416ms)
+✔ an inventory entry with no package script is reported (0.33375ms)
+✔ a lane whose runner OS cannot be recognized is reported rather than silently trusted (0.179625ms)
+✔ workflow lanes carry their job name, runner, host family, and gate invocations (0.118583ms)
+✔ runner labels map to host families, and an unknown label maps to null (0.024542ms)
+✔ published counts are derived from the inventory, never typed (0.066041ms)
+✔ the shape checks survive a synthetic inventory, so no repository total is baked in (0.052334ms)
+✔ a stale build fails the gate before any child is spawned (0.254917ms)
+✔ an installed-artifact gate is freshness-checked too (0.095209ms)
+✔ a native-contract gate skips the freshness check, because it never loads dist/ (0.20775ms)
+✔ commands run sequentially, with no shell, inheriting stdio, in the given root (0.108208ms)
+✔ the first nonzero exit propagates and stops the remaining commands (0.044916ms)
+✔ a spawn error and a killed child are both nonzero, and stop the gate (0.27775ms)
+✔ an unknown gate name is refused by name (0.042583ms)
+✔ runArgv resolves nonzero without throwing when the child cannot start (0.045958ms)
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-S1lV9k/ignores-sigterm.mjs exceeded 0s; sending SIGTERM
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-S1lV9k/ignores-sigterm.mjs ignored SIGTERM for 1s; sending SIGKILL
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-S1lV9k/ignores-sigterm.mjs was terminated by SIGKILL after exceeding 0s
+✔ a real child that ignores SIGTERM is still bounded: SIGKILL lands after the grace (1006.386542ms)
+[run-gate] node test/eye.mjs exceeded 0s; sending SIGTERM
+[run-gate] node test/eye.mjs ignored SIGTERM for 0s; sending SIGKILL
+[run-gate] node test/eye.mjs was terminated by SIGKILL after exceeding 0s
+✔ a timed-out gate stops before its remaining commands (20.956917ms)
+✔ only npm goes through the Windows launch shim; node and sh are spawned directly (0.4195ms)
+ℹ tests 31
+ℹ suites 0
+ℹ pass 31
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1073.985083

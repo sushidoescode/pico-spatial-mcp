@@ -1,0 +1,126 @@
+# npm run test:vault
+# exit=0 signal= elapsedMs=184
+
+## stdout
+  ok   vault_api public schema/result never recommends a bare pico-cli setup command
+  ok   vault_api missing-vault result starts with ensure_pico_cli
+  ok   vault_api missing-vault result requires the returned absolute path
+  ok   vault_api missing-vault result supplies setup argv structurally
+  ok   vault_api unavailable result: names the 0.13.3 default declaration vault
+  ok   vault_api unavailable result: names the declaration source
+  ok   vault_api unavailable result: points at the SDK 6.0.0 drift document
+  ok   vault_api description discloses the 0.13.3 declaration baseline and SDK 6.0.0 drift caveat
+  ok   fixture vault_api success response available (got ok)
+  ok   fixture vault_api documented-only response available (got documented-only)
+  ok   fixture vault_api not-found response available (got not-found)
+  ok   vault_api success result: names the 0.13.3 default declaration vault
+  ok   vault_api success result: names the declaration source
+  ok   vault_api success result: points at the SDK 6.0.0 drift document
+  ok   vault_api documented-only result: names the 0.13.3 default declaration vault
+  ok   vault_api documented-only result: names the declaration source
+  ok   vault_api documented-only result: points at the SDK 6.0.0 drift document
+  ok   vault_api not-found result: names the 0.13.3 default declaration vault
+  ok   vault_api not-found result: names the declaration source
+  ok   vault_api not-found result: points at the SDK 6.0.0 drift document
+  ok   pico_sdk description discloses the forwarded vault provenance and drift caveat
+Parsing the fixture vault...
+
+  ok   fileCount 4 (got 4)
+  ok   all 4 fixture packages indexed
+  ok   core.ecs declares Entity
+  ok   core.ecs declares RigidBodyComponent
+  ok   core.ecs declares AnchorComponent
+  ok   core.ecs declares CollisionComponent
+  ok   core.ecs declares TransformComponent
+  ok   code sample inside a doc comment is NOT indexed (Sneaky)
+  ok   nested enum AnchorComponent.Alignment indexed
+  ok   nested class AnchorComponent.TrackingMode indexed
+  ok   nested class Entity.CloneOptions indexed
+  ok   typealias with vestigial brace pair indexed
+  ok   enum entries [CENTER, EDGE] (got ["CENTER","EDGE"])
+  ok   RigidBodyMode entries KINEMATIC/DYNAMIC/UNKNOWN
+  ok   RigidBodyComponent has 2 ctors (got 2)
+  ok   2-arg ctor param names
+  ok   Vector3(x,y,z) defaults → minArity 0 / maxArity 3
+  ok   ShapeResource.createCapsule is static (Companion)
+  ok   createCapsule params are (height, radius) — the 2026-07-12 audit bug, locked (got ["height","radius"])
+  ok   pseudo-enum companion constant TrackingMode.CONTINUOUS indexed as static
+  ok   angularDamping: Float var indexed
+  ok   nullable `Scene ?` normalized to Scene?
+  ok   Companion @JvmStatic suspend loadSuspend indexed
+
+Vault check against the fixture index...
+
+  ok   2 unknown-type warns (got ["unknown-type","unknown-type"])
+  ok   finding lines attribute to the import lines
+  ok   generate_rigidbody_kotlin import block is vault-clean (got [])
+  ok   ui.* import skipped (Text)
+  ok   allowlisted GaussianSplattingComponent skipped
+  ok   unknown package → info finding
+  ok   inline FQN usage validated
+  ok   nested inline FQN (Outer.Nested) resolves
+  ok   FQ enum-entry (Enum.ENTRY) resolves via type prefix
+  ok   FQ companion constant (Outer.Nested.CONSTANT) resolves
+  ok   lowercase member import skipped
+
+Phase-2 checks against the fixture index...
+
+  ok   createCapsule height param carries its @param doc (got "The total height of the capsule, including the spherical caps, in meters.")
+  ok   bogus enum entry flagged w/ valid values (got [{"check":"unknown-enum-value","severity":"warn","line":2,"match":"val m = RigidBodyMode.BOGUS","symbol":"com.pico.spatial.core.ecs.simulation.RigidBodyMode.BOGUS","message":"BOGUS is not an entry/constant/nested type of RigidBodyMode per the agent-vault (com.pico.spatial.core.ecs.simulation.md:11); valid values: KINEMATIC, DYNAMIC, UNKNOWN."}])
+  ok   real enum entry silent
+  ok   no import → enum check does not fire (androidx safety)
+  ok   companion constant Vector3.ZERO silent
+  ok   bogus companion constant flagged
+  ok   nested type access via outer import silent
+  ok   prose 'Type. Word' not treated as member access
+  ok   comment FQN mention does not suppress the code finding
+  ok   Type.MEMBER inside a string literal is ignored
+  ok   Type.MEMBER inside a // comment is ignored
+  ok   Type.Companion is known
+  ok   commas inside string args not counted
+  ok   commas inside inline lambda args not counted
+  ok   trailing lambda counted as an argument (4 > max 3 flagged)
+  ok   ui.* types excluded from member/arity checks
+  ok   inline-FQN bogus enum entry caught
+  ok   entry-import bogus enum entry caught
+  ok   entry-import of a real entry silent
+  ok   enum-entry doc does not leak onto 'val value' (got undefined)
+  ok   TransformComponent(2 args) flagged, arities listed (got [{"check":"ctor-arity","severity":"warn","line":2,"match":"val t = TransformComponent(pos, rot)","symbol":"com.pico.spatial.core.ecs.TransformComponent(2 args)","message":"TransformComponent has no constructor taking 2 arg(s) per the agent-vault (com.pico.spatial.core.ecs.md:116); declared arities: 3."}])
+  ok   TransformComponent(3 args) silent — nested call parens counted correctly
+  ok   Vector3() silent (all-default ctor, minArity 0)
+  ok   Vector3(4 args) flagged (max 3)
+  ok   RigidBodyComponent 2-arg ctor silent
+
+v15.3 named-arg + unit-advisory checks...
+
+  ok   valid named args silent
+  ok   misspelled named arg flagged with real names cited (got [{"check":"unknown-ctor-arg","severity":"warn","line":2,"match":"val r = RigidBodyComponent(massProps = MassProperties(1f), rigidBodyMode = RigidBodyMode.DYNAMIC)","symbol":"com.pico.spatial.core.ecs.RigidBodyComponent(massProps = …)","message":"no RigidBodyComponent constructor has a parameter named 'massProps' per the agent-vault (com.pico.spatial.core.ecs.md:35); parameter names: massProperties, rigidBodyMode."}])
+  ok   unit advisory fires on numeric literals into degree params (got [{"check":"unit-advisory","severity":"info","line":2,"match":"spot.components.set(SpotLightComponent(Color4(1f, 1f, 1f, 1f), 1300f, 6f, 26f, 40f))","symbol":"com.pico.spatial.core.ecs.SpotLightComponent(units)","message":"unit-sensitive parameters receive numeric literals — verify units against the vault (com.pico.spatial.core.ecs.md:129): intensity (\"The intensity of the light, measured in lumen.\"); innerAngle (\"The inner cone angle of the spotlight, measured in degrees.\"); outerAngle (\"The outer angle of the spotlight, measured in degrees.\")."}])
+  ok   no unit advisory when params carry no unit docs
+  ok   absent vault → loadVaultIndex null
+
+Real agent-vault checks (skipped when not provisioned)...
+
+  ok   real vault indexes >= 419 top-level+nested types (got 552)
+  ok   REAL vault: createCapsule(height, radius) — permanent regression lock for the collider.ts bug
+  ok   REAL vault: SpotLightComponent 5-arg ctor with innerAngle/outerAngle — regression lock for the lighting.ts bug
+  ok   REAL vault: generate_rigidbody_kotlin import block is vault-clean
+  ok   REAL vault: depth-3 nested type import resolves (SceneGraphProperty.CameraAnchor.Follow)
+  ok   REAL vault: FQ enum-entry reference resolves
+  ok   REAL vault: CollisionCastHitMode.CLOSEST caught by the generic enum check
+  ok   REAL vault: .NEAREST silent
+  ok   REAL vault: CollisionComponent() no-arg caught by the generic arity check
+  ok   REAL vault: SpotLightComponent innerAngle property doc mentions degrees (got "The inner cone angle of the spotlight, measured in degrees.")
+  ok   REAL vault: unit advisory fires for SpotLightComponent cone params
+  ok   REAL vault: PolygonFillMode.value doc not leaked from the UNKNOWN entry (got undefined)
+  ok   vault_api("RigidBodyMode.DYNAMIC") resolves to the owner type card (got status=ok)
+  ok   vault_api FQN Type.member query resolves
+  ok   REAL vault: splat-env imports clean (allowlist + LoadType)
+
+  info real vault: SDK 0.13.3, 552 types across 54 package files
+
+Vault test done. Failures: 0
+
+
+## stderr
+

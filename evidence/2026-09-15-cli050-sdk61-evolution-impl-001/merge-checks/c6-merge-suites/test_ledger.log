@@ -1,0 +1,126 @@
+# npm run test:ledger
+# exit=0 signal= elapsedMs=28027
+
+## stdout
+  ok   binary command output is capped before it can exhaust the server
+  ok   validateCapture accepts a real PNG
+  ok   validateCapture reports dimensions
+  ok   validateCapture rejects a text file
+  ok   validateCapture rejects a 0-byte file
+  ok   validateCapture rejects a directory
+  ok   validateCapture rejects a missing path
+  ok   validateCapture rejects PNG-shaped header junk without a valid chunk stream
+  ok   validateCapture rejects a PNG truncated before IEND
+  ok   validateCapture rejects a PNG whose IDAT CRC is corrupt
+  ok   validateCapture rejects a marker-only JPEG with no decodable raster
+  ok   validateCapture rejects an oversized sparse capture before buffering it
+  ok   vision_verified without artifact is rejected
+  ok   vision_verified without attestation is rejected
+  ok   device_verified uses the same image gate
+  ok   vision_verified with image and attestation is accepted
+  ok   accepted entry records capture provenance
+  ok   text spoof is rejected
+  ok   empty spoof is rejected
+  ok   directory spoof is rejected
+  ok   usd_host_render uses the image gate
+  ok   non-visual evidence needs no artifact
+  ok   PNG-shaped header junk cannot mint vision_verified
+  ok   marker-only JPEG cannot mint vision_verified
+  ok   generic append cannot mint auto_judged without a calibrated-producer receipt
+  ok   generic append cannot mint usd_host_render without a renderer receipt
+  ok   visual_judge producer path persists hash-bound provenance
+  ok   USD renderer producer path persists hash-bound provenance and structured measurements
+  ok   USD renderer receipt rejects an output hash that is not bound to the rendered artifact
+  ok   USD producer persists measured bytes rather than re-reading a replaced output path
+  ok   read-time producer validation downgrades a USD measurement hash unbound from its CAS artifact
+  ok   legacy auto_judged without producer provenance downgrades to structural
+  ok   legacy usd_host_render without producer provenance downgrades to structural
+  ok   direct appendLedgerEntry rejects a plain shaped binding without resolver-origin capability
+  ok   direct appendDeviceVerifiedEntry rejects a plain shaped binding without resolver-origin capability
+  ok   device_verified requires explicit structured outcome
+  ok   new device_verified entry rejects serial-only caller metadata
+  ok   caller-forged probe markers cannot mint device_verified
+  ok   new device_verified entry rejects emulator-shaped identity
+  ok   device_verified schema fixture records complete non-emulator lineage
+  ok   device_verified rejects caller identity that differs from the live probe
+  ok   device_verified rejects artifact bytes not captured live from the probed serial
+  ok   complete device lineage remains device_verified on read
+  ok   per-app capability matrix counts device proof in its strongest bucket
+  ok   failed device outcome stays recorded but never enters the positive device capability bucket
+  ok   legacy device row without complete lineage downgrades to vision_verified
+  ok   legacy device lineage downgrade is disclosed
+  ok   visual append succeeds
+  ok   visual append records the source path separately
+  ok   visual append records a ledger-owned path
+  ok   CAS filename is hash-addressed with canonical extension
+  ok   CAS bytes match the bytes that were hashed
+  ok   overwriting the source leaves immutable evidence intact
+  ok   effective evidence remains vision_verified after source overwrite
+  ok   intact immutable evidence reaches the visual bucket
+  ok   missing stored artifact downgrades to provenance-broken
+  ok   missing stored artifact never reaches the visual bucket
+  ok   broken provenance remains conspicuous in generated output
+  ok   valid replacement image is a hash mismatch
+  ok   mismatch reports expected and actual hashes
+  ok   mismatched image never reaches the visual bucket
+  ok   malformed stored capture downgrades to provenance-broken on read
+  ok   legacy visual row without recorded hash is provenance-broken
+  ok   retraction appends an event
+  ok   retraction leaves the target entry unchanged
+  ok   retracted claim is excluded from effective evidence
+  ok   retraction history and reason remain readable
+  ok   duplicate retraction is rejected
+  ok   legacy inline retraction remains excluded
+  ok   canonical extension comes from image bytes
+  ok   identical bytes reuse one CAS path
+  ok   extra metadata cannot override core fields or attach unprobed hardware or run-receipt lineage
+  ok   legacy malformed runReceipt cannot be consumed while intact image evidence is preserved
+  ok   legacy capture-mismatch runReceipt cannot be consumed while intact image evidence is preserved
+  ok   legacy caller-extra runReceipt cannot be consumed while intact image evidence is preserved
+  ok   corrupt pre-existing CAS target rejects append
+  ok   corrupt CAS target is not overwritten
+  ok   unreadable ledger rejects append
+  ok   unreadable ledger bytes are preserved
+  ok   noncanonical app key is rejected instead of colliding with a canonical ledger
+  ok   uppercase app key is rejected instead of aliasing lowercase on case-insensitive filesystems
+  ok   all concurrent append workers report success
+  ok   concurrent appends retain every unique claim
+  ok   concurrent appends allocate unique contiguous sequences
+  ok   concurrent append/retraction workers report success
+  ok   concurrent append/retraction retains every event
+  ok   concurrent retraction remains effective
+  ok   complete lock with a provably dead PID is recovered
+  ok   lock ownership includes process-start identity so PID reuse is recoverable
+  ok   whole-directory quarantine left by a crashed reaper cannot wedge or overwrite a claimant
+  ok   dead reaper election is recoverable without weakening mutual exclusion
+  ok   two synchronized dead-lock reapers preserve both successful appends
+  ok   dead-owner reaper never restores over or removes a live replacement generation
+  ok   ledger rename and first CAS publication fsync their parent directories
+  ok   slow pre-transaction capture work does not expose a live lock to stale reaping
+  ok   elapsed time never reaps a live writer during a >10s ledger write
+  ok   public record_verification mints device_verified only through live identity + same-serial capture probes
+  ok   public record_verification rejects caller-minted auto_judged
+  ok   public record_verification rejects caller-minted usd_host_render
+  ok   retract action rejects record-only fields
+  ok   record action rejects retraction-only fields
+  ok   public retract appends immutable history and excludes the target from effective proof
+  ok   ledger_report emits provenance-broken for a hash mismatch
+  ok   cross-ledger matrix excludes broken visual proof
+  ok   cross-ledger matrix fails closed when any selected ledger is unreadable
+  ok   cross-ledger matrix discloses device FAIL separately and excludes it from positive proof
+  ok   ship checklist blocks on broken provenance
+  ok   ship checklist accepts intact validated device proof as visual proof
+  ok   ship checklist preserves device FAIL as a blocker rather than positive proof
+  ok   ship checklist never infers build/install/signing from .apk path existence
+  ok   ship checklist never infers deployed/hostable web readiness from manifest path existence
+  ok   package_web_pwa rejects a missing entrypoint before writing partial metadata
+  ok   package_web_pwa rejects a missing declared icon before mutation
+  ok   package_web_pwa returns a scaffolded, not deployment-ready, result for validated inputs
+  ok   public claims output cannot publish broken proof as vision_verified
+
+Ledger fixture test done. Failures: 0
+
+
+## stderr
+pico-spatial-mcp ready (stdio)
+

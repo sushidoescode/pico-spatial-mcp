@@ -1,0 +1,25 @@
+# RED fixture run: package-lock.json packages[\"\"].version deliberately set to 0.0.0-deliberate-mismatch
+# baseline package-lock.json sha256: c67edd00c171cf78c6b17357bd9b4e1b2f1665eaced4165a3117aaab4365602b
+
+package.json version: 37.0.0
+
+  ok   plugin.json carries version 37.0.0
+  ok   .claude-plugin/plugin.json carries version 37.0.0
+  ok   .claude-plugin/marketplace.json carries version 37.0.0
+  ok   .claude-plugin/marketplace.json carries version 37.0.0
+  ok   .codex-plugin/plugin.json carries version 37.0.0
+  ok   .agents/plugins/marketplace.json carries version 37.0.0
+  ok   .cursor-plugin/plugin.json carries version 37.0.0
+  ok   .cursor-plugin/marketplace.json carries version 37.0.0
+  ok   .github/plugin/marketplace.json carries version 37.0.0
+  ok   .github/plugin/marketplace.json carries version 37.0.0
+  ok   package-lock.json version carries version 37.0.0
+  FAIL package-lock.json packages[''].version is "0.0.0-deliberate-mismatch" != package.json 37.0.0 — run `npm version --no-git-tag-version <version>` rather than editing package.json by hand
+  ok   plugin.json targets Agent Plugins 1.0.0
+  ok   portable and Claude manifests carry one plugin identity
+  ok   sync-metadata --check: no stale version/tool-count literals
+  ok   all 162 relative markdown links resolve (72 git-tracked files: root *.md + docs/**)
+  WARN homepage/origin check skipped: ENOTDIR: not a directory, open '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/.git/config'
+
+Docs/metadata gate done. Failures: 1
+EXIT=1

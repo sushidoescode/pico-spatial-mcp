@@ -1,0 +1,44 @@
+✔ each Android project selects the packer its own local.properties points at (24.035375ms)
+✔ the argv every stage runs carries the project's own packer, captured without spawning (0.749167ms)
+✔ a projectDir and --details reach the packer exactly as before (0.176708ms)
+✔ a multi-stage operation keeps its stage-1 selection when discovery changes underneath it (19.979292ms)
+✔ a deploying scene operation resolves the packer and the editor from ONE installation (0.32225ms)
+✔ a deploying scene operation still packs when the host has no editor payload (1.533666ms)
+✔ a deploying scene operation prefers one installation carrying BOTH payloads (18.224541ms)
+✔ an editor request resolves the app bundle it launches, not the packer beside it (0.176791ms)
+✔ a packer-only installation cannot satisfy an editor request (0.182208ms)
+✔ the editor component is unsupported off macOS, and says so instead of naming a fake path (0.250334ms)
+✔ a supplied androidProjectRoot must carry readable Android project metadata (0.103125ms)
+✔ androidProjectRoot is rejected BEFORE any packing happens (0.05825ms)
+✔ every accepted Android project marker is honoured, and an empty root is refused (0.215208ms)
+✔ androidProjectRoot is a different input from the .spatialproject projectDir (0.134208ms)
+✔ an explicit override is disclosed by its bytes and is never launched to inspect it (0.140042ms)
+✔ an override carries the operation even when the host has no installed toolchain (0.051ms)
+✔ a non-executable or unreadable override is refused instead of being handed to spawn (0.049041ms)
+✔ an override is only consulted when the operation opted in, and only for the packer (0.081916ms)
+✔ an explicit pin whose override reports no version fails as override-version-unverified (0.101917ms)
+✔ an override that disagrees with the pin fails as override-version-conflict (0.110583ms)
+✔ an override that agrees with the pin is accepted and records the version it reported (0.057667ms)
+✔ version reporting helpers read the tool's output, never a path (0.026083ms)
+✔ scene_schemas reads beside the INSTALLED packer and never spawns, even with the override set (0.141625ms)
+✔ inspect_bundle's body names the binary that decoded the bundle (0.082459ms)
+✔ a packer operation that RUNS the binary still honours the override by default (0.065042ms)
+✔ every tool result that can run the override discloses which binary ran (4.453208ms)
+✔ no src/*.ts still carries the hardcoded 0.13 spatialbundle fallback (46.748875ms)
+✔ the packer consumers import the shared selection rather than rebuilding one (0.264708ms)
+✔ the extracted helper still performs BOTH halves for every packer wrapper (0.273167ms)
+✔ S6 matrix: every packer/editor consumer runs the SELECTED 6.1 binary on a host that also carries 0.13 (0.537459ms)
+✔ S6 matrix: the preflight pico-sdk and adb rows read the selection, and their captured exec log launches nothing legacy (0.780208ms)
+✔ S6 matrix: adb and the emulator proto schema follow the selected installation; adb resolution spawns nothing (7.095541ms)
+✔ S6 matrix: vault and lint answers follow the selected tools root and stay historical without reviewed evidence (10.484083ms)
+✔ S6 matrix: failed and missing selections are reported as themselves, never degraded to another binary (0.328583ms)
+✔ S6 matrix: the same mixed host on win32 and linux FIXTURES selects the 6.1 payload published for that platform (0.395417ms)
+✔ S6 matrix: the ONE legacy `which adb` probe left in the server is bounded to validate_toolchain and does not spread (23.667709ms)
+ℹ tests 36
+ℹ suites 0
+ℹ pass 36
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 214.843709

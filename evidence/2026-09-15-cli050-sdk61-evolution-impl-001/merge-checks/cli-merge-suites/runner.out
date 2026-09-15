@@ -1,0 +1,11 @@
+test:prompts: exit=0 739ms
+test:picocli: exit=0 93533ms
+test:knowledge-lifecycle: exit=0 27544ms
+test:doors: exit=0 15695ms
+test:bench: exit=0 482ms
+test:vault: exit=0 207ms
+test:vaultdiff: exit=0 126ms
+test:projectgen: exit=0 239ms
+test:runreceipt: exit=0 45138ms
+test:emulator-restart: exit=0 24767ms
+DONE

@@ -1,0 +1,55 @@
+# npm run test:lint
+# exit=1 signal= elapsedMs=153
+
+## stdout
+Testing 38 built-in lint rules (positive + negative fixtures each)...
+
+  ok   compose-fork-direct-dependency [error]
+  ok   displayColor-flat-white [error]
+  ok   mesh-collider-alignment [warn]
+  ok   collisioncomponent-no-arg [error]
+  ok   raycast-without-physicsworld [error]
+  ok   menu-dispatch-missing-move-route [error]
+  ok   collisioncasthitmode-closest [error]
+  ok   spotlight-cone-radians [error]
+  ok   physics-ccd-continuous [error]
+  ok   physics-destroy-respawn [error]
+  ok   physics-kinematic-flip [error]
+  ok   rotation-rotateVector [error]
+  ok   transform-scale-property [warn]
+  ok   particlecomponent-ctor [error]
+  ok   text-component [error]
+  ok   raw-glb-runtime-load [error]
+  ok   usd-glb-reference [error]
+  ok   stage-lighting-in-mixed [warn]
+  ok   dynamic-full-stage-emulator-safety [warn]
+  ok   defaultstage-windowcontainer-metadata [warn]
+  ok   bundle-md5-diff [error]
+  ok   am-start-without-forcestop [warn]
+  ok   compose-material-in-spatial-ui [error]
+  ok   compose-setcontent-without-picotheme [error]
+  ok   entityquerycondition-custom [error]
+  ok   ecs-system-nonexistent-override [error]
+  ok   registersystem-without-unregister [error]
+  ok   animationresource-never-closed [error]
+  ok   assetbundle-never-closed [error]
+  ok   toglobal-without-close [error]
+  ok   vibrant-encoding-destroyed [warn]
+  ok   picotheme-colortokens-restricted [error]
+  ok   resource-closed-without-toglobal [warn]
+  ok   mediaplayer-never-closed [error]
+  ok   trackingmanager-never-stopped [error]
+  ok   subscription-never-cancelled [error]
+  ok   interactable-collider-full [error]
+  ok   scaffold-log-tag-drift [warn]
+
+  ok   integration blob surfaced 5 violations
+  FAIL battery: package.json declares gates that gates.yml never runs: test:runrevision
+  FAIL battery: README.md claims 47 invocations / 46 suites; package.json + gates.yml say 49 / 48
+  FAIL battery: docs/COLLABORATORS.md claims 47 invocations / 46 suites; package.json + gates.yml say 49 / 48
+
+Lint fixture test done. Failures: 3
+
+
+## stderr
+

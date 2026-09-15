@@ -1,0 +1,206 @@
+# npm run test:picocli
+# exit=0 signal= elapsedMs=80272
+
+## stdout
+  ok   legacy picoCliPath remains an inert compatibility export
+  ok   drift classified: "error: unknown option '--nope'\nUsage: pe"
+  ok   drift classified: "Usage: perf trace record [options]"
+  ok   drift classified: "error: missing required argument 'packag"
+  ok   runtime failure classified as runtime
+  ok   empty output defaults to runtime (never claims drift without evidence)
+  ok   0.4.x utilities gate classified as setup-required
+  ok   utilities gate on stdout with a future bundle version classifies as setup-required
+  ok   appFps avg 0 (the measured emulator no_3d_frame case) scores null, not 0
+  ok   appFps p5=62 vs 60fps floor scores 1
+  ok   appFps p5=20 vs 60fps floor scores 0
+  ok   failed diagnose scores null (not counted), never 0
+  ok   absent appFps block scores null
+  ok   budget-to-fps-floor conversion honors a 30fps-class budget
+  ok   preflight pico-cli row warns that first CLI use provisions the managed store
+  ok   preflight pico-cli row passes with the parsed version when present
+  ok   preflight pico-cli row admits an unparsed version instead of inventing one
+  ok   preflight uses exact structured emulator-status argv and never pico-cli doctor
+  ok   preflight PARTIAL structured status degrades honestly
+  ok   preflight FAILED structured status degrades honestly
+  ok   preflight garbage structured status degrades honestly
+  ok   total pico-cli envelope parser is exported for fixture callers
+  ok   sessionId parsed from a JSON body
+  ok   sessionId parsed from a JSON line amid log noise
+  ok   sessionId parsed from a labeled token
+  ok   garbage yields null, not an invented sessionId
+  ok   crash markers detected: fatal-exception, process-died
+  ok   benign watch output yields zero indicators
+  ok   native crash marker detected
+  ok   registerPerfTraceTools exported
+  ok   registerPicoCliTools exported
+  ok   registerPerfCliTools exported
+  ok   capture_record description names adb screenrecord
+  ok   capture_record description names pico-cli capture record
+  ok   capture_record description names empty/invalid
+  ok   capture_record description names this emulator display
+  ok   capture_record description names screencapture -V -l<windowId>
+
+pico-cli lane test done. Failures: 0
+✔ bounded runner compatibility helpers remain covered without ambient CLI access (0.732292ms)
+✔ the bounded runner rejects a failed synchronous pre-spawn identity check before execution (0.540666ms)
+✔ post-spawn detection kills a child before delayed work but is not a prevention claim (1803.094334ms)
+✔ post-spawn detection reports an immediate child side effect instead of claiming prevention (1272.690625ms)
+✔ a synchronous pre-spawn check that exhausts the command budget refuses to spawn (149.934042ms)
+✔ a post-spawn check that exhausts the budget reports that process creation already happened (1327.35ms)
+✔ post-spawn rejection uses the bounded Windows process-tree cleanup seam (752.115958ms)
+✔ post-completion rejection owns one Windows process-tree cleanup through settlement (222.948708ms)
+✔ a managed command timeout gets a fresh bounded post-completion validation deadline (1023.666083ms)
+✔ the separate post-completion validation deadline remains cooperatively bounded (1297.541084ms)
+✔ default managed calls snapshot one call-time environment and home after import (1340.499625ms)
+▶ managed pico-cli policy and immutable-store inspection
+  ✔ policy parsing rejects contradictory configuration (0.121125ms)
+  ✔ cached policy picks the newest wholly validated immutable version without npm or writes (1250.629875ms)
+  ✔ a relative managedRoot resolves the published immutable version (658.600625ms)
+  ✔ corrupt records and version disagreements are rejected before a cached version is selected (4957.754542ms)
+  ✔ disabled, external, and missing-cache policies expose their read-only outcomes (1.4015ms)
+✔ managed pico-cli policy and immutable-store inspection (6869.182667ms)
+▶ cold managed and stale managed exact provisioning
+  ✔ cold managed install publishes the exact registry version without global mutation (616.714708ms)
+  ✔ stale managed version provisions and executes the exact newer shim (1194.350125ms)
+  ✔ cold managed help canaries remain bounded diagnostics when one command drifts (640.885875ms)
+✔ cold managed and stale managed exact provisioning (2452.266625ms)
+▶ managed publication no-clobber fix round
+  ✔ a dangling exact-version target fails before install with complete recovery guidance (137.037667ms)
+  ✔ a pre-existing empty target created at publication claim survives unchanged (549.56525ms)
+✔ managed publication no-clobber fix round (686.863ms)
+▶ managed publication content identity rejects post-publication byte and path drift
+  ✔ an unchanged finalized publication remains accepted (659.528166ms)
+  ✔ schema-1 install records fail closed with exact manual recovery (646.043959ms)
+  ✔ schema-2 missing content identity install records fail closed with exact manual recovery (621.497167ms)
+  ✔ same-version shim byte replacement is rejected before execution (630.002917ms)
+  ✔ an in-root shim symlink retargeted outside the version root is rejected before execution (629.866792ms)
+  ✔ a cached shim swapped to an out-of-root same-version executable inside io.run is rejected before spawn (613.644625ms)
+  ✔ a staged shim swapped to an out-of-root same-version executable inside io.run is rejected before spawn (187.687125ms)
+  ✔ queued relative paths are charged before traversal (0.566625ms)
+  ✔ registry failure still reports exact recovery for a legacy managed target (141.84675ms)
+  ✔ the hard-linked publication claim rejects changed bytes even when install.json is rewritten with their digest (624.3445ms)
+  ✔ a changed hard-linked publication manifest binding is rejected before execution (642.735541ms)
+  ✔ same-version package metadata bytes are rejected even though pico-cli -v is unchanged (616.802208ms)
+  ✔ installed dependency bytes are rejected even though pico-cli -v is unchanged (643.94425ms)
+✔ managed publication content identity rejects post-publication byte and path drift (6659.566875ms)
+▶ managed wrapper execution retains publication identity
+  ✔ a provisioned shim rewritten before runPicoCli never executes the replacement payload (622.810916ms)
+  ✔ a managed tree changed by the child is rejected after command completion (940.701708ms)
+✔ managed wrapper execution retains publication identity (1563.766916ms)
+▶ managed winner completeness fix round
+  ✔ a complete collision winner is validated and reused (3035.856375ms)
+  ✔ a collision winner without compatibility diagnostics is rejected and preserved (3034.2895ms)
+  ✔ a collision winner with mismatched registry integrity is rejected and preserved (3011.322917ms)
+✔ managed winner completeness fix round (9081.85075ms)
+▶ managed fallback, corruption, and concurrent managed convergence
+  ✔ registry failure falls back to a validated cache with latest-unknown freshness (279.805125ms)
+  ✔ registry failure without a validated cache is unavailable as latest-unknown (135.815958ms)
+  ✔ npm timeout fallback preserves the validated cache and failure output (129.041458ms)
+  ✔ npm unavailable fallback preserves the validated cache and failure output (131.453791ms)
+  ✔ malformed registry JSON falls back without caching or publishing it (264.392584ms)
+  ✔ npm timeout fallback retains the validated old version as outdated (872.679708ms)
+  ✔ successful npm exit without a shim fallback retains the validated old version as outdated (330.772292ms)
+  ✔ mismatched staged -v fallback retains the validated old version as outdated (483.292334ms)
+  ✔ package version mismatch fallback retains the validated old version as outdated (333.178625ms)
+  ✔ fallback is revalidated after a failing install mutates the previously valid shim (292.976542ms)
+  ✔ known-latest install failure without fallback preserves attempted provenance (162.148417ms)
+  ✔ corrupt install record is skipped without erasing it or the valid fallback (264.348375ms)
+  ✔ corrupt package version mismatch is skipped without erasing it or the valid fallback (275.115042ms)
+  ✔ corrupt shim mutation is skipped without erasing it or the valid fallback (262.3495ms)
+  ✔ abandoned staging cleanup isolates only a valid dead-owner record older than seven days (451.760834ms)
+  ✔ cleanup preserves active, unowned, malformed, and symlink staging entries (131.823875ms)
+  ✔ cleanup detects a quarantine replacement and leaves it isolated without deletion (164.686709ms)
+  ✔ cleanup never recursively deletes a replacement swapped in after quarantine verification (146.470584ms)
+  ✔ a stale publication claim fails closed with manual recovery guidance and is preserved (2760.469708ms)
+  ✔ publication finalization preserves a claim replacement instead of unlinking it (770.392792ms)
+  ✔ publication finalization never overwrites a destination created at the atomic boundary (750.111875ms)
+  ✔ a target missing both publication control records fails closed with exact manual recovery (644.270667ms)
+  ✔ a target left before failed link finalization remains incomplete on the next resolver (839.265791ms)
+  ✔ finalization rejects a source claim swapped after the real hard link is created (841.016042ms)
+  ✔ finalization binds source record bytes to the opened claim inode (757.690833ms)
+  ✔ 12 concurrent managed workers converge on one complete immutable version (2914.841416ms)
+✔ managed fallback, corruption, and concurrent managed convergence (15392.24025ms)
+▶ managed registry cache fix round
+  ✔ sequential registry environments sharing one npm identity never share latest metadata (1248.57525ms)
+  ✔ sequential npm identities sharing one registry environment never share latest metadata (1230.592833ms)
+  ✔ a successful registry result is reused only within one hour (698.818292ms)
+  ✔ forceRefresh bypasses a successful unexpired registry cache (694.101417ms)
+  ✔ failure registry responses do not populate the successful cache (639.45025ms)
+  ✔ malformed registry responses do not populate the successful cache (651.119125ms)
+✔ managed registry cache fix round (5163.180875ms)
+▶ Task 4 production adapters use the managed absolute CLI without eager provisioning
+  ✔ startup and tools/list neither contact npm nor create the managed root (339.629625ms)
+  ✔ a default wrapper provisions the managed absolute path and always returns provenance (925.25775ms)
+  ✔ exit-zero missing capture and trace artifacts are runtime failures (941.878458ms)
+  ✔ exit-zero empty capture and trace artifacts are runtime failures (954.729792ms)
+  ✔ exit-zero directory capture and trace outputs are runtime failures (961.064667ms)
+  ✔ watch_crash accepts a clean duration cap only when no runner or guard error exists (7044.732708ms)
+  ✔ watch_crash rejects a post-completion managed guard failure (7048.862917ms)
+  ✔ managed resolution failures propagate without falling back to PATH or global npm (319.220792ms)
+  ✔ setup-required failures keep provenance and return an absolute manual command without executing it (828.203625ms)
+  ✔ ensure_pico_cli force-refreshes regardless of inert legacy update input (1429.956ms)
+  ✔ coalescing is option-keyed and force-refresh strength aware (2066.120875ms)
+✔ Task 4 production adapters use the managed absolute CLI without eager provisioning (22860.582084ms)
+✔ compares the complete advertised safe help trees and hashes exact stdout plus stderr (1000.407ms)
+▶ resolves latest to an exact install and rejects unsafe arguments and invalid package evidence
+  ✔ latest registry response becomes an exact non-global package install (315.515083ms)
+  ✔ exact scratch installs suppress package lifecycle scripts (272.636625ms)
+  ✔ latest registry JSON is parsed from stdout despite an npm notice on stderr (296.18125ms)
+  ✔ malformed registry stdout is rejected even when stderr is valid text (86.406375ms)
+  ✔ failed registry lookup retains stderr in the surfaced error (78.500833ms)
+  ✔ unknown flag (26.30125ms)
+  ✔ relative output (25.92125ms)
+  ✔ prerelease from (28.552583ms)
+  ✔ registry outage (80.207625ms)
+  ✔ malformed registry (94.219959ms)
+  ✔ package version mismatch (193.045917ms)
+  ✔ reported version mismatch (241.432208ms)
+  ✔ install failure (179.609541ms)
+✔ resolves latest to an exact install and rejects unsafe arguments and invalid package evidence (1919.874084ms)
+▶ recognizes the advertised root command heading and fails closed when root enumeration is unavailable
+  ✔ Available Commands is traversed as a complete root command section (404.613125ms)
+  ✔ missing heading (166.633333ms)
+  ✔ unrecognized heading (185.728167ms)
+  ✔ an unrecognized nested command-like heading fails closed (183.932708ms)
+  ✔ an indented recognized nested command heading is traversed (380.026666ms)
+  ✔ a same-indent row under an indented command heading fails closed (193.939709ms)
+  ✔ a nested leaf without any command heading remains a valid leaf (326.336042ms)
+✔ recognizes the advertised root command heading and fails closed when root enumeration is unavailable (1841.729625ms)
+▶ fails closed at depth eight and 256 help invocations
+  ✔ depth overflow (360.272792ms)
+  ✔ command-count overflow (172.781709ms)
+✔ fails closed at depth eight and 256 help invocations (533.291208ms)
+▶ fails closed when a minimum-indent advertised command row uses unsupported grammar
+  ✔ alias syntax (168.408833ms)
+  ✔ unsupported punctuation (154.284792ms)
+  ✔ mixed valid and unsupported rows (165.642292ms)
+✔ fails closed when a minimum-indent advertised command row uses unsupported grammar (488.627ms)
+✔ an indented Options heading terminates the Commands section without becoming a command (371.35225ms)
+✔ multi-token advertised commands become separate argv tokens with notation stripped and paths deduplicated (405.5465ms)
+▶ unsafe grammar anywhere in multi-token syntax fails before partial child traversal
+  ✔ alias in first token (162.920792ms)
+  ✔ alias in later token (161.352333ms)
+  ✔ punctuation in middle token (151.49175ms)
+  ✔ more than eight command tokens (208.988083ms)
+✔ unsafe grammar anywhere in multi-token syntax fails before partial child traversal (685.0805ms)
+▶ timeout, spawn failure, and output truncation are fatal and atomic output is never ambiguous
+  ✔ timeout (504.675917ms)
+  ✔ timeout hard-settles and reaps a detached descendant that inherited stdio (1894.01925ms)
+  ✔ truncation (579.462583ms)
+  ✔ output cap reaps a detached inherited-stdio descendant after its parent exits (372.896083ms)
+  ✔ signal termination (156.820959ms)
+  ✔ npm spawn error (29.944083ms)
+  ✔ a preexisting output is preserved and no atomic temporary is leaked (26.619125ms)
+✔ timeout, spawn failure, and output truncation are fatal and atomic output is never ambiguous (3564.986084ms)
+ℹ tests 136
+ℹ suites 0
+ℹ pass 136
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 80087.382708
+
+
+## stderr
+

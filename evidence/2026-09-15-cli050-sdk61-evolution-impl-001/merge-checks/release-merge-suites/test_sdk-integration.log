@@ -1,0 +1,24 @@
+# npm run test:sdk-integration
+# exit=0 signal= elapsedMs=187
+
+## stdout
+✔ the CLI names all three required paths and accepts nothing implicit (1.167542ms)
+✔ prerequisites accept a well-formed fixture project and create the output directory fresh (1.337875ms)
+✔ an existing output directory is a failure, and its prior evidence survives (1.28175ms)
+✔ a malformed or unreadable input is a failure, never a skip (1.172583ms)
+✔ missing optional tooling is a labeled skip that never counts as evidence (0.971375ms)
+✔ a run that exercised no SDK step reports no evidence, however few things failed (0.085542ms)
+✔ a tool error, a thrown call, and a schema mismatch are each a failure (0.112458ms)
+✔ the explicit run mode is documented and is not a gate (0.27425ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 41.236708
+
+
+## stderr
+

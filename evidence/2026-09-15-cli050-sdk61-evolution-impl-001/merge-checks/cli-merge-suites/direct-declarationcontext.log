@@ -1,0 +1,33 @@
+✔ the reviewed index is a fixed module-relative path and its packaged basis is byte-identical to the historical sources (1.632ms)
+✔ brief snippet: an unindexed caller record is never a candidate, the context stays unknown, and a missing vault is unavailable (1.536208ms)
+✔ a declaration identity is read from package.xml and the api-reference bytes, canonically sorted and root-relative (0.381208ms)
+✔ identical declaration installations at different roots share a fingerprint and differ only in root (0.931166ms)
+✔ missing or malformed package metadata makes declaration authority unavailable, naming package.xml (0.408375ms)
+✔ absent roots, directory-only hints and unreadable declarations are unavailable (0.870042ms)
+✔ a symlink escaping the root, duplicate canonical entries and bytes changing during the read are all unavailable (0.379542ms)
+✔ a prose-only root is identified as prose and cannot authorize target declarations (0.737708ms)
+✔ an indexed record is accepted only after every bound byte verifies, and its acceptance is bound to the current project (1.445167ms)
+✔ the signature derivation is pinned: symbol + verified declaration/artifact identity on each side (0.448166ms)
+✔ every bound file mutated on its own is rejected with the code that names what changed (2.24775ms)
+✔ record schema: unknown versions, ranges, wildcards, project fields and compatibility booleans are refused (4.237ms)
+✔ a basis outside the reviewed index and a caller path with reviewed bytes are both not-reviewed (0.709125ms)
+✔ context mismatch: wrong target BOM, an unexpected SDK module, a different source set — while unrelated app dependencies are ignored (1.312458ms)
+✔ a declared-only or unknown project identity is target-unresolved; a stale identity is refused until re-read (1.790792ms)
+✔ source 0.13.3 -> target 6.1.0 with no reviewed mapping stays unknown even though every version string is valid (0.640416ms)
+✔ brief snippet: two projects with identical resolved SDK artifacts reuse one record; a changed artifact or configuration is not carried over (1.29525ms)
+✔ only loader-branded evidence counts; a structurally identical plain object and a caller-built source are refused (0.590042ms)
+✔ no target is historical; conflicting applicable records are incompatible; disjoint scopes keep their own verdicts (1.477125ms)
+✔ the host artifact lookup answers only exact hashes inside the Gradle module cache and never runs anything (1.474583ms)
+✔ the module reads only; it never spawns a process, runs Gradle or the CLI, or writes to a project (5.010625ms)
+✔ a multi-match lookup is headlined target-verified only when EVERY returned match is verified; a partial match stays unknown and names the verified ones (1.182542ms)
+✔ a missing or invalid packaged index is reported distinctly from an index that lists no records (1.447417ms)
+✔ combined fixture: selected tools 6.1, project BOM 6.0.0, vault revision 0.13.3 and a dynamic-BOM project are four independent facts (1.801625ms)
+✔ a fabricated CLI version/fingerprint hint never becomes authority: only the local bytes decide, and an unsupported transport stays unavailable (0.645333ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 87.740459

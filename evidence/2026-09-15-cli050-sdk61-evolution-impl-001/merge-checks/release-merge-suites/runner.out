@@ -1,0 +1,14 @@
+test:lint: exit=0 1349ms
+test:distribution-adoption: exit=0 22163ms
+test:docsmeta: exit=0 441ms
+test:buildfreshness: exit=0 786ms
+test:plugin-bootstrap-freshness: exit=0 787ms
+test:smoke-isolation: exit=0 2305ms
+test:sdk-integration: exit=0 187ms
+smoke: exit=0 1175ms
+test:prompts: exit=0 784ms
+test:preflight: exit=0 1533ms
+test:doors: exit=0 15766ms
+test:picocli-win: exit=0 93461ms
+test:tarball: exit=1 11796ms
+DONE

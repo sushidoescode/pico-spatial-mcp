@@ -1,0 +1,29 @@
+✔ watchArgv is the verbatim wrapper argv for both version lines (0.803125ms)
+✔ the native duration flag is a per-version route fact, not a version comparison (0.271584ms)
+✔ ObservationCoverage carries exactly the declared fields (0.104375ms)
+✔ assessCoverage never calls an early or unbounded window complete (0.071708ms)
+✔ classifyWatchEnd separates the CLI's own duration from our watchdog (0.068458ms)
+✔ a quiet window is only a no-crash answer when coverage is complete (0.052833ms)
+✔ a 60 second request whose child exits after 1 second reports 1 second, not 60 (37.1225ms)
+✔ the watchdog grace is only spent on a line that was actually given the window (0.071167ms)
+✔ the native monitor timeout window that actually elapses is complete coverage (31.826334ms)
+✔ a CLI that gave up waiting for a process is never a clean no-crash window (34.944375ms)
+✔ a stuck child is killed by the documented watchdog and reports observed elapsed time (1968.409667ms)
+✔ a watchdog-killed silent child is never graded complete or no-crash-detected (1967.309209ms)
+✔ a stuck child without a native timeout can only be partial coverage (1966.949875ms)
+✔ an early clean exit without a native timeout leaves coverage unknown (37.785084ms)
+✔ a nonzero CLI exit is a failure that still carries its observed timing (33.194708ms)
+✔ truncated output is partial coverage and never a quiet-window success (35.71375ms)
+✔ a crash marker outside the returned UI tail is still found in the complete retained log (33.031083ms)
+✔ raw stdout and stderr are retained immutably with hashes and byte counts (74.0425ms)
+✔ optional start and activity are preserved and nothing launches implicitly (63.867417ms)
+✔ an unsupported capability refuses before any spawn and keeps the neutral setup guidance (0.3385ms)
+✔ the wrapper no longer claims the CLI has no duration flag or streams indefinitely (0.575416ms)
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6335.663667

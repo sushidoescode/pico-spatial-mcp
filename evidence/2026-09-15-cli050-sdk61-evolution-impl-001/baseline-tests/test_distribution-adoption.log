@@ -1,0 +1,160 @@
+# npm run test:distribution-adoption
+# exit=1 signal= elapsedMs=21126
+
+## stdout
+✔ portable core and host overlays use only their documented MCP contracts (1.9255ms)
+✔ all host marketplaces use their exact source descriptor and synchronized metadata (28.612125ms)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+✔ installed tarball keeps default startup, tools/list, and pico_doctor read-only (3084.559167ms)
+✔ installed tarball wrapper lazily uses exact managed latest without touching ambient CLI or PATH (1608.403541ms)
+✔ setup-required wrapper results stay source/freshness-neutral and never execute setup (3374.256ms)
+✔ public schemas and missing-vault results route setup through ensure_pico_cli (281.780083ms)
+✔ KnowledgeBridge classifies setup refusal anywhere in bounded startup stderr (1549.499708ms)
+✔ bootstrap root/platform/prerequisite decisions are independent of the caller cwd (0.687542ms)
+✔ Windows bootstrap runs fixed npm scripts through ComSpec without shell interpolation (0.635875ms)
+✔ a non-timeout npm failure is nonzero and never launches MCP (154.329042ms)
+✔ cold bootstrap keeps npm on stderr, uses absolute child argv, and propagates child exit (261.709458ms)
+✔ documented portable and Claude token contracts launch from a hostile cwd (494.912625ms)
+✔ bounded bootstrap children are killed after timeout (86.608291ms)
+✔ bootstrap forwards SIGTERM to the MCP child (58.387375ms)
+✔ knowledge_api exposes all eight strict grounded action schemas (1.469708ms)
+✔ KnowledgeBridge calls every action through one persistent serialized stdio MCP client (283.891167ms)
+✔ KnowledgeBridge returns remote tool errors without retiring switched workspace state (279.083584ms)
+✔ KnowledgeBridge deduplicates concurrent startup and caps returned text (284.228959ms)
+✔ KnowledgeBridge production environment forwards the full host environment (276.625791ms)
+✔ KnowledgeBridge observes a timed-out generation exit before starting its replacement (3722.454084ms)
+✔ KnowledgeBridge resets after startup timeout, call timeout, and protocol failure, then recovers (2456.401541ms)
+✔ KnowledgeBridge reports a missing pico-cli command as unavailable (1.222333ms)
+✔ KnowledgeBridge custom injected command bypasses managed resolution (280.988458ms)
+✔ KnowledgeBridge production child follows managed path/version changes and retires on disabled (1995.194417ms)
+✔ registered knowledge_api keeps the flattened union strict (294.867875ms)
+✔ preflight_lint queries only an opt-in advisory graph second opinion without changing clean (3.275541ms)
+✔ missing pico-cli leaves opt-in preflight_lint clean and labels knowledge unavailable (1.296834ms)
+✔ preflight prints the verified emulator-bundle install route but never runs it (1.6505ms)
+✔ public adoption docs keep bundle installation, AVD creation, and build tooling distinct (0.323791ms)
+✔ operational docs publish one exact canonical managed CLI policy block (3.946208ms)
+✔ managed CLI policy gate rejects alternate modes and automatic mutation claims (7.797583ms)
+✔ managed CLI policy gate accepts external and global prose that does not define resolution policy (2.612333ms)
+✔ managed-latest finding distinguishes live ledger proof from isolated synthetic battery calls (0.191333ms)
+✔ managed CLI implementation plan no longer teaches a freshness-overclaiming setup note (0.120875ms)
+✔ answers-by-measurement publishes exactly seven narrow answers backed by tracked citations (19.973583ms)
+✔ public docs do not use ignored .dev files as evidence (20.323125ms)
+✖ the 47 named gate invocations are assigned to 44 Linux, one native-Windows, and two native-macOS lanes (0.803833ms)
+✔ pico-cli 0.4.2 docs state the measured scope and corrected deltas (0.3875ms)
+✔ the scene-understanding ceiling does not resurrect the superseded zero-mesh claim (0.089ms)
+✔ public guidance does not resurrect refuted capture, scene-understanding, or mesh-collider absolutes (41.993ms)
+✔ published schema-token measurements name the tokenizer and context boundary (0.297791ms)
+✔ official-samples guidance retracts the untracked 8/8 runtime claim (0.248708ms)
+✖ distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and 46 test suites plus smoke (0.291541ms)
+ℹ tests 43
+ℹ suites 0
+ℹ pass 41
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 21020.586875
+
+✖ failing tests:
+
+test at test/distribution-adoption.mjs:1990:1
+✖ the 47 named gate invocations are assigned to 44 Linux, one native-Windows, and two native-macOS lanes (0.803833ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    {
+  +   linux: 45,
+  -   linux: 44,
+      macos: 2,
+      windows: 1
+    }
+  
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/distribution-adoption.mjs:2009:10)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { linux: 45, windows: 1, macos: 2 },
+    expected: { linux: 44, windows: 1, macos: 2 },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/distribution-adoption.mjs:2088:1
+✖ distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and 46 test suites plus smoke (0.291541ms)
+  AssertionError [ERR_ASSERTION]: test:tarball
+  test:lint
+  test:projectgen
+  test:unitygen
+  test:surfaceplace
+  test:vault
+  test:semantic
+  test:ledger
+  test:eye
+  test:assetgate
+  test:worldenv
+  test:referring
+  test:doors
+  test:prompts
+  test:archetype
+  test:claims
+  test:bench
+  test:affordance
+  test:occupancy
+  test:copilot
+  test:vaultdiff
+  test:preflight
+  test:provision
+  test:bridge
+  test:vcam
+  test:vcamtransport
+  test:vcamboundary
+  test:vcamreader
+  test:vcamthroughput
+  test:vcammaterialize
+  test:vcamtransport-native
+  test:vcamreader-native
+  test:briefroute
+  test:emulator-restart
+  test:modelmeasure
+  test:docsmeta
+  test:picocli
+  test:runreceipt
+  test:runrevision
+  test:swan
+  test:placeonsurface
+  test:menuactions
+  test:adoption-safety
+  test:spatialui-adoption
+  test:distribution-adoption
+  test:knowledge-lifecycle
+  test:conformance
+  test:picocli-win
+  
+  48 !== 46
+  
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/distribution-adoption.mjs:2091:10)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 48,
+    expected: 46,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+
+## stderr
+

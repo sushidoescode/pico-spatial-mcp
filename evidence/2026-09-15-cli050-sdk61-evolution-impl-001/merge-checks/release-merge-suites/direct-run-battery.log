@@ -1,0 +1,19 @@
+✔ the battery plan skips by scope, not by lane: only another OS's native contracts are off-limits (0.611959ms)
+✔ the repository plan derives from the inventory, not from package-script discovery (0.152709ms)
+✔ a reserved log never overwrites previous evidence (0.919125ms)
+✔ runBattery reserves a new log rather than replacing the one already there (0.721791ms)
+✔ runBattery continues after failures, retains every section, and summarizes (0.535833ms)
+✔ the summary states how many gates were skipped off-platform, so a short PASS cannot read as a full one (0.402792ms)
+✔ null status, spawn error, and signal count as one failure without aborting (0.405416ms)
+✔ battery npm launch is argv-safe and portable across POSIX and Windows (0.110417ms)
+✔ default battery log path is rooted in the host temp directory (0.072708ms)
+✔ battery CLI runs the planned gates and writes the requested aggregate log (29.893917ms)
+✔ all-pass run reports an exact zero-failure summary (0.563291ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 71.663084

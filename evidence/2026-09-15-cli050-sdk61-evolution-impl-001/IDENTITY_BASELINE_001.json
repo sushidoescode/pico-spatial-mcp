@@ -1,0 +1,14 @@
+{
+  "label": "fresh worktree build identity (host-executed, read-only inspection)",
+  "head": "4478238a8d7aac266b12c2b8dc61c08482337286",
+  "branch": "cli050-sdk61-evolution-2026-09-15",
+  "packageVersion": "37.0.0",
+  "node": "v25.8.1",
+  "typescript": "5.9.3",
+  "srcTsFiles": 182,
+  "srcAggregateSha256": "6c56cf06c2b6ca2f277296647ab323fc31fab1bbcd0a9a0894c0c1d1d5a3033d",
+  "distFiles": 182,
+  "distAggregateSha256": "5f02aa01b76c1736c84eff5562ae11903d573b13dcb7cc146c854ed33272ebaa",
+  "distIndexSha256": "f41e9088fd7dcb2aba2898794fd6bff68e83e564fb55398d71b158d508f6648d",
+  "builtAt": "2026-09-15T09:43:58.059Z"
+}

@@ -1,0 +1,16 @@
+✔ the canary verifies the packaged index and every referenced byte, resolving from packageRoot and never from the working directory (50.161791ms)
+✔ an empty reviewed mapping list is valid; a missing index is not (17.866959ms)
+✔ the relocated package loads its historical references through its own module URL, with no docs/ or test/ present (18.687417ms)
+✔ removing a required basis file makes the payload unavailable, and restoring its exact bytes recovers fresh loading in the same process (19.850625ms)
+✔ a previously accepted mapping does not survive a changed or missing packaged basis, and comes back only when the exact bytes do (25.948042ms)
+✔ a record whose basis the installed index does not declare at the same hash is refused, even when every indexed byte matches (19.310292ms)
+✔ a malformed or wrong-version installed index is refused rather than partially trusted (20.024333ms)
+✔ the canary reads only: it starts no process, opens no network, and never consults the working directory (0.260375ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 263.360792

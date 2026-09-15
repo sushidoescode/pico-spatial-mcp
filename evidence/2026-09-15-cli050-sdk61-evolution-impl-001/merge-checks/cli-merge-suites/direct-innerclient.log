@@ -1,0 +1,25 @@
+✔ createSingleFlightClient shares one in-flight connect across 20 concurrent callers (1.998875ms)
+✔ createSingleFlightClient clears the pending state after a failed first initialization so a retry connects again (0.615833ms)
+✔ provider: 20 concurrent acquires share one connect, one child and one identity in generation 1 (0.2655ms)
+✔ provider: a failed first initialization rejects every waiter with the same error and the retry starts generation 2 (0.322042ms)
+✔ provider: retiring generation 1 while generation 2 is connecting never retires generation 2 (0.27325ms)
+✔ provider: close during initialization never hands out the client and the next acquire reconnects (0.284834ms)
+✔ provider: a transport-driven retirement through the session reconnects on the next acquire (0.207542ms)
+✔ provider: retire is idempotent and a stale client cannot retire the live generation (0.192375ms)
+✔ provider: a connect that retires its session synchronously is never installed as the live generation; the next acquire reconnects (0.136125ms)
+✔ provider: a connect that retires its session synchronously and then fails leaves no wedged slot either (0.112833ms)
+✔ provider: calls go through the live generation's client (0.328875ms)
+✔ domain lane: a successful text result keeps today's decoding (JSON text → object, other text → string) (0.092375ms)
+✔ domain lane: a successful structured result decodes the TEXT block (structuredContent is not merged — that is the raw lane's job) (0.030208ms)
+✔ domain lane: isError is never a success object — it becomes the documented status:error payload carrying the inner text (0.053833ms)
+✔ domain lane: a structured failure carries structuredContent beside the inner text (0.036625ms)
+✔ domain lane: an isError result without text still names the tool and never reads as success (0.020042ms)
+✔ textOf joins text blocks (non-text blocks are empty segments, as before C5); domainValueText yields the tool's own words for a lane error (0.035792ms)
+ℹ tests 17
+ℹ suites 0
+ℹ pass 17
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 38.395541

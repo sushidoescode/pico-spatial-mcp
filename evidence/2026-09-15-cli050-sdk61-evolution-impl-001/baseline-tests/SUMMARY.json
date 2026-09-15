@@ -1,0 +1,219 @@
+{
+  "root": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15",
+  "startedAt": "2026-09-15T09:48:07.783Z",
+  "head": "4478238a8d7aac266b12c2b8dc61c08482337286",
+  "node": "v25.8.1",
+  "suites": [
+    {
+      "name": "test:prompts",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 856,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_prompts.log",
+      "stdoutBytes": 432,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 725.866541"
+      ]
+    },
+    {
+      "name": "test:picocli",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 80272,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_picocli.log",
+      "stdoutBytes": 14852,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 80087.382708"
+      ]
+    },
+    {
+      "name": "test:preflight",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1452,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_preflight.log",
+      "stdoutBytes": 2578,
+      "stderrBytes": 186,
+      "tail": [
+        "  ok   preflight_env probes configured external CLI read-only without relabeling it managed/latest",
+        "  ok   preflight_env inspects cached managed CLI and emulator status without registry/install",
+        "Preflight test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:knowledge-lifecycle",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 16102,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_knowledge-lifecycle.log",
+      "stdoutBytes": 2056,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 15999.263333"
+      ]
+    },
+    {
+      "name": "test:runrevision",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 120449,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_runrevision.log",
+      "stdoutBytes": 28308,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 120338.094959"
+      ]
+    },
+    {
+      "name": "test:runreceipt",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 44889,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_runreceipt.log",
+      "stdoutBytes": 28732,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 44762.958583"
+      ]
+    },
+    {
+      "name": "test:projectgen",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 140,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_projectgen.log",
+      "stdoutBytes": 2263,
+      "stderrBytes": 0,
+      "tail": [
+        "  ok   deterministic file list (46 files)",
+        "  ok   deterministic bytes across runs",
+        "Projectgen test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:docsmeta",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 164,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_docsmeta.log",
+      "stdoutBytes": 1069,
+      "stderrBytes": 0,
+      "tail": [
+        "  ok   all 162 relative markdown links resolve (72 files: root *.md + docs/**)",
+        "  WARN homepage/origin check skipped: ENOTDIR: not a directory, open '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/.git/config'",
+        "Docs/metadata gate done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:doors",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 12477,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_doors.log",
+      "stdoutBytes": 4403,
+      "stderrBytes": 124,
+      "tail": [
+        "  ok   verify_pico_apk reports the full-space rejection as a structured launch error",
+        "  ok   verify_pico_apk force-stops the full-space incumbent and relaunches once (recovery recorded)",
+        "Doors test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:lint",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 153,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_lint.log",
+      "stdoutBytes": 2033,
+      "stderrBytes": 0,
+      "tail": [
+        "  FAIL battery: README.md claims 47 invocations / 46 suites; package.json + gates.yml say 49 / 48",
+        "  FAIL battery: docs/COLLABORATORS.md claims 47 invocations / 46 suites; package.json + gates.yml say 49 / 48",
+        "Lint fixture test done. Failures: 3"
+      ]
+    },
+    {
+      "name": "test:vault",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 184,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_vault.log",
+      "stdoutBytes": 8119,
+      "stderrBytes": 0,
+      "tail": [
+        "  ok   REAL vault: splat-env imports clean (allowlist + LoadType)",
+        "  info real vault: SDK 0.13.3, 552 types across 54 package files",
+        "Vault test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:vaultdiff",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 110,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_vaultdiff.log",
+      "stdoutBytes": 609,
+      "stderrBytes": 0,
+      "tail": [
+        "  ok   real workspaces enumerate (0.13:54md)",
+        "  ok   vault_workspaces public schema/result routes setup through the managed absolute path",
+        "Vault-diff test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:distribution-adoption",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 21126,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_distribution-adoption.log",
+      "stdoutBytes": 7351,
+      "stderrBytes": 0,
+      "tail": [
+        "    operator: 'strictEqual',",
+        "    diff: 'simple'",
+        "  }"
+      ]
+    },
+    {
+      "name": "test:tarball",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 11315,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/baseline-tests/test_tarball.log",
+      "stdoutBytes": 2679,
+      "stderrBytes": 124,
+      "tail": [
+        "  ok   a door tool completed its inner self-client spawn from a path containing a space",
+        "  ok   PICO_MCP_SURFACE unset serves the 18-tool doors surface (full stays explicit opt-in)",
+        "Tarball verification done. Failures: 0"
+      ]
+    }
+  ],
+  "finishedAt": "2026-09-15T09:53:17.492Z"
+}
