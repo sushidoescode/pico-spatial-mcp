@@ -1,0 +1,18 @@
+  ok   capture sha256 surfaces verbatim (the verifiable part)
+  ok   attestation text is HTML-escaped (no injection)
+  ok   dimensions + artifact name rendered
+  ok   public page states that generated proof is a dated, revalidated snapshot
+  ok   broken provenance publishes its claimed tier, reason, and actual hash
+  ok   public claims disclose a legacy producer-tier downgrade and its reason
+  ok   public claims disclose why legacy hardware evidence counts only as vision_verified
+  ok   public claims preserve a looked-at device FAIL without presenting it as positive proof
+  ok   public claims visibly disclose unreadable ledgers instead of omitting them
+  ok   claims manifest reports a corrupt ledger rather than silently dropping it
+  ok   structured corrections keep known-false and stale-readiness rows out of public claims
+  ok   CAPABILITIES.md headline/totals match the tracked effective claims snapshot
+  ok   tracked claims HTML is exactly generated from the tracked JSON snapshot
+  ok   real ledgers load (97 apps, 764 claims)
+  ok   minEvidence=auto_judged drops weaker classes (353/764 kept)
+  FAIL tracked public claims snapshot is stale against the current effective ledger read
+
+Claims-page test done. Failures: 1

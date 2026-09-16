@@ -1,0 +1,26 @@
+✖ concurrent cross-process enrollment cannot cross exact lock namespace or aggregate capacity (11902.236833ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11945.27875
+
+✖ failing tests:
+
+test at test/runrevision-locks.mjs:2633:1
+✖ concurrent cross-process enrollment cannot cross exact lock namespace or aggregate capacity (11902.236833ms)
+  AssertionError [ERR_ASSERTION]: [{"kind":"capacity-result","status":"run-busy","detail":"a live capacity enrollment still owns its unpublished staging leaf"},{"kind":"capacity-result","status":"acquired"}]
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-hc-t2-2026-09-16/test/runrevision-locks.mjs:2645:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

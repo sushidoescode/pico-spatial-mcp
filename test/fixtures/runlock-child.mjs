@@ -226,6 +226,13 @@ fs.fsyncSync = (descriptor) => {
 
 let acquireUuid = command === "capacity-cap-contender" ? 10_000 : 1;
 let contenderObservedLiveEnrollment = false;
+// A test-only clock. The production acquisition budget (ACQUIRE_BUDGET_MS in src/runlocks.ts) is not
+// changed; the capacity tests scale the child's monotonic clock so a 15 s budget cannot expire inside
+// a 16-18 s concurrent enrollment on a loaded host. Every monotonicMs() call site in runlocks.ts is a
+// deadline comparison or a capped Atomics.wait poll interval, so scaling changes only how much wall
+// time fits inside the budget. Default scale 1 = wall clock, for every other child command.
+const clockScale = Number(process.env.PICO_RUNLOCK_CHILD_CLOCK_SCALE ?? "1");
+const clockOrigin = performance.now();
 const acquireDeps = {
   rootDir,
   pid: process.pid,
@@ -238,7 +245,7 @@ const acquireDeps = {
     }
     try { process.kill(pid, 0); return true; } catch { return false; }
   },
-  monotonicMs: () => performance.now(),
+  monotonicMs: () => clockOrigin + (performance.now() - clockOrigin) * (Number.isFinite(clockScale) && clockScale > 0 ? clockScale : 1),
   nowUtc: () => "2026-08-16T12:34:56.000Z",
   uuid: () => {
     acquireUuid += 1;
