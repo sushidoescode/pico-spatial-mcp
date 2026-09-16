@@ -1,0 +1,57 @@
+# AGENTS.md hatch paragraph re-wrapped to 100 columns: test:distribution-adoption (2026-09-16T12:51:40Z)
+
+✔ portable core and host overlays use only their documented MCP contracts (1.433417ms)
+✔ all host marketplaces use their exact source descriptor and synchronized metadata (30.067459ms)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+✔ installed tarball keeps default startup, tools/list, and pico_doctor read-only (3095.787875ms)
+✔ installed tarball wrapper lazily uses exact managed latest without touching ambient CLI or PATH (1787.955917ms)
+✔ setup-required wrapper results stay source/freshness-neutral and never execute setup (4683.232666ms)
+✔ public schemas and missing-vault results route setup through ensure_pico_cli (363.706333ms)
+✔ KnowledgeBridge classifies setup refusal anywhere in bounded startup stderr (1718.943708ms)
+✔ bootstrap root/platform/prerequisite decisions are independent of the caller cwd (1.037333ms)
+✔ Windows bootstrap runs fixed npm scripts through ComSpec without shell interpolation (3.972833ms)
+✔ a non-timeout npm failure is nonzero and never launches MCP (172.510083ms)
+✔ cold bootstrap keeps npm on stderr, uses absolute child argv, and propagates child exit (374.989916ms)
+✔ documented portable and Claude token contracts launch from a hostile cwd (607.81175ms)
+✔ bounded bootstrap children are killed after timeout (83.831375ms)
+✔ bootstrap forwards SIGTERM to the MCP child (57.353833ms)
+✔ knowledge_api exposes all eight strict grounded action schemas (1.400208ms)
+✔ KnowledgeBridge calls every action through one persistent serialized stdio MCP client (303.589292ms)
+✔ KnowledgeBridge returns remote tool errors without retiring switched workspace state (318.059625ms)
+✔ KnowledgeBridge deduplicates concurrent startup and caps returned text (310.863042ms)
+✔ KnowledgeBridge production environment forwards the full host environment (299.870458ms)
+✔ KnowledgeBridge observes a timed-out generation exit before starting its replacement (3838.0805ms)
+✔ KnowledgeBridge resets after startup timeout, call timeout, and protocol failure, then recovers (2535.741917ms)
+✔ KnowledgeBridge reports a missing pico-cli command as unavailable (1.442959ms)
+✔ KnowledgeBridge custom injected command bypasses managed resolution (290.541917ms)
+✔ KnowledgeBridge production child follows managed path/version changes and retires on disabled (2164.322666ms)
+✔ registered knowledge_api keeps the flattened union strict (292.442875ms)
+✔ preflight_lint queries only an opt-in advisory graph second opinion without changing clean (3.554209ms)
+✔ missing pico-cli leaves opt-in preflight_lint clean and labels knowledge unavailable (1.391833ms)
+✔ preflight prints the verified emulator-bundle install route but never runs it (2.364042ms)
+✔ public adoption docs keep bundle installation, AVD creation, and build tooling distinct (1.032625ms)
+✔ operational docs publish one exact canonical managed CLI policy block (5.256083ms)
+✔ managed CLI policy gate rejects alternate modes and automatic mutation claims (9.639917ms)
+✔ managed CLI policy gate accepts external and global prose that does not define resolution policy (3.008084ms)
+✔ managed-latest finding distinguishes live ledger proof from isolated synthetic battery calls (0.521292ms)
+✔ managed CLI implementation plan no longer teaches a freshness-overclaiming setup note (0.448916ms)
+✔ answers-by-measurement publishes exactly seven narrow answers backed by tracked citations (23.408084ms)
+✔ public docs do not use ignored .dev files as evidence (34.060833ms)
+✔ every named gate invocation is assigned to one workflow lane whose runner OS matches the inventory (1.164917ms)
+✔ pico-cli 0.4.2 docs state the measured scope and corrected deltas (0.497417ms)
+✔ the scene-understanding ceiling does not resurrect the superseded zero-mesh claim (0.299416ms)
+✔ public guidance does not resurrect refuted capture, scene-understanding, or mesh-collider absolutes (82.666834ms)
+✔ published schema-token measurements name the tokenizer and context boundary (0.291791ms)
+✔ official-samples guidance retracts the untracked 8/8 runtime claim (0.22275ms)
+✔ distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and an inventory-derived gate battery (2.059041ms)
+ℹ tests 43
+ℹ suites 0
+ℹ pass 43
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 23561.43425
+
+exit=0
