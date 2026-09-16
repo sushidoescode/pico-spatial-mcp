@@ -32,8 +32,8 @@ strongest evidence class earned anywhere in this pass is `host-executed`.
 |---|---|
 | Branch / worktree | `cli050-sdk61-evolution-2026-09-15` in `.worktrees/cli050-sdk61-evolution-2026-09-15` |
 | Base commit | `dfb3f2d` — the tip of the 2026-09-15 pass, the commit its checkpoint describes |
-| Tip | **this document's own commit** (`git log -1` names it); it sits directly on `4022939`, the task-6 evidence commit |
-| Commits in `dfb3f2d..HEAD` | 39 including this one, every one ending `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` |
+| Tip | the branch head. This document landed in `61b8bde`, on top of `4022939` (the task-6 evidence commit); the single commit after it corrects the count in the row below, which I had written as 39 |
+| Commits in `dfb3f2d..HEAD` | **38**, including that correction, every one ending `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` |
 | Release version | **38.0.0** — unchanged (ruling below) |
 | Source files | 192 `src/*.ts`; 98 `test/*.mjs` |
 | Build receipt input sha256 (source identity) | `bafeb2712c5b635d18a2a6a4523b41dc7a7eeee6e940bbe95c214822cd0628db` (197 input files) |
@@ -209,8 +209,8 @@ One fix wave followed, then one scoped re-review.
   [../../AGENTS.md](../../AGENTS.md)'s re-derived dist-import count, the `perf` rows of
   [CLI050_CAPABILITY_MATRIX.md](CLI050_CAPABILITY_MATRIX.md), the battery, the artifact and this
   file.
-- **Commits.** `896b589` (the two description edits), `54ce696` (the doc corrections), `4022939` (evidence),
-  and this document's own commit.
+- **Commits.** `896b589` (the two description edits), `54ce696` (the doc corrections), `4022939`
+  (evidence), `61b8bde` (this document) and the one commit that corrects the count in Identity.
 - **Evidence.** [../../evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/task-6/](../../evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/task-6/)
   and `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/host-completion/`.
 
