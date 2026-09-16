@@ -714,6 +714,15 @@ if (picoRecordSchema?.properties?.app?.pattern === "^[a-z0-9][a-z0-9._-]{0,199}$
   ok("pico_record advertises canonical keys, caller-recordable tiers, structured device outcomes, and exact receipt binding");
 else fail(`pico_record advertises calls its inner ledger rejects: ${JSON.stringify(picoRecordSchema)}`);
 
+// Minor 5 (fix wave FW1): pico_look forwards capture_canonical {} and so inherits that tool's
+// retained emulator-5554 default; the door must say so where the agent reads it, and take no serial.
+const picoLookDefinition = toolDefinitions.find((tool) => tool.name === "pico_look");
+const picoLookInputs = Object.keys(picoLookDefinition?.inputSchema?.properties ?? {});
+if (/Default target emulator-5554 \(retained this checkpoint\); this door has no serial input\./.test(picoLookDefinition?.description ?? "")
+    && picoLookInputs.length === 0)
+  ok("pico_look discloses its retained default target (emulator-5554) and that it has no serial input");
+else fail(`pico_look does not disclose its default target: inputs=[${picoLookInputs.join(", ")}] description=${JSON.stringify(picoLookDefinition?.description ?? "").slice(0, 200)}`);
+
 // a door that orchestrates through the child server (vault lookup — fast, no emulator needed)
 const sdk = await client.callTool({ name: "pico_sdk", arguments: { symbol: "RigidBodyComponent" } });
 const sdkOut = JSON.parse(sdk.content[0].text);

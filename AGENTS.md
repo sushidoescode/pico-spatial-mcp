@@ -62,8 +62,9 @@ whitespace are all discarded, never passed through; the one pass-through is `PIC
 naming an absolute executable fake, and anything else in that variable refuses the gate (exit 2)
 before a child exists. `src/adb.ts` refuses an explicit adb that names no file — a blank `PICO_ADB`
 included — and probes nothing else, so a suite that still reaches adb fails loudly instead of
-touching a device. `gates.yml` keeps the same value at workflow level only for its one raw
-`node --test` step; a direct `node --test test/<file>.mjs` gets neither, so export it yourself.
+touching a device. `gates.yml` keeps the same value at workflow level; it is the barrier only for
+the one raw `node --test` step (run-gate replaces it for every gate child). A direct
+`node --test test/<file>.mjs` gets neither, so export it yourself.
 `validateGateInventory` is what `test:lint` and `test:distribution-adoption` check, and the
 published counts are derived from it — so a gate that no lane runs (`test:runrevision` was exactly
 that, four revision suites regressing invisibly) now fails a gate instead of a doc. Adding one is
