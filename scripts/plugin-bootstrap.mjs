@@ -265,10 +265,19 @@ async function installDependencies(root, { platform, env, commandTimeoutMs, kill
  * Write down an install npm made and we did not, so the next start reads one small receipt instead
  * of comparing two lockfiles again. Best effort on purpose: the evidence that accepted this tree is
  * already good, so failing to record it must never be the reason a server does not start.
+ *
+ * What the receipt records is npm's evidence, not ours: `source: "hidden-lockfile"`, no `npmArgv`,
+ * and the Node major this adoption ran under. The stderr line says the same thing, because a line
+ * reading like an install report is how an adopted tree gets mistaken for one this bootstrap laid
+ * down and checked. Exported so a test can drive the adoption step on its own.
  */
-function adoptInstalledDependencies(root, verdict) {
+export function adoptInstalledDependencies(root, verdict) {
   try {
     writeDependencyReceipt(root, { identity: verdict.identity, source: RECORDED_SOURCE.hiddenLockfile });
+    process.stderr.write(
+      "pico-spatial-mcp bootstrap: dependencies accepted on npm's hidden lockfile "
+      + "(provenance recorded as hidden-lockfile; this bootstrap did not perform the install)\n",
+    );
   } catch (error) {
     process.stderr.write(
       `pico-spatial-mcp bootstrap: could not record the dependencies npm had already installed (${error.message}); the next start will check them again\n`,

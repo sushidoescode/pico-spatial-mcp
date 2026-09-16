@@ -125,7 +125,11 @@ const isPlainObject = (value) => typeof value === "object" && value !== null && 
 const isStringList = (value) => Array.isArray(value) && value.length > 0 && value.every((token) => typeof token === "string");
 
 export function dependencyReceipt(root, { npmArgv, identity = dependencyIdentity(root), source = RECORDED_SOURCE.npmCi }) {
-  const receipt = { schemaVersion: IDENTITY_SCHEMA_VERSION, dependencyIdentity: identity, source };
+  // `nodeMajor` is recorded even though `dependencyIdentity` already folds it in, because the
+  // identity is a digest: once it fails to match, it can no longer say WHY. A receipt that names
+  // its Node major can, and that difference is what stops npm's record from being read as
+  // evidence about a major it knows nothing about (see verifyDependencies).
+  const receipt = { schemaVersion: IDENTITY_SCHEMA_VERSION, dependencyIdentity: identity, source, nodeMajor: nodeMajor() };
   // Only our own install can name the command that produced it; adopting npm's record must not
   // claim one. An empty or invented argv would be a worse record than no argv at all.
   if (source === RECORDED_SOURCE.npmCi) receipt.npmArgv = [...npmArgv];
@@ -229,34 +233,61 @@ export function matchesHiddenLockfile(root) {
   return { matches: true, reasons: [] };
 }
 
-/** `{current, reasons[]}` plus the evidence, from a receipt alone. */
+/**
+ * `{current, reasons[]}` plus the evidence, from a receipt alone.
+ *
+ * Also reports `present` (a receipt file was read at all), the `nodeMajor` it records and the
+ * `source` it claims, so `verifyDependencies` can decide whether npm's own record is allowed to
+ * speak for this tree. `nodeMajor` is null whenever the file could not be read far enough to carry
+ * one — a recorded install of unknown provenance, which is not the same thing as no install.
+ */
 function receiptVerdict(checkout, identity) {
+  const unusable = (reason, extra = {}) => ({ current: false, reasons: [reason], present: true, nodeMajor: null, source: null, ...extra });
   let raw;
   try { raw = fs.readFileSync(path.join(checkout, DEPENDENCY_RECEIPT_NAME), "utf8"); }
   catch (error) {
-    return { current: false, reasons: [error.code === "ENOENT"
+    return { current: false, present: false, nodeMajor: null, source: null, reasons: [error.code === "ENOENT"
       ? `no install has been recorded here yet (${DEPENDENCY_RECEIPT_NAME} does not exist)`
       : `${DEPENDENCY_RECEIPT_NAME} is unreadable (${error.code ?? error.message})`] };
   }
   let receipt;
   try { receipt = JSON.parse(raw); }
-  catch (error) { return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} is unparsable: ${error.message}`] }; }
+  catch (error) { return unusable(`${DEPENDENCY_RECEIPT_NAME} is unparsable: ${error.message}`); }
   if (!isPlainObject(receipt) || receipt.schemaVersion !== IDENTITY_SCHEMA_VERSION) {
-    return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} carries schemaVersion ${receipt?.schemaVersion} instead of ${IDENTITY_SCHEMA_VERSION}`] };
+    return unusable(`${DEPENDENCY_RECEIPT_NAME} carries schemaVersion ${receipt?.schemaVersion} instead of ${IDENTITY_SCHEMA_VERSION}`);
   }
-  // A receipt written before this file recorded its evidence can only have come from our own install.
+  // A receipt written before this file recorded its evidence can only have come from our own
+  // install; one written before it recorded a Node major cannot say which major that was.
   const source = receipt.source ?? RECORDED_SOURCE.npmCi;
+  const recorded = typeof receipt.nodeMajor === "number" && Number.isInteger(receipt.nodeMajor) ? receipt.nodeMajor : null;
+  const evidence = { present: true, nodeMajor: recorded, source: KNOWN_SOURCES.has(source) ? source : null };
   if (!KNOWN_SOURCES.has(source)) {
-    return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} names ${JSON.stringify(source)} as the evidence for this install, which this build does not know`] };
+    return unusable(`${DEPENDENCY_RECEIPT_NAME} names ${JSON.stringify(source)} as the evidence for this install, which this build does not know`, { nodeMajor: recorded });
   }
   if (typeof receipt.dependencyIdentity !== "string"
     || (source === RECORDED_SOURCE.npmCi && !isStringList(receipt.npmArgv))) {
-    return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} is missing its dependency identity or the command that produced it`] };
+    return { current: false, reasons: [`${DEPENDENCY_RECEIPT_NAME} is missing its dependency identity or the command that produced it`], ...evidence };
   }
   if (receipt.dependencyIdentity !== identity) {
-    return { current: false, reasons: [`package-lock.json changed since the install (${receipt.dependencyIdentity.slice(0, 12)} -> ${identity.slice(0, 12)})`] };
+    return { current: false, reasons: [`package-lock.json changed since the install (${receipt.dependencyIdentity.slice(0, 12)} -> ${identity.slice(0, 12)})`], ...evidence };
   }
-  return { current: true, reasons: [] };
+  return { current: true, reasons: [], ...evidence };
+}
+
+/**
+ * Why a recorded install cannot be handed to npm's record for a second opinion.
+ *
+ * `npm ci` resolves optional and native dependencies against the running Node major, so the same
+ * lockfile lays down different trees on different majors. `node_modules/.package-lock.json` records
+ * WHICH artifacts were installed and never which runtime installed them — so it can agree with
+ * `package-lock.json` down to the last integrity hash and still be describing a tree this Node
+ * cannot use. A receipt that names its major is the only thing that can tell the two apart.
+ */
+function crossMajorReason(recordedMajor) {
+  const cannotVouch = "the hidden lockfile cannot vouch for native or optional dependencies across majors, so this install is reinstalled";
+  return recordedMajor === null
+    ? `${DEPENDENCY_RECEIPT_NAME} does not record the Node major it was installed under, so that install's provenance is unknown; ${cannotVouch}`
+    : `installed under Node ${recordedMajor}, running Node ${nodeMajor()}; ${cannotVouch}`;
 }
 
 /**
@@ -268,26 +299,43 @@ function receiptVerdict(checkout, identity) {
  * unknown, and unknown is never current: the caller reinstalls once rather than trusting it.
  *
  * `acceptedBy` says which of the two carried it, so a caller can record npm's evidence as its own
- * and make the next start receipt-fast.
+ * and make the next start receipt-fast. `provenance` says what that evidence actually WAS — an
+ * adopted receipt stays receipt-fast forever, and must never start reporting itself as an `npm-ci`
+ * install this bootstrap performed.
+ *
+ * One thing npm's record may never answer for: a tree installed under a different Node major. Once
+ * a receipt is present and cannot vouch for THIS major, the hidden lockfile is not consulted at all
+ * — it would agree, and agreeing about the wrong runtime is how unknown provenance gets laundered
+ * into a verified-looking install identity.
  */
 export function verifyDependencies(root) {
   const checkout = path.resolve(root);
+  const unaccounted = (reasons, identity = null) => ({ current: false, acceptedBy: null, provenance: null, identity, reasons });
+
   if (!fs.existsSync(path.join(checkout, "node_modules"))) {
-    return { current: false, acceptedBy: null, identity: null, reasons: ["node_modules/ does not exist; dependencies were never installed here"] };
+    return unaccounted(["node_modules/ does not exist; dependencies were never installed here"]);
   }
 
   const identity = dependencyIdentity(checkout);
   if (identity === null) {
-    return { current: false, acceptedBy: null, identity: null, reasons: ["package-lock.json is unreadable, so the installed dependencies cannot be checked against it"] };
+    return unaccounted(["package-lock.json is unreadable, so the installed dependencies cannot be checked against it"]);
   }
 
   const receipt = receiptVerdict(checkout, identity);
-  if (receipt.current) return { current: true, acceptedBy: ACCEPTED_BY.receipt, identity, reasons: [] };
+  // A current receipt is same-major by construction: `dependencyIdentity` folds the Node major in,
+  // so an identity that still matches could not have been written under another one.
+  if (receipt.current) return { current: true, acceptedBy: ACCEPTED_BY.receipt, provenance: receipt.source, identity, reasons: [] };
+
+  if (receipt.present && receipt.nodeMajor !== nodeMajor()) {
+    return unaccounted([...receipt.reasons, crossMajorReason(receipt.nodeMajor)], identity);
+  }
 
   const npm = matchesHiddenLockfile(checkout);
-  if (npm.matches) return { current: true, acceptedBy: ACCEPTED_BY.hiddenLockfile, identity, reasons: [] };
+  if (npm.matches) {
+    return { current: true, acceptedBy: ACCEPTED_BY.hiddenLockfile, provenance: RECORDED_SOURCE.hiddenLockfile, identity, reasons: [] };
+  }
 
-  return { current: false, acceptedBy: null, identity, reasons: [...receipt.reasons, ...npm.reasons] };
+  return unaccounted([...receipt.reasons, ...npm.reasons], identity);
 }
 
 /** The emitted tree, receipt excluded — a receipt can never be part of its own output digest. */

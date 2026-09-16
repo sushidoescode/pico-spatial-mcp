@@ -28,6 +28,7 @@ import {
   HIDDEN_LOCKFILE_SEGMENTS,
   RECORDED_SOURCE,
   dependencyIdentity,
+  matchesHiddenLockfile,
   nodeMajor,
   verifyBuild,
   verifyDependencies,
@@ -35,7 +36,7 @@ import {
   writeDependencyReceipt,
   writeReceipt,
 } from "../scripts/build-identity.mjs";
-import { isSourceCheckout, runBootstrap, sourceSetupPlan } from "../scripts/plugin-bootstrap.mjs";
+import { adoptInstalledDependencies, isSourceCheckout, runBootstrap, sourceSetupPlan } from "../scripts/plugin-bootstrap.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const LOCK_NAME = ".pico-source-setup.lock";
@@ -416,6 +417,91 @@ test("npm's own record of the install is accepted when our receipt cannot speak"
     assert.equal(verdict.acceptedBy, null, label);
     assert.match(verdict.reasons.join(" "), expected, `${label}: ${verdict.reasons.join(" ")}`);
   }
+});
+
+test("a receipt from another Node major blocks hidden-lockfile adoption and demands a reinstall", () => {
+  // npm resolves optional and native dependencies against the running Node major, so a tree it
+  // laid down under one major is not evidence about another. The hidden lockfile records WHICH
+  // artifacts were installed, never which runtime installed them — so once a receipt says the
+  // install happened under a different major, npm's record must not be allowed to vouch for it.
+  const root = createCheckout();
+  installDependenciesInto(root);
+  writeDependencyReceipt(root, { identity: dependencyIdentity(root), npmArgv: INSTALL_ARGS, source: RECORDED_SOURCE.npmCi });
+  const receiptPath = path.join(root, DEPENDENCY_RECEIPT_NAME);
+  const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+  assert.equal(receipt.nodeMajor, nodeMajor(), "a receipt must record the Node major that installed the tree");
+  // The identity moves with the Node major too, so a cross-major receipt is non-current by
+  // identity as well — which is exactly the state that used to fall through to npm's record.
+  fs.writeFileSync(receiptPath, `${JSON.stringify({ ...receipt, nodeMajor: receipt.nodeMajor - 1, dependencyIdentity: "0".repeat(64) })}\n`);
+  writeHiddenLockfile(root);
+  assert.equal(matchesHiddenLockfile(root).matches, true, "npm's record must match, or this proves nothing");
+
+  const verdict = verifyDependencies(root);
+  assert.equal(verdict.current, false);
+  assert.equal(verdict.acceptedBy, null);
+  assert.equal(verdict.provenance, null);
+  assert.match(verdict.reasons.join("\n"), /installed under Node \d+, running Node \d+/);
+  assert.match(verdict.reasons.join("\n"), new RegExp(`installed under Node ${receipt.nodeMajor - 1}, running Node ${nodeMajor()}`));
+
+  // A receipt from BEFORE this field existed cannot say which major installed the tree either,
+  // and unknown provenance is never evidence: npm's record stays unconsulted there too.
+  const { nodeMajor: _dropped, ...preChange } = receipt;
+  fs.writeFileSync(receiptPath, `${JSON.stringify({ ...preChange, dependencyIdentity: "0".repeat(64) })}\n`);
+  const unknown = verifyDependencies(root);
+  assert.equal(unknown.current, false);
+  assert.equal(unknown.acceptedBy, null);
+  assert.equal(unknown.provenance, null);
+  assert.match(unknown.reasons.join("\n"), /does not record the Node major/);
+});
+
+test("hidden-lockfile adoption records its provenance and never reports npm-ci", () => {
+  const root = createCheckout();
+  installDependenciesInto(root);
+  writeHiddenLockfile(root);
+
+  const first = verifyDependencies(root);
+  assert.equal(first.current, true);
+  assert.equal(first.acceptedBy, ACCEPTED_BY.hiddenLockfile);
+  assert.equal(first.provenance, RECORDED_SOURCE.hiddenLockfile, "npm's record is never reported as an install of ours");
+
+  adoptInstalledDependencies(root, first);
+  const second = verifyDependencies(root);
+  assert.equal(second.current, true);
+  assert.equal(second.acceptedBy, ACCEPTED_BY.receipt, "the adopted receipt is what answers on the next start");
+  assert.equal(second.provenance, RECORDED_SOURCE.hiddenLockfile, "receipt-fast must not launder npm's record into npm-ci");
+
+  const written = JSON.parse(fs.readFileSync(path.join(root, DEPENDENCY_RECEIPT_NAME), "utf8"));
+  assert.equal(written.nodeMajor, nodeMajor());
+  assert.equal(written.source, RECORDED_SOURCE.hiddenLockfile);
+  assert.equal(Object.hasOwn(written, "npmArgv"), false, "adopting npm's record must not claim a command we never ran");
+
+  // And our OWN install still reports itself as our own.
+  recordCurrentInstall(root);
+  const ours = verifyDependencies(root);
+  assert.equal(ours.acceptedBy, ACCEPTED_BY.receipt);
+  assert.equal(ours.provenance, RECORDED_SOURCE.npmCi);
+});
+
+test("adopting npm's record says on stderr that the bootstrap did not perform the install", async () => {
+  const root = createWarmCheckout();
+  fs.rmSync(path.join(root, DEPENDENCY_RECEIPT_NAME));
+  writeHiddenLockfile(root);
+
+  const written = [];
+  const realWrite = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk, ...rest) => { written.push(String(chunk)); return realWrite(chunk, ...rest); };
+  try {
+    const { spawnImpl } = recordingSpawn();
+    const compiler = recordingCompiler();
+    await runBootstrap({ root, spawnImpl, runCompilerImpl: compiler.runCompilerImpl });
+  } finally {
+    process.stderr.write = realWrite;
+  }
+
+  const line = written.find((entry) => entry.includes("hidden lockfile"));
+  assert.ok(line, `no adoption line on stderr: ${JSON.stringify(written).slice(0, 400)}`);
+  assert.match(line, /accepted on npm's hidden lockfile \(provenance recorded as hidden-lockfile; this bootstrap did not perform the install\)/);
+  assert.doesNotMatch(line, /verified|installed by this bootstrap/i, "the bootstrap must not claim it did or checked the install");
 });
 
 test("a packaged payload is verified from its receipt without any source", () => {
