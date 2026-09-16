@@ -19,7 +19,7 @@ import {
 } from "./toolchain.js";
 import { adb, adbPath, resolveSerial } from "./adb.js";
 import { buildCapabilityMatrix } from "./capability.js";
-import { openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
+import { LONG_POLL_LOG_WINDOW_MAX_LINES, openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * High-level orchestration: collapse the common edit→build→deploy→observe loop
@@ -413,7 +413,9 @@ export function registerWorkflowTools(server: McpServer) {
       // Poll PID-scoped logs for render markers and correlate multiline crashes through the window.
       // The PID read is scoped by the process this launch created (a --pid dump can never contain
       // the marker, and the PID is post-window by construction); the global correlation — multi-line
-      // crash blocks, system_server's `ANR in <pkg>` — is read from the window's lines only.
+      // crash blocks, system_server's `ANR in <pkg>` — is read from the window's lines only. That
+      // read spans the whole settle, so it takes the long-poll bound (src/logwindow.ts): logd
+      // applies `-t` before any filter, and a 4000-line tail on a chatty device evicts the marker.
       let rendered = false;
       let crash: string[] = [];
       let markerSeen = false;
@@ -421,7 +423,7 @@ export function registerWorkflowTools(server: McpServer) {
       do {
         const [pidLog, windowRead] = await Promise.all([
           adb(["-s", s, "logcat", "--pid", pid, "-d"]),
-          readLogWindow(runner, window, { timeoutMs: 60_000 }).then(
+          readLogWindow(runner, window, { maxLines: LONG_POLL_LOG_WINDOW_MAX_LINES, timeoutMs: 60_000 }).then(
             (read) => ({ ok: true as const, ...read }),
             (error: unknown) => ({ ok: false as const, error: error instanceof Error ? error.message : String(error) }),
           ),

@@ -468,6 +468,93 @@ test("wait_for_log's default opens a marker window instead of clearing and repor
   });
 });
 
+// ── the bound a LONG poller reads with (fix wave FW1, Important 1) ───────────────────────────────
+// logd applies `-t <count>` to the raw selected buffers BEFORE the client-side tag filter, so the
+// count bounds the device's raw output, not the lines a caller sees: a chatty XR runtime pushes the
+// marker out of a small tail while the filtered output stays tiny, and the read turns inconclusive.
+// The module default (4000) suits a short tag-filtered read. The pollers that wait for tens of
+// seconds — assert_logcat (up to 180 s), wait_for_log, build_and_run's whole settle — read with
+// 20000, and pico_loop, whose marker precedes a multi-minute fleet_build, asks assert_logcat for
+// 50000. An explicit `maxLines` input on the two tools is sent verbatim. readLogWindow itself is
+// unchanged: it sends exactly the bound it is given (the unit case above pins that).
+const dumpBound = (argv) => argv[argv.indexOf("-t") + 1];
+/** True when the call was refused by the tool's input schema, whichever way the SDK reports it. */
+const refusedByInputSchema = (promise) => promise.then((result) => result.isError === true, () => true);
+
+test("assert_logcat reads with the long-poll bound (-t 20000) by default and sends an explicit maxLines verbatim", async () => {
+  await withFakeAdb({ before: STALE_LOG, after: FRESH_LOG }, async (fake) => {
+    const marker = "pico-mcp-window-bound-fixture";
+    const { registerAdbTools } = await import("../dist/adb.js");
+    await withTools(registerAdbTools, async (client) => {
+      const schema = (await client.listTools()).tools.find((t) => t.name === "assert_logcat").inputSchema.properties.maxLines;
+      assert.equal(schema?.type, "integer", `maxLines must be an optional integer input: ${JSON.stringify(schema)}`);
+      assert.equal(schema?.minimum, 100);
+      assert.equal(schema?.maximum, 200000);
+      assert.match(schema?.description ?? "", /before the tag filter/i, "the input must say why the bound matters");
+
+      fake.seedMarker(marker);
+      const hit = jsonOf(await client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "APP_READY", sinceMarker: marker, timeoutSec: 1, pollMs: 200 } }));
+      assert.equal(hit.matched, true, JSON.stringify(hit));
+      let dumps = assertBoundedWindowDumps(assertNoClear(fake));
+      for (const dump of dumps) assert.equal(dumpBound(dump), "20000", `default long-poll bound: ${dump.join(" ")}`);
+
+      for (const maxLines of [500, 50000]) {
+        fake.reset();
+        fake.seedMarker(marker);
+        const explicit = jsonOf(await client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "APP_READY", tag: "Fixture", sinceMarker: marker, timeoutSec: 1, pollMs: 200, maxLines } }));
+        assert.equal(explicit.matched, true, JSON.stringify(explicit));
+        dumps = assertBoundedWindowDumps(assertNoClear(fake), "Fixture");
+        for (const dump of dumps) assert.equal(dumpBound(dump), String(maxLines), `explicit bound ${maxLines}: ${dump.join(" ")}`);
+      }
+
+      fake.reset();
+      assert.equal(await refusedByInputSchema(client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "APP_READY", sinceMarker: marker, timeoutSec: 1, maxLines: 10 } })), true, "a bound under 100 lines is refused by the schema");
+      assert.deepEqual(fake.readArgv(), [], "a refused input runs nothing");
+    });
+  });
+});
+
+test("wait_for_log reads with the long-poll bound (-t 20000) by default and sends an explicit maxLines verbatim", async () => {
+  await withFakeAdb({ before: STALE_LOG, after: FRESH_LOG }, async (fake) => {
+    const { registerAgentLoopTools } = await import("../dist/agentloop.js");
+    await withTools(registerAgentLoopTools, async (client) => {
+      const schema = (await client.listTools()).tools.find((t) => t.name === "wait_for_log").inputSchema.properties.maxLines;
+      assert.equal(schema?.type, "integer", `maxLines must be an optional integer input: ${JSON.stringify(schema)}`);
+      assert.equal(schema?.minimum, 100);
+      assert.equal(schema?.maximum, 200000);
+
+      const hit = await client.callTool({ name: "wait_for_log", arguments: { serial: FIX, pattern: "APP_READY", timeoutSec: 1 } });
+      assert.equal(hit.isError, undefined, textOf(hit));
+      let dumps = assertBoundedWindowDumps(assertNoClear(fake));
+      for (const dump of dumps) assert.equal(dumpBound(dump), "20000", `default long-poll bound: ${dump.join(" ")}`);
+
+      fake.reset();
+      const explicit = await client.callTool({ name: "wait_for_log", arguments: { serial: FIX, pattern: "APP_READY", tag: "Fixture", timeoutSec: 1, maxLines: 500 } });
+      assert.equal(explicit.isError, undefined, textOf(explicit));
+      dumps = assertBoundedWindowDumps(assertNoClear(fake), "Fixture");
+      for (const dump of dumps) assert.equal(dumpBound(dump), "500", `explicit bound: ${dump.join(" ")}`);
+
+      fake.reset();
+      assert.equal(await refusedByInputSchema(client.callTool({ name: "wait_for_log", arguments: { serial: FIX, pattern: "APP_READY", timeoutSec: 1, maxLines: 10 } })), true, "a bound under 100 lines is refused by the schema");
+      assert.deepEqual(fake.readArgv(), [], "a refused input runs nothing");
+    });
+  });
+});
+
+test("the long-poll bounds are named constants of the module, and build_and_run's settle-long read uses one", async () => {
+  const mod = await import("../dist/logwindow.js");
+  assert.equal(mod.DEFAULT_LOG_WINDOW_MAX_LINES, 4000, "the module default is unchanged");
+  assert.equal(mod.LONG_POLL_LOG_WINDOW_MAX_LINES, 20000, "assert_logcat / wait_for_log / build_and_run");
+  assert.equal(mod.BUILD_LENGTH_LOG_WINDOW_MAX_LINES, 50000, "pico_loop, whose marker precedes fleet_build");
+  // build_and_run needs a Gradle build to reach its read, so its argv is proven where that fixture
+  // exists — the hermetic smoke gate (test/smoke.mjs, "build_and_run window dump carries the
+  // long-poll bound"). This pins the source so the site cannot silently fall back to the default.
+  const workflow = fs.readFileSync(new URL("../src/workflow.ts", import.meta.url), "utf8");
+  const reads = workflow.match(/readLogWindow\(runner, window, \{[^}]*\}\)/g) ?? [];
+  assert.equal(reads.length, 1, `exactly one window read in build_and_run: ${reads.join(" | ")}`);
+  assert.match(reads[0], /maxLines: LONG_POLL_LOG_WINDOW_MAX_LINES/, `build_and_run must read with the long-poll bound: ${reads[0]}`);
+});
+
 // ── pico_loop (src/doors.ts) — through the door's dependency seam, no process ──
 async function withScratchHome(operation) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "pico-logwindow-home-"));
@@ -526,7 +613,12 @@ test("pico_loop writes a marker through adb_shell before the build and scopes ev
     assert.ok(openAt < buildAt, "the window must open before the build/launch that produces the lines");
     const asserts = fixture.calls.filter((c) => c.name === "assert_logcat");
     assert.equal(asserts.length, 2);
-    for (const a of asserts) assert.equal(a.args.sinceMarker, marker, JSON.stringify(a.args));
+    for (const a of asserts) {
+      assert.equal(a.args.sinceMarker, marker, JSON.stringify(a.args));
+      // The marker was written BEFORE a multi-minute fleet_build (Gradle + install + launch + settle):
+      // a default-bound tail would evict it on a real device, so the loop asks for the build-length bound.
+      assert.equal(a.args.maxLines, 50000, `pico_loop must pass the build-length bound to assert_logcat: ${JSON.stringify(a.args)}`);
+    }
   });
 });
 

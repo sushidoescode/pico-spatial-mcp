@@ -189,6 +189,20 @@ expect("no global log clear",
   log.entries.every((entry) => entry.kind !== "fixture-adb-cleared-log")
     && log.entries.every((entry) => { const at = entry.argv.indexOf("logcat"); return !(at >= 0 && entry.argv.slice(at + 1).includes("-c")); }),
   JSON.stringify(log.entries.filter((entry) => entry.argv.includes("logcat"))).slice(0, 800));
+// build_and_run's global crash-correlation read spans its whole settle, so it is one of the LONG
+// pollers that read with the long-poll bound (src/logwindow.ts LONG_POLL_LOG_WINDOW_MAX_LINES),
+// not the 4000-line module default: logd applies -t before the tag filter, so a small tail on a
+// chatty device evicts the marker and turns every run inconclusive. A window dump is the
+// `logcat -d -v threadtime -t <n>` shape; the PID-scoped dump is not a window read and is excluded.
+if (!fixture.executesMcpSuccessPath) {
+  record("build_and_run window dump carries the long-poll bound", "SKIP", fixture.scope);
+} else {
+  const windowDumps = log.entries.filter((entry) => entry.kind === "fixture-adb" && entry.argv.includes("logcat")
+    && entry.argv.includes("threadtime") && entry.argv.includes("-t") && !entry.argv.includes("--pid"));
+  expect("build_and_run window dump carries the long-poll bound",
+    windowDumps.length > 0 && windowDumps.every((entry) => entry.argv.includes("-d") && entry.argv[entry.argv.indexOf("-t") + 1] === "20000"),
+    JSON.stringify(windowDumps).slice(0, 800));
+}
 
 fs.rmSync(scratch, { recursive: true, force: true });
 

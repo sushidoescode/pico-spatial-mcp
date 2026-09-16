@@ -25,14 +25,26 @@ import { randomUUID } from "node:crypto";
  *
  * `-t <count>` is applied by logd to the selected buffers BEFORE the client-side tag filter, so a
  * busy device can push the marker out of the tail even when the filtered output is short; that is
- * exactly the case `markerSeen: false` reports, and callers that poll for long pass a larger
- * `maxLines` rather than trusting a partial tail.
+ * exactly the case `markerSeen: false` reports. The module default (DEFAULT_LOG_WINDOW_MAX_LINES,
+ * 4000) suits a short, tag-filtered read — assert_scene, probe_planes, live_scene_snapshot. The
+ * callers that poll for long pass a larger bound instead of trusting a partial tail:
+ * assert_logcat (polls up to 180 s) and wait_for_log read with LONG_POLL_LOG_WINDOW_MAX_LINES
+ * (20000) unless their optional `maxLines` input says otherwise; build_and_run reads its
+ * settle-long crash correlation with the same 20000; and pico_loop — whose marker is written
+ * BEFORE a multi-minute fleet_build — asks assert_logcat for BUILD_LENGTH_LOG_WINDOW_MAX_LINES
+ * (50000). `-t <n>` never returns more than the buffer holds, so a large bound costs only the
+ * transfer of what is there; an evicted marker is still inconclusive, never a false pass. The
+ * eviction rate on a real PICO device is unmeasured.
  */
 
 export const LOG_WINDOW_TAG = "pico-mcp";
 
-/** The default bound on one dump. Callers polling for tens of seconds may raise it. */
+/** The default bound on one dump: a short, tag-filtered read. Long pollers pass one of the bounds below. */
 export const DEFAULT_LOG_WINDOW_MAX_LINES = 4000;
+/** What assert_logcat, wait_for_log and build_and_run read with — polls of tens of seconds. */
+export const LONG_POLL_LOG_WINDOW_MAX_LINES = 20_000;
+/** What pico_loop asks assert_logcat for: its marker precedes a multi-minute fleet_build. */
+export const BUILD_LENGTH_LOG_WINDOW_MAX_LINES = 50_000;
 
 export interface LogWindow {
   /** The explicit device the marker was written to. */

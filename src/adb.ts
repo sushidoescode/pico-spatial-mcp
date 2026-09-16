@@ -8,7 +8,7 @@ import { hostToolchainIO } from "./toolchain.js";
 import { executableCandidates } from "./picocli.js";
 import { executableNames, resolveRootCandidate, selectInstallation, type FileIdentity, type ToolchainIO } from "./toolchainselection.js";
 import { IdentityCache } from "./identitycache.js";
-import { LogWindowOpenError, logWindowFromMarker, openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
+import { LONG_POLL_LOG_WINDOW_MAX_LINES, LogWindowOpenError, logWindowFromMarker, openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * THE one adb lookup (Task S4).
@@ -451,10 +451,11 @@ export function registerAdbTools(server: McpServer) {
         timeoutSec: z.number().int().min(1).max(180).default(20),
         clearFirst: z.boolean().default(false).describe("Opens a marker window instead of clearing the device log; equivalent to sinceMarker with a fresh marker (kept for compatibility — use when re-running the same assertion so stale lines cannot match). Nothing is erased."),
         sinceMarker: z.string().optional().describe("Match only lines logged AFTER this marker line (e.g. one you wrote with adb_shell `log -t pico-mcp <marker>` before the action). Takes precedence over clearFirst. A marker absent from the bounded dump makes the result inconclusive — never a match against the unscoped buffer."),
+        maxLines: z.number().int().min(100).max(200000).optional().describe("Bound on each raw dump (`logcat -t <n>`). logd applies it to the selected buffers BEFORE the tag filter, so on a chatty device a small tail can drop the window marker while the filtered output stays short — the result is then inconclusive, never a false pass. Default 20000 (the module default of 4000 suits short reads; this tool polls for up to 180 s). Raise it for a long poll on a busy device: `-t <n>` never returns more than the buffer holds."),
         pollMs: z.number().int().min(200).max(5000).default(700),
       },
     },
-    async ({ serial, pattern, tag, timeoutSec, clearFirst, sinceMarker, pollMs }) => {
+    async ({ serial, pattern, tag, timeoutSec, clearFirst, sinceMarker, maxLines, pollMs }) => {
       const s = await resolveSerial(serial);
       let re: RegExp;
       try {
@@ -465,6 +466,8 @@ export function registerAdbTools(server: McpServer) {
       // A window scopes the poll to lines after its marker (src/logwindow.ts). Without one the whole
       // buffer is still the (compatible) scope — and either way nothing is cleared.
       const runner: AdbRunner = (args, timeoutMs) => adb(args, timeoutMs ?? 60_000);
+      // A long poller's bound (src/logwindow.ts): the raw tail logd keeps BEFORE the tag filter.
+      const bound = maxLines ?? LONG_POLL_LOG_WINDOW_MAX_LINES;
       let window: LogWindow | null = null;
       if (sinceMarker) {
         window = logWindowFromMarker(s, sinceMarker);
@@ -492,7 +495,7 @@ export function registerAdbTools(server: McpServer) {
         let lines: string[] | null = null;
         if (window) {
           try {
-            const read = await readLogWindow(runner, window, { tags: tag ? [tag] : undefined, timeoutMs: 30_000 });
+            const read = await readLogWindow(runner, window, { tags: tag ? [tag] : undefined, maxLines: bound, timeoutMs: 30_000 });
             markerSeen = read.markerSeen;
             lines = read.markerSeen ? read.lines : null; // no marker: nothing here is provably post-window
           } catch {
@@ -528,7 +531,8 @@ export function registerAdbTools(server: McpServer) {
           pattern,
           serial: s,
           logWindow: { marker: window.marker, markerSeen: false },
-          hint: "The log window marker was never seen in the bounded dump (evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer. Re-open the window (clearFirst:true or a fresh sinceMarker) and re-run.",
+          maxLines: bound,
+          hint: `The log window marker was never seen in the bounded dump (-t ${bound}; evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer. Re-open the window (clearFirst:true or a fresh sinceMarker), raise maxLines if the device is chatty, and re-run.`,
         });
       }
       return okJson({

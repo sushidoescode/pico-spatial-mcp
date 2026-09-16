@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createInnerClientProvider, decodeDomainValue, domainValueText, isInnerToolError, type InnerClient, type InnerSession } from "./innerclient.js";
 import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
 import { hasSpatialNavigatorFullStageCall } from "./lint.js";
-import { LOG_WINDOW_TAG, newLogMarker } from "./logwindow.js";
+import { BUILD_LENGTH_LOG_WINDOW_MAX_LINES, LOG_WINDOW_TAG, newLogMarker } from "./logwindow.js";
 import { CANONICAL_APP_KEY_PATTERN, isPassingDeviceEvidence, isPassingDeviceEvidenceForReceipt, readLedger } from "./ledger.js";
 import {
   findHistoricalRunReceipt,
@@ -1104,7 +1104,10 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
               }
             } else if (c.kind === "logcat") {
               if (!c.pattern) { outcomes.push({ kind: "logcat", status: "unmeasurable", detail: "kind:'logcat' requires a pattern" }); continue; }
-              const l = await call("assert_logcat", { pattern: c.pattern, ...(c.tag ? { tag: c.tag } : {}), timeoutSec: c.timeoutSec ?? 20, ...(logMarker ? { sinceMarker: logMarker } : {}) });
+              // The marker was written BEFORE fleet_build (Gradle + install + launch + settle), so the
+              // raw tail logd keeps ahead of the tag filter must span that whole build: the build-length
+              // bound (src/logwindow.ts), not assert_logcat's own 20000 default.
+              const l = await call("assert_logcat", { pattern: c.pattern, ...(c.tag ? { tag: c.tag } : {}), timeoutSec: c.timeoutSec ?? 20, maxLines: BUILD_LENGTH_LOG_WINDOW_MAX_LINES, ...(logMarker ? { sinceMarker: logMarker } : {}) });
               if (l && typeof l === "object" && typeof l.matched === "boolean") {
                 if (l.status === "inconclusive" || l.logWindow?.markerSeen === false) {
                   // The window's marker was never seen in the bounded dump: the read is inconclusive,

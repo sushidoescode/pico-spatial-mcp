@@ -6,7 +6,7 @@ import { z } from "zod";
 import { expandHome, fail, ok, okJson, sleep, tail } from "./util.js";
 import { AVD_HOME } from "./toolchain.js";
 import { adb, resolveSerial } from "./adb.js";
-import { openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
+import { LONG_POLL_LOG_WINDOW_MAX_LINES, openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * v0.3 — capabilities a self-running agent loop needs beyond raw observe/control:
@@ -144,11 +144,14 @@ export function registerAgentLoopTools(server: McpServer) {
         tag: z.string().optional(),
         timeoutSec: z.number().int().default(30),
         clearFirst: z.boolean().default(true).describe("Open a marker window before waiting (recommended): only lines logged after the window opens can match. Nothing is cleared; false polls the whole buffer."),
+        maxLines: z.number().int().min(100).max(200000).optional().describe("Bound on each raw dump (`logcat -t <n>`). logd applies it to the selected buffers BEFORE the tag filter, so on a chatty device a small tail can drop the window marker while the filtered output stays short — the wait is then inconclusive, never a false match. Default 20000 (the module default of 4000 suits short reads; this tool polls for tens of seconds). Raise it for a long wait on a busy device: `-t <n>` never returns more than the buffer holds."),
       },
     },
-    async ({ pattern, serial, tag, timeoutSec, clearFirst }) => {
+    async ({ pattern, serial, tag, timeoutSec, clearFirst, maxLines }) => {
       const s = await resolveSerial(serial);
       const runner: AdbRunner = (args, timeoutMs) => adb(args, timeoutMs ?? 60_000);
+      // A long poller's bound (src/logwindow.ts): the raw tail logd keeps BEFORE the tag filter.
+      const bound = maxLines ?? LONG_POLL_LOG_WINDOW_MAX_LINES;
       let window: LogWindow | null = null;
       if (clearFirst) {
         try {
@@ -166,7 +169,7 @@ export function registerAgentLoopTools(server: McpServer) {
         let lines: string[] | null = null;
         if (window) {
           try {
-            const read = await readLogWindow(runner, window, { tags: tag ? [tag] : undefined, timeoutMs: 20_000 });
+            const read = await readLogWindow(runner, window, { tags: tag ? [tag] : undefined, maxLines: bound, timeoutMs: 20_000 });
             markerSeen = read.markerSeen;
             lines = read.markerSeen ? read.lines : null; // no marker: nothing here is provably post-window
           } catch {
@@ -189,7 +192,7 @@ export function registerAgentLoopTools(server: McpServer) {
         await sleep(1000);
       }
       if (window && !markerSeen) {
-        return fail(`Inconclusive: the log window marker ${window.marker} was never seen on ${s} within ${timeoutSec}s (evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer — re-run. status=inconclusive`);
+        return fail(`Inconclusive: the log window marker ${window.marker} was never seen on ${s} within ${timeoutSec}s in the bounded dump (-t ${bound}; evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer — raise maxLines if the device is chatty and re-run. status=inconclusive`);
       }
       return fail(`Timeout: /${pattern}/ not seen in ${timeoutSec}s on ${s}${window ? ` (log window ${window.marker}, markerSeen=true)` : ""}`);
     },
