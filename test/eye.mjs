@@ -8,6 +8,7 @@
 import { analyzeFrame, analyzeColorKeys, judgeFrame, PASSTHROUGH_COVERAGE_THRESHOLD, registerEyeTools } from "../dist/eye.js";
 import * as eyeModule from "../dist/eye.js";
 import { sendXrRecenter } from "../dist/grpc.js";
+import { picoCliObservationRoot } from "../dist/picocli.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -146,6 +147,55 @@ check(
 );
 screencapPayload = validFramePng;
 fs.rmSync(captureScratch, { recursive: true, force: true });
+
+// ── the canonical capture's DEFAULT output path ────────────────────────────────────────────────
+// The old default was one fixed file, /tmp/pico-render/canonical.png, so the second LOOK silently
+// overwrote the frame the first one was still being cited for — and record_verification's
+// byte-equality re-capture then compared against bytes that had already been replaced. The default
+// is now a run-unique RETAINED file under the observation root, the same store capture_frame and
+// capture_record already write to. The DEFAULT TARGET is deliberately unchanged: with no serial
+// this tool still captures emulator-5554.
+const defaultPathHome = fs.mkdtempSync(path.join(os.tmpdir(), "eye-default-capture-path-"));
+const previousHome = process.env.HOME;
+process.env.HOME = defaultPathHome;
+let defaultPathHandler = null;
+let defaultTargetArgv = null;
+registerEyeTools({
+  registerTool(name, _definition, handler) { if (name === "capture_canonical") defaultPathHandler = handler; },
+}, {
+  runBinaryFn: async (_command, args) => { defaultTargetArgv = args; return { code: 0, stdout: validFramePng, stderr: "" }; },
+  analyzeFrameFn: async () => ({ available: true }),
+  resolveAdbFn: () => "fake-adb",
+});
+const firstDefault = JSON.parse((await defaultPathHandler({ settleMs: 0 })).content[0].text);
+const firstDefaultArgv = defaultTargetArgv;
+const secondDefault = JSON.parse((await defaultPathHandler({ settleMs: 0 })).content[0].text);
+const canonicalRoot = path.join(picoCliObservationRoot(), "canonical");
+check(
+  `capture_canonical's default path is a run-unique file under the observation root (${firstDefault.path})`,
+  firstDefault.status === "captured"
+    && typeof firstDefault.path === "string"
+    && firstDefault.path.startsWith(canonicalRoot + path.sep)
+    && path.basename(firstDefault.path) === "canonical.png"
+    && path.relative(canonicalRoot, path.dirname(firstDefault.path)).split(path.sep).length === 1,
+);
+check(
+  "capture_canonical's default path is never the fixed shared /tmp/pico-render file",
+  !firstDefault.path.includes("/tmp/pico-render") && !secondDefault.path.includes("/tmp/pico-render"),
+);
+check(
+  "two default captures RETAIN both frames instead of one overwriting the other",
+  firstDefault.path !== secondDefault.path
+    && fs.existsSync(firstDefault.path)
+    && fs.existsSync(secondDefault.path),
+);
+check(
+  `capture_canonical still defaults to the emulator-5554 target (${JSON.stringify(firstDefaultArgv?.slice(0, 2))})`,
+  firstDefaultArgv?.[0] === "-s" && firstDefaultArgv?.[1] === "emulator-5554",
+);
+if (previousHome === undefined) delete process.env.HOME;
+else process.env.HOME = previousHome;
+fs.rmSync(defaultPathHome, { recursive: true, force: true });
 
 // Public visual_judge regression: the caller's prose names semantic content that the calibrated
 // checks do not measure. A PASS may persist only a canonical claim derived from the exact predicate

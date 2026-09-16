@@ -17,8 +17,15 @@
  *   3. What landed is re-read from disk and re-hashed before publication — deliberately through
  *      real `fs`, never through the injectable `io` seam, so a broken or stubbed write cannot
  *      certify itself.
- *   4. Publication is `link()`: an exclusive, non-replacing primitive. EEXIST means the artifact is
- *      already there and the existing file is left exactly as it was.
+ *   4. Publication is `link()`, and ONLY `link()`: an exclusive, non-replacing primitive. EEXIST
+ *      means the artifact is already there and the existing file is left exactly as it was. Where
+ *      the filesystem has no hard links (FAT/exFAT, some network mounts, some Windows shares) the
+ *      publication is REFUSED with `PUBLISH_NO_ATOMIC_PUBLICATION` rather than landed some other
+ *      way. The rename fallback this replaced claimed the name with an exclusive create, removed
+ *      that probe and renamed onto it — and in the gap between the removal and the rename the name
+ *      was free, while `rename()` itself has no non-replacing mode. That is a window in which a
+ *      published artifact can be destroyed, which is the one outcome this module exists to make
+ *      impossible. An unpublished release is recoverable; a replaced one is not.
  *   5. The only path this module ever removes is the temporary it created itself. There is no
  *      directory enumeration anywhere in this file, so no other archive can be reached.
  *
@@ -36,15 +43,16 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 /**
  * link() failures that mean "this filesystem has no hard links" rather than "this operation was
- * wrong": FAT/exFAT volumes, some network mounts and some Windows shares. Anything else is a real
- * error and is rethrown untouched.
+ * wrong": FAT/exFAT volumes, some network mounts and some Windows shares. Each of these refuses
+ * publication outright (guarantee 4); anything else is a real error and is rethrown untouched.
  */
 const LINK_UNSUPPORTED = new Set(["EXDEV", "EPERM", "ENOSYS", "EOPNOTSUPP", "ENOTSUP", "EMLINK"]);
 
 /**
  * The seam. Tests inject a single failing step (a short write, a failing fsync, a filesystem that
- * cannot link) to prove the failure paths leave nothing behind. Verification hashing deliberately
- * does NOT go through here.
+ * cannot link) to prove the failure paths leave nothing behind. There is no `rename` here: the
+ * module has no replacing primitive to inject, so a test cannot make one run. Verification hashing
+ * deliberately does NOT go through here.
  */
 export const PUBLISH_IO = Object.freeze({
   openExclusive: (target) => fs.openSync(target, "wx"),
@@ -54,7 +62,6 @@ export const PUBLISH_IO = Object.freeze({
   fsync: (fd) => fs.fsyncSync(fd),
   close: (fd) => fs.closeSync(fd),
   link: (from, to) => fs.linkSync(from, to),
-  rename: (from, to) => fs.renameSync(from, to),
   unlink: (target) => fs.unlinkSync(target),
 });
 
@@ -153,30 +160,21 @@ function removeTemporary(temporaryPath, ops) {
 function land(temporaryPath, destinationPath, ops) {
   try {
     ops.link(temporaryPath, destinationPath);
-    return;
   } catch (error) {
     if (error?.code === "EEXIST") throw occupiedError("the artifact", destinationPath);
-    if (!LINK_UNSUPPORTED.has(error?.code)) throw error;
-  }
-
-  // Hard links are unavailable on this filesystem. rename() would replace silently, so the name is
-  // first claimed with an exclusive create — the only primitive left that fails when someone else
-  // already holds it. The probe file is ours: we created it one statement ago with `wx`.
-  //
-  // This leaves a window between removing the probe and the rename that the link path does not
-  // have. It is the narrowest non-replacing sequence the platform offers; the hard-link path above
-  // is used everywhere it exists.
-  const probePath = destinationPath;
-  let probeFd;
-  try {
-    probeFd = ops.openExclusive(probePath);
-  } catch (error) {
-    if (error?.code === "EEXIST") throw occupiedError("the artifact", destinationPath);
+    if (LINK_UNSUPPORTED.has(error?.code)) {
+      const refusal = new Error(
+        `cannot publish ${destinationPath}: this filesystem does not support hard links (${error.code}), `
+        + "and link() is the only atomic non-replacing publication primitive this script trusts. rename() "
+        + "would silently replace an existing artifact, so publication is refused. Publish onto a "
+        + "filesystem with hard-link support.",
+      );
+      refusal.code = "PUBLISH_NO_ATOMIC_PUBLICATION";
+      refusal.cause = error;
+      throw refusal;
+    }
     throw error;
   }
-  closeQuietly(probeFd, ops);
-  ops.unlink(probePath);
-  ops.rename(temporaryPath, destinationPath);
 }
 
 /**

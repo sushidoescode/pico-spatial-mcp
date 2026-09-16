@@ -5,6 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, runBinary, image, fail, expandHome } from "./util.js";
 import { adbExecutable } from "./adb.js";
+import { observationCapturePath } from "./capturepaths.js";
 
 /**
  * emulator_look — AIM the emulator's free camera, then capture, so an agent can VISUALLY verify a
@@ -65,7 +66,7 @@ export function registerEmulatorLookTools(server: McpServer) {
     "emulator_look",
     {
       description:
-        "AIM the emulator's free camera by a mouse-drag, then capture the rendered frame and return the image — so you can VISUALLY verify a whole scene, not just the forward view. The emulator only enters look/orbit mode on a RIGHT-button drag (keystrokes/left-drag do nothing). dx<0 looks left, dx>0 looks right; dy pans vertically. A ~300px horizontal drag is a sizeable yaw; call repeatedly to sweep around. Requires macOS Accessibility for the controlling process. Pairs with capture_frame (which captures without moving).",
+        "AIM the emulator's free camera by a mouse-drag, then capture the rendered frame and return the image — so you can VISUALLY verify a whole scene, not just the forward view. The emulator only enters look/orbit mode on a RIGHT-button drag (keystrokes/left-drag do nothing). dx<0 looks left, dx>0 looks right; dy pans vertically. A ~300px horizontal drag is a sizeable yaw; call repeatedly to sweep around. Requires macOS Accessibility for the controlling process. Pairs with capture_frame (which captures without moving). The frame is saved to a run-unique RETAINED file under the observation root, never a fixed shared path a later look can overwrite; the default TARGET is unchanged (emulator-5554).",
       inputSchema: {
         dx: z.number().describe("Horizontal drag pixels from window center (negative = look left, positive = look right). ~300 ≈ a big yaw."),
         dy: z.number().optional().describe("Vertical drag pixels (default 0). negative = up, positive = down."),
@@ -89,7 +90,7 @@ export function registerEmulatorLookTools(server: McpServer) {
 
       await new Promise((r) => setTimeout(r, 800)); // settle
       const adb = resolveAdb();
-      const full = expandHome("/tmp/pico-render/emulator_look.png");
+      const full = expandHome(observationCapturePath("emulator-look", "emulator_look.png"));
       fs.mkdirSync(path.dirname(full), { recursive: true });
       const res = await runBinary(adb, ["-s", dev, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
       if (res.code !== 0 || res.stdout.length < 1000) return fail(`screencap failed after look (code ${res.code}).`);

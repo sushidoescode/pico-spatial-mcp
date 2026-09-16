@@ -541,6 +541,53 @@ test("the serial is REQUIRED — there is no emulator-5554 default to leak into"
   }
 });
 
+// The same fixed-path defect in its other shape. `capture_canonical` and `emulator_look` are the
+// two LOOK captures the agent reads and then cites, and both wrote to one fixed /tmp/pico-render
+// file that the next capture overwrote — so record_verification's byte-equality re-capture could be
+// comparing against bytes that had already been replaced. Their DEFAULT TARGET is deliberately
+// unchanged (emulator-5554 is what these two document and what pico_look drives with no inputs), so
+// only the path literal is scanned; src AND dist, for the same reason the loop above reads both.
+test("the canonical and emulator LOOK captures name no fixed shared output path", () => {
+  for (const file of ["../src/eye.ts", "../dist/eye.js", "../src/emulatorlook.ts", "../dist/emulatorlook.js"]) {
+    const source = fs.readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.ok(!source.includes("/tmp/pico-render"), `${file} must not name a fixed shared capture path`);
+    assert.ok(source.includes("observationCapturePath"), `${file} must take its default from the shared observation-root helper`);
+    assert.ok(source.includes("emulator-5554"), `${file} must keep its documented default target`);
+  }
+});
+
+// The helper those two and capture_frame now share. One responsibility: a run-unique RETAINED file
+// under the observation store, so no capture can overwrite a frame another claim is anchored to.
+test("observationCapturePath roots every kind under the observation store and never repeats a run", async () => {
+  const { observationCapturePath } = await import("../dist/capturepaths.js");
+  const { picoCliObservationRoot } = await import("../dist/picocli.js");
+  const home = tempRoot("capture-paths");
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    const root = picoCliObservationRoot();
+    for (const [kind, fileName] of [
+      ["capture-frame", "capture_frame.png"],
+      ["canonical", "canonical.png"],
+      ["emulator-look", "emulator_look.png"],
+    ]) {
+      const first = observationCapturePath(kind, fileName);
+      const second = observationCapturePath(kind, fileName);
+      assert.equal(path.basename(first), fileName, `${kind}: the file keeps its name`);
+      assert.equal(path.dirname(path.dirname(first)), path.join(root, kind), `${kind}: <root>/<kind>/<runId>/<file>`);
+      assert.notEqual(first, second, `${kind}: two captures must not share a path`);
+      // The run directory is the same shape retainPicoCliObservation uses: an ISO instant with the
+      // punctuation stripped, then a uuid — sortable by time, unique without a lock.
+      assert.match(path.basename(path.dirname(first)), /^\d{8}T\d{9}Z-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      // Nothing is created by asking for a path: the caller owns the write.
+      assert.equal(fs.existsSync(path.dirname(first)), false, `${kind}: naming a path must not create it`);
+    }
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+  }
+});
+
 // ── the seam is real ───────────────────────────────────────────────────────────────────────────
 
 test("an unresolvable adb is refused before any device command runs", async () => {
