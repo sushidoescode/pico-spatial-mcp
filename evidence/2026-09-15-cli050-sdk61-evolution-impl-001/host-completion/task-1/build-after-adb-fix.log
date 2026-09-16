@@ -1,0 +1,8 @@
+# npm run build — 2026-09-16T09:43:44Z — HEAD 641ec84 + uncommitted src/adb.ts, test/toolchain-cache.mjs
+
+> pico-spatial-mcp@38.0.0 build
+> node scripts/build-source.mjs
+
+build-source: published 190 file(s) for source ddfca596b714
+# exit=0
+verifyBuild: {"current":true,"reasons":[]}

@@ -56,15 +56,18 @@ every step really ran.
 `GATES`; each `test:*`/`smoke` script is only `node scripts/run-gate.mjs <name>`, and `run-gate`
 refuses a gate whose `dist/` is stale before spawning anything — except the two `native-contract`
 shell gates, which compile native sources and never load `dist/`. `run-gate` also spawns every
-`fixture`/`installed-artifact` gate child with `PICO_ADB=/fixture/no/such/adb` unless the caller
-set one (`FIXTURE_NO_ADB` in the inventory; `src/adb.ts` refuses an explicit adb that names no
-file and probes nothing else, so a suite that still reaches adb fails loudly instead of touching a
-device), and `gates.yml` pins the same value at workflow level — a direct
-`node --test test/<file>.mjs` gets neither, so export it yourself. `validateGateInventory` is what
-`test:lint` and `test:distribution-adoption` check, and the published counts are derived from it —
-so a gate that no lane runs (`test:runrevision` was exactly that, four revision suites regressing
-invisibly) now fails a gate instead of a doc. Adding one is three edits: an entry, a one-line
-script, a workflow step for its host lane.
+`fixture`/`installed-artifact` gate child with `PICO_ADB=/fixture/no/such/adb` (`FIXTURE_NO_ADB`
+in the inventory), replacing whatever your shell inherited — a real adb, an empty string and
+whitespace are all discarded, never passed through; the one pass-through is `PICO_GATE_FIXTURE_ADB`
+naming an absolute executable fake, and anything else in that variable refuses the gate (exit 2)
+before a child exists. `src/adb.ts` refuses an explicit adb that names no file — a blank `PICO_ADB`
+included — and probes nothing else, so a suite that still reaches adb fails loudly instead of
+touching a device. `gates.yml` keeps the same value at workflow level only for its one raw
+`node --test` step; a direct `node --test test/<file>.mjs` gets neither, so export it yourself.
+`validateGateInventory` is what `test:lint` and `test:distribution-adoption` check, and the
+published counts are derived from it — so a gate that no lane runs (`test:runrevision` was exactly
+that, four revision suites regressing invisibly) now fails a gate instead of a doc. Adding one is
+three edits: an entry, a one-line script, a workflow step for its host lane.
 
 **The pico-cli policy block below is byte-pinned across six files.**
 `test/distribution-adoption.mjs` holds the canonical text inline and asserts an exact match in

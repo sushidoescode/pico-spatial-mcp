@@ -243,6 +243,90 @@ if (doorsModule.registerDoorTools.length < 2) {
   }
 }
 
+// ── every door through its seam (host completion T1, 2026-09-16) — no process ──
+// A fixture server with NO lane at all (`{}`) must be refused by EVERY door at the seam. Ten
+// doors used to call the shared inner client directly, so a fixture that injected only `call`
+// still spawned the REAL inner full-surface server for them — which then ran against whatever
+// adb, HOME and CLI state this process inherited. The block is hermetic against a regressed
+// adapter: PICO_ADB is an exit-1 stub (no hardware), HOME is a scratch dir (no real ledgers,
+// briefs or managed store), CLI use is disabled (no registry contact), pico_loop's draftSpec is
+// invalid on purpose (plan-failed before any fleet build), and every call is bounded so a door
+// that reaches the real inner server fails this block instead of waiting on it.
+{
+  const seamTmp = fs.mkdtempSync(path.join(os.tmpdir(), "pico-door-seam-"));
+  const seamAdbStub = path.join(seamTmp, "adb");
+  fs.writeFileSync(seamAdbStub, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const seamHome = path.join(seamTmp, "home");
+  fs.mkdirSync(seamHome, { recursive: true });
+  const previousSeamEnv = { PICO_ADB: process.env.PICO_ADB, HOME: process.env.HOME, PICO_MCP_CLI_POLICY: process.env.PICO_MCP_CLI_POLICY };
+  process.env.PICO_ADB = seamAdbStub;
+  process.env.HOME = seamHome;
+  process.env.PICO_MCP_CLI_POLICY = "disabled";
+  // pico_place reads its semantic scene BEFORE reaching the seam, so it gets a real (empty) one.
+  const seamScene = path.join(seamTmp, "scene.json");
+  fs.writeFileSync(seamScene, JSON.stringify({ objects: [], floorY: 0, bounds: { min: [0, 0, 0], max: [1, 1, 1] } }));
+  // Minimal schema-valid arguments per door: enough to pass zod and reach the handler's seam call.
+  const minimalArgs = {
+    pico_build_app: { brief: "seam fixture" },
+    pico_scan_world: { splatPath: path.join(seamTmp, "no-such.ply") },
+    pico_place: { semanticScenePath: seamScene, label: "counter" },
+    pico_look: {},
+    pico_verify_app: { apkPath: path.join(seamTmp, "no-such.apk"), packageName: "com.example.fixture", serial: "fixture-seam-0001" },
+    pico_measure: { capturePath: path.join(seamTmp, "no-such.png"), targets: [{ name: "a", colorKey: [1, 0, 0], expectedPosition: [0, 0, -1] }] },
+    pico_perf: { packageName: "com.example.fixture" },
+    pico_sdk: { symbol: "Entity" },
+    pico_doctor: {},
+    pico_ship: { app: "com.example.fixture" },
+    pico_capabilities: {},
+    pico_fix: { error: "seam fixture" },
+    pico_record: { app: "com.example.fixture", claim: "seam fixture", evidenceType: "vision_verified" },
+    pico_emulator: { action: "status" },
+    pico_next: {},
+    pico_loop: { goal: "seam fixture", draftSpec: { meta: { appName: "SeamFixture" } }, acceptance: [{ kind: "visual" }] },
+  };
+  const bare = new McpServer({ name: "doors-bare-fixture", version: "0.0.0" });
+  doorsModule.registerDoorTools(bare, {});
+  const [bareClientTransport, bareServerTransport] = InMemoryTransport.createLinkedPair();
+  await bare.connect(bareServerTransport);
+  const bareClient = new Client({ name: "doors-bare-test", version: "0.0.0" });
+  await bareClient.connect(bareClientTransport);
+  try {
+    const names = (await bareClient.listTools()).tools.map((t) => t.name).sort();
+    const driven = Object.keys(minimalArgs).sort();
+    if (JSON.stringify(names) === JSON.stringify(driven)) ok(`the bare fixture server registers exactly the ${names.length} doors this block drives`);
+    else fail(`the bare fixture server's doors differ from the driven set (a new door needs minimal args here): ${JSON.stringify({ names, driven })}`);
+    let refusedAtSeam = 0;
+    for (const name of names) {
+      let result;
+      try {
+        result = await bareClient.callTool({ name, arguments: minimalArgs[name] ?? {} }, undefined, { timeout: 10_000 });
+      } catch (error) {
+        fail(`${name}: no answer within 10 s (or the call threw) — a door on a lane-less fixture must refuse at the seam, not reach the inner server: ${error instanceof Error ? error.message : String(error)}`);
+        continue;
+      }
+      let payload = null;
+      try { payload = JSON.parse(result.content?.[0]?.text ?? ""); } catch { payload = null; }
+      if (payload?.status === "error" && /dependencies\.call|dependencies\.callRaw/.test(payload.error ?? "")) refusedAtSeam++;
+      else fail(`${name}: a door on a lane-less fixture must refuse through the seam, got ${JSON.stringify(payload ?? result).slice(0, 200)}`);
+    }
+    if (refusedAtSeam === names.length) ok(`every door refuses through the seam on a {} fixture (${refusedAtSeam}/${names.length})`);
+    else fail(`only ${refusedAtSeam}/${names.length} doors refused through the seam on a {} fixture`);
+
+    // Source-level: the only inner() call sites left in doors.ts are the two lane fallbacks and innerCall().
+    const source = fs.readFileSync(new URL("../src/doors.ts", import.meta.url), "utf8");
+    const sites = source.match(/await inner\(\)/g) ?? [];
+    if (sites.length === 3) ok("doors.ts has exactly three inner() sites (innerCall, doorCall, doorCallRaw)");
+    else fail(`doors.ts has ${sites.length} inner() sites; expected exactly three (innerCall, doorCall, doorCallRaw)`);
+  } finally {
+    await bareClient.close();
+    await bare.close();
+    for (const [key, value] of Object.entries(previousSeamEnv)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    fs.rmSync(seamTmp, { recursive: true, force: true });
+  }
+}
+
 // ── C5 result lanes (2026-09-15) — no process ──
 // The door adapter must never launder an inner tool's isError into a success payload, and the
 // artifact-forwarding doors (pico_look, pico_verify_app) must carry image/resource blocks and

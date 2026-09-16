@@ -366,31 +366,47 @@ export interface DoorToolDependencies {
 }
 
 export function registerDoorTools(server: McpServer, dependencies?: DoorToolDependencies) {
-  // The injection seam has two lanes and one rule: supplying `dependencies` at all means "this
-  // server must never spawn the real inner full-surface server". Two partial shapes follow from
-  // that rule, and both are spelled out here because each once read as a reasonable default:
+  // The injection seam has two lanes and one rule: supplying `dependencies` at all — even `{}` —
+  // means "this server must never spawn the real inner full-surface server". Every door reaches
+  // the inner lanes ONLY through doorCall()/doorCallRaw() below; on a fixture each lane returns the
+  // injected function or REFUSES, so no door can fall through to the shared inner client. The
+  // shapes are spelled out here because each once read as a reasonable default:
   //   - `{ call }` WITHOUT `callRaw` (a call-only fixture): the two raw-lane doors, pico_look and
   //     pico_verify_app, forward the inner CallToolResult verbatim and have no seam to forward
-  //     through. doorCallRaw used to fall back to `inner()` for them — the exact bypass the C5 base
-  //     RED run demonstrated, where pico_look on a fixture server reached the real emulator — so it
-  //     now REFUSES with a fixture error before any `inner()` call.
+  //     through. doorCallRaw used to fall back to the shared inner client for them — the exact
+  //     bypass the C5 base RED run demonstrated, where pico_look on a fixture server reached the
+  //     real emulator — so it REFUSES with a fixture error instead.
   //   - `{ call, callRaw }`: `dependencies.call` is IGNORED. The domain lane is derived from
   //     `callRaw` with the production decoder so a lane fixture exercises the real decoding rather
   //     than a stand-in; a caller-supplied `call` beside a `callRaw` is never consulted.
+  //   - `{}` (no lane at all): every door refuses. Nine domain-lane doors used to call the shared
+  //     inner client directly, so a fixture that injected only `call` still spawned dist/index.js
+  //     for them (the 2026-09-16 host-completion RED run: 14 of 16 doors reached a real inner
+  //     server from inside the test process).
   // With no `dependencies` at all (production), both lanes come from the shared inner client.
-  const injected: Partial<InnerLanes> | null = dependencies?.callRaw
-    ? lanesOf(dependencies.callRaw, async () => {})
-    : dependencies?.call ? { call: dependencies.call } : null;
-  const doorCall = async (): Promise<InnerLanes["call"]> => injected?.call ?? (await inner()).call;
+  const injected: Partial<InnerLanes> | null = dependencies
+    ? (dependencies.callRaw ? lanesOf(dependencies.callRaw, async () => {}) : { call: dependencies.call })
+    : null;
+  const seamError = (lane: "call" | "callRaw") => new Error(
+    `registerDoorTools was given a fixture (a dependencies object) without dependencies.${lane}: doors never spawn the `
+    + "real inner full-surface server on a fixture, so this call is refused. "
+    + (lane === "callRaw"
+      ? "The raw-lane doors pico_look and pico_verify_app forward the inner CallToolResult verbatim and have no seam "
+        + "to forward through on a call-only fixture; inject dependencies.callRaw to exercise them."
+      : "Inject dependencies.call (or dependencies.callRaw, from which the domain lane is derived) to exercise the "
+        + "domain-lane doors."),
+  );
+  const doorCall = async (): Promise<InnerLanes["call"]> => {
+    if (injected) {
+      if (injected.call) return injected.call;
+      throw seamError("call");
+    }
+    return (await inner()).call;
+  };
   const doorCallRaw = async (): Promise<InnerLanes["callRaw"]> => {
-    if (injected?.callRaw) return injected.callRaw;
-    if (dependencies) {
-      throw new Error(
-        "registerDoorTools was given a call-only fixture (dependencies.call without dependencies.callRaw): "
-        + "the raw-lane doors pico_look and pico_verify_app forward the inner CallToolResult verbatim and "
-        + "have no seam to forward through, so this call is refused rather than spawning the real inner "
-        + "full-surface server. Inject dependencies.callRaw to exercise these two doors.",
-      );
+    if (injected) {
+      if (injected.callRaw) return injected.callRaw;
+      throw seamError("callRaw");
     }
     return (await inner()).callRaw;
   };
@@ -469,7 +485,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       labelQueries: z.array(z.string()).optional().describe("Scene-specific vocabulary ('bar counter', 'neon sign') — sharper labels than the generic default."),
     },
     async ({ splatPath, labelQueries }) => {
-      const { call } = await inner();
+      const call = await doorCall();
       const scan = await call("semantic_splat_scan", { splatPath, autoLabel: true, ...(labelQueries ? { labelQueries } : {}) });
       if (!scan?.clusters) return { status: "scan-failed", detail: scan, fix: "Check the splat path; OWL-v2 needs the pico venv python (pico_doctor)." };
       const labels = scan.autoLabels?.labels ?? {};
@@ -502,7 +518,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     },
     async ({ semanticScenePath, label, relation, childSize }) => {
       const scene = JSON.parse(fs.readFileSync(semanticScenePath, "utf8"));
-      const { call } = await inner();
+      const call = await doorCall();
       return call("resolve_semantic_placement", { objects: scene.objects, anchorTo: { label, ...(relation ? { relation } : {}) }, ...(childSize ? { childSize } : {}), floorY: scene.floorY, bounds: scene.bounds });
     },
   );
@@ -544,7 +560,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       targets: z.array(z.object({ name: z.string(), colorKey: z.array(z.number()).length(3), expectedPosition: z.array(z.number()).length(3), expectedSize: z.array(z.number()).length(3).optional() })).min(1),
     },
     async (args) => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("measure_placement", args);
     },
   );
@@ -554,7 +570,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     "DOOR 7 — Profile a running app with PICO's OFFICIAL profiler (pico-cli perf): FPS percentiles, CPU/GPU, jank windows, and PICO's own diagnosis engine. Structural evidence — numbers, not looks.",
     { packageName: z.string(), durationSec: z.number().optional() },
     async (args) => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("perf_diagnose", args);
     },
   );
@@ -570,7 +586,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       recordPaths: z.array(z.string()).optional().describe("Reviewed compatibility record paths to consider; only records in the packaged reviewed index can be accepted."),
     },
     async (args) => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("vault_api", args);
     },
   );
@@ -580,7 +596,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     "DOOR 9 — Health-check the local PICO environment: the read-only preflight (node/adb/emulator/gRPC/Accessibility/calibration/disk — every failure carries the exact fix), toolchain payloads, emulator state, and the v20 camera calibration. Run this FIRST on a new machine, and whenever anything smells off. Pass {calibrate:true} to also RUN the one-time camera calibration end-to-end (fleet_build(['calib']) → calibrate_capture_camera): the inner child server already runs the FULL surface, so no surface switch or client restart is needed — it does need a running emulator and takes a few minutes.",
     { calibrate: z.boolean().optional().describe("Build+launch the calib brief and solve the capture camera through the full-surface inner server. Requires a running emulator; takes minutes.") },
     async ({ calibrate }) => {
-      const { call } = await inner();
+      const call = await doorCall();
       const [tc, emu, pre] = await Promise.all([call("validate_toolchain", {}), call("emulator_status", {}), call("preflight_env", {})]);
       let calibrationRun: any = null;
       if (calibrate) {
@@ -634,7 +650,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     "DOOR 11 — What can this toolchain actually do, and how is each capability PROVEN? Generated from the trust ledger: every row's best evidence class, with vision_verified meaning a human/agent looked at a rendered frame.",
     {},
     async () => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("capability_matrix", {});
     },
   );
@@ -658,7 +674,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       }).optional().describe("After you SOLVE a novel gotcha: persist it as a retained-lessons lint rule. Passed through unchanged to record_lesson, which validates the regex + fixtures before persisting."),
     },
     async ({ error, kotlin, recordLesson }) => {
-      const { call } = await inner();
+      const call = await doorCall();
       // v27-pre first-light fix: diagnose takes a strict symptom enum — piping free text into it
       // leaked a raw schema error at the stranger. Map keywords -> symptom; no match is honest.
       const SYMPTOM_KEYWORDS: Array<[RegExp, string]> = [
@@ -778,7 +794,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     "DOOR 15 — What should I do NOW? Reads the ACTUAL local state — preflight checks, emulator, camera calibration, your generated briefs with their build/capture/trust-ledger progress — and returns {situation, nextAction:{door,argsExample,why}, alternatives}. Every recommendation names a real door on this surface; nothing is executed for you, and a LOOK step still means YOU read the capture.",
     {},
     async () => {
-      const { call } = await inner();
+      const call = await doorCall();
       // a probe that cannot run (e.g. no adb) reads as its unhealthy state, not as a door error
       const [pre, emu] = await Promise.all([call("preflight_env", {}).catch(() => null), call("emulator_status", {}).catch(() => null)]);
       const failing = (Array.isArray(pre?.checks) ? pre.checks : []).filter((c: any) => c.status === "fail");
