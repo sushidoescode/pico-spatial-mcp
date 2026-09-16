@@ -37,7 +37,7 @@ strongest evidence class earned anywhere in this pass is `host-executed`.
 | Release version | **38.0.0** — unchanged (ruling below) |
 | Source files | 192 `src/*.ts`; 98 `test/*.mjs` |
 | Build receipt input sha256 (source identity) | `bafeb2712c5b635d18a2a6a4523b41dc7a7eeee6e940bbe95c214822cd0628db` (197 input files) |
-| Build receipt output sha256 | `f4978b711f570efda70ef91f4a8c8157cadc231daab7ccc103909a36ee61c24d` (192 published `dist/*.js` + `dist/build-receipt.json`) |
+| Build receipt output sha256 | `f4978b711f570efda70ef91f4a8c8157cadc231daab7ccc103909a36ee61c24d` (192 published `dist/*.js`; the receipt is written beside them and is not part of its own digest) |
 | Toolchain | Node `v25.8.1`, TypeScript `5.9.3`, macOS (`darwin-arm64`) |
 | Tool surfaces | unchanged — 255 on macOS (installed-tarball runtime-measured), a source-derived 252 on Linux and Windows, 18 doors |
 | Nothing pushed | `main` untouched, no history rewritten, no `git stash` used |
@@ -251,7 +251,8 @@ native fleet receipt reader.
 ## The final required battery
 
 **Method** (`host-executed`). Run from this worktree with **no `PICO_ADB` exported** — the run-gate
-default is what pins every gate child, and this run exists to prove that it does — and with a
+default is what pins every gate child; a silent tripwire shows no battery child resolved `adb` from
+`PATH`, which is consistent with that pin holding — and with a
 marker-writing tripwire `adb` first on `PATH`: a script that appends its argv, pid, ppid and cwd to
 a marker file and exits 66. The tripwire was self-tested first (it recorded `argv=devices` and
 exited 66) and the self-test marker deleted before the run. A copy of the script is retained as
