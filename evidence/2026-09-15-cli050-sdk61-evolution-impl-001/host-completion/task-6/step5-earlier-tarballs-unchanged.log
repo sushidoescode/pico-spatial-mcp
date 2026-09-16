@@ -1,0 +1,10 @@
+# step5 earlier tarballs re-verified byte-unchanged (2026-09-16T13:20:47Z)
+expected F1  941e402bb2c234c444e31c62c9bc9dc2c69055ac3aeee48c960e870e100f36d6  ./pico-spatial-mcp-38.0.0.tgz
+expected FW1 c08e1a8baf2b850cae5bdd09eb259fab5270645dda3d635eeb1bc7cb51c435f5  ./final/pico-spatial-mcp-38.0.0.tgz
+--- actual ---
+941e402bb2c234c444e31c62c9bc9dc2c69055ac3aeee48c960e870e100f36d6  ./pico-spatial-mcp-38.0.0.tgz
+c08e1a8baf2b850cae5bdd09eb259fab5270645dda3d635eeb1bc7cb51c435f5  ./final/pico-spatial-mcp-38.0.0.tgz
+--- sizes ---
+./pico-spatial-mcp-38.0.0.tgz 2158783 bytes  mtime=Sep 15 14:55:05 2026
+./final/pico-spatial-mcp-38.0.0.tgz 2161859 bytes  mtime=Sep 15 16:42:43 2026
+exit=0

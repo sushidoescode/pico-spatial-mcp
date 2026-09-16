@@ -1,0 +1,7 @@
+# step2 node scripts/sync-metadata.mjs --check (2026-09-16T13:09:47Z)
+truth: version=38.0.0  macOS-tools=255  other-host-tools=252  doors=18
+
+sync-metadata --check (dry run):
+
+--check: 0 stale site(s), 0 warning(s).
+exit=0

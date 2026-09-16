@@ -1,0 +1,23 @@
+# step3 npm run --silent test:claims (2026-09-16T13:12:55Z)
+  ok   capture sha256 surfaces verbatim (the verifiable part)
+  ok   attestation text is HTML-escaped (no injection)
+  ok   dimensions + artifact name rendered
+  ok   public page states that generated proof is a dated, revalidated snapshot
+  ok   broken provenance publishes its claimed tier, reason, and actual hash
+  ok   public claims disclose a legacy producer-tier downgrade and its reason
+  ok   public claims disclose why legacy hardware evidence counts only as vision_verified
+  ok   public claims preserve a looked-at device FAIL without presenting it as positive proof
+  ok   public claims visibly disclose unreadable ledgers instead of omitting them
+  ok   claims manifest reports a corrupt ledger rather than silently dropping it
+  ok   structured corrections keep known-false and stale-readiness rows out of public claims
+  ok   CAPABILITIES.md headline/totals match the tracked effective claims snapshot
+  ok   tracked claims HTML is exactly generated from the tracked JSON snapshot
+  ok   the device row's two live-probe instants are real ISO timestamps (the only normalized fields)
+  ok   fixture ledger generates the committed expected manifest byte-for-byte
+  ok   the retracted fixture row never reaches the generated manifest
+  ok   minEvidence=auto_judged drops weaker classes on the fixture ledger
+  ok   fixture HTML surfaces every capture hash verbatim (5 rows)
+  skip live-ledger comparison (set PICO_CLAIMS_LIVE_LEDGER=1 on the ledger-owning machine to run it)
+
+Claims-page test done. Failures: 0
+exit=0

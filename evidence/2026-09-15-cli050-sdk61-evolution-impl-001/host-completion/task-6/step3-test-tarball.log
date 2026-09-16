@@ -1,0 +1,79 @@
+# step3 npm run --silent test:tarball (2026-09-16T13:12:40Z)
+✔ publishes a verified tarball alongside prior versions, leaving every one of them untouched (7.30475ms)
+✔ refuses to replace an existing artifact, and the prior bytes and directory listing do not move (5.192ms)
+✔ refuses a source whose digest is not the digest that passed verification, and writes nothing (1.2615ms)
+✔ an interrupted copy removes its own temporary and never creates the destination (2.052875ms)
+✔ re-reads the staged bytes and refuses to publish a copy that does not hash to the verified digest (6.376583ms)
+✔ refuses to publish where hard links are unavailable instead of falling back to rename (4.549917ms)
+✔ every link-unsupported errno refuses publication, and the refusal names the cause (26.030959ms)
+✔ creates a missing destination directory, and refuses malformed arguments before touching disk (5.240041ms)
+✔ writes the receipt beside the artifact and never overwrites an existing one (8.683ms)
+✔ the publication module contains no directory enumeration and no recursive removal (0.368584ms)
+✔ verify-tarball publishes through the helper and removes nothing but its own sandbox (0.205708ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 103.73075
+sandbox: /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico mcp tester é DJlmx1
+
+  ok   packed pico-spatial-mcp-38.0.0.tgz (2125 kB, sha256 ff394fbbcdf1828ea0745e3d7ad4fe931a2a46e7b910ea309f67c82c6858d042)
+  ok   installed into a clean directory with --omit=dev
+  ok   installed home environment dataset directory contains exactly the versioned JSON
+  ok   installed home environment dataset bytes match the exact packed source dataset
+  ok   home environment dataset ships in the installed package
+  ok   installed dataset keeps Mesume Day excluded for its zero-geometry public-parser failure
+  ok   installed dataset keeps both Livingroom refresh surface extensions
+  ok   installed dataset keeps the evidence-falsified Day guarantees and optional cluster ranges
+  ok   installed dataset retains complete one-to-one measured-potential Livingroom ranking inputs
+  ok   installed dataset carries only accepted, syntactically pinned refresh evidence
+  ok   installed selector ranks complete Day/Night potential and receipts the canonical dataset hash
+  ok   derived out-of-dist dependencies from the build: appskeleton, assets, briefs, data, package.json, scripts, tools, unityskeleton
+  ok   payload present: appskeleton/
+  ok   payload present: assets/
+  ok   payload present: briefs/
+  ok   payload present: data/
+  ok   payload present: package.json/
+  ok   payload present: scripts/
+  ok   payload present: tools/
+  ok   payload present: unityskeleton/
+  ok   reviewed SDK-compatibility payload verified (3 files, index + every referenced record/basis)
+  ok   briefs/ carries 22 briefs
+  ok   brief canary parses: gallery.json
+  ok   brief canary parses: knockdown.json
+  ok   no build droppings anywhere in the package
+  ok   no absolute home paths in any shipped file
+  ok   TESTERS.md ships
+  ok   reader-facing doc ships: SKILLS.md
+  ok   reader-facing doc ships: DESIGN.md
+  ok   reader-facing doc ships: GETTING_STARTED.md
+  ok   app skeleton ships complete and non-empty (17 canaries)
+  ok   appskeleton/gradlew kept its exec bit through pack+install
+  ok   gradle wrapper jar ships intact
+  ok   dot-less _gitignore survived packing (npm drops files named .gitignore)
+  ok   menu.bundle ships for GameMenu briefs
+  ok   unity skeleton ships complete (11 canaries)
+  ok   unityskeleton _gitignore survived packing
+  ok   bin entry has a shebang
+pico-spatial-mcp ready (stdio)
+  ok   installed server listed exactly 255 tools for darwin (255 on the full macOS surface)
+  ok   all 43 anchor tools present
+  ok   preflight_env ran from the installed copy (14 checks, status: problems)
+  ok   preflight fixes contain no repo-only commands
+pico-spatial-mcp ready (stdio)
+  ok   doors surface registered all 18 door tools
+pico-spatial-mcp ready (stdio)
+  ok   a door tool completed its inner self-client spawn from a path containing a space
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+  ok   20 concurrent first door calls on the installed artifact started exactly one inner server (all unavailable)
+  ok   installed pico_look forwards the inner screencap failure as isError, never as status ok (stub adb ran: 1 invocation(s), screencap argv recorded)
+pico-spatial-mcp ready (stdio)
+  ok   PICO_MCP_SURFACE unset serves the 18-tool doors surface (full stays explicit opt-in)
+  ok   packed dist/build-receipt.json binds the payload to source bafeb2712c5b / output f4978b711f57
+
+Tarball verification done. Failures: 0
+exit=0

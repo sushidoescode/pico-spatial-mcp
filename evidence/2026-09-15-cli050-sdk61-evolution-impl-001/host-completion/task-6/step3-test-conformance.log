@@ -1,0 +1,793 @@
+# step3 npm run --silent test:conformance (2026-09-16T13:16:39Z)
+
+§3.1 generated panels are SpatialUI-conformant
+  ok   hud panel imports PicoTheme
+  ok   hud panel is mounted inside PicoTheme { }
+  ok   hud panel has no androidx.compose.material* import
+  ok   hud panel emits no hardcoded Color(0x...) literal
+  ok   hud panel no longer imports raw Compose Color
+  ok   hud panel no longer uses Color.White
+  ok   hud panel reads PicoTheme.colorScheme
+  ok   hud panel reads PicoTheme.typography
+  ok   hud panel takes >=3 colours from roles (got 4)
+  ok   hud panel takes >=2 text sizes from roles (got 3)
+  ok   every colour role exists in 0.13.3 ColorScheme
+  ok   every typography role exists in 0.13.3 Typography
+  ok   hud panel is lint-clean
+  ok   web panel has no androidx.compose.material* import
+  ok   web panel is lint-clean
+
+§3.1 the regression guards are wired into preflight_lint
+  ok   a Material import is an error
+  ok   a Material Gradle coordinate is an error
+  ok   a prose mention of the ban is not an error
+  ok   a bare setContent is an error
+  ok   a PicoTheme-wrapped setContent is clean
+
+§6.1 the generated app entry keeps its PicoTheme wrap
+  ok   Main.kt imports PicoTheme
+  ok   Main.kt wraps the container content in PicoTheme
+  ok   Main.kt has no Material import
+
+§6.2 the skeleton manifest survives a container resize
+  ok   LaunchActivity declares android:configChanges
+  ok   configChanges carries PICO's nine flags
+  ok   the stage.immersion* keys are kept — they are DefaultStage's only immersion control (Stage.kt:29-56)
+  ok   immersion_min is 0 so a Progressive stage is actually adjustable (got 0)
+  ok   immersion range is a usable [min <= default <= max] with min < max (got [0, 100, 100])
+
+§2.3 generate_ecs_system_kotlin emits a valid Component + System pair
+  ok   spin: emits a Component + System pair (SpinComponent.kt, SpinSystem.kt)
+  ok   spin: System is a top-level @Keep class
+  ok   spin: Component is a top-level @Keep class
+  ok   spin: every ctor param has a default (public no-arg ctor exists)
+  ok   spin: clone() copies every field (declared enabled/degreesPerSecond, copied enabled/degreesPerSecond)
+  ok   spin: the EntityQueryCondition is hoisted to a field, not rebuilt per frame
+  ok   spin: overrides update(SceneUpdateContext) — System's only open member
+  ok   spin: reads scene fresh from the context (one System is ticked once per container)
+  ok   spin: never caches context.scene
+  ok   spin: scales motion by deltaTime (framerate-independent)
+  ok   spin: mutates the existing TransformComponent instead of replacing it per frame
+  ok   spin: does not emit EntityQueryCondition.custom (SDK KDoc typo; real name customCondition)
+  ok   spin: does not emit EntityQueryCondition.byName (does not exist)
+  ok   spin: does not emit reified hasComponent<T>() (only the Class<T> form exists)
+  ok   spin: does not emit setScale (the setter is setScaleVector)
+  ok   spin: does not emit setRotation (use setQuaternion/setEulerAngles)
+  ok   spin: does not emit TransformComponent.scale (the property is scaleVector)
+  ok   spin: does not emit Entity.name (getName() is a function, not a property)
+  ok   spin: does not emit System.onRegister (System has no such member)
+  ok   spin: does not emit queryEntityInto (no buffer-reuse overload exists)
+  ok   spin: does not emit clear()+addAll() (net-negative on 0.13.3 — queryEntity already allocated)
+  ok   spin: registration snippet pairs registerSystem with unregisterSystem
+  ok   spin: unregister happens in onDispose
+  ok   spin: emitted pair is lint-clean
+  ok   orbit: emits a Component + System pair (OrbitComponent.kt, OrbitSystem.kt)
+  ok   orbit: System is a top-level @Keep class
+  ok   orbit: Component is a top-level @Keep class
+  ok   orbit: every ctor param has a default (public no-arg ctor exists)
+  ok   orbit: clone() copies every field (declared enabled/center/radius/radiansPerSecond/angle, copied enabled/center/radius/radiansPerSecond/angle)
+  ok   orbit: the EntityQueryCondition is hoisted to a field, not rebuilt per frame
+  ok   orbit: overrides update(SceneUpdateContext) — System's only open member
+  ok   orbit: reads scene fresh from the context (one System is ticked once per container)
+  ok   orbit: never caches context.scene
+  ok   orbit: scales motion by deltaTime (framerate-independent)
+  ok   orbit: mutates the existing TransformComponent instead of replacing it per frame
+  ok   orbit: does not emit EntityQueryCondition.custom (SDK KDoc typo; real name customCondition)
+  ok   orbit: does not emit EntityQueryCondition.byName (does not exist)
+  ok   orbit: does not emit reified hasComponent<T>() (only the Class<T> form exists)
+  ok   orbit: does not emit setScale (the setter is setScaleVector)
+  ok   orbit: does not emit setRotation (use setQuaternion/setEulerAngles)
+  ok   orbit: does not emit TransformComponent.scale (the property is scaleVector)
+  ok   orbit: does not emit Entity.name (getName() is a function, not a property)
+  ok   orbit: does not emit System.onRegister (System has no such member)
+  ok   orbit: does not emit queryEntityInto (no buffer-reuse overload exists)
+  ok   orbit: does not emit clear()+addAll() (net-negative on 0.13.3 — queryEntity already allocated)
+  ok   orbit: registration snippet pairs registerSystem with unregisterSystem
+  ok   orbit: unregister happens in onDispose
+  ok   orbit: emitted pair is lint-clean
+  ok   bob: emits a Component + System pair (BobComponent.kt, BobSystem.kt)
+  ok   bob: System is a top-level @Keep class
+  ok   bob: Component is a top-level @Keep class
+  ok   bob: every ctor param has a default (public no-arg ctor exists)
+  ok   bob: clone() copies every field (declared enabled/base/amplitude/period/elapsed, copied enabled/base/amplitude/period/elapsed)
+  ok   bob: the EntityQueryCondition is hoisted to a field, not rebuilt per frame
+  ok   bob: overrides update(SceneUpdateContext) — System's only open member
+  ok   bob: reads scene fresh from the context (one System is ticked once per container)
+  ok   bob: never caches context.scene
+  ok   bob: scales motion by deltaTime (framerate-independent)
+  ok   bob: mutates the existing TransformComponent instead of replacing it per frame
+  ok   bob: does not emit EntityQueryCondition.custom (SDK KDoc typo; real name customCondition)
+  ok   bob: does not emit EntityQueryCondition.byName (does not exist)
+  ok   bob: does not emit reified hasComponent<T>() (only the Class<T> form exists)
+  ok   bob: does not emit setScale (the setter is setScaleVector)
+  ok   bob: does not emit setRotation (use setQuaternion/setEulerAngles)
+  ok   bob: does not emit TransformComponent.scale (the property is scaleVector)
+  ok   bob: does not emit Entity.name (getName() is a function, not a property)
+  ok   bob: does not emit System.onRegister (System has no such member)
+  ok   bob: does not emit queryEntityInto (no buffer-reuse overload exists)
+  ok   bob: does not emit clear()+addAll() (net-negative on 0.13.3 — queryEntity already allocated)
+  ok   bob: registration snippet pairs registerSystem with unregisterSystem
+  ok   bob: unregister happens in onDispose
+  ok   bob: emitted pair is lint-clean
+  ok   custom: emits a Component + System pair (BehaviourComponent.kt, BehaviourSystem.kt)
+  ok   custom: System is a top-level @Keep class
+  ok   custom: Component is a top-level @Keep class
+  ok   custom: every ctor param has a default (public no-arg ctor exists)
+  ok   custom: clone() copies every field (declared enabled, copied enabled)
+  ok   custom: the EntityQueryCondition is hoisted to a field, not rebuilt per frame
+  ok   custom: overrides update(SceneUpdateContext) — System's only open member
+  ok   custom: reads scene fresh from the context (one System is ticked once per container)
+  ok   custom: never caches context.scene
+  ok   custom: mutates the existing TransformComponent instead of replacing it per frame
+  ok   custom: does not emit EntityQueryCondition.custom (SDK KDoc typo; real name customCondition)
+  ok   custom: does not emit EntityQueryCondition.byName (does not exist)
+  ok   custom: does not emit reified hasComponent<T>() (only the Class<T> form exists)
+  ok   custom: does not emit setScale (the setter is setScaleVector)
+  ok   custom: does not emit setRotation (use setQuaternion/setEulerAngles)
+  ok   custom: does not emit TransformComponent.scale (the property is scaleVector)
+  ok   custom: does not emit Entity.name (getName() is a function, not a property)
+  ok   custom: does not emit System.onRegister (System has no such member)
+  ok   custom: does not emit queryEntityInto (no buffer-reuse overload exists)
+  ok   custom: does not emit clear()+addAll() (net-negative on 0.13.3 — queryEntity already allocated)
+  ok   custom: registration snippet pairs registerSystem with unregisterSystem
+  ok   custom: unregister happens in onDispose
+  ok   custom: emitted pair is lint-clean
+  ok   EntityQueryCondition.custom is an error
+  ok   registerSystem with no unregisterSystem is an error
+
+§1.4/§2.3 per-frame and per-event transform writes mutate, never replace
+  ok   SceneAnimator never constructs a TransformComponent per frame
+  ok   SceneAnimator writes position by mutation
+  ok   SceneAnimator writes rotation by mutation
+  ok   SceneAnimator uses scaleVector, not the nonexistent scale
+  ok   SceneAnimator no longer stamps identity rotation over other animations
+  ok   orbit writes position only, so it composes with spin
+  ok   spin writes rotation only, so it composes with orbit
+  ok   SceneAnimator's frame loop is cancellable (stop() + a loop condition, not while(true))
+  ok   fadeOpacity sets BlendingMode.TRANSPARENT (setOpacity on an opaque material is a no-op)
+  ok   there is a path back to OPAQUE
+  ok   ScenePhysics.launch is emitted
+  ok   launch() nudges by mutation — replacing the component would clobber rotation and scale
+  ok   launch() writes position in place
+
+§3.2 in-scene Compose panels, and the correction that unlocked them
+  ok   imports AttachmentPanelBuilder
+  ok   emits the attachments builder extension
+  ok   emits the seating helper
+  ok   one AttachmentPanel per requested panel
+  ok   the builder extension is well-formed
+  ok   panelSize is NOT called inside the attachments lambda (it is not a composable scope)
+  ok   panel sizes are hoisted into a @Composable
+  ok   uses the Dp overload of panelSize
+  ok   does not use the metres overload (it throws without LocalPhysicalLengthConverter)
+  ok   every attachment entity is explicitly added to the scene
+  ok   entity(id) is null-guarded (it returns Entity?)
+  ok   positions the attachment via TransformComponent
+  ok   does not replace the attachment's TransformComponent
+  ok   faceViewer uses LookAtComponent.setViewerAsTarget()
+  ok   never constructs or imports a BillboardComponent (no such type in 0.13.3)
+  ok   attachment content draws its own background (no container glass behind it)
+  ok   the entity lookup logs NULL vs ok rather than silently skipping
+  ok   panel content is wrapped in PicoTheme
+  ok   no Material import
+  ok   no hardcoded colour literals
+  ok   emitted attachment file is lint-clean
+  ok   the note distinguishes scene placement from world-locking
+  ok   the note names AnchorComponent as what world-locking would still need
+  ok   the note reports the evidence class it actually earned, with its ledger entry
+  ok   duplicate attachment ids are rejected (ids are map keys)
+  ok   a panel wider than MAX_PANEL_SIZE_DP=2048 is rejected rather than silently clamped
+
+§3.2 the shipped 'no world placement' claim is corrected everywhere it was published
+  ok   src/panelcompose.ts: the dead-end wording is gone
+  ok   src/panelcompose.ts: points at the route that actually works
+  ok   src/panelcompose.ts: still distinguishes scene placement from world-locking
+  ok   src/appspec.ts: the dead-end wording is gone
+  ok   src/appspec.ts: points at the route that actually works
+  ok   src/appspec.ts: still distinguishes scene placement from world-locking
+  ok   src/compiler.ts: the dead-end wording is gone
+  ok   src/compiler.ts: points at the route that actually works
+  ok   src/compiler.ts: still distinguishes scene placement from world-locking
+  ok   a 'world' request emits the real route in the generated source
+  ok   a 'world' request names the real route in the tool note
+  ok   the 'head-docked fallback' framing is gone from the note
+
+§3.3 multi-container apps open through the navigator
+  ok   exactly one mainApp
+  ok   exactly one Default* container — it is what the OS launches
+  ok   the secondary WindowContainer is declared with its id
+  ok   the secondary Stage is declared with its id
+  ok   Stage() is declared without a style parameter (it has none)
+  ok   immersion uses the Immersion(...) factory, not the internal class ctor
+  ok   the WindowContainer root carries windowConstraints
+  ok   a Stage-rooted app emits no windowConstraints (the scope does not provide it)
+  ok   a Stage-rooted app emits DefaultStage
+  ok   the generated DefaultStage composition carries pico.spatial.stage.id
+  ok   the generated DefaultStage composition carries pico.spatial.stage.style=1
+  ok   the generated DefaultStage composition carries no windowcontainer metadata
+  ok   an explicit openWindowContainer call is emitted
+  ok   an explicit openStage call is emitted
+  ok   the navigator comes from LocalSpatialNavigator
+  ok   the Stage open/close helper is emitted
+  ok   closeStage is NOT called from onDispose (the scope is already cancelled there — it would silently no-op)
+  ok   the Stage is closed on ON_PAUSE/ON_DESTROY, before disposal
+  ok   does not emit the unbacked manifest key pico.spatial.windowcontainer.style
+  ok   does not emit the unbacked manifest key pico.spatial.windowcontainer.worldscaletype
+  ok   does not emit the unbacked manifest key pico.spatial.windowcontainer.defaultsize
+  ok   container Main.kt is lint-clean
+  ok   a Stage-root app declaring one Stage is allowed AND warns that opening it stops the root rendering
+  ok   more than one secondary Stage is still refused (only one Stage is open at a time)
+  ok   an unrecognised root value is rejected rather than silently reinterpreted
+  ok   a secondary container's contentImport is emitted (without it the output does not compile)
+  ok   duplicate container ids are rejected (ids address the open/close calls)
+  ok   the note carries the emulator measurement
+  ok   the note cites the ledger entry
+
+§3.3 the v9.3 'own WindowContainer never opens' note is narrowed, not deleted
+  ok   src/panelcompose.ts: the unqualified absolute is gone
+  ok   src/panelcompose.ts: names the call that makes it open
+  ok   src/assemble.ts: the unqualified absolute is gone
+  ok   src/assemble.ts: names the call that makes it open
+
+§1.1 the mesh-collider rule states alignment, not un-queryability
+  ok   the mesh-collider rule still exists (retargeted, not deleted)
+  ok   it is a warning, not an error (measured queryable in BOTH provenances) — got warn
+  ok   the message leads with the measured result: mesh colliders ARE queryable
+  ok   the message still names the LOADED-asset case — now as measured, not suspect
+  ok   the message names the trap that actually bites
+  ok   the first refuted absolute is gone
+  ok   the second refuted claim — loaded-asset meshes untested/suspect — is gone from the message
+  ok   the fix warns that one ray at the entity origin returns NONE against a working collider
+  ok   src/collider.ts: cites the ledger entry that refuted it
+  ok   src/collider.ts: the first refuted absolute is gone
+  ok   src/collider.ts: no longer calls loaded-asset mesh colliders suspect
+  ok   src/surfaceplace.ts: cites the ledger entry that refuted it
+  ok   src/surfaceplace.ts: the first refuted absolute is gone
+  ok   src/surfaceplace.ts: no longer calls loaded-asset mesh colliders suspect
+  ok   rayCast without PhysicsWorldComponent is still an error
+
+§7 every generator that acquires a resource also releases it
+  ok   animationresource-never-closed is an error-level rule
+  ok   animationresource-never-closed is conditional — a file that DOES clean up stays clean
+  ok   assetbundle-never-closed is an error-level rule
+  ok   assetbundle-never-closed is conditional — a file that DOES clean up stays clean
+  ok   trackingmanager-never-stopped is an error-level rule
+  ok   trackingmanager-never-stopped is conditional — a file that DOES clean up stays clean
+  ok   subscription-never-cancelled is an error-level rule
+  ok   subscription-never-cancelled is conditional — a file that DOES clean up stays clean
+  ok   generate_tween_animation_kotlin emits no unpaired acquisition
+  ok   generate_orbit_animation_kotlin emits no unpaired acquisition
+  ok   generate_scene_animator_kotlin emits no unpaired acquisition
+  ok   generate_attachment_panel_kotlin emits no unpaired acquisition
+  ok   generate_bundle_lease_kotlin emits no unpaired acquisition
+  ok   generate_collider_kotlin emits no unpaired acquisition
+  ok   generate_container_app_kotlin emits no unpaired acquisition
+  ok   generate_data_binding_kotlin emits no unpaired acquisition
+  ok   generate_display_controllers_kotlin emits no unpaired acquisition
+  ok   generate_portal_kotlin emits no unpaired acquisition
+  ok   generate_ecs_system_kotlin emits no unpaired acquisition
+  ok   generate_environment_kotlin emits no unpaired acquisition
+  ok   generate_event_subscription_kotlin emits no unpaired acquisition
+  ok   generate_interactable_registry_kotlin emits no unpaired acquisition
+  ok   generate_interaction_kotlin emits no unpaired acquisition
+  ok   generate_layout_kotlin emits no unpaired acquisition
+  ok   generate_lighting_kotlin emits no unpaired acquisition
+  ok   generate_full_lighting_rig_kotlin emits no unpaired acquisition
+  ok   generate_ibl_kotlin emits no unpaired acquisition
+  ok   generate_particle_kotlin emits no unpaired acquisition
+  ok   generate_video_player_kotlin emits no unpaired acquisition
+  ok   generate_game_menu_kotlin emits no unpaired acquisition
+  ok   generate_panel_compose_kotlin emits no unpaired acquisition
+  ok   generate_rigidbody_kotlin emits no unpaired acquisition
+  ok   generate_anchor_kotlin emits no unpaired acquisition
+  ok   generate_spatial_audio_kotlin emits no unpaired acquisition
+  ok   generate_animation_kotlin emits no unpaired acquisition
+  ok   generate_persistent_anchor_kotlin emits no unpaired acquisition
+  ok   generate_scene_router_kotlin emits no unpaired acquisition
+  ok   generate_scene_understanding_kotlin emits no unpaired acquisition
+  ok   generate_skeletal_animation_kotlin emits no unpaired acquisition
+  ok   generate_spatial_gestures_kotlin emits no unpaired acquisition
+  ok   generate_subwindow_kotlin emits no unpaired acquisition
+  ok   generate_surface_placement_kotlin emits no unpaired acquisition
+  ok   generate_hand_input_kotlin emits no unpaired acquisition
+  ok   generate_tappable_detail_kotlin emits no unpaired acquisition
+  ok   generate_web_bridge_kotlin emits no unpaired acquisition
+  ok   every generate_*_kotlin tool is reachable by the sweep
+  ok   the sweep covers the whole codegen surface (swept 37)
+  ok   generate_tween_animation_kotlin retains the AnimationResource
+  ok   generate_tween_animation_kotlin stops playback BEFORE closing the resource
+  ok   generate_orbit_animation_kotlin retains the AnimationResource
+  ok   generate_orbit_animation_kotlin stops playback BEFORE closing the resource
+  ok   scene understanding pairs start() with stop() (battery/thermal cost on hardware otherwise)
+  ok   the plane retry loop logs TrackingState each attempt (turns '0 planes' into a diagnosis)
+  ok   data binding emits a dispose()
+  ok   dispose() closes every cached AssetBundle
+  ok   bundles are cached by path, not re-loaded per catalog item
+  ok   dispose() cancels in-flight loads before closing what they use
+  ok   a replaced placeholder Entity is destroyed, not stranded
+
+§7 the learned-lesson store is treated as untrusted input
+  ok   a malformed lessons store fires nothing (got )
+
+v35.9 every generator this wave added is REACHABLE, not just registered
+  ok   generate_ecs_system_kotlin is in CAPABILITY_MANIFEST (list_capabilities / the planner see it)
+  ok   generate_attachment_panel_kotlin is in CAPABILITY_MANIFEST (list_capabilities / the planner see it)
+  ok   generate_container_app_kotlin is in CAPABILITY_MANIFEST (list_capabilities / the planner see it)
+  ok   generate_ecs_system_kotlin is ROUTED by compile_app_spec (an agent can reach it by prompting)
+  ok   generate_attachment_panel_kotlin is ROUTED by compile_app_spec (an agent can reach it by prompting)
+  ok   generate_container_app_kotlin is ROUTED by compile_app_spec (an agent can reach it by prompting)
+  ok   the container step follows generate_app_wiring (5 -> 6)
+  ok   a 'scene' panel does not also emit a docked 2D Activity
+  ok   a 'world' panel still lowers to the dock path (world-locking needs AnchorComponent, still deferred)
+  ok   the 'world' ledger note points at the route that does work
+
+§4.1 mesh tracking is emitted, and nothing gates readiness on TrackingState
+  ok   mesh tracking is emitted via subscribeAnchorUpdate (the path PICO's own sample uses)
+  ok   startMesh is paired with a stopMesh that cancels the subscription AND stops the tracker
+  ok   subscription is set up BEFORE start()
+  ok   no retry loop gates on TrackingState.RUNNING (both trackers report RUNNING while returning 0)
+  ok   the mesh retry loop logs state, making a 0 diagnosable
+  ok   scene-understanding is lint-clean
+  ok   the 'do not claim mesh data works' absolute is retracted, not still asserted
+  ok   the retraction cites its ledger entry
+
+CP1B Agent Bridge scene snapshots are versioned, lossless, and file-only
+  ok   scene payload kind is a static exported protocol constant
+  ok   scene payload schema version is 1
+  ok   Agent Bridge scene protocol revision is the static revision 41
+  ok   scene coordinate-frame ID is pinned to bridge revision 41
+  ok   navigation guide owns a separate static revision-1 protocol
+  ok   navigation guide owns a separate command and nonce cache directory
+  ok   world locomotion owns a separate additive revision-1 capability without changing scene 41 or guide 1
+  ok   locomotion exports its nonce cache, reserved root telemetry ID, and three exact commands
+  ok   the first producer protocol pins saturated magenta/cyan and its support-fitting 0.74m by 0.44m outer frame
+  ok   tool metadata and host exports share one scene protocol version
+  ok   tool metadata and host exports share one navigation-guide protocol version
+  ok   tool metadata and host exports share the independent locomotion protocol and discovery commands
+  ok   generated AgentBridge embeds the same kind/schema/revision constants
+  ok   generated AgentBridge owns one query_scene_anchors command
+  ok   generated AgentBridge embeds the distinct guide kind/schema/revision/command
+  ok   generated AgentBridge exposes a separate typed navigation-guide producer lifecycle
+  ok   generated AgentBridge embeds the independent locomotion constants without revising scene or guide protocols
+  ok   the locomotion binding exposes data-only world, listener-fresh HMD, and result producer types
+  ok   registration owns an identity-root/HMD/locomotion binding under a generation token and serialized requests
+  ok   every producer registration mints one lowercase RFC-4122 v4 incarnation and root replacement preserves it
+  ok   commands, hmd_pose, and locomote are discoverable nonce-file operations that echo tag and request identity
+  ok   raw, release, non-Full, non-stage, rootless, and HMD-less bridge states fail locomotion capability closed
+  ok   locomote requires an exact revision, explicit mechanism, complete finite absolute target, and physicalWalk=false
+  ok   locomotion serializes producer calls, carries bounded direct-glide metadata, and rejects invalidated generations before and after mutation
+  ok   locomotion revision 1 couples execute to a guest lease and a mutex-independent cancellation barrier
+  ok   execute/cancel acknowledgement publication shares the lease lock and cannot resurrect a removed nonce
+  ok   commands and HMD acknowledgements remain generation-bound without requiring an execute/cancel lease
+  ok   locomotion retains identity-keyed terminal tombstones and one cached repeat-cancel outcome across producer replacement
+  ok   execute admission is lease-linearized before pathname deletion and an existing lease's original tuple wins over mutable binding
+  ok   commands and HMD admission cannot remove or republish a nonce once finalization starts
+  ok   cancel broadcast completion is a bounded asynchronous barrier that joins the exact producer before durable acknowledgement and finishes once
+  ok   finalization joins every prior nonce writer, atomically publishes one original-tuple fence, and permanently suppresses execute/cancel resurrection
+  ok   capability snapshots capture lifecycle generation while unregister remains independent of a long producer mutex
+  ok   generic move/remove reserve only the currently registered root by referential identity, never by name
+  ok   locomotion rejects malformed targets with nullable evidence rather than NaN/invented coordinates and publishes atomically
+  ok   malformed locomotion targets are rejected before capability availability is considered
+  ok   HMD and locomotion reject malformed or stale incarnation before invoking root/HMD/movement producers
+  ok   locomotion terminal acknowledgements write kind
+  ok   locomotion terminal acknowledgements write schemaVersion
+  ok   locomotion terminal acknowledgements write capabilityRevision
+  ok   locomotion terminal acknowledgements write requestId
+  ok   locomotion terminal acknowledgements write tag
+  ok   locomotion terminal acknowledgements write application
+  ok   locomotion terminal acknowledgements write operation
+  ok   locomotion terminal acknowledgements write requestControl
+  ok   locomotion terminal acknowledgements write executionLeaseMs
+  ok   locomotion terminal acknowledgements write mode
+  ok   locomotion terminal acknowledgements write target
+  ok   locomotion terminal acknowledgements write absolute
+  ok   locomotion terminal acknowledgements write glideDurationMs
+  ok   locomotion terminal acknowledgements write physicalWalk
+  ok   locomotion terminal acknowledgements write rootGenerationBefore
+  ok   locomotion terminal acknowledgements write root
+  ok   locomotion terminal acknowledgements write incarnation
+  ok   locomotion terminal acknowledgements write pose
+  ok   locomotion terminal acknowledgements write hmdPose
+  ok   locomotion terminal acknowledgements write outcome
+  ok   locomotion terminal acknowledgements write primaryError
+  ok   locomotion terminal acknowledgements write cleanupError
+  ok   each guest request receives a monotonic dispatch generation before its serialized coroutine runs
+  ok   guest guide requests serialize and check dispatch currency before/after producer mutation and before current ack publication
+  ok   a pre-mutex stale request is a no-op, while currency lost after producer entry cleans once and never publishes an obsolete ack
+  ok   a request retains its generation-matched producer cleanup while registration invalidates state atomically
+  ok   guest RGB parsing rejects missing or non-numeric tokens instead of compacting them into a valid palette
+  ok   the exported guide command is authenticated by the installed app's debuggable flag
+  ok   release initialization has no second unconditional navigation_guide registration
+  ok   guide terminal ack writes kind
+  ok   guide terminal ack writes schemaVersion
+  ok   guide terminal ack writes bridgeRevision
+  ok   guide terminal ack writes requestId
+  ok   guide terminal ack writes mode
+  ok   guide terminal ack writes sceneSnapshotId
+  ok   guide terminal ack writes targetTraceId
+  ok   guide terminal ack writes targetRuntimeUuid
+  ok   guide terminal ack writes pattern
+  ok   guide terminal ack writes projectionModel
+  ok   guide terminal ack writes colors
+  ok   guide terminal ack writes widthM
+  ok   guide terminal ack writes heightM
+  ok   guide terminal ack writes outcome
+  ok   guide terminal ack writes guideState
+  ok   guide terminal ack writes cleanupState
+  ok   guide terminal ack writes error
+  ok   guide acknowledgements publish atomically to their own nonce-addressed app-cache file
+  ok   guide acknowledgement serializes the exact producer decimal dimensions instead of Float-to-Double noise
+  ok   guest protocol rejects substituted identity/fiducial fields and requests stale-guide cleanup
+  ok   navigation-guide binding and acknowledgement data never fall back to logcat
+  ok   scene payload is request-addressed beneath the app cache
+  ok   payload publication is atomic temp-plus-rename on one filesystem
+  ok   payload bytes are flushed and fsynced before publication
+  ok   payload envelope carries build, observed stage, root, and stage-open identity
+  ok   unavailable build/stage/root identity is null and fails binding closed
+  ok   observed stage style reads the launcher-activity metadata shape emitted by the repo scaffold
+  ok   direct and provider Stage attachments have explicit lifecycle detach wiring
+  ok   provider binds application Context before making the command receiver reachable
+  ok   generated bridge writes typed terminal payloads for missing stage/producer/valid data
+  ok   AgentBridge never writes scene geometry to a log line
+  ok   the packaged AgentBridge skeleton is byte-identical to the generated default bridge
+  ok   the packaged AgentBridgeInitProvider skeleton is byte-identical to the generated default provider
+  ok   scene generator imports the explicitly selected Agent Bridge package
+  ok   scene generator exposes the one-line lossless producer registration
+  ok   scene integration names the identity-bearing stage-root overload
+  ok   one bridge producer starts a fresh tracking epoch and owns every readiness read
+  ok   concurrent bridge requests serialize their mesh-tracker epochs
+  ok   a failed tracker start is cleaned up, never retained as a live subscription
+  ok   each callback-based SDK mesh read is bounded by a timeout
+  ok   retained subscription anchors cannot satisfy a fresh bridge readiness read
+  ok   tracker setup failure becomes a typed terminal payload
+  ok   readiness requires consecutive unfiltered non-empty mesh reads
+  ok   producer performs no label filtering before readiness
+  ok   lossless producer writes runtimeUuid
+  ok   lossless producer writes worldFromAnchor
+  ok   lossless producer writes positionM
+  ok   lossless producer writes rotationQuaternionXyzw
+  ok   lossless producer writes boundsM
+  ok   lossless producer writes vertices
+  ok   lossless producer writes indices
+  ok   lossless producer writes semanticAssignments
+  ok   worldFromAnchor is the full SDK row-major 4x4 matrix
+  ok   producer refuses malformed triangle/xyz arrays instead of guessing
+  ok   raw semantic assignments preserve duplicates and SDK order
+  ok   every producer read carries monotonic time, tracking state, count, and read diagnostics
+  ok   the old MESH| diagnostic lane remains available for old tools
+  ok   transport fixture is much larger than a truncation-prone log line
+  ok   file/pull helper accepts an exact app-cache payload
+  ok   file/pull helper returns every payload byte losslessly
+  ok   the explicit absent-file marker is retried until the payload appears
+  ok   every adb subprocess is pinned to the exact requested serial
+  ok   broadcast carries the static command and transaction requestId
+  ok   payload is existence-guarded and read as exact bytes through the intended package's run-as path
+  ok   lossless transport never consults logcat
+  ok   file/pull helper returns broadcast, pull, and cleanup action receipts
+  ok   transport returns every byte of a present malformed payload without shape-scraping it
+  ok   a present malformed bridge file reaches the versioned host parser and terminates invalid_payload
+  ok   missing terminal file fails as bridge_unavailable
+  ok   unavailable payload records a failed pull with explicit timeout outcome
+  ok   ambiguous/non-exact serial input is refused before any adb call
+
+§2.6 skeletal animation, and the provenance rule that decides disposal
+  ok   the model load is the one call pushed to IO
+  ok   findSkinnedMeshEntity is NOT inside the IO block (it is @MainThread and would throw)
+  ok   getAnimationResources is NOT inside the IO block (it is @MainThread and would throw)
+  ok   playAnimation is NOT inside the IO block (it is @MainThread and would throw)
+  ok   stopAllAnimations is NOT inside the IO block (it is @MainThread and would throw)
+  ok   findSkinnedMeshEntity runs on the PARENT (it searches this entity AND its children)
+  ok   an empty skinned-mesh array is logged (a non-skinned GLB returns empty silently)
+  ok   clips are looked up BY NAME, not by a positional index into the GLB's clip order
+  ok   the positional form is bounds-checked
+  ok   stop() does NOT close model-owned clips
+  ok   switching clips does NOT close the previous one
+  ok   dispose() is the ONE place model-owned clips are closed
+  ok   dispose() also closes the repeat()-derived resources, which the app created
+  ok   every close() in the file is inside dispose() — none in stop(), none on clip switch
+  ok   exactly two close() calls: model-owned clips, and app-derived resources
+  ok   a failed playAnimation is logged, not swallowed
+  ok   the play-once/repeat() trap is stated in the emitted file
+  ok   skeletal output is lint-clean
+  ok   the never-closed rule does NOT fire on model-obtained clips (they are model-lifetime)
+  ok   the never-closed rule DOES fire on generated clips (you own those)
+  ok   a modelUri without a scheme is rejected
+
+§1.5 tap targets are TRIGGER_LITE, not physical obstacles
+  ok   generate_interaction_kotlin: tap target uses TRIGGER_LITE
+  ok   generate_interaction_kotlin: no COLLIDER_FULL on an interactable (that makes the card an invisible wall)
+  ok   generate_interaction_kotlin: the filter is scoped, not COLLISION_FILTER_DEFAULT (group 1u + mask ALL always pairs)
+  ok   generate_interaction_kotlin: emits an explicit CollisionFilter(group, mask)
+  ok   generate_interaction_kotlin is lint-clean
+  ok   generate_tappable_detail_kotlin: tap target uses TRIGGER_LITE
+  ok   generate_tappable_detail_kotlin: no COLLIDER_FULL on an interactable (that makes the card an invisible wall)
+  ok   generate_tappable_detail_kotlin: the filter is scoped, not COLLISION_FILTER_DEFAULT (group 1u + mask ALL always pairs)
+  ok   generate_tappable_detail_kotlin: emits an explicit CollisionFilter(group, mask)
+  ok   generate_tappable_detail_kotlin is lint-clean
+  ok   generate_spatial_gestures_kotlin: tap target uses TRIGGER_LITE
+  ok   generate_spatial_gestures_kotlin: no COLLIDER_FULL on an interactable (that makes the card an invisible wall)
+  ok   generate_spatial_gestures_kotlin: the filter is scoped, not COLLISION_FILTER_DEFAULT (group 1u + mask ALL always pairs)
+  ok   generate_spatial_gestures_kotlin: emits an explicit CollisionFilter(group, mask)
+  ok   generate_spatial_gestures_kotlin is lint-clean
+  ok   physics bodies are NOT demoted to TRIGGER_LITE (they must collide)
+  ok   an InteractableComponent with COLLIDER_FULL is an error
+
+P1-7 Augment-backed components are refused outside a WindowContainer
+  ok   tabBar in an 'ordinary' container is REFUSED (it would render nothing and only log)
+  ok   tabBar's refusal names WindowContainer as the fix
+  ok   toolbar in an 'ordinary' container is REFUSED (it would render nothing and only log)
+  ok   toolbar's refusal names WindowContainer as the fix
+  ok   sheet in an 'ordinary' container is still refused
+  ok   snackbarHost in an 'ordinary' container is still refused
+  ok   coachmark in an 'ordinary' container is still refused
+  ok   a plain card is still valid in an ordinary container (the gate is not over-broad)
+  ok   TabBar passes an explicit followViewpoints set
+  ok   ViewPoint comes from ui.platform (the type TabBar actually takes), not ui.foundation.content
+
+§5.3 the SDK event bus, and the preconditions that make handlers silently never fire
+  ok   subscriptions are held in a LIST (one Cancellable? silently leaks all but the last)
+  ok   unsubscribeAll cancels every subscription
+  ok   one subscribe call site per requested event
+  ok   the Exit handler is emitted
+  ok   the Exit handler reads no position/impulse/contacts (Exit carries entityA/entityB only)
+  ok   the Enter handler DOES read position
+  ok   the emitted file states that events fire only when a body is DYNAMIC (two statics fire nothing)
+  ok   it names the override for the static/kinematic case
+  ok   it states that event.contacts is empty under the default BRIEF detail level
+  ok   emits the direct class-literal form, not the smart-cast-dependent generic wrapper
+  ok   event file is lint-clean
+  ok   the event tool is in the manifest
+  ok   scenes[].physics.events routes to the event generator
+
+P1-7 SideNavigation encodes the missing-onClick trap
+  ok   no onClick on SideNavigationItem (it has no such parameter)
+  ok   clickability comes from a Modifier, as in PICO's sample
+  ok   imported from design, not design.windows
+  ok   Modifier is imported exactly once (a duplicate is a Kotlin 'ambiguous import' error)
+
+§1.2/1.3/1.6 physics: shared resources, expressive bodies, toggle-not-rebuild
+  ok   the physics material is hoisted to a single shared val
+  ok   physMat is no longer a per-call factory
+  ok   shapes are memoized
+  ok   meshes are memoized
+  ok   the helpers actually route through the caches
+  ok   bodies use the no-arg + .apply{} form PICO document
+  ok   inertia and centerOfMass are expressible
+  ok   isAffectedByGravity is expressible
+  ok   setDynamic toggles simulation on a live body
+  ok   disabling REMOVES the component (PICO's play loop)
+  ok   resetTo restores a pose
+  ok   resetTo mutates the transform in place
+  ok   resetWorld remains for structural rebuilds
+  ok   physics output is lint-clean
+  ok   flipping rigidBodyMode on an attached component is still an error
+  ok   setting the mode on a FRESH component is allowed (it is what the rule's own fix recommends)
+
+§6.6 bundle leases are owner-refcounted, and validity is re-checked
+  ok   leases are keyed by OWNER, not a bare count
+  ok   release is emitted
+  ok   release returns early while other owners remain (it must not free what the room still holds)
+  ok   the bundle is closed only on the LAST release
+  ok   AssetBundle.valid is re-checked before reuse
+  ok   concurrency uses a suspending Mutex
+  ok   not synchronized (it cannot span a suspension point)
+  ok   there is a teardown that closes everything
+  ok   bundle lease is lint-clean
+  ok   a bundle path without a scheme is rejected
+
+CP1 generated Full-stage world roots are movable without changing Mixed wiring
+  ok   Mixed world wiring is byte-identical to ce201e4
+  ok   Progressive world wiring is byte-identical to ce201e4
+  ok   Full-stage output mounts fixed AgentSpatialViewHost -> mutable AgentWorldRoot -> authored SceneRoot, including physics worlds
+  ok   Full-stage hierarchy adopts each created entity before fallible configuration/parenting and transactionally disposes setup failure
+  ok   Full-stage scene binding is a dynamic stage provider for the replaceable world root
+  ok   Full-stage output samples HMD updates through an owned listener with guest-derived sequence and age clocks
+  ok   HMD resume conservatively retains partial listener/provider ownership when compensating startup fails
+  ok   HMD acknowledgement timestamps the retained listener sample under the same lock so observedAt cannot overtake readAt
+  ok   Full-stage output starts or pauses HMD from current lifecycle state, observes transitions, and removes its observer before disposal
+  ok   Full-stage output retains the bridge generation token and unregisters that exact token
+  ok   direct mode is an explicit cancellable per-frame root glide on Main and never invokes input APIs
+  ok   replacement mode transfers every stable child, publishes the fresh absolute root/generation, then retires the empty old root
+  ok   replacement publication and rollback reconcile bridge root generation at the producer commit boundary
+  ok   Full-stage scene attachments and menu roots are parented beneath the current AgentWorldRoot
+  ok   Full-stage output adds only its fixed host directly to SpatialViewContent
+  ok   movable-root code only mutates app ECS content; platform Guardian/Home and physical-walk input remain outside its structural reach
+  ok   the unassembled style-3-capable scaffold remains honestly unregistered
+  ok   Full-stage disposal is idempotent and orders invalidation/glide cancel, exact unregister, provider detach, HMD stop, then one hierarchy destroy
+  ok   Full-stage disposal owns both initial entities before parenting and tears down unparented or recursively parented hierarchy states
+  ok   Mixed output carries no Full-stage locomotion/root/HMD symbols
+  ok   Mixed output retains direct content.addEntity(sceneRoot) parenting
+  ok   Mixed output retains the existing attachment call shape
+  ok   Mixed output retains the existing menu-root call shape
+  ok   Progressive output carries no Full-stage locomotion/root/HMD symbols
+  ok   Progressive output retains direct content.addEntity(sceneRoot) parenting
+  ok   Progressive output retains the existing attachment call shape
+  ok   Progressive output retains the existing menu-root call shape
+  ok   non-stage Full output carries no Full-stage locomotion/root/HMD symbols
+  ok   non-stage Full output retains direct content.addEntity(sceneRoot) parenting
+  ok   non-stage Full output retains the existing attachment call shape
+  ok   non-stage Full output retains the existing menu-root call shape
+  ok   default attachment-panel generation is byte-identical to ce201e4
+  ok   stage-neutral attachment generation retains only its ce201e4 SpatialViewContent route
+  ok   eligible Full wiring alone supplies the attachment-to-AgentWorldRoot helper
+  ok   Mixed world and attachment outputs carry no Full-stage root/HMD symbols
+  ok   Progressive world and attachment outputs carry no Full-stage root/HMD symbols
+  ok   non-stage Full world and attachment outputs carry no Full-stage root/HMD symbols
+  ok   Mixed Boundary Lab generation is byte-identical to ce201e4
+  ok   Full boundary panels gain Entity parenting while Mixed boundary seating keeps its existing call shape
+  ok   Mixed Boundary Lab output carries no Full-root helper or marker
+  ok   Full-stage capability activation occurs only after authored scene, attachments, and menu setup finish
+  ok   activation failure invalidates and immediately compensates its exact token/provider before retaining primary plus teardown evidence
+  ok   activation keeps provider/token ownership local until one atomic commit clears both claims, with no fallible post-transfer work
+  ok   activation compensation invalidates first, guards every teardown action, and returns bounded cleanup evidence
+  ok   replacement contains the whole rollback helper so no rollback exception can replace the mutation primary
+  ok   one rollback path guards every fallible probe/action before returning bounded cleanup evidence
+  ok   replacement completion reports structural TransformComponent readback rather than echoing the request
+  ok   replacement obtains fallible structural readback before irreversible old-root retirement
+  ok   bridge reconciles a completed producer generation before every post-producer lease-expiry return
+  ok   caller cancellation non-cancellably cancels/joins the owned glide before clearing/rethrow, while disposal cancels the same handle
+  ok   double disposal is a no-op after one token/provider/HMD/hierarchy ownership snapshot is consumed
+  ok   replacement retains the primary mutation failure when rollback also reports a cleanup failure
+  ok   disposal guards every step, aggregates/stores bounded errors, and makes them visible from onDispose
+  ok   Full Boundary Lab cleanup is consolidated into the one Full lifecycle without refactoring Mixed cleanup
+
+CP2 Swan Mission Table profile is room-aware, lifecycle-paired, and fleet-writable
+  ok   flagship brief validates
+  ok   room profile emits the existing scene-understanding primitive
+  ok   scene bridge/readiness code is generated before app wiring
+  ok   one shared Spin pair and one shared Orbit pair serve all engine-ticked entities
+  ok   the WALL_ART companion uses the existing in-scene AttachmentPanel surface
+  ok   Swan mission-table wiring is byte-identical across repeated generation
+  ok   typed wiring emits the core three files plus experience and attachment files
+  ok   Stage root is identity-bound and registers the revision-41 scene producer
+  ok   composition pairs mesh/job cleanup, ECS unregister, exact bridge detach, and recursive scene teardown
+  ok   scene attachment builder and entity seating are both wired
+  ok   broadcast validation routes to the same launch/pause/reset state functions as the panel
+  ok   only the debuggable Agent Bridge path registers the guide producer; public DEBUG_CMD routing cannot reach it
+  ok   scene disposal disables the guide, unregisters its producer, destroys entities, then releases resources
+  ok   mission guide dimensions surround the 0.68m by 0.42m authored footprint while fitting the measured Livingroom TABLE
+  ok   guide resources own opaque emissive pure saturated magenta and cyan materials
+  ok   the viewer-facing guide root is disabled before attachment or child creation, then receives two connected nested frames
+  ok   each color frame is one four-edge connected component with deterministic entity names
+  ok   guide bars lie in stable local X/Y with Z depth for the viewer-facing planar projection model
+  ok   show validation stays on Main, checks generation before and after mutation, and fails closed on stale target binding or undersized TABLE support
+  ok   mission producer independently rejects any palette, pattern, or dimension substitution
+  ok   explicit hide and failed requests both disable stale guide state before acknowledging
+  ok   lost/rematched TABLE support, lifecycle stop, and scene disposal all disable the guide
+  ok   guide materials share the existing reverse-order resource owner and close only after guide entities are destroyed
+  ok   every placement pass establishes unfiltered readiness before classifying labels from that snapshot
+  ok   one off-main classifier reads per-face semantics once per anchor for TABLE/FLOOR/WALL_ART
+  ok   the flagship does not rescan the full per-face semantic stream once per requested label
+  ok   room snapshot loading and semantic classification run off Android Main
+  ok   only the compact RoomMatch and its placement/Compose-state decisions cross back to Android Main
+  ok   every re-query iteration reaches one cancellable wait, including label-absent returns
+  ok   periodic polling sleeps and event storms are debounce-bounded rather than busy-looping
+  ok   mesh event pressure is conflated before the bounded re-query scheduler
+  ok   mission waiting has no blocking sleep, runBlocking, or unbounded bare loop
+  ok   native mesh/resource construction is dispatched away from Android Main
+  ok   meshes and materials are prepared off-main before bounded Main-thread entity attachment
+  ok   the Main-thread primitive helper only creates entities/components from prepared resources
+  ok   all generated meshes/materials have one retained ownership record
+  ok   PreparedResources owns the four native meshes plus materials and can close them
+  ok   partial or cancelled resource preparation closes local ownership before rethrowing
+  ok   ON_PAUSE cancels the label wait and stops mesh tracking
+  ok   ON_STOP cancels the label wait and stops mesh tracking
+  ok   foreground lifecycle resumes room matching against the current Stage root
+  ok   composition disposal removes the lifecycle observer before full experience teardown
+  ok   full teardown destroys every referencing entity before closing prepared meshes/materials
+  ok   pause cancels the job/scope/channel before releasing the mesh tracker
+  ok   lost unfiltered readiness clears stale placement claims and restores the explicit stage fallback
+  ok   WALL_ART selection remains live when TABLE is absent instead of falling back early
+  ok   TABLE wins whenever present, while FLOOR is the explicit label-absent fallback on every re-query
+  ok   FLOOR fallback remains visible at live floor height and clamps a deterministic forward X/Z pose
+  ok   FLOOR fallback never inherits the room-sized floor anchor centroid for X/Z
+  ok   TABLE and WALL_ART candidates tolerate declared geometry ranges instead of exact counts
+  ok   TABLE selection rejects non-horizontal, down-facing, and non-finite anchors
+  ok   WALL_ART selection follows the measured thin-Y/tall-Z anchor convention
+  ok   exact label pose and local surface-lift/scale live on separate owned roots
+  ok   WALL_ART offset is computed toward Stage origin before conversion into the panel host frame
+  ok   WALL_ART panel re-seating applies the same positional deadband as TABLE placement
+  ok   the attachment has one scene-graph owner and is detached before recursive root teardown
+  ok   runtime selection never indexes an anchor list or asserts a label count
+  ok   RESET restores transforms as well as ECS component phases
+  ok   Moon and spacecraft retain separate authored orbit phases
+  ok   elapsed mission time excludes paused wall-clock duration
+  ok   Stage disposal resets runtime clocks and UI before the owned root is destroyed
+  ok   one shared unit-sphere mesh avoids repeated native construction on the background build lane
+  ok   atmosphere explicitly uses transparent PBR blending, opacity, and disabled depth writes
+  ok   mission controls use SpatialUI Button/Text inside PicoTheme with no Material import
+  ok   mission panel id, dimensions, pose, title, and control labels derive from AppSpec metadata
+  ok   placement remains label-level and does not consume unverified triangle semantics
+  ok   bridge-owned tracker epochs preserve the app's mesh-update listener
+  ok   shared readiness returns the accepted unfiltered snapshot and never trusts RUNNING state
+  ok   mesh-read error handling rethrows coroutine cancellation instead of turning lifecycle stop into an empty read
+  ok   an individual mesh-read timeout remains a retryable empty observation instead of cancelling the lifecycle-owned re-query job
+  ok   foreground resume restarts a failed or completed re-query job even when its Supervisor scope remains active
+  ok   shared scene code can label-filter one accepted runtime snapshot without additional geometry loads
+  ok   fleet writes every record-shaped companion file beside the ledger target
+  ok   fleet refuses an entire companion-file record when any entry is malformed
+  ok   room profile refuses a non-Mixed Stage
+  ok   room profile refuses a missing in-scene mission panel
+  ok   room profile refuses a missing engine-spin lane
+  ok   room profile refuses missing mission control metadata
+  ok   room profile refuses panel fields the generator cannot represent
+
+Sample-conformance gate done. Failures: 0
+✔ recovery envelopes reserve every ordered fallback and keep force-stop compensation reachable (0.876167ms)
+✔ preparation waits eight seconds before both transition captures (0.085416ms)
+✔ continuity log scope discards pre-cursor generations but retains post-cursor faults (0.482583ms)
+✔ all four action schemas are strict and relational route/style contradictions fail before dependencies (3.738125ms)
+✔ receipt-bound effective AppSpec recheck hashes canonical JSON beneath its required storage newline (1.906458ms)
+✔ receipt-bound effective AppSpec regular-to-FIFO replacement cannot block before authoritative fstat (69.2365ms)
+✔ system-home preparation force-stops a user-installed Full-space incumbent without opening the Home dialog (0.522583ms)
+✔ system-home preparation never force-stops a system foreground and bounds stubborn user-app teardown (0.31875ms)
+✔ system-home preparation refuses an unowned third-party foreground before stopping it (0.124667ms)
+✔ system-home preparation distinguishes an attempted stop from a confirmed stop (0.11575ms)
+✔ resumed parser preserves legitimate multi-display packages and accepts explicit null state (0.336083ms)
+✔ third-party package classification is exact and rejects malformed pm output (0.327125ms)
+✔ prepare reserves one external run, publishes complete baseline review, and performs zero movement (10.242208ms)
+✔ prepare returns retained diagnostic frames and scrubs runtime state when a baseline is unsettled (7.450209ms)
+✔ a thrown live preparation failure returns and indexes every retained diagnostic frame (3.579291ms)
+✔ prepare refuses repository-contained, existing, and symlink-resolved artifact roots before collection (0.970875ms)
+✔ published logs redact raw capabilities and response image reads are hash-bound, PNG-only, and no-follow (10.1775ms)
+✔ secret-bearing log finalization sanitizes operation failures and deletes exact artifacts on collection failure (17.390041ms)
+✔ later actions reject a replaced run root before touching dependencies or attacker-owned files (7.440292ms)
+✔ only one state-changing call may operate on a run at a time (22.269ms)
+✔ step requires the exact prior reviewed hash, recaptures it, executes one immutable group, and emits no visual verdict (19.886167ms)
+✔ step refuses a reviewed hash whose retained PNG can no longer be revalidated (6.311875ms)
+✔ marker-window prior-frame drift retains a transition and executes zero movement (18.525583ms)
+✔ a hash-only initial drift pauses once, preserves both attempt artifacts, and resumes the same waypoint (48.053625ms)
+✔ a second unique initial-frame drift terminalizes after the persisted one-shot rebaseline (23.927958ms)
+✔ a bad preflight foreground cannot rebaseline even if a later sample is clean (18.037584ms)
+✔ a dynamic explicit-close probe event cannot rebaseline a hash-only frame drift (16.509292ms)
+✔ a non-dynamic truncated probe diagnostic resumes through the live movement predicate after hash-only rebaseline (25.519541ms)
+✔ zero-waypoint input uncertainty and action failure retain a transition frame, stop permanently, and cannot retry (35.731ms)
+✔ a post-movement evidence failure retains the frame as a non-gate transition (21.167625ms)
+✔ the app baseline cannot supply a terminal state, an inconclusive state, or a route gate (19.611209ms)
+✔ route adjudication is rejected until a reviewed terminal condition or completed movement exists (7.138875ms)
+✔ aggregate route budgets persist across staged step calls and cannot reset at the CP1 boundary (25.170875ms)
+✔ a route with less than the bounded live preflight envelope stops before waypoint dependencies (7.723958ms)
+✔ the bounded four-action outer gate remains reachable after five staged waypoint reviews (97.681583ms)
+✔ a same-process transition to system home remains an ejection candidate instead of becoming a binding mismatch (20.347791ms)
+✔ an attributed ANR dominates a live PID and looked pixels as app_lifecycle_loss (22.507834ms)
+✔ a dynamic probe sequence gap is sticky even if a later continuity sample says complete (24.552416ms)
+✔ route adjudication requires the complete exact review manifest and rejects duplicates or incompatible states (0.292208ms)
+✔ Section 7 outcome precedence preserves every failure and characterization class (0.2705ms)
+✔ dynamic open evidence requires the exact authenticated command-request-return ordering (0.044958ms)
+✔ normal activity recovery classifies accepted, ignored, and blocked am-start dispositions (0.159292ms)
+✔ recovery candidates require the exact bound process and the exact expected visual state (0.122125ms)
+✔ the live waypoint trace charges complete wall time once across preflight, movement, and finalization (0.082ms)
+✔ bounded capture identity attaches every handler, drains all probes, and rejects deterministically (154.095959ms)
+✔ live waypoint coverage markers bind a finalized retry health receipt exactly once and leave the next waypoint viable (0.847666ms)
+✔ adjudicate stores one immutable route result and never promotes its evidence ceiling automatically (25.801833ms)
+✔ canonical route scripts are deterministic and reject mutable or controller-synthesized groups (0.347584ms)
+✔ replay is fully cross-bound to one looked M0 run and preserves its route metadata (10.010834ms)
+✔ recovery has four bounded once-only branches and short-circuits at the first proven result (0.21525ms)
+✔ recover is once-only, route-adjudication-gated, and recovery pixels require a separate adjudication (47.911708ms)
+✔ F2 inserts reopen only from the current LOOKed observe Mixed root with a fresh exact binding (119.746291ms)
+✔ a visually rejected structural recovery candidate unlocks exactly the next fallback (39.5935ms)
+✔ an ignored normal launch can stop on recovered pixels without being mislabeled activity_relaunch (43.452667ms)
+✔ runtime-health failure prevents a dependency-claimed recovery from earning success (41.594458ms)
+✔ pre-intervention gap failures remain recorded without invalidating a healthy recovery operation (35.034416ms)
+✔ recovery is negative only from a LOOKed settled final post-frame; missing or unsettled posts stay inconclusive (215.710292ms)
+✔ a partial recovery dependency failure consumes the once-only attempt (28.943375ms)
+✔ recovery scrubs capability state before ownership failures can bypass terminal handling (50.332125ms)
+✔ the implementation imports the shared CP1 executor and registers exactly one full-only public tool (1.796666ms)
+✔ waypoint transition fallbacks use a distinct deterministic capture target (0.114959ms)
+✔ Boundary Lab materializes stable fleet identities, exact effective hashes, and one shared scene payload (3.010209ms)
+✔ Boundary Lab variants differ only through the reviewed matrix allowlist (0.591875ms)
+✔ Boundary Lab schema rejects contradictory routes, styles, containers, gates, axes, and sentinel text (1.372958ms)
+✔ materialization script accepts an injected writer and never needs the real user store in tests (1.619584ms)
+✔ Boundary Lab codegen emits a batched off-main enclosure and legible four-axis metre gates (1.04025ms)
+✔ F2 owns an authenticated idempotent direct-open route while release has no receiver, logs, or open (1.05425ms)
+✔ F2 uses the existing container lowering and does not invoke its automatic lifecycle helper (1.157584ms)
+✔ assembly adds Boundary Lab files and hooks without changing unrelated wiring or ledgers (2.822583ms)
+ℹ tests 69
+ℹ suites 0
+ℹ pass 69
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1512.303875
+exit=0

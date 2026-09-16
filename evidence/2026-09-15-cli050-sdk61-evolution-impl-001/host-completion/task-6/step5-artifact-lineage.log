@@ -1,0 +1,19 @@
+# step5 post-publish: all three 38.0.0 tarballs, and the two earlier ones re-verified byte-unchanged (2026-09-16T13:29:26Z)
+expected F1  941e402bb2c234c444e31c62c9bc9dc2c69055ac3aeee48c960e870e100f36d6
+expected FW1 c08e1a8baf2b850cae5bdd09eb259fab5270645dda3d635eeb1bc7cb51c435f5
+--- shasum -a 256 (actual) ---
+941e402bb2c234c444e31c62c9bc9dc2c69055ac3aeee48c960e870e100f36d6  ./pico-spatial-mcp-38.0.0.tgz
+c08e1a8baf2b850cae5bdd09eb259fab5270645dda3d635eeb1bc7cb51c435f5  ./final/pico-spatial-mcp-38.0.0.tgz
+ff394fbbcdf1828ea0745e3d7ad4fe931a2a46e7b910ea309f67c82c6858d042  ./host-completion/pico-spatial-mcp-38.0.0.tgz
+--- bytes ---
+2158783  ./pico-spatial-mcp-38.0.0.tgz
+2161859  ./final/pico-spatial-mcp-38.0.0.tgz
+2176424  ./host-completion/pico-spatial-mcp-38.0.0.tgz
+--- new receipt identities ---
+artifact.sha256 ff394fbbcdf1828ea0745e3d7ad4fe931a2a46e7b910ea309f67c82c6858d042
+artifact.bytes 2176424
+build.input {'sha256': 'bafeb2712c5b635d18a2a6a4523b41dc7a7eeee6e940bbe95c214822cd0628db', 'files': 197}
+build.output {'sha256': 'f4978b711f570efda70ef91f4a8c8157cadc231daab7ccc103909a36ee61c24d', 'files': 192}
+typescript 5.9.3 nodeMajor 25 platform {'os': 'darwin', 'arch': 'arm64', 'node': 'v25.8.1'}
+checks 48 {'pass': 48}
+exit=0
