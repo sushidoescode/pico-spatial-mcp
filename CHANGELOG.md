@@ -79,13 +79,83 @@ acceptance, and the same limit applies to every line here.
   staging rename and emits `dist/build-receipt.json`; `run-gate` refuses a gate whose `dist/` is
   stale; the plugin bootstrap rebuilds on source and dependency identity; smoke is hermetic; one
   inventory (`scripts/gate-inventory.mjs`) owns every gate and its CI lane; and every
-  fixture/installed-artifact gate child runs under `PICO_ADB=/fixture/no/such/adb` unless the
-  caller set one.
+  fixture/installed-artifact gate child runs under `PICO_ADB=/fixture/no/such/adb`, replacing
+  whatever the shell inherited — a real adb, an empty string and whitespace are all discarded,
+  never passed through. The one pass-through is `PICO_GATE_FIXTURE_ADB` naming an absolute
+  executable fake; anything else in that variable refuses the gate (exit 2) before a child
+  exists, a real adb included — an override whose realpath is an `adb` found in a directory on
+  the caller's PATH, or up to three levels under `$PICO_HOME` or `~/Library/PICO`, is refused the
+  same way, by filesystem reads alone. A blank value fails closed wherever it is read: `src/adb.ts`
+  refuses an explicit adb that names no file and probes nothing else, the doctor's adb row applies
+  the same rule instead of falling back to a PATH probe (so the emulator row cannot run
+  `adb devices`), and the native fleet receipt reader resolves through the adapter rather than
+  reading the variable as a string.
 - **`--publish` is add-only.** `scripts/verify-tarball.mjs --publish <file>` takes a file path,
   refuses to replace an existing artifact or receipt, and never prunes a directory.
 - **Shipped payload.** `data/sdk-compatibility` ships (a home-path-redacted derivative of
   `docs/SDK_6_0_0_DRIFT.md`, recorded as such), and vault lookups headline `target-verified` only
   on verified matches with explicit provenance.
+
+The entries below land in the same 38.0.0 line from the 2026-09-16 host-only completion pass.
+They carry the same evidence limit as everything above: fixture- and host-executed, never native,
+visual, device, cross-platform or end-to-end.
+
+- **Observation opens a marker window; nothing clears the device log.** `assert_scene`,
+  `probe_planes`, the copilot snapshot loop, `build_and_run`, `pico_loop`, `wait_for_log`,
+  `assert_logcat`'s `clearFirst` and the boundary experiment's prepare step all write one marker
+  line and read a bounded dump sliced after it. A marker that is not in the dump is INCONCLUSIVE —
+  never a match against the unscoped buffer. Wire contract: `assert_logcat` gains a `sinceMarker`
+  input and its result gains `serial`, `logWindow` and `status:"inconclusive"`; `clearFirst` opens
+  a window and erases nothing (kept for compatibility); `wait_for_log`'s matched result is now
+  JSON (`{matched, elapsedSec, serial, logWindow, lines}`) instead of prose; `build_and_run`'s
+  output gains required `serial` and `logWindow`. The one explicit destructive clear left,
+  `logcat clear:true`, now REQUIRES an explicit serial — no sole-device resolution stands in for a
+  named target on an irreversible operation.
+- **Bounded reads are sized per caller: `maxLines`.** `assert_logcat` and `wait_for_log` take an
+  optional `maxLines` (integer, 100..200000, default 20000); the module default stays 4000 for the
+  short tag-filtered reads. It bounds the WINDOWED read only — the one `clearFirst` opens or
+  `sinceMarker` names; an unwindowed read still dumps the whole buffer and the input is inert
+  there. `pico_loop` passes 50000 because it writes its marker BEFORE a multi-minute `fleet_build`;
+  `build_and_run` reads its settle-long correlation with 20000. logd applies `-t <n>` to the
+  selected buffers BEFORE the client-side tag filter, so a chatty device can evict the marker from
+  the tail: the result is then inconclusive (`pico_loop` maps it to `unmeasurable`), never a false
+  pass. `assert_logcat`'s inconclusive result additionally carries `maxLines` and
+  `dumps: {succeeded, lastError}`, so a dead adb is reported as the dump failure it is rather than
+  as log eviction. The eviction rate on a real PICO device is unmeasured.
+- **Canonical LOOK captures are retained, not overwritten.** `capture_canonical` and
+  `emulator_look` default to run-unique paths under the observation store instead of one fixed
+  shared file, so a new capture can never destroy the frame a previous LOOK judged. Their default
+  TARGET is unchanged this checkpoint.
+- **`--publish` has no replacing primitive left to reach for.** Where atomic non-replacing
+  publication (a hard link) is unavailable, `scripts/verify-tarball.mjs --publish` fails closed
+  with `PUBLISH_NO_ATOMIC_PUBLICATION`; the replacing-rename fallback is removed from the
+  publication IO itself, not merely unused.
+- **Build receipts gain `nodeMajor`; `verifyDependencies()` gains `provenance`.** Hidden-lockfile
+  adoption never crosses a Node major and never turns unknown provenance into a verified
+  installation identity: a receipt from another major, one with no readable `nodeMajor`, and one
+  that is present but unreadable or wrong-shaped all reinstall instead of adopting, and none of
+  them reports `npm-ci` provenance it did not earn. The same rule makes an `IDENTITY_SCHEMA_VERSION`
+  bump cost every host one `npm ci` instead of a free adoption — deliberate, and recorded here so
+  it is not rediscovered as a regression.
+- **`check_toolchain_updates` reports per-component `installed.selection`** (`{emulator, editor}`)
+  resolved through the same component-valid selection every other operation runs. A host whose
+  emulator and editor legitimately resolve to different installations is no longer misreported
+  through one shared field.
+- **Explicit device selection reaches the perf lane.** The `pico_perf` door accepts `device` and
+  forwards it; `perf_diagnose` and the door report `requestedDevice` on every outcome — success,
+  SKIP and failure — so the profiled target is named whether the caller chose it or the wrapper's
+  documented default did. That default (`DEFAULT_PERF_DEVICE`) is unchanged this checkpoint.
+- **`NativeFleetFailureStage` gains `adb-resolution`.** A new member of a persisted `…V1` receipt
+  union (type-only; no stored receipt changes shape). It is reachable only for callers that omit
+  `adbPath`; `fleet_build` passes `ADB()` eagerly, so its own throw remains the user-visible
+  refusal there.
+- **Two required gates are deterministic without weakened assertions.** `test:claims` builds a
+  fixture ledger through the real writer API and compares a byte-for-byte expected manifest; the
+  tracked-snapshot consistency checks are unchanged, the real ledgers and the public claims page
+  are untouched, and the live-ledger comparison is opt-in with `PICO_CLAIMS_LIVE_LEDGER=1` on the
+  ledger-owning machine. `test:runrevision`'s capacity children run under an explicit test-only
+  clock scale (`PICO_RUNLOCK_CHILD_CLOCK_SCALE`, read by `test/fixtures/runlock-child.mjs`)
+  instead of a wall-clock timing assumption; no production limit, budget or assertion changed.
 
 ## 37.0.0 — 2026-08-14
 
