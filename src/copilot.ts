@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { adb } from "./adb.js";
-import { LogWindowOpenError, openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
+import { LogWindowOpenError, openLogWindow, readLogWindow, unseenMarkerCause, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * copilot.ts — v25 THE LIVE AGENT COPILOT: talk to a RUNNING spatial app.
@@ -88,12 +88,18 @@ async function snapshot(serial: string, packageName: string, depth = 8): Promise
   await adb(["-s", serial, "shell", "am", "broadcast", "-a", `${packageName}.AGENT_CMD`, "--es", "cmd", "dump_scene", "--ei", "depth", String(depth)]);
   const deadline = Date.now() + 8000;
   let markerSeen = false;
+  let successfulDumps = 0;
+  let lastReadError: string | null = null;
   while (Date.now() < deadline) {
     let read: Awaited<ReturnType<typeof readLogWindow>> | null = null;
     try {
       read = await readLogWindow(runner, window, { tags: ["AgentBridge"], timeoutMs: 15_000 });
-    } catch {
-      read = null; // a failed dump is retried until the deadline
+      successfulDumps += 1;
+    } catch (e) {
+      // a failed dump is retried until the deadline — and remembered, so a dead adb is reported
+      // below as the dump failure it is, never as log eviction (unseenMarkerCause)
+      lastReadError = e instanceof Error ? e.message : String(e);
+      read = null;
     }
     if (read) {
       markerSeen = read.markerSeen;
@@ -124,7 +130,7 @@ async function snapshot(serial: string, packageName: string, depth = 8): Promise
   if (!markerSeen) {
     return {
       status: "inconclusive",
-      error: `the log window marker ${window.marker} was not seen in the bounded dump within 8s on ${serial} (evicted or never written); the buffer was not cleared — re-run`,
+      error: `the log window marker ${window.marker} was not seen within 8s on ${serial} (${unseenMarkerCause({ successfulDumps, lastReadError })}); the buffer was not cleared — re-run`,
       serial,
       logWindow,
     };

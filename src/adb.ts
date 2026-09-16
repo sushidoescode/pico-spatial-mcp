@@ -8,7 +8,7 @@ import { hostToolchainIO } from "./toolchain.js";
 import { executableCandidates } from "./picocli.js";
 import { executableNames, resolveRootCandidate, selectInstallation, type FileIdentity, type ToolchainIO } from "./toolchainselection.js";
 import { IdentityCache } from "./identitycache.js";
-import { LONG_POLL_LOG_WINDOW_MAX_LINES, LogWindowOpenError, logWindowFromMarker, openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
+import { LONG_POLL_LOG_WINDOW_MAX_LINES, LogWindowOpenError, logWindowFromMarker, openLogWindow, readLogWindow, unseenMarkerCause, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * THE one adb lookup (Task S4).
@@ -490,16 +490,22 @@ export function registerAdbTools(server: McpServer) {
       const deadline = start + timeoutSec * 1000;
       let lastTail = "";
       let markerSeen = false;
+      let successfulDumps = 0;
+      let lastReadError: string | null = null;
       const dumpArgs = ["-s", s, "logcat", "-d", ...(tag ? [`${tag}:V`, "*:S"] : [])];
       while (Date.now() < deadline) {
         let lines: string[] | null = null;
         if (window) {
           try {
             const read = await readLogWindow(runner, window, { tags: tag ? [tag] : undefined, maxLines: bound, timeoutMs: 30_000 });
+            successfulDumps += 1;
             markerSeen = read.markerSeen;
             lines = read.markerSeen ? read.lines : null; // no marker: nothing here is provably post-window
-          } catch {
-            lines = null; // a failed dump is retried until the deadline
+          } catch (e) {
+            // a failed dump is retried until the deadline — and remembered, so a dead adb is reported
+            // below as the dump failure it is, never as log eviction (unseenMarkerCause)
+            lastReadError = e instanceof Error ? e.message : String(e);
+            lines = null;
           }
         } else {
           const r = await adb(dumpArgs, 30_000);
@@ -532,7 +538,8 @@ export function registerAdbTools(server: McpServer) {
           serial: s,
           logWindow: { marker: window.marker, markerSeen: false },
           maxLines: bound,
-          hint: `The log window marker was never seen in the bounded dump (-t ${bound}; evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer. Re-open the window (clearFirst:true or a fresh sinceMarker), raise maxLines if the device is chatty, and re-run.`,
+          dumps: { succeeded: successfulDumps, lastError: lastReadError },
+          hint: `The log window marker was never seen (${unseenMarkerCause({ successfulDumps, lastReadError })}; bound -t ${bound}). The device log was NOT cleared and nothing was matched against the unscoped buffer. ${successfulDumps === 0 && lastReadError !== null ? `Check the adb connection to ${s}` : "Re-open the window (clearFirst:true or a fresh sinceMarker), raise maxLines if the device is chatty"}, and re-run.`,
         });
       }
       return okJson({

@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { fail, ok, okJson, run, sleep } from "./util.js";
 import { adbExecutable } from "./adb.js";
-import { LogWindowOpenError, openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
+import { LogWindowOpenError, openLogWindow, readLogWindow, unseenMarkerCause, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * generate_scene_understanding_kotlin — the CORRECT native surface-pin path (sense/plane).
@@ -594,14 +594,20 @@ export function registerSenseTools(server: McpServer) {
       let parsed: ReturnType<typeof parsePlaneMarkers> = null;
       let sawBridge = false;
       let markerSeen = false;
+      let successfulDumps = 0;
+      let lastReadError: string | null = null;
       while (Date.now() < deadline) {
         await sleep(1500);
         let read: Awaited<ReturnType<typeof readLogWindow>>;
         try {
           read = await readLogWindow(runner, window, { tags: [t, "AgentBridge"], timeoutMs: 15_000 });
-        } catch {
-          continue; // a failed dump is retried until the deadline
+        } catch (e) {
+          // a failed dump is retried until the deadline — and remembered, so a dead adb is reported
+          // below as the dump failure it is, never as log eviction (unseenMarkerCause)
+          lastReadError = e instanceof Error ? e.message : String(e);
+          continue;
         }
+        successfulDumps += 1;
         markerSeen = read.markerSeen;
         // No marker in the bounded tail: nothing here may be parsed — the lines are not provably
         // this call's. Keep polling; if it never appears the result below is inconclusive.
@@ -618,7 +624,7 @@ export function registerSenseTools(server: McpServer) {
           status: "inconclusive",
           serial: dev,
           logWindow,
-          error: `the log window marker ${window.marker} was not seen in the bounded dump within ${waitSec ?? 25}s on ${dev} (evicted or never written); the buffer was not cleared — re-run`,
+          error: `the log window marker ${window.marker} was not seen within ${waitSec ?? 25}s on ${dev} (${unseenMarkerCause({ successfulDumps, lastReadError })}); the buffer was not cleared — re-run`,
         }, null, 2));
       }
       if (!parsed) {

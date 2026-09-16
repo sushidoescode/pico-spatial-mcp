@@ -21,7 +21,9 @@ import { randomUUID } from "node:crypto";
  * bounded tail (or never written) — the read is INCONCLUSIVE. A caller reports
  * `{ serial, logWindow: { marker, markerSeen: false } }` with an inconclusive status and never
  * matches its pattern against the unscoped buffer instead. Every result also names the explicit
- * target (`serial`) the window was opened on.
+ * target (`serial`) the window was opened on. A dump that FAILS (readLogWindow throws) is retried
+ * until the site's deadline and remembered: if no dump ever succeeded, the site names that failure
+ * through `unseenMarkerCause` instead of calling the marker evicted — a dead adb is not eviction.
  *
  * `-t <count>` is applied by logd to the selected buffers BEFORE the client-side tag filter, so a
  * busy device can push the marker out of the tail even when the filtered output is short; that is
@@ -125,6 +127,22 @@ export async function readLogWindow(run: AdbRunner, window: LogWindow, opts: Rea
     throw new Error(`bounded log dump failed on ${window.serial} (exit ${result.code}): ${result.stderr.trim() || result.stdout.trim()}`);
   }
   return { ...sliceAfterMarker(result.stdout, window.marker), raw: result.stdout };
+}
+
+/**
+ * Why an unseen marker is inconclusive, for the hint a polling site reports. Eviction is a finding
+ * only when a dump actually succeeded without the marker. When every dump failed (adb server gone,
+ * device unplugged) nothing was ever looked for, so the failure is named and eviction is not
+ * claimed; a site that saw at least one successful dump keeps the eviction finding and appends the
+ * last failure, so a flapping connection stays visible too.
+ */
+export function unseenMarkerCause(reads: { successfulDumps: number; lastReadError: string | null }): string {
+  if (reads.successfulDumps === 0 && reads.lastReadError !== null) {
+    return `every dump failed: ${reads.lastReadError}; no dump succeeded, so nothing is known about the marker`;
+  }
+  const base = "evicted by log volume, or never written";
+  if (reads.lastReadError === null) return base;
+  return `${base}; the last dump also failed: ${reads.lastReadError} (${reads.successfulDumps} dump(s) succeeded without the marker)`;
 }
 
 /** The lines after the LAST line containing the marker; `markerSeen: false` (and no lines) when it is absent. */

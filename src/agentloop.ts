@@ -6,7 +6,7 @@ import { z } from "zod";
 import { expandHome, fail, ok, okJson, sleep, tail } from "./util.js";
 import { AVD_HOME } from "./toolchain.js";
 import { adb, resolveSerial } from "./adb.js";
-import { LONG_POLL_LOG_WINDOW_MAX_LINES, openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
+import { LONG_POLL_LOG_WINDOW_MAX_LINES, openLogWindow, readLogWindow, unseenMarkerCause, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * v0.3 — capabilities a self-running agent loop needs beyond raw observe/control:
@@ -165,15 +165,21 @@ export function registerAgentLoopTools(server: McpServer) {
       const deadline = started + timeoutSec * 1000;
       const filter = tag ? [`${tag}:V`, "*:S"] : [];
       let markerSeen = false;
+      let successfulDumps = 0;
+      let lastReadError: string | null = null;
       while (Date.now() < deadline) {
         let lines: string[] | null = null;
         if (window) {
           try {
             const read = await readLogWindow(runner, window, { tags: tag ? [tag] : undefined, maxLines: bound, timeoutMs: 20_000 });
+            successfulDumps += 1;
             markerSeen = read.markerSeen;
             lines = read.markerSeen ? read.lines : null; // no marker: nothing here is provably post-window
-          } catch {
-            lines = null; // a failed dump is retried until the deadline
+          } catch (e) {
+            // a failed dump is retried until the deadline — and remembered, so a dead adb is reported
+            // below as the dump failure it is, never as log eviction (unseenMarkerCause)
+            lastReadError = e instanceof Error ? e.message : String(e);
+            lines = null;
           }
         } else {
           const r = await adb(["-s", s, "logcat", "-d", ...filter], 20_000);
@@ -192,7 +198,8 @@ export function registerAgentLoopTools(server: McpServer) {
         await sleep(1000);
       }
       if (window && !markerSeen) {
-        return fail(`Inconclusive: the log window marker ${window.marker} was never seen on ${s} within ${timeoutSec}s in the bounded dump (-t ${bound}; evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer — raise maxLines if the device is chatty and re-run. status=inconclusive`);
+        const deadAdb = successfulDumps === 0 && lastReadError !== null;
+        return fail(`Inconclusive: the log window marker ${window.marker} was never seen on ${s} within ${timeoutSec}s (${unseenMarkerCause({ successfulDumps, lastReadError })}; bound -t ${bound}); the device log was NOT cleared and nothing was matched against the unscoped buffer — ${deadAdb ? "check the adb connection" : "raise maxLines if the device is chatty"} and re-run. status=inconclusive`);
       }
       return fail(`Timeout: /${pattern}/ not seen in ${timeoutSec}s on ${s}${window ? ` (log window ${window.marker}, markerSeen=true)` : ""}`);
     },

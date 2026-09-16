@@ -555,6 +555,111 @@ test("the long-poll bounds are named constants of the module, and build_and_run'
   assert.match(reads[0], /maxLines: LONG_POLL_LOG_WINDOW_MAX_LINES/, `build_and_run must read with the long-poll bound: ${reads[0]}`);
 });
 
+// ── a dead adb is a dump failure, not an eviction (fix wave FW1, Minor 1) ─────────────────────────
+// readLogWindow throws when the dump command itself fails, and every polling site retried until its
+// deadline while discarding that error — then blamed "evicted by log volume" for a marker no dump had
+// ever looked for. Each site now keeps the last dump error; when no dump succeeded it names the
+// failure and claims nothing about eviction, and when some dump did succeed the eviction finding
+// stands with the last failure appended. The fixture adb's `dumpFails` makes every dump exit 1.
+const DUMP_FAILURE = /every dump failed: .*fixture dump failure/;
+
+test("unseenMarkerCause blames eviction only when a dump actually succeeded", async () => {
+  const { unseenMarkerCause } = await import("../dist/logwindow.js");
+  const allFailed = unseenMarkerCause({ successfulDumps: 0, lastReadError: "bounded log dump failed on s (exit 1): dead adb" });
+  assert.match(allFailed, /every dump failed: bounded log dump failed on s \(exit 1\): dead adb/);
+  assert.doesNotMatch(allFailed, /evict/i, "no dump succeeded, so nothing is known about the marker");
+  const mixed = unseenMarkerCause({ successfulDumps: 3, lastReadError: "dead adb" });
+  assert.match(mixed, /evicted by log volume, or never written/);
+  assert.match(mixed, /last dump also failed: dead adb \(3 dump\(s\) succeeded without the marker\)/);
+  const clean = unseenMarkerCause({ successfulDumps: 2, lastReadError: null });
+  assert.equal(clean, "evicted by log volume, or never written");
+});
+
+test("assert_logcat names the dump failure when every poll's dump failed, instead of blaming eviction", async () => {
+  await withFakeAdb({ before: STALE_LOG, after: FRESH_LOG, dumpFails: true }, async (fake) => {
+    const { registerAdbTools } = await import("../dist/adb.js");
+    await withTools(registerAdbTools, async (client) => {
+      const out = jsonOf(await client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "APP_READY", clearFirst: true, timeoutSec: 1, pollMs: 200 } }));
+      assert.equal(out.matched, false, JSON.stringify(out));
+      assert.equal(out.status, "inconclusive");
+      assert.equal(out.serial, FIX);
+      assert.equal(out.logWindow?.markerSeen, false);
+      assert.match(out.hint, DUMP_FAILURE, out.hint);
+      assert.doesNotMatch(out.hint, /evicted/, "no dump succeeded, so eviction is not a finding");
+      assert.match(out.hint, /not cleared/i);
+      const argv = assertNoClear(fake);
+      assert.ok(argv.filter(isDump).length >= 2, "the dump is retried until the deadline");
+    });
+  });
+});
+
+test("assert_logcat keeps the eviction finding, with the last failure appended, when a dump did succeed", async () => {
+  await withFakeAdb({ before: STALE_LOG, after: FRESH_LOG, evict: true }, async (fake) => {
+    const { registerAdbTools } = await import("../dist/adb.js");
+    await withTools(registerAdbTools, async (client) => {
+      const pending = client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "APP_READY", clearFirst: true, timeoutSec: 2, pollMs: 200 } });
+      // Once the first (successful, marker-less) dump is on record, every later dump fails.
+      while (fake.readArgv().filter(isDump).length < 1) await new Promise((r) => setTimeout(r, 25));
+      fake.setScenario({ before: STALE_LOG, after: FRESH_LOG, evict: true, dumpFails: true });
+      const out = jsonOf(await pending);
+      assert.equal(out.status, "inconclusive", JSON.stringify(out));
+      assert.match(out.hint, /evicted by log volume, or never written/, out.hint);
+      assert.match(out.hint, /last dump also failed: .*fixture dump failure \(\d+ dump\(s\) succeeded without the marker\)/, out.hint);
+      assertNoClear(fake);
+    });
+  });
+});
+
+test("wait_for_log names the dump failure when every poll's dump failed, instead of blaming eviction", async () => {
+  await withFakeAdb({ before: STALE_LOG, after: FRESH_LOG, dumpFails: true }, async (fake) => {
+    const { registerAgentLoopTools } = await import("../dist/agentloop.js");
+    await withTools(registerAgentLoopTools, async (client) => {
+      const result = await client.callTool({ name: "wait_for_log", arguments: { serial: FIX, pattern: "APP_READY", timeoutSec: 1 } });
+      assert.equal(result.isError, true, textOf(result));
+      const text = textOf(result);
+      assert.match(text, /inconclusive/i);
+      assert.match(text, DUMP_FAILURE, text);
+      assert.doesNotMatch(text, /evicted/);
+      assert.match(text, /not cleared/i);
+      assertNoClear(fake);
+    });
+  });
+});
+
+test("probe_planes names the dump failure when every poll's dump failed, instead of blaming eviction", async () => {
+  await withFakeAdb({ before: STALE_PLANES, after: FRESH_PLANES, dumpFails: true }, async (fake) => {
+    const { registerSenseTools } = await import("../dist/sense.js");
+    await withTools(registerSenseTools, async (client) => {
+      const result = await client.callTool({ name: "probe_planes", arguments: { applicationId: "com.example.fixture", serial: FIX, waitSec: 3 } });
+      assert.equal(result.isError, true, textOf(result));
+      const out = JSON.parse(textOf(result));
+      assert.equal(out.status, "inconclusive");
+      assert.equal(out.serial, FIX);
+      assert.equal(out.logWindow?.markerSeen, false);
+      assert.match(out.error, DUMP_FAILURE, out.error);
+      assert.doesNotMatch(out.error, /evicted/);
+      assertNoClear(fake);
+    });
+  });
+});
+
+test("live_scene_snapshot names the dump failure when every poll's dump failed, instead of blaming eviction", async () => {
+  await withFakeAdb({ before: STALE_BRIDGE_DUMP, after: FRESH_BRIDGE_DUMP, dumpFails: true }, async (fake) => {
+    const { registerCopilotTools } = await import("../dist/copilot.js");
+    await withTools(registerCopilotTools, async (client) => {
+      const result = await client.callTool({ name: "live_scene_snapshot", arguments: { serial: FIX, packageName: "com.example.fixture" } });
+      const out = jsonOf(result);
+      assert.equal(out.status, "inconclusive", textOf(result));
+      assert.equal(out.serial, FIX);
+      assert.equal(out.logWindow?.markerSeen, false);
+      assert.match(out.error, DUMP_FAILURE, out.error);
+      assert.doesNotMatch(out.error, /evicted/);
+      assert.equal(out.entities, undefined, "no entities may be reported when nothing was read");
+      assertNoClear(fake);
+    });
+  });
+});
+
 // ── pico_loop (src/doors.ts) — through the door's dependency seam, no process ──
 async function withScratchHome(operation) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "pico-logwindow-home-"));
