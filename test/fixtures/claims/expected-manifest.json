@@ -1,0 +1,289 @@
+{
+  "apps": [
+    {
+      "app": "com.fixture.alpha",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "fixture: alpha compiles",
+          "evidenceType": "compiles",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "deviceFeature": null,
+          "deviceOutcome": null,
+          "reproHash": null,
+          "claimedEvidenceType": null,
+          "provenance": null,
+          "producerProvenance": null,
+          "deviceLineage": null
+        },
+        {
+          "seq": 1,
+          "claim": "fixture: alpha prints its startup line",
+          "evidenceType": "logcat",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "deviceFeature": null,
+          "deviceOutcome": null,
+          "reproHash": null,
+          "claimedEvidenceType": null,
+          "provenance": null,
+          "producerProvenance": null,
+          "deviceLineage": null
+        },
+        {
+          "seq": 2,
+          "claim": "fixture: alpha declares the spatial activity",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": "C1",
+          "deviceSerial": null,
+          "deviceFeature": null,
+          "deviceOutcome": null,
+          "reproHash": null,
+          "claimedEvidenceType": null,
+          "provenance": null,
+          "producerProvenance": null,
+          "deviceLineage": null
+        },
+        {
+          "seq": 3,
+          "claim": "fixture: alpha is built for a headset-only capability",
+          "evidenceType": "built_for_headset",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": "C3",
+          "deviceSerial": null,
+          "deviceFeature": null,
+          "deviceOutcome": null,
+          "reproHash": null,
+          "claimedEvidenceType": null,
+          "provenance": null,
+          "producerProvenance": null,
+          "deviceLineage": null
+        }
+      ]
+    },
+    {
+      "app": "com.fixture.beta",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "fixture: beta shows six cards",
+          "evidenceType": "vision_verified",
+          "attestation": "fixture attestation: the tracked golden frame stands in for a frame that was LOOKED at",
+          "artifact": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f.png",
+          "capture": {
+            "sha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 40728,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "deviceFeature": null,
+          "deviceOutcome": null,
+          "reproHash": "fixture-repro-0001",
+          "claimedEvidenceType": null,
+          "provenance": {
+            "status": "intact",
+            "expectedSha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f",
+            "actualSha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f"
+          },
+          "producerProvenance": null,
+          "deviceLineage": null
+        },
+        {
+          "seq": 1,
+          "claim": "fixture: beta panel is centered",
+          "evidenceType": "auto_judged",
+          "attestation": "fixture measurement summary: synthetic visual_judge receipt, no judge was run",
+          "artifact": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f.png",
+          "capture": {
+            "sha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 40728,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "deviceFeature": null,
+          "deviceOutcome": null,
+          "reproHash": null,
+          "claimedEvidenceType": null,
+          "provenance": {
+            "status": "intact",
+            "expectedSha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f",
+            "actualSha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f"
+          },
+          "producerProvenance": {
+            "status": "validated",
+            "kind": "visual_judge"
+          },
+          "deviceLineage": null
+        },
+        {
+          "seq": 2,
+          "claim": "fixture: beta asset renders off-device",
+          "evidenceType": "usd_host_render",
+          "attestation": "fixture measurement summary: synthetic renderer receipt, no Hydra render was run",
+          "artifact": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f.png",
+          "capture": {
+            "sha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 40728,
+            "format": "png"
+          },
+          "cClass": "C1",
+          "deviceSerial": null,
+          "deviceFeature": null,
+          "deviceOutcome": null,
+          "reproHash": null,
+          "claimedEvidenceType": null,
+          "provenance": {
+            "status": "intact",
+            "expectedSha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f",
+            "actualSha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f"
+          },
+          "producerProvenance": {
+            "status": "validated",
+            "kind": "render_usd_offscreen"
+          },
+          "deviceLineage": null
+        }
+      ]
+    },
+    {
+      "app": "com.fixture.gamma",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "fixture: gamma device row (synthetic schema fixture; no hardware was observed)",
+          "evidenceType": "device_verified",
+          "attestation": "fixture attestation: identity and screencap probes are injected; no device or adb was touched",
+          "artifact": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f.png",
+          "capture": {
+            "sha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 40728,
+            "format": "png"
+          },
+          "cClass": "C3",
+          "deviceSerial": "PA0000FIXTURE0001",
+          "deviceFeature": "controller_ray",
+          "deviceOutcome": "pass",
+          "deviceIdentity": {
+            "serial": "PA0000FIXTURE0001",
+            "model": "PICO schema fixture",
+            "fingerprint": "Pico/fixture/fixture:16/FIXTURE/1:user/release-keys",
+            "bootQemu": "",
+            "identitySource": "adb-live-probe",
+            "identityObservedAt": "<fixture-observed-at>",
+            "captureSource": "adb-exec-out-screencap",
+            "captureSha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f"
+          },
+          "reproHash": null,
+          "claimedEvidenceType": null,
+          "provenance": {
+            "status": "intact",
+            "expectedSha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f",
+            "actualSha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f"
+          },
+          "producerProvenance": null,
+          "deviceLineage": {
+            "status": "validated",
+            "serial": "PA0000FIXTURE0001",
+            "model": "PICO schema fixture",
+            "fingerprint": "Pico/fixture/fixture:16/FIXTURE/1:user/release-keys",
+            "bootQemu": "",
+            "identityClass": "pico-hardware-shaped",
+            "source": "adb-live-probe",
+            "observedAt": "<fixture-observed-at>",
+            "captureSource": "adb-exec-out-screencap",
+            "captureSha256": "d66c11c7152645339feb7957779c2004ce98d2ce349054d4d2d03fba5ae9027f"
+          }
+        },
+        {
+          "seq": 1,
+          "claim": "fixture: gamma row whose stored evidence was replaced",
+          "evidenceType": "provenance-broken",
+          "attestation": "fixture attestation: this row's content-addressed bytes are replaced on purpose so the read downgrades it",
+          "artifact": "457aadfa7d45e845d5eaa54200c9c62ad419013f9ae1328d5cb07fac76b92d41.png",
+          "capture": {
+            "sha256": "457aadfa7d45e845d5eaa54200c9c62ad419013f9ae1328d5cb07fac76b92d41",
+            "width": 64,
+            "height": 64,
+            "bytes": 12420,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "deviceFeature": null,
+          "deviceOutcome": null,
+          "reproHash": null,
+          "claimedEvidenceType": "vision_verified",
+          "provenance": {
+            "status": "mismatch",
+            "reason": "linked evidence no longer matches recorded capture metadata (expected sha256 457aadfa7d45e845d5eaa54200c9c62ad419013f9ae1328d5cb07fac76b92d41, read d4270cb3908ae3f796665c14721e6d14728d75ba314b01b5094ee8988359c537)",
+            "expectedSha256": "457aadfa7d45e845d5eaa54200c9c62ad419013f9ae1328d5cb07fac76b92d41",
+            "actualSha256": "d4270cb3908ae3f796665c14721e6d14728d75ba314b01b5094ee8988359c537"
+          },
+          "producerProvenance": null,
+          "deviceLineage": null
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "compiles": 1,
+    "logcat": 1,
+    "structural": 1,
+    "built_for_headset": 1,
+    "vision_verified": 1,
+    "auto_judged": 1,
+    "usd_host_render": 1,
+    "device_verified": 1,
+    "provenance-broken": 1
+  },
+  "deviceOutcomes": {
+    "pass": 1,
+    "fail": 0,
+    "unspecified": 0
+  },
+  "unreadableLedgers": [],
+  "evidenceMeaning": {
+    "device_verified": "a LOOKED-at capture whose bytes matched a fresh same-serial screencap after live PICO/non-emulator adb identity probes; the explicit pass/fail outcome determines whether it is positive proof or a negative finding",
+    "vision_verified": "an emulator frame that was actually LOOKED at (attestation + capture hash recorded)",
+    "auto_judged": "scored by the calibrated visual judge against expectations — no eye on this frame",
+    "usd_host_render": "verified via an off-device USD host render, not the PICO runtime",
+    "logcat": "asserted from runtime log evidence only",
+    "structural": "asserted from code/bundle structure only",
+    "compiles": "the code compiles; behavior unverified",
+    "built_for_headset": "built for real-hardware capability; awaiting device verification",
+    "provenance-broken": "the recorded image is missing or no longer matches its recorded hash; it is not visual proof"
+  },
+  "evidenceRank": [
+    "device_verified",
+    "vision_verified",
+    "auto_judged",
+    "usd_host_render",
+    "logcat",
+    "structural",
+    "compiles",
+    "built_for_headset",
+    "provenance-broken"
+  ]
+}
