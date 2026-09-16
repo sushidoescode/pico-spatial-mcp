@@ -1,0 +1,37 @@
+# step2 RED: node --test test/logwindow.mjs before src/logwindow.ts exists (2026-09-16T10:31:58Z)
+node:internal/modules/esm/resolve:271
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/dist/logwindow.js' imported from /Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:988:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:697:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:714:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:746:52)
+    at #resolve (node:internal/modules/esm/loader:679:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:599:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33)
+    at ModuleJob.link (node:internal/modules/esm/module_job:245:17) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/dist/logwindow.js'
+}
+
+Node.js v25.8.1
+✖ test/logwindow.mjs (24.000333ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 26.598083
+
+✖ failing tests:
+
+test at test/logwindow.mjs:1:1
+✖ test/logwindow.mjs (24.000333ms)
+  'test failed'
+exit=1

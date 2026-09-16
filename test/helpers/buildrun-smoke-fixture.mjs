@@ -76,6 +76,12 @@ if (!targeted) {
   record("fixture-adb-refused");
   process.stderr.write("fixture adb serves only " + SERIAL + ", not " + String(serial) + "\\n");
   process.exitCode = 1;
+} else if (op.includes("logcat") && op.includes("-c")) {
+  // TRIPWIRE: clearing the device's global log is never ordinary verification (host completion T4;
+  // Incident 3 of the CLI 0.5 checkpoint was ~20 such clears). Refused, recorded, exit 97.
+  record("fixture-adb-cleared-log");
+  process.stderr.write("FIXTURE VIOLATION: the global log was cleared: " + op.join(" ") + "\\n");
+  process.exitCode = 97;
 } else {
   record("fixture-adb");
   if (op.includes("install")) process.stdout.write("Success\\n");
@@ -85,8 +91,20 @@ if (!targeted) {
   } else if (op.includes("pidof")) {
     if (SCENARIO !== "dead-process") process.stdout.write("4242\\n");
     else process.exitCode = 1;
+  } else if (op[0] === "shell" && op[1] === "log") {
+    // A window marker write (\`log -t pico-mcp <marker>\`): recorded above, echoed back by the
+    // global dump below so the server's marker-correlated read sees exactly what it wrote.
   } else if (op.includes("--pid") && op.includes("logcat")) {
     process.stdout.write("I SpatialView: RenderEntity create texture success\\n");
+  } else if (op.includes("logcat")) {
+    // The global (window) dump: the markers this fixture was asked to write, in order, and nothing
+    // else — a marker never written is never echoed, so an unopened window reads as evicted.
+    const written = fs.existsSync(LOG)
+      ? fs.readFileSync(LOG, "utf8").split("\\n").filter(Boolean).map((line) => JSON.parse(line))
+        .filter((entry) => entry.kind === "fixture-adb" && entry.argv[2] === "shell" && entry.argv[3] === "log")
+        .map((entry) => entry.argv[entry.argv.length - 1])
+      : [];
+    process.stdout.write(written.map((marker) => "09-16 00:00:00.500     1     1 I pico-mcp: " + marker + "\\n").join(""));
   } else if (op.includes("exec-out") && op.includes("screencap")) {
     process.stdout.write(Buffer.from(${JSON.stringify(pngBase64)}, "base64"));
   }

@@ -2,11 +2,18 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, okJson, fail, sleep } from "./util.js";
 import { adbExecutable } from "./adb.js";
+import { LogWindowOpenError, openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * assert_scene — STRUCTURAL verification via the injected Agent Bridge. Broadcasts `dump_scene`,
  * reads the AGENTBRIDGE| markers from logcat, parses the live entity tree, and evaluates assertions
  * (entities present, min count, component types present, raw marker regex).
+ *
+ * Scoping (host completion T4, 2026-09-16): a MARKER WINDOW is opened before the broadcast and the
+ * dump is read back bounded and sliced to the lines after the marker (src/logwindow.ts). The device's
+ * global log is never cleared — the old clear here was one of the ~20 irreversible clears recorded as
+ * Incident 3 in docs/findings/CLI050_IMPLEMENTATION_CHECKPOINT.md. A marker that is not in the dump
+ * makes the call inconclusive (an error naming the marker), never a match against the unscoped buffer.
  *
  * Requires the app to have `generate_agent_bridge` injected + AgentBridge.attachScene(root) called.
  * HONESTY: this proves a thing EXISTS in the scene graph — NOT that it renders or looks right. Pair
@@ -57,7 +64,7 @@ export function registerAssertSceneTools(server: McpServer) {
         entitiesPresent: z.array(z.string()).optional().describe("Each name (substring match) must appear in the dump."),
         minEntities: z.number().int().optional().describe("Total entity count must be >= this."),
         componentsPresent: z.array(z.string()).optional().describe("Each component class name must appear on some entity."),
-        markers: z.array(z.string()).optional().describe("Each substring must appear in the CURRENT dump's AGENTBRIDGE| stream (logcat is cleared first, so launch-time events like scene_attached won't be here — use dump_end / entity names / your own per-dump markers)."),
+        markers: z.array(z.string()).optional().describe("Each substring must appear in the CURRENT dump's AGENTBRIDGE| stream (a marker window is opened before the dump and only lines after it count, so launch-time events like scene_attached won't be here — use dump_end / entity names / your own per-dump markers). The device log is never cleared."),
       },
     },
     async (args) => {
@@ -67,21 +74,43 @@ export function registerAssertSceneTools(server: McpServer) {
   );
 }
 
-/** Core of assert_scene — returns data ({pass,results,scene} or {error}). Shared with the verify orchestrator. */
+/** Core of assert_scene — returns data ({pass,results,scene,serial,logWindow} or {error,serial,logWindow}). Shared with the verify orchestrator. */
 export async function runAssertScene(args: any): Promise<any> {
       const adb = resolveAdb();
       const dev = args.serial ?? "emulator-5554";
       const tag = args.tag ?? "AgentBridge";
       const action = `${args.applicationId}.AGENT_CMD`;
-      await run(adb, ["-s", dev, "logcat", "-c"], { timeoutMs: 10_000 });
+      const runner: AdbRunner = (a, timeoutMs) => run(adb, a, { timeoutMs });
+      // The window opens BEFORE the broadcast that produces the dump, so a previous run's stream
+      // (still in the buffer — nothing is cleared) can never satisfy this call's assertions.
+      let window: LogWindow;
+      try {
+        window = await openLogWindow(runner, dev);
+      } catch (e) {
+        const marker = e instanceof LogWindowOpenError ? e.marker : null;
+        return {
+          error: `could not open a log window on ${dev}; nothing was driven or read: ${(e as Error).message}`,
+          serial: dev,
+          logWindow: marker ? { marker, markerSeen: false } : null,
+        };
+      }
       const bc = await run(adb, ["-s", dev, "shell", "am", "broadcast", "-a", action, "--es", "cmd", "dump_scene", "--ei", "depth", String(args.depth ?? 8)], { timeoutMs: 15_000 });
-      if (/error|not found/i.test(bc.stderr)) return { error: `broadcast failed: ${bc.stderr.slice(0, 300)}` };
+      if (/error|not found/i.test(bc.stderr)) return { error: `broadcast failed on ${dev}: ${bc.stderr.slice(0, 300)}`, serial: dev, logWindow: { marker: window.marker, markerSeen: false } };
       await sleep(1500);
-      const lc = await run(adb, ["-s", dev, "logcat", "-d", "-s", `${tag}:V`], { timeoutMs: 15_000 });
-      const { entities, count, raw } = parseDump(lc.stdout);
+      let read: Awaited<ReturnType<typeof readLogWindow>>;
+      try {
+        read = await readLogWindow(runner, window, { tags: [tag], timeoutMs: 15_000 });
+      } catch (e) {
+        return { error: `bounded log read failed on ${dev}: ${(e as Error).message}`, serial: dev, logWindow: { marker: window.marker, markerSeen: false } };
+      }
+      const logWindow = { marker: window.marker, markerSeen: read.markerSeen };
+      if (!read.markerSeen) {
+        return { error: `log window marker ${window.marker} was evicted before the dump was read on ${dev}; the buffer was not cleared, re-run`, serial: dev, logWindow };
+      }
+      const { entities, count, raw } = parseDump(read.lines.join("\n"));
 
       if (!raw.some((l) => l.includes("dump_") || l.includes("scene_attached"))) {
-        return { error: `No Agent Bridge dump seen on ${dev}. Is generate_agent_bridge injected, AgentBridge.attachScene(root) called, and the app running? (action=${action}, tag=${tag})` };
+        return { error: `No Agent Bridge dump seen on ${dev} inside the log window. Is generate_agent_bridge injected, AgentBridge.attachScene(root) called, and the app running? (action=${action}, tag=${tag})`, serial: dev, logWindow };
       }
 
       const results: { check: string; pass: boolean; detail?: string }[] = [];
@@ -109,6 +138,8 @@ export async function runAssertScene(args: any): Promise<any> {
         pass,
         results,
         scene: { entityCount: count ?? entities.length, entities: entities.slice(0, 40), componentsSeen: [...allComps] },
+        serial: dev,
+        logWindow,
         note: "STRUCTURAL truth (existence) only — confirm appearance with capture_frame / verify_visual.",
       };
 }

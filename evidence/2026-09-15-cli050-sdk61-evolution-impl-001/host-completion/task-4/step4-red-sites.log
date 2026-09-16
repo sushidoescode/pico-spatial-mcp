@@ -1,0 +1,395 @@
+# step4 RED: site fixtures against the unchanged sites (2026-09-16T10:37:27Z)
+✔ sliceAfterMarker returns only lines after the marker line (0.586167ms)
+✔ a missing marker is reported, never silently treated as an empty window (0.047042ms)
+✔ openLogWindow writes exactly one `log -t pico-mcp <marker>` and never a clear (0.82875ms)
+✔ readLogWindow always includes the marker tag in its filter and bounds the dump (0.105459ms)
+✖ assert_scene opens a window before its broadcast and matches only the dump inside it (1852.662458ms)
+✖ assert_scene reports an evicted marker as an inconclusive error, never as a dump (1611.8885ms)
+✖ assert_scene refuses when the window cannot be opened and reads no dump at all (1604.575084ms)
+✖ probe_planes opens a window before its broadcast and parses only the inventory inside it (1609.646833ms)
+✖ probe_planes reports an evicted marker as inconclusive instead of reading the stale inventory (1605.158958ms)
+✖ live_scene_snapshot opens a window before its dump_scene broadcast and returns only the fresh scene (119.802625ms)
+✖ live_scene_snapshot reports an evicted marker as inconclusive rather than parsing the stale dump (112.628167ms)
+✖ assert_logcat sinceMarker adopts a caller-written marker and matches only lines after it (55.987875ms)
+✖ assert_logcat clearFirst opens a marker window instead of clearing, and an evicted marker is inconclusive (80.671917ms)
+✖ the logcat tool's clear:true is the one destructive clear and requires an explicit serial (3.117042ms)
+✖ wait_for_log's default opens a marker window instead of clearing and reports the window it matched in (85.037583ms)
+✖ pico_loop writes a marker through adb_shell before the build and scopes every assert_logcat to it (13.589ms)
+✖ pico_loop treats an inconclusive (evicted-window) assert_logcat as unmeasurable, never as a fail to replan (1.546833ms)
+✖ the boundary prepare step opens a -b all window, writes its sidecar, and stops on an evicted marker (41.344708ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 4
+ℹ fail 14
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8880.994541
+
+✖ failing tests:
+
+test at test/logwindow.mjs:212:1
+✖ assert_scene opens a window before its broadcast and matches only the dump inside it (1852.662458ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'fixture-logwindow-serial'
+  
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:217:12
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:213:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'fixture-logwindow-serial',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:229:1
+✖ assert_scene reports an evicted marker as an inconclusive error, never as a dump (1611.8885ms)
+  AssertionError [ERR_ASSERTION]: {"pass":true,"results":[{"check":"entity present: crate","pass":true}],"scene":{"entityCount":1,"entities":[{"name":"crate","children":0,"comps":["CollisionComponent","TransformComponent"]}],"componentsSeen":["CollisionComponent","TransformComponent"]},"note":"STRUCTURAL truth (existence) only — confirm appearance with capture_frame / verify_visual."}
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:233:12
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:230:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:243:1
+✖ assert_scene refuses when the window cannot be opened and reads no dump at all (1604.575084ms)
+  AssertionError [ERR_ASSERTION]: {"pass":true,"results":[{"check":"dump received","pass":true}],"scene":{"entityCount":1,"entities":[{"name":"crate","children":0,"comps":["CollisionComponent","TransformComponent"]}],"componentsSeen":["CollisionComponent","TransformComponent"]},"note":"STRUCTURAL truth (existence) only — confirm appearance with capture_frame / verify_visual."}
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:247:12
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:244:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:265:1
+✖ probe_planes opens a window before its broadcast and parses only the inventory inside it (1609.646833ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'fixture-logwindow-serial'
+  
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:274:14
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:190:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:268:5
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:266:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'fixture-logwindow-serial',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:284:1
+✖ probe_planes reports an evicted marker as inconclusive instead of reading the stale inventory (1605.158958ms)
+  AssertionError [ERR_ASSERTION]: {
+    "device": "fixture-logwindow-serial",
+    "count": 2,
+    "retries": 3,
+    "planes": [
+      {
+        "idx": 0,
+        "label": "FLOOR",
+        "orientation": "HORIZONTAL",
+        "position": [
+          0,
+          0.4,
+          0
+        ],
+        "extent": [
+          4,
+          4
+        ]
+      },
+      {
+        "idx": 1,
+        "label": "WALL",
+        "orientation": "VERTICAL",
+        "position": [
+          0,
+          1.5,
+          -2
+        ],
+        "extent": [
+          3,
+          2.5
+        ]
+      }
+    ],
+    "note": "Live inventory (STRUCTURAL truth). retries=3 is the poll count the runtime needed — cold boots have measured ~7. FLOOR height here is the number to trust, never a constant."
+  }
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:289:14
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:190:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:287:5
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:285:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:301:1
+✖ live_scene_snapshot opens a window before its dump_scene broadcast and returns only the fresh scene (119.802625ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'fixture-logwindow-serial'
+  
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:310:14
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:190:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:304:5
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:302:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'fixture-logwindow-serial',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:320:1
+✖ live_scene_snapshot reports an evicted marker as inconclusive rather than parsing the stale dump (112.628167ms)
+  AssertionError [ERR_ASSERTION]: {
+    "status": "ok",
+    "rootName": "Root",
+    "entityCount": 1,
+    "entities": [
+      {
+        "name": "crate",
+        "depth": 1,
+        "pos": [
+          0.7,
+          1,
+          -2
+        ],
+        "comps": "CollisionComponent,TransformComponent"
+      }
+    ]
+  }
+  + actual - expected
+  
+  + 'ok'
+  - 'inconclusive'
+  
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:326:14
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:190:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:323:5
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:321:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'ok',
+    expected: 'inconclusive',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:340:1
+✖ assert_logcat sinceMarker adopts a caller-written marker and matches only lines after it (55.987875ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'fixture-logwindow-serial'
+  
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:349:14
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:190:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:345:5
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:341:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'fixture-logwindow-serial',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:362:1
+✖ assert_logcat clearFirst opens a marker window instead of clearing, and an evicted marker is inconclusive (80.671917ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:368:14
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:190:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:365:5
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:363:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:394:1
+✖ the logcat tool's clear:true is the one destructive clear and requires an explicit serial (3.117042ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /destructive/i. Input:
+  
+  'Clear the log buffer instead of dumping'
+  
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:400:14
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:190:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:397:5
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:395:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'Clear the log buffer instead of dumping',
+    expected: /destructive/i,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:418:1
+✖ wait_for_log's default opens a marker window instead of clearing and reports the window it matched in (85.037583ms)
+  SyntaxError: Unexpected token 'M', "Matched af"... is not valid JSON
+      at JSON.parse (<anonymous>)
+      at jsonOf (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:197:33)
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:424:19
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:190:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:421:5
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:419:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+
+test at test/logwindow.mjs:493:1
+✖ pico_loop writes a marker through adb_shell before the build and scopes every assert_logcat to it (13.589ms)
+  AssertionError [ERR_ASSERTION]: pico_loop cleared the global log: logcat -c
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:506:40
+      at async withScratchHome (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:465:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:494:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:519:1
+✖ pico_loop treats an inconclusive (evicted-window) assert_logcat as unmeasurable, never as a fail to replan (1.546833ms)
+  AssertionError [ERR_ASSERTION]: {
+    "status": "manual-repair-required",
+    "iterations": 1,
+    "briefId": "door633388",
+    "projectDir": "/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-logwindow-home-p1Xrq1/AndroidStudioProjects/fleet-door633388-native",
+    "scaffoldStarted": false,
+    "iterationsLog": [
+      {
+        "iteration": 1,
+        "outcomes": [
+          {
+            "kind": "logcat",
+            "status": "fail",
+            "detail": "no logcat match for 'APP_READY' within 20s"
+          }
+        ],
+        "capture": "/fixture/ledger/artifacts/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+        "receiptId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "receiptPath": "/fixture/run-receipts/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.json",
+        "ledger": "recorded"
+      }
+    ],
+    "capture": "/fixture/ledger/artifacts/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+    "receiptId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "receiptPath": "/fixture/run-receipts/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.json",
+    "failing": [
+      {
+        "kind": "logcat",
+        "status": "fail",
+        "detail": "no logcat match for 'APP_READY' within 20s"
+      }
+    ],
+    "fix": "No failing criterion maps to a retained lesson with a safe AppSpec mutation. Read failing[].detail and use pico_fix/the named profiler or assertion output to repair it manually, then re-call; the loop will not invent a build_failed mutation."
+  }
+  + actual - expected
+  
+  + 'manual-repair-required'
+  - 'unmeasurable-acceptance'
+  
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:529:14
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:190:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:523:5
+      at async withScratchHome (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:465:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:520:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'manual-repair-required',
+    expected: 'unmeasurable-acceptance',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:538:1
+✖ the boundary prepare step opens a -b all window, writes its sidecar, and stops on an evicted marker (41.344708ms)
+  TypeError: collectPreparationLogWindow is not a function
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:551:26)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+exit=1

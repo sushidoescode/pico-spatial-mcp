@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createInnerClientProvider, decodeDomainValue, domainValueText, isInnerToolError, type InnerClient, type InnerSession } from "./innerclient.js";
 import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
 import { hasSpatialNavigatorFullStageCall } from "./lint.js";
+import { LOG_WINDOW_TAG, newLogMarker } from "./logwindow.js";
 import { CANONICAL_APP_KEY_PATTERN, isPassingDeviceEvidence, isPassingDeviceEvidenceForReceipt, readLedger } from "./ledger.js";
 import {
   findHistoricalRunReceipt,
@@ -107,9 +108,11 @@ export function loopFailureSignature(outcomes: LoopCriterionOutcome[]): string {
     .join("|");
 }
 
-/** `assert_scene` clears logcat before requesting its Agent Bridge dump. Consume every launch-log
- * criterion first so a caller's criterion order cannot erase the evidence a later logcat assert
- * needs. The partition is stable within each group, keeping caller order everywhere it is safe. */
+/** Logcat criteria first, then the rest. The partition dates from when `assert_scene` cleared logcat
+ * before requesting its Agent Bridge dump (a later logcat assert would have lost its evidence);
+ * assert_scene now opens its own marker window and clears nothing (src/logwindow.ts), and the stable
+ * partition is kept so exit reports and callers see the same shape. Caller order is preserved
+ * within each group. */
 export function loopCriteriaInEvidenceSafeOrder<T extends Record<string, any>>(criteria: T[]): T[] {
   return [...criteria.filter((c) => c.kind === "logcat"), ...criteria.filter((c) => c.kind !== "logcat")];
 }
@@ -383,8 +386,11 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
   //     inner client directly, so a fixture that injected only `call` still spawned dist/index.js
   //     for them (the 2026-09-16 host-completion RED run: 14 of 16 doors reached a real inner
   //     server from inside the test process).
-  // With no `dependencies` at all (production), both lanes come from the shared inner client.
-  const injected: Partial<InnerLanes> | null = dependencies
+  // With no `dependencies` at all (production), both lanes come from the shared inner client. The
+  // test is `!== undefined`, not truthiness: TypeScript forbids a null here today, but an explicit
+  // null from an untyped caller must still read as "a fixture was given" and never take the
+  // production path.
+  const injected: Partial<InnerLanes> | null = dependencies !== undefined
     ? (dependencies.callRaw ? lanesOf(dependencies.callRaw, async () => {}) : { call: dependencies.call })
     : null;
   const seamError = (lane: "call" | "callRaw") => new Error(
@@ -912,8 +918,11 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       "through the fleet pipeline, machine-checks every criterion, and when a failure matches a " +
       "retained lesson with a concrete AppSpec mutation, applies replan_spec and iterates. Failures " +
       "without a safe automatic mutation exit manual-repair-required with their measured detail; the " +
-      "loop never relabels them build_failed or pretends an unattended fix occurred. Logcat criteria " +
-      "are evaluated before structural asserts because assert_scene clears logcat for its own dump. " +
+      "loop never relabels them build_failed or pretends an unattended fix occurred. Each iteration " +
+      "opens a marker window (adb_shell `log -t pico-mcp <marker>`) before its build and scopes every " +
+      "logcat criterion to it through assert_logcat's sinceMarker — the device log is never cleared, and " +
+      "a window whose marker is never seen makes that criterion unmeasurable, not failed. Logcat criteria " +
+      "are evaluated before structural asserts (a stable order kept from when assert_scene cleared logcat). " +
       "HONESTY CEILING BY EVIDENCE: a calibrated-eye PASS earns `auto_judged` only when the matching " +
       "ledger write succeeds; a measured PASS with a rejected/missing write remains `structural`. An iteration " +
       "whose requested structural/logcat/perf criteria pass while the eye FAILs, ESCALATEs, or is " +
@@ -976,7 +985,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       const id = briefIdOf(goal);
       const app = `com.fleet.${id}`;
       const projectDir = fleetProjectDirectory(id);
-      const iterationsLog: Array<{ iteration: number; outcomes: LoopCriterionOutcome[]; capture: string | null; receiptId: string | null; receiptPath: string | null; ledger: string }> = [];
+      const iterationsLog: Array<{ iteration: number; outcomes: LoopCriterionOutcome[]; capture: string | null; receiptId: string | null; receiptPath: string | null; ledger: string; logWindow: { marker: string } | null }> = [];
       const scaffoldStarted = draftSpec === undefined;
 
       // Criterion pre-flight: a misconfigured criterion must be rejected BEFORE the first
@@ -1025,11 +1034,17 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
         if (Date.now() - started > timeMs)
           return exit("budget-exhausted", i - 1, { failing: lastOutcomes.filter((o) => o.status !== "pass"), fix: `timeMin ${budget?.timeMin ?? 20} elapsed before acceptance — raise budget.timeMin/iterations or fix the failing criteria by hand (pico_fix names the next action), then re-call.` });
 
-        // Any logcat criterion: clear the buffer BEFORE the build/launch, so this iteration's
-        // assert can only match lines this iteration's app emitted (launch-time markers included).
-        // Asserting against an uncleared buffer false-PASSed on lines from a previous run.
-        if (acceptance.some((c: any) => c.kind === "logcat"))
-          await call("adb_shell", { command: "logcat -c" }).catch(() => {});
+        // Any logcat criterion: open a MARKER WINDOW before the build/launch (never a clear — the
+        // device's global log is not this loop's to erase; src/logwindow.ts), so this iteration's
+        // asserts can only match lines this iteration's app emitted (launch-time markers included).
+        // Asserting against an unscoped buffer false-PASSed on lines from a previous run. A failed
+        // marker write is not swallowed into a pass: assert_logcat never sees the marker and reports
+        // inconclusive, which the loop records as unmeasurable below.
+        let logMarker: string | null = null;
+        if (acceptance.some((c: any) => c.kind === "logcat")) {
+          logMarker = newLogMarker();
+          await call("adb_shell", { command: `log -t ${LOG_WINDOW_TAG} ${logMarker}` }).catch(() => {});
+        }
 
         writeUserBrief(id, { id, brief: goal, spec });
         const fleet = await call("fleet_build", { briefIds: [id], settleSec: 16 });
@@ -1058,8 +1073,9 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
               : "native receipt was recorded, but the verification route did not conclude"),
           });
         } else {
-          // assert_scene clears logcat for its isolated dump, so launch-log evidence must be
-          // consumed before any structural criterion regardless of the caller's array order.
+          // Logcat criteria first, then the rest (see loopCriteriaInEvidenceSafeOrder): the order
+          // dates from when assert_scene cleared logcat for its dump; it now opens its own window,
+          // and the stable partition is kept so exit reports and callers see the same shape.
           for (const c of loopCriteriaInEvidenceSafeOrder(acceptance)) {
             if (c.kind === "visual") {
               // Three-way, matching the eye's own vocabulary: PASS = auto_judged; FAIL = the eye
@@ -1084,11 +1100,17 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
               }
             } else if (c.kind === "logcat") {
               if (!c.pattern) { outcomes.push({ kind: "logcat", status: "unmeasurable", detail: "kind:'logcat' requires a pattern" }); continue; }
-              const l = await call("assert_logcat", { pattern: c.pattern, ...(c.tag ? { tag: c.tag } : {}), timeoutSec: c.timeoutSec ?? 20 });
+              const l = await call("assert_logcat", { pattern: c.pattern, ...(c.tag ? { tag: c.tag } : {}), timeoutSec: c.timeoutSec ?? 20, ...(logMarker ? { sinceMarker: logMarker } : {}) });
               if (l && typeof l === "object" && typeof l.matched === "boolean") {
-                outcomes.push(l.matched
-                  ? { kind: "logcat", status: "pass", detail: l.line }
-                  : { kind: "logcat", status: "fail", detail: `no logcat match for '${c.pattern}' within ${c.timeoutSec ?? 20}s` });
+                if (l.status === "inconclusive" || l.logWindow?.markerSeen === false) {
+                  // The window's marker was never seen in the bounded dump: the read is inconclusive,
+                  // not a measured miss — a replan would chase a failure nothing measured.
+                  outcomes.push({ kind: "logcat", status: "unmeasurable", detail: `log window inconclusive for '${c.pattern}': marker ${l.logWindow?.marker ?? logMarker} not seen in the bounded dump (evicted or never written; the device log was not cleared) — re-run` });
+                } else {
+                  outcomes.push(l.matched
+                    ? { kind: "logcat", status: "pass", detail: l.line }
+                    : { kind: "logcat", status: "fail", detail: `no logcat match for '${c.pattern}' within ${c.timeoutSec ?? 20}s` });
+                }
               } else {
                 // an inner isError (bad regex, no device) — the tool's own words, never a fabricated
                 // "no match" measurement that replanning would then chase.
@@ -1153,6 +1175,8 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
           receiptId: recordedReceipt?.receiptId ?? null,
           receiptPath: recordedReceipt?.receiptPath ?? null,
           ledger,
+          // the marker every logcat criterion of this iteration was scoped to (null: no logcat criterion)
+          logWindow: logMarker ? { marker: logMarker } : null,
         });
 
         const needsLook = outcomes.filter((o) => o.status === "needs-look");

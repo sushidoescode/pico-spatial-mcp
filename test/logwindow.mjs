@@ -44,3 +44,573 @@ test("readLogWindow always includes the marker tag in its filter and bounds the 
   assert.ok(calls[0].includes("AgentBridge:V") && calls[0].includes(`${LOG_WINDOW_TAG}:V`) && calls[0].includes("*:S"));
   assert.ok(!calls[0].includes("-c"));
 });
+
+// ── every replaced site, against a RECORDING fixture adb ─────────────────────────────────────────
+// The fake below is the only adb these cases can reach: process.env.PICO_ADB names it for the
+// duration of each case (src/adb.ts re-walks its candidate chain on every call, so the override is
+// observed immediately and restored afterwards). It records every argv, records every window
+// marker it is asked to write and echoes those markers back inside its dumps, answers broadcasts,
+// refuses untargeted commands (no `devices`: every site must name its serial), and trips — exit 97
+// plus a violations record — on any `logcat … -c`, which is the command this task removes.
+import os from "node:os";
+import path from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
+const FIX = "fixture-logwindow-serial";
+const FAKE_ADB_SOURCE = `#!/usr/bin/env node
+import fs from "node:fs";
+const args = process.argv.slice(2);
+const env = process.env;
+fs.appendFileSync(env.PICO_LOGWINDOW_FAKE_ARGV, JSON.stringify(args) + "\\n");
+const scenario = JSON.parse(fs.readFileSync(env.PICO_LOGWINDOW_FAKE_SCENARIO, "utf8"));
+const markersPath = env.PICO_LOGWINDOW_FAKE_MARKERS;
+const markers = fs.existsSync(markersPath) ? fs.readFileSync(markersPath, "utf8").split("\\n").filter(Boolean) : [];
+if (args.includes("logcat") && args.includes("-c")) {
+  if (scenario.allowClear) process.exit(0);
+  fs.appendFileSync(env.PICO_LOGWINDOW_FAKE_VIOLATIONS, JSON.stringify(args) + "\\n");
+  process.stderr.write("FIXTURE VIOLATION: the global log was cleared\\n");
+  process.exit(97);
+}
+if (args[0] !== "-s" || !args[1]) {
+  process.stderr.write("fixture adb refuses untargeted command: " + args.join(" ") + "\\n");
+  process.exit(98);
+}
+const op = args.slice(2);
+if (op[0] === "shell" && op[1] === "log") {
+  if (scenario.openFails) { process.stderr.write("log: fixture write failure\\n"); process.exit(1); }
+  fs.appendFileSync(markersPath, op[op.length - 1] + "\\n");
+  process.exit(0);
+}
+if (op[0] === "logcat") {
+  if (scenario.dumpFails) { process.stderr.write("logcat: fixture dump failure\\n"); process.exit(1); }
+  const out = [...(scenario.before ?? [])];
+  if (!scenario.evict) for (const m of markers) out.push("09-16 00:00:00.500     1     1 I pico-mcp: " + m);
+  out.push(...(scenario.after ?? []));
+  process.stdout.write(out.join("\\n") + "\\n");
+  process.exit(0);
+}
+if (op[0] === "shell" && op[1] === "am" && op[2] === "broadcast") {
+  process.stdout.write("Broadcasting: Intent { act=fixture }\\nBroadcast completed: result=0\\n");
+  process.exit(0);
+}
+process.stderr.write("fixture adb: unmodelled command: " + args.join(" ") + "\\n");
+process.exit(2);
+`;
+
+async function withFakeAdb(scenario, operation) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pico-logwindow-adb-"));
+  const fake = path.join(dir, "fake-adb.mjs");
+  fs.writeFileSync(fake, FAKE_ADB_SOURCE, { mode: 0o755 });
+  fs.chmodSync(fake, 0o755);
+  const files = {
+    argv: path.join(dir, "argv.jsonl"),
+    markers: path.join(dir, "markers.txt"),
+    scenario: path.join(dir, "scenario.json"),
+    violations: path.join(dir, "violations.jsonl"),
+  };
+  fs.writeFileSync(files.scenario, JSON.stringify(scenario));
+  const previous = {
+    PICO_ADB: process.env.PICO_ADB,
+    PICO_LOGWINDOW_FAKE_ARGV: process.env.PICO_LOGWINDOW_FAKE_ARGV,
+    PICO_LOGWINDOW_FAKE_MARKERS: process.env.PICO_LOGWINDOW_FAKE_MARKERS,
+    PICO_LOGWINDOW_FAKE_SCENARIO: process.env.PICO_LOGWINDOW_FAKE_SCENARIO,
+    PICO_LOGWINDOW_FAKE_VIOLATIONS: process.env.PICO_LOGWINDOW_FAKE_VIOLATIONS,
+  };
+  process.env.PICO_ADB = fake;
+  process.env.PICO_LOGWINDOW_FAKE_ARGV = files.argv;
+  process.env.PICO_LOGWINDOW_FAKE_MARKERS = files.markers;
+  process.env.PICO_LOGWINDOW_FAKE_SCENARIO = files.scenario;
+  process.env.PICO_LOGWINDOW_FAKE_VIOLATIONS = files.violations;
+  const readLines = (file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean) : []);
+  const handle = {
+    readArgv: () => readLines(files.argv).map((line) => JSON.parse(line)),
+    readMarkers: () => readLines(files.markers),
+    violations: () => readLines(files.violations),
+    seedMarker: (marker) => fs.appendFileSync(files.markers, `${marker}\n`),
+    setScenario: (next) => fs.writeFileSync(files.scenario, JSON.stringify(next)),
+    reset: () => { for (const file of [files.argv, files.markers, files.violations]) fs.rmSync(file, { force: true }); },
+  };
+  try {
+    return await operation(handle);
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const isOpen = (argv) => argv[2] === "shell" && argv[3] === "log" && argv[4] === "-t" && argv[5] === LOG_WINDOW_TAG;
+const isDump = (argv) => argv[2] === "logcat";
+const isBroadcast = (argv) => argv[2] === "shell" && argv[3] === "am" && argv[4] === "broadcast";
+
+/** The claim every site must satisfy: no recorded argv contains `logcat` followed by `-c`, and the tripwire never fired. */
+function assertNoClear(fake) {
+  const argv = fake.readArgv();
+  for (const call of argv) {
+    const at = call.indexOf("logcat");
+    assert.ok(!(at >= 0 && call.slice(at + 1).includes("-c")), `a global log clear was attempted: ${call.join(" ")}`);
+  }
+  assert.deepEqual(fake.violations(), [], "the fixture adb's clear tripwire fired");
+  return argv;
+}
+
+/** Every dump must be bounded (-d, -t <n>); a tag-filtered dump must admit the marker tag beside the
+ * site's own tags and silence the rest, while a tagless window read carries no filter at all (a
+ * `pico-mcp:V *:S` filter there would hide the very lines being awaited). */
+function assertBoundedWindowDumps(argv, ...tags) {
+  const dumps = argv.filter(isDump);
+  assert.ok(dumps.length > 0, "no dump was read");
+  for (const dump of dumps) {
+    assert.ok(dump.includes("-d"), `dump must not block: ${dump.join(" ")}`);
+    const t = dump.indexOf("-t");
+    assert.ok(t > 0 && Number(dump[t + 1]) > 0, `dump must be line-bounded: ${dump.join(" ")}`);
+    const filtered = dump.some((a) => /:[VDIWEFS]$/.test(a));
+    if (tags.length || filtered) {
+      assert.ok(dump.includes(`${LOG_WINDOW_TAG}:V`) && dump.includes("*:S"), `a filtered dump must admit the marker tag: ${dump.join(" ")}`);
+    }
+    for (const tag of tags) assert.ok(dump.includes(`${tag}:V`), `dump must admit ${tag}: ${dump.join(" ")}`);
+  }
+  return dumps;
+}
+
+function assertOpenPrecedesBroadcast(argv) {
+  const open = argv.findIndex(isOpen);
+  const broadcast = argv.findIndex(isBroadcast);
+  assert.ok(open >= 0, "no window was opened");
+  assert.ok(broadcast >= 0, "no broadcast was sent");
+  assert.ok(open < broadcast, "the window must open BEFORE the action that produces the lines");
+}
+
+async function withTools(register, operation) {
+  const server = new McpServer({ name: "logwindow-fixture", version: "0.0.0" });
+  register(server);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "logwindow-fixture", version: "0.0.0" });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  try {
+    return await operation(client);
+  } finally {
+    await client.close();
+  }
+}
+
+const textOf = (result) => result.content?.map((c) => c.text ?? "").join("\n") ?? "";
+const jsonOf = (result) => JSON.parse(result.content[0].text);
+
+const bridgeLine = (body) => `09-16 00:00:01.000  8531  8531 I AgentBridge: AGENTBRIDGE| ${body}`;
+const STALE_BRIDGE_DUMP = [
+  bridgeLine("event=dump_begin root=Root"),
+  bridgeLine("event=entity d=1 name=stale_from_previous_run children=0 pos=0.0,0.0,0.0 comps=TransformComponent"),
+  bridgeLine("event=dump_end entities=1"),
+];
+const FRESH_BRIDGE_DUMP = [
+  bridgeLine("event=dump_begin root=Root"),
+  bridgeLine("event=entity d=1 name=crate children=0 pos=0.7,1.0,-2.0 comps=CollisionComponent,TransformComponent"),
+  bridgeLine("event=dump_end entities=1"),
+];
+
+// ── assert_scene ──
+test("assert_scene opens a window before its broadcast and matches only the dump inside it", async () => {
+  await withFakeAdb({ before: STALE_BRIDGE_DUMP, after: FRESH_BRIDGE_DUMP }, async (fake) => {
+    const { runAssertScene } = await import("../dist/assertscene.js");
+    const fresh = await runAssertScene({ applicationId: "com.example.fixture", serial: FIX, entitiesPresent: ["crate"] });
+    assert.equal(fresh.pass, true, JSON.stringify(fresh));
+    assert.equal(fresh.serial, FIX);
+    assert.equal(fresh.logWindow?.markerSeen, true);
+    assert.deepEqual(fake.readMarkers(), [fresh.logWindow.marker], "exactly the reported marker was written");
+    const stale = await runAssertScene({ applicationId: "com.example.fixture", serial: FIX, entitiesPresent: ["stale_from_previous_run"] });
+    assert.equal(stale.pass, false, "an entity dumped BEFORE the window must not satisfy the assertion");
+    const argv = assertNoClear(fake);
+    assertOpenPrecedesBroadcast(argv);
+    assert.equal(argv.filter(isOpen).length, 2, "one window per call");
+    assertBoundedWindowDumps(argv, "AgentBridge");
+  });
+});
+
+test("assert_scene reports an evicted marker as an inconclusive error, never as a dump", async () => {
+  await withFakeAdb({ before: STALE_BRIDGE_DUMP, after: FRESH_BRIDGE_DUMP, evict: true }, async (fake) => {
+    const { runAssertScene } = await import("../dist/assertscene.js");
+    const result = await runAssertScene({ applicationId: "com.example.fixture", serial: FIX, entitiesPresent: ["crate"] });
+    assert.ok("error" in result, JSON.stringify(result));
+    assert.match(result.error, /evicted/);
+    assert.match(result.error, /not cleared/);
+    assert.equal(result.serial, FIX);
+    assert.equal(result.logWindow?.markerSeen, false);
+    assert.equal(result.logWindow?.marker, fake.readMarkers()[0]);
+    assertNoClear(fake);
+  });
+});
+
+test("assert_scene refuses when the window cannot be opened and reads no dump at all", async () => {
+  await withFakeAdb({ after: FRESH_BRIDGE_DUMP, openFails: true }, async (fake) => {
+    const { runAssertScene } = await import("../dist/assertscene.js");
+    const result = await runAssertScene({ applicationId: "com.example.fixture", serial: FIX });
+    assert.ok("error" in result, JSON.stringify(result));
+    assert.match(result.error, /log window/);
+    assert.equal(result.serial, FIX);
+    const argv = assertNoClear(fake);
+    assert.equal(argv.filter(isDump).length, 0, "no dump may be read without a window");
+    assert.equal(argv.filter(isBroadcast).length, 0, "no action is driven without a window");
+  });
+});
+
+// ── probe_planes ──
+const planesLine = (body) => `09-16 00:00:02.000  8531  8531 I SceneUnderstanding: PLANES| ${body}`;
+const STALE_PLANES = [planesLine("count=1 retries=0"), planesLine("idx=0 label=STALE orient=HORIZONTAL pos=0,0,0 bbox=1,1")];
+const FRESH_PLANES = [
+  planesLine("count=2 retries=3"),
+  planesLine("idx=0 label=FLOOR orient=HORIZONTAL pos=0,0.4,0 bbox=4,4"),
+  planesLine("idx=1 label=WALL orient=VERTICAL pos=0,1.5,-2 bbox=3,2.5"),
+];
+
+test("probe_planes opens a window before its broadcast and parses only the inventory inside it", async () => {
+  await withFakeAdb({ before: STALE_PLANES, after: FRESH_PLANES }, async (fake) => {
+    const { registerSenseTools } = await import("../dist/sense.js");
+    await withTools(registerSenseTools, async (client) => {
+      const result = await client.callTool({ name: "probe_planes", arguments: { applicationId: "com.example.fixture", serial: FIX, waitSec: 3 } });
+      assert.equal(result.isError, undefined, textOf(result));
+      const out = jsonOf(result);
+      assert.equal(out.count, 2);
+      assert.deepEqual(out.planes.map((p) => p.label), ["FLOOR", "WALL"]);
+      assert.equal(out.serial, FIX);
+      assert.equal(out.logWindow?.markerSeen, true);
+      assert.deepEqual(fake.readMarkers(), [out.logWindow.marker]);
+    });
+    const argv = assertNoClear(fake);
+    assertOpenPrecedesBroadcast(argv);
+    assertBoundedWindowDumps(argv, "SceneUnderstanding", "AgentBridge");
+  });
+});
+
+test("probe_planes reports an evicted marker as inconclusive instead of reading the stale inventory", async () => {
+  await withFakeAdb({ before: STALE_PLANES, after: FRESH_PLANES, evict: true }, async (fake) => {
+    const { registerSenseTools } = await import("../dist/sense.js");
+    await withTools(registerSenseTools, async (client) => {
+      const result = await client.callTool({ name: "probe_planes", arguments: { applicationId: "com.example.fixture", serial: FIX, waitSec: 3 } });
+      assert.equal(result.isError, true, textOf(result));
+      const out = JSON.parse(textOf(result));
+      assert.equal(out.status, "inconclusive");
+      assert.equal(out.serial, FIX);
+      assert.equal(out.logWindow?.markerSeen, false);
+      assert.equal(out.logWindow?.marker, fake.readMarkers()[0]);
+    });
+    assertNoClear(fake);
+  });
+});
+
+// ── live_scene_snapshot (copilot) ──
+test("live_scene_snapshot opens a window before its dump_scene broadcast and returns only the fresh scene", async () => {
+  await withFakeAdb({ before: STALE_BRIDGE_DUMP, after: FRESH_BRIDGE_DUMP }, async (fake) => {
+    const { registerCopilotTools } = await import("../dist/copilot.js");
+    await withTools(registerCopilotTools, async (client) => {
+      const result = await client.callTool({ name: "live_scene_snapshot", arguments: { serial: FIX, packageName: "com.example.fixture" } });
+      assert.equal(result.isError, undefined, textOf(result));
+      const out = jsonOf(result);
+      assert.equal(out.status, "ok");
+      assert.deepEqual(out.entities.map((e) => e.name), ["crate"]);
+      assert.equal(out.serial, FIX);
+      assert.equal(out.logWindow?.markerSeen, true);
+      assert.deepEqual(fake.readMarkers(), [out.logWindow.marker]);
+    });
+    const argv = assertNoClear(fake);
+    assertOpenPrecedesBroadcast(argv);
+    assertBoundedWindowDumps(argv, "AgentBridge");
+  });
+});
+
+test("live_scene_snapshot reports an evicted marker as inconclusive rather than parsing the stale dump", async () => {
+  await withFakeAdb({ before: STALE_BRIDGE_DUMP, after: FRESH_BRIDGE_DUMP, evict: true }, async (fake) => {
+    const { registerCopilotTools } = await import("../dist/copilot.js");
+    await withTools(registerCopilotTools, async (client) => {
+      const result = await client.callTool({ name: "live_scene_snapshot", arguments: { serial: FIX, packageName: "com.example.fixture" } });
+      const out = jsonOf(result);
+      assert.equal(out.status, "inconclusive", textOf(result));
+      assert.equal(out.serial, FIX);
+      assert.equal(out.logWindow?.markerSeen, false);
+      assert.equal(out.entities, undefined, "no entities may be reported from an unscoped buffer");
+    });
+    assertNoClear(fake);
+  });
+});
+
+// ── assert_logcat / logcat (src/adb.ts) ──
+const fixtureLine = (stamp, body) => `09-16 00:00:0${stamp}.000     2     2 I Fixture: ${body}`;
+const STALE_LOG = [fixtureLine(0, "STALE_READY")];
+const FRESH_LOG = [fixtureLine(3, "APP_READY")];
+
+test("assert_logcat sinceMarker adopts a caller-written marker and matches only lines after it", async () => {
+  await withFakeAdb({ before: STALE_LOG, after: FRESH_LOG }, async (fake) => {
+    const marker = "pico-mcp-window-preseeded-by-caller";
+    fake.seedMarker(marker);
+    const { registerAdbTools } = await import("../dist/adb.js");
+    await withTools(registerAdbTools, async (client) => {
+      const hit = jsonOf(await client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "APP_READY", sinceMarker: marker, timeoutSec: 1, pollMs: 200 } }));
+      assert.equal(hit.matched, true, JSON.stringify(hit));
+      assert.match(hit.line, /APP_READY/);
+      assert.equal(hit.serial, FIX);
+      assert.deepEqual(hit.logWindow, { marker, markerSeen: true });
+      const miss = jsonOf(await client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "STALE_READY", sinceMarker: marker, timeoutSec: 1, pollMs: 200 } }));
+      assert.equal(miss.matched, false, "a line logged BEFORE the marker must not match");
+      assert.notEqual(miss.status, "inconclusive");
+      assert.deepEqual(miss.logWindow, { marker, markerSeen: true });
+      const argv = assertNoClear(fake);
+      assert.equal(argv.filter(isOpen).length, 0, "an adopted marker is not re-written");
+      assertBoundedWindowDumps(argv);
+
+      // A tag filter must still admit the marker tag, or the window could never be confirmed.
+      fake.reset();
+      fake.seedMarker(marker);
+      const tagged = jsonOf(await client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "APP_READY", tag: "Fixture", sinceMarker: marker, timeoutSec: 1, pollMs: 200 } }));
+      assert.equal(tagged.matched, true, JSON.stringify(tagged));
+      assertBoundedWindowDumps(assertNoClear(fake), "Fixture");
+    });
+  });
+});
+
+test("assert_logcat clearFirst opens a marker window instead of clearing, and an evicted marker is inconclusive", async () => {
+  await withFakeAdb({ before: STALE_LOG, after: FRESH_LOG }, async (fake) => {
+    const { registerAdbTools } = await import("../dist/adb.js");
+    await withTools(registerAdbTools, async (client) => {
+      const hit = jsonOf(await client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "APP_READY", clearFirst: true, timeoutSec: 1, pollMs: 200 } }));
+      assert.equal(hit.matched, true, JSON.stringify(hit));
+      assert.equal(hit.logWindow?.markerSeen, true);
+      assert.deepEqual(fake.readMarkers(), [hit.logWindow.marker]);
+      let argv = assertNoClear(fake);
+      assert.equal(argv.filter(isOpen).length, 1);
+      assertBoundedWindowDumps(argv);
+
+      fake.reset();
+      fake.setScenario({ before: STALE_LOG, after: FRESH_LOG, evict: true });
+      const evicted = jsonOf(await client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "APP_READY", clearFirst: true, timeoutSec: 1, pollMs: 200 } }));
+      assert.equal(evicted.matched, false, JSON.stringify(evicted));
+      assert.equal(evicted.status, "inconclusive");
+      assert.equal(evicted.serial, FIX);
+      assert.equal(evicted.logWindow?.markerSeen, false);
+      argv = assertNoClear(fake);
+
+      fake.reset();
+      fake.setScenario({ before: STALE_LOG, after: FRESH_LOG });
+      const unscoped = jsonOf(await client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "STALE_READY", timeoutSec: 1, pollMs: 200 } }));
+      assert.equal(unscoped.matched, true, "without a window the whole buffer is still the (compatible) scope");
+      assert.equal(unscoped.serial, FIX);
+      assert.equal(unscoped.logWindow, null);
+      assertNoClear(fake);
+    });
+  });
+});
+
+test("the logcat tool's clear:true is the one destructive clear and requires an explicit serial", async () => {
+  await withFakeAdb({ allowClear: true }, async (fake) => {
+    const { registerAdbTools } = await import("../dist/adb.js");
+    await withTools(registerAdbTools, async (client) => {
+      const tools = await client.listTools();
+      const logcat = tools.tools.find((t) => t.name === "logcat");
+      assert.match(logcat.inputSchema.properties.clear.description, /destructive/i);
+      assert.match(logcat.inputSchema.properties.clear.description, /explicit serial/i);
+      const refused = await client.callTool({ name: "logcat", arguments: { clear: true } });
+      assert.equal(refused.isError, true, textOf(refused));
+      assert.match(textOf(refused), /explicit serial/i);
+      assert.deepEqual(fake.readArgv(), [], "a refused clear resolves no device and runs nothing");
+      const blank = await client.callTool({ name: "logcat", arguments: { clear: true, serial: "   " } });
+      assert.equal(blank.isError, true, textOf(blank));
+      assert.deepEqual(fake.readArgv(), []);
+      const cleared = await client.callTool({ name: "logcat", arguments: { clear: true, serial: FIX } });
+      assert.equal(cleared.isError, undefined, textOf(cleared));
+      assert.match(textOf(cleared), new RegExp(FIX));
+      assert.deepEqual(fake.readArgv(), [["-s", FIX, "logcat", "-c"]], "exactly the explicit-serial clear, nothing else");
+    });
+  });
+});
+
+// ── wait_for_log (src/agentloop.ts) ──
+test("wait_for_log's default opens a marker window instead of clearing and reports the window it matched in", async () => {
+  await withFakeAdb({ before: STALE_LOG, after: FRESH_LOG }, async (fake) => {
+    const { registerAgentLoopTools } = await import("../dist/agentloop.js");
+    await withTools(registerAgentLoopTools, async (client) => {
+      const hit = await client.callTool({ name: "wait_for_log", arguments: { serial: FIX, pattern: "APP_READY", timeoutSec: 1 } });
+      assert.equal(hit.isError, undefined, textOf(hit));
+      const out = jsonOf(hit);
+      assert.equal(out.matched, true);
+      assert.equal(out.serial, FIX);
+      assert.equal(out.logWindow?.markerSeen, true);
+      assert.deepEqual(fake.readMarkers(), [out.logWindow.marker]);
+      assert.ok(out.lines.some((l) => /APP_READY/.test(l)));
+      let argv = assertNoClear(fake);
+      assert.equal(argv.filter(isOpen).length, 1);
+      assertBoundedWindowDumps(argv);
+
+      fake.reset();
+      const stale = await client.callTool({ name: "wait_for_log", arguments: { serial: FIX, pattern: "STALE_READY", timeoutSec: 1 } });
+      assert.equal(stale.isError, true, "a line logged BEFORE the window must not satisfy the wait");
+      assert.match(textOf(stale), new RegExp(FIX));
+      assertNoClear(fake);
+
+      fake.reset();
+      fake.setScenario({ before: STALE_LOG, after: FRESH_LOG, evict: true });
+      const evicted = await client.callTool({ name: "wait_for_log", arguments: { serial: FIX, pattern: "APP_READY", timeoutSec: 1 } });
+      assert.equal(evicted.isError, true, textOf(evicted));
+      assert.match(textOf(evicted), /inconclusive/i);
+      assert.match(textOf(evicted), /not cleared/i);
+      assertNoClear(fake);
+
+      fake.reset();
+      fake.setScenario({ before: STALE_LOG, after: FRESH_LOG });
+      const unscoped = await client.callTool({ name: "wait_for_log", arguments: { serial: FIX, pattern: "STALE_READY", timeoutSec: 1, clearFirst: false } });
+      assert.equal(unscoped.isError, undefined, textOf(unscoped));
+      assert.equal(jsonOf(unscoped).logWindow, null);
+      argv = assertNoClear(fake);
+      assert.equal(argv.filter(isOpen).length, 0);
+    });
+  });
+});
+
+// ── pico_loop (src/doors.ts) — through the door's dependency seam, no process ──
+async function withScratchHome(operation) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "pico-logwindow-home-"));
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    return await operation(home);
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+function loopFixture(assertLogcatResponse) {
+  const calls = [];
+  const capture = "/fixture/ledger/artifacts/" + "a".repeat(64) + ".png";
+  const receiptId = "b".repeat(64);
+  const fleetResult = {
+    id: "fixture", built: true, installed: true, concluded: true, verdict: "ESCALATE", artifact: capture,
+    receipt: { status: "recorded", receiptId, receiptPath: `/fixture/run-receipts/${receiptId}.json`, capturePath: capture, sourceCapturePath: "/fixture/captures/unique.png", captureSha256: "a".repeat(64), evidenceType: "structural", lookRequired: true },
+    visualChecks: [], visualJudgeNote: "fixture", visualLedger: null, notes: [],
+  };
+  const call = async (name, args) => {
+    calls.push({ name, args });
+    if (name === "plan_app_spec") return { status: "ok", spec: { meta: { packageName: "com.example.fixture" } } };
+    if (name === "adb_shell") return "(no output)";
+    if (name === "fleet_build") return { status: "ok", results: [fleetResult] };
+    if (name === "assert_logcat") return assertLogcatResponse(args);
+    if (name === "record_verification") return { status: "recorded", entry: { evidenceType: "structural" } };
+    throw new Error(`unexpected injected door call: ${name}`);
+  };
+  return { calls, call };
+}
+
+test("pico_loop writes a marker through adb_shell before the build and scopes every assert_logcat to it", async () => {
+  await withScratchHome(async () => {
+    const fixture = loopFixture((args) => ({ matched: true, line: "I Fixture: APP_READY", serial: FIX, logWindow: { marker: args.sinceMarker, markerSeen: true } }));
+    const { registerDoorTools } = await import("../dist/doors.js");
+    await withTools((server) => registerDoorTools(server, { call: fixture.call }), async (client) => {
+      const result = await client.callTool({
+        name: "pico_loop",
+        arguments: { goal: "log window loop fixture", draftSpec: { meta: { packageName: "com.example.fixture" } }, acceptance: [{ kind: "logcat", pattern: "APP_READY" }, { kind: "logcat", pattern: "rayCast HIT", tag: "Fixture" }], budget: { iterations: 1 } },
+      });
+      const out = jsonOf(result);
+      assert.equal(out.status, "accepted", textOf(result));
+      const shell = fixture.calls.find((c) => c.name === "adb_shell");
+      assert.equal(out.iterationsLog?.[0]?.logWindow?.marker, shell?.args.command.split(" ").at(-1), "the iteration log must record the window its logcat criteria were scoped to");
+    });
+    const shells = fixture.calls.filter((c) => c.name === "adb_shell");
+    for (const shell of shells) assert.ok(!/logcat\s+-c/.test(shell.args.command), `pico_loop cleared the global log: ${shell.args.command}`);
+    assert.equal(shells.length, 1, JSON.stringify(shells));
+    const marker = /^log -t pico-mcp (pico-mcp-window-[0-9a-f-]{36})$/.exec(shells[0].args.command)?.[1];
+    assert.ok(marker, `the one adb_shell call must write the window marker: ${shells[0].args.command}`);
+    const openAt = fixture.calls.findIndex((c) => c.name === "adb_shell");
+    const buildAt = fixture.calls.findIndex((c) => c.name === "fleet_build");
+    assert.ok(openAt < buildAt, "the window must open before the build/launch that produces the lines");
+    const asserts = fixture.calls.filter((c) => c.name === "assert_logcat");
+    assert.equal(asserts.length, 2);
+    for (const a of asserts) assert.equal(a.args.sinceMarker, marker, JSON.stringify(a.args));
+  });
+});
+
+test("pico_loop treats an inconclusive (evicted-window) assert_logcat as unmeasurable, never as a fail to replan", async () => {
+  await withScratchHome(async () => {
+    const fixture = loopFixture((args) => ({ matched: false, status: "inconclusive", serial: FIX, logWindow: { marker: args.sinceMarker, markerSeen: false } }));
+    const { registerDoorTools } = await import("../dist/doors.js");
+    await withTools((server) => registerDoorTools(server, { call: fixture.call }), async (client) => {
+      const result = await client.callTool({
+        name: "pico_loop",
+        arguments: { goal: "log window evicted fixture", draftSpec: { meta: { packageName: "com.example.fixture" } }, acceptance: [{ kind: "logcat", pattern: "APP_READY" }], budget: { iterations: 2 } },
+      });
+      const out = jsonOf(result);
+      assert.equal(out.status, "unmeasurable-acceptance", textOf(result));
+      assert.equal(out.failing?.[0]?.status, "unmeasurable");
+      assert.match(out.failing?.[0]?.detail ?? "", /inconclusive|marker/i);
+    });
+    assert.equal(fixture.calls.filter((c) => c.name === "replan_spec").length, 0, "an inconclusive read must not drive a replan");
+  });
+});
+
+// ── boundary experiment prepare step (src/boundaryexperiment.ts) ──
+test("the boundary prepare step opens a -b all window, writes its sidecar, and stops on an evicted marker", async () => {
+  const { collectPreparationLogWindow, LogWindowEvictedError } = await import("../dist/boundaryexperiment.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pico-logwindow-boundary-"));
+  try {
+    const calls = [];
+    let written = null;
+    const runner = async (args) => {
+      calls.push(args);
+      if (args[2] === "shell" && args[3] === "log") { written = args[6]; return { code: 0, stdout: "", stderr: "" }; }
+      if (args[2] === "logcat") return { code: 0, stdout: `old line\n09-16 00:00:00.500 1 1 I pico-mcp: ${written}\nnew 1\nnew 2\n`, stderr: "" };
+      throw new Error(`unmodelled: ${args.join(" ")}`);
+    };
+    const artifactPath = path.join(dir, "prepare-log-window.txt");
+    const result = await collectPreparationLogWindow(runner, FIX, artifactPath);
+    assert.equal(result.window.serial, FIX);
+    assert.equal(result.window.marker, written);
+    assert.deepEqual(result.lines, ["new 1", "new 2"]);
+    const text = fs.readFileSync(artifactPath, "utf8").split("\n");
+    assert.equal(text[0], `# window marker ${written} seen=true`);
+    assert.deepEqual(text.slice(1, 3), ["new 1", "new 2"]);
+    for (const call of calls) {
+      const at = call.indexOf("logcat");
+      assert.ok(!(at >= 0 && call.slice(at + 1).includes("-c")), `prepare cleared the log: ${call.join(" ")}`);
+    }
+    const dump = calls.find((c) => c[2] === "logcat");
+    assert.ok(dump.includes("-b") && dump[dump.indexOf("-b") + 1] === "all", `prepare must read every buffer: ${dump.join(" ")}`);
+    assert.ok(dump.includes("-d") && dump.includes("-t"), `prepare's dump must be bounded: ${dump.join(" ")}`);
+    assert.ok(calls.findIndex((c) => c[3] === "log") < calls.findIndex((c) => c[2] === "logcat"));
+
+    let evictedMarker = null;
+    const evictedRunner = async (args) => {
+      if (args[2] === "shell" && args[3] === "log") { evictedMarker = args[6]; return { code: 0, stdout: "", stderr: "" }; }
+      if (args[2] === "logcat") return { code: 0, stdout: "old line\nnewer line\n", stderr: "" };
+      throw new Error(`unmodelled: ${args.join(" ")}`);
+    };
+    const evictedPath = path.join(dir, "prepare-log-window-evicted.txt");
+    await assert.rejects(() => collectPreparationLogWindow(evictedRunner, FIX, evictedPath), (error) => {
+      assert.ok(error instanceof LogWindowEvictedError, String(error));
+      assert.equal(error.window.marker, evictedMarker);
+      assert.match(error.message, /evicted/);
+      return true;
+    });
+    assert.equal(fs.readFileSync(evictedPath, "utf8").split("\n")[0], `# window marker ${evictedMarker} seen=false`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── the source-level guard ───────────────────────────────────────────────────────────────────────
+// Pins the ONE allowed clear by file:line — the `logcat` tool's explicit, operator-requested
+// `clear:true`, which refuses to run without a named serial. Any other clear form in src/ (a
+// `"logcat", "-c"` argv, a `-b <buffer>` variant, or the shell text) fails this test by name.
+test("no src file clears logcat implicitly; the explicit logcat tool is the only clear", () => {
+  const src = new URL("../src/", import.meta.url);
+  const offenders = [];
+  for (const name of fs.readdirSync(src).filter((n) => n.endsWith(".ts"))) {
+    const text = fs.readFileSync(new URL(name, src), "utf8");
+    for (const [index, line] of text.split("\n").entries()) {
+      if (/"logcat",\s*(?:"-b",\s*"[a-z]+",\s*)?"-c"/.test(line) || /logcat -c/.test(line)) offenders.push(`${name}:${index + 1}`);
+    }
+  }
+  assert.deepEqual(offenders, ["adb.ts:382"], offenders.join(", ")); // pin the one allowed site by file:line
+  const pinned = fs.readFileSync(new URL("adb.ts", src), "utf8").split("\n")[381];
+  assert.match(pinned, /await adb\(\["-s", target, "logcat", "-c"\]\)/, `adb.ts:382 is no longer the explicit clear: ${pinned}`);
+});

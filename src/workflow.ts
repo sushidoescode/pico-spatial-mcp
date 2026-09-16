@@ -19,6 +19,7 @@ import {
 } from "./toolchain.js";
 import { adb, adbPath, resolveSerial } from "./adb.js";
 import { buildCapabilityMatrix } from "./capability.js";
+import { openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * High-level orchestration: collapse the common edit→build→deploy→observe loop
@@ -351,6 +352,8 @@ export function registerWorkflowTools(server: McpServer) {
         capabilitySummary: z.string().describe("Auto-emitted honest capability matrix summary for this run."),
         screenshotIncluded: z.boolean().describe("Whether a frame rides along as image content — an agent must LOOK at it; appearance is NOT auto-verified."),
         appearanceRule: z.string(),
+        serial: z.string().describe("The explicit device the run was observed on (default resolution included)."),
+        logWindow: z.object({ marker: z.string(), markerSeen: z.literal(true) }).describe("The marker window opened before launch that the crash correlation was read through; the device log was never cleared. An evicted marker is an isError (inconclusive), so a success always carries markerSeen:true."),
       },
     },
     async ({ projectDir, packageName, task, activity, serial, settleSec }) => {
@@ -377,11 +380,18 @@ export function registerWorkflowTools(server: McpServer) {
       if (inst.code !== 0 || !/Success/i.test(inst.stdout + inst.stderr)) return fail(`Install failed: ${(inst.stdout + inst.stderr).trim()}`);
       report.steps.push({ install: "ok" });
 
-      // Clean relaunch + clear log so the render check sees a fresh frame.
+      // Clean relaunch. The render/crash check reads a MARKER WINDOW opened before launch — never a
+      // cleared buffer (the device's global log is not this tool's to erase; src/logwindow.ts) — so
+      // it correlates only lines this launch produced.
       const stopped = await adb(["-s", s, "shell", "am", "force-stop", packageName]);
       if (stopped.code !== 0) return fail(`Could not force-stop ${packageName} before launch: ${(stopped.stdout + stopped.stderr).trim()}`);
-      const cleared = await adb(["-s", s, "logcat", "-c"]);
-      if (cleared.code !== 0) return fail(`Could not clear logcat before launch: ${(cleared.stdout + cleared.stderr).trim()}`);
+      const runner: AdbRunner = (a, timeoutMs) => adb(a, timeoutMs ?? 60_000);
+      let window: LogWindow;
+      try {
+        window = await openLogWindow(runner, s);
+      } catch (e) {
+        return fail(`Could not open a log window before launch on ${s}: ${(e as Error).message}`);
+      }
 
       const launch = activity
         ? await adb(["-s", s, "shell", "am", "start", "-n", `${packageName}/${activity}`])
@@ -400,27 +410,46 @@ export function registerWorkflowTools(server: McpServer) {
       if (!pid) return fail(`Launch was acknowledged, but no live PID for ${packageName} appeared within 5 seconds.`);
       report.steps.push({ launch: "ok", pid });
 
-      // Poll PID-scoped logs for render markers and correlate multiline crashes from global logcat.
+      // Poll PID-scoped logs for render markers and correlate multiline crashes through the window.
+      // The PID read is scoped by the process this launch created (a --pid dump can never contain
+      // the marker, and the PID is post-window by construction); the global correlation — multi-line
+      // crash blocks, system_server's `ANR in <pkg>` — is read from the window's lines only.
       let rendered = false;
       let crash: string[] = [];
+      let markerSeen = false;
       const deadline = Date.now() + Math.max(0, settleSec) * 1000;
       do {
-        const [pidLog, globalLog] = await Promise.all([
+        const [pidLog, windowRead] = await Promise.all([
           adb(["-s", s, "logcat", "--pid", pid, "-d"]),
-          adb(["-s", s, "logcat", "-d"]),
+          readLogWindow(runner, window, { timeoutMs: 60_000 }).then(
+            (read) => ({ ok: true as const, ...read }),
+            (error: unknown) => ({ ok: false as const, error: error instanceof Error ? error.message : String(error) }),
+          ),
         ]);
-        if (pidLog.code !== 0 || globalLog.code !== 0) {
-          return fail(`Could not inspect runtime logs for ${packageName}: ${tail(pidLog.stderr || globalLog.stderr || pidLog.stdout || globalLog.stdout, 20)}`);
+        if (pidLog.code !== 0 || !windowRead.ok) {
+          return fail(`Could not inspect runtime logs for ${packageName}: ${tail(pidLog.stderr || (windowRead.ok ? "" : windowRead.error) || pidLog.stdout, 20)}`);
         }
-        const observed = analyzePackageRuntimeLogs(pidLog.stdout, globalLog.stdout, packageName);
+        markerSeen = windowRead.markerSeen;
+        // An evicted marker leaves the global correlation unknown — nothing from the unscoped buffer
+        // is correlated in its place; the inconclusive result is returned below.
+        const observed = analyzePackageRuntimeLogs(pidLog.stdout, windowRead.markerSeen ? windowRead.lines.join("\n") : "", packageName);
         rendered ||= observed.rendered;
         crash = observed.crashes;
         if (crash.length || Date.now() >= deadline) break;
         await sleep(Math.min(1_000, Math.max(1, deadline - Date.now())));
       } while (true);
+      report.steps.push({ logWindow: { marker: window.marker, markerSeen }, serial: s });
       const aliveResult = await adb(["-s", s, "shell", "pidof", packageName]);
       const alive = aliveResult.code === 0 && aliveResult.stdout.trim().split(/\s+/).includes(pid);
       if (!alive && !crash.length) return fail(`${packageName} PID ${pid} disappeared during the observation window; no positive running-app claim was recorded.`);
+      if (!markerSeen) {
+        return fail(
+          `Runtime-log observation on ${s} is INCONCLUSIVE: the log window marker ${window.marker} was not in the bounded dump (evicted or never written), `
+            + `so crash correlation for ${packageName} could not be scoped to this launch and no health claim is made; the device log was NOT cleared. `
+            + `${crash.length ? `PID-scoped crash lines seen: ${crash.slice(-4).join(" | ")}. ` : ""}Re-run the observation (build_and_run again, or verify_pico_apk).\n`
+            + JSON.stringify(report, null, 2),
+        );
+      }
       report.steps.push({ health: crash.length ? "CRASHED" : "ok", pidAlive: alive, rendered, crashes: crash.slice(-4) });
 
       // v3.5: auto-emit the honest capability matrix derived from the run's signals.
@@ -450,6 +479,8 @@ export function registerWorkflowTools(server: McpServer) {
         appearanceRule: crash.length
           ? "the process crashed; the returned device frame may show shell/home and is not evidence of app appearance"
           : "frame captured and returned — an agent MUST LOOK (verify / capture_frame); appearance is NOT auto-verified",
+        serial: s,
+        logWindow: { marker: window.marker, markerSeen: true },
       };
       if (screenshotIncluded) {
         return { ...image(shot.stdout.toString("base64"), note), structuredContent };

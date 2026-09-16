@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { adb } from "./adb.js";
+import { LogWindowOpenError, openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * copilot.ts — v25 THE LIVE AGENT COPILOT: talk to a RUNNING spatial app.
@@ -60,34 +61,80 @@ async function sendAndAwait(serial: string, packageName: string, extras: Record<
 
 export interface SceneEntity { name: string; depth: number; pos: [number, number, number] | null; comps: string }
 
-/** Dump + parse the LAST dump_begin..dump_end block from the bridge. */
-async function snapshot(serial: string, packageName: string, depth = 8): Promise<{ entities: SceneEntity[]; rootName: string } | null> {
-  await adb(["-s", serial, "logcat", "-c"]).catch(() => {});
+type SnapshotLogWindow = { marker: string; markerSeen: boolean };
+type SnapshotResult =
+  | { status: "ok"; entities: SceneEntity[]; rootName: string; serial: string; logWindow: SnapshotLogWindow }
+  | { status: "no-dump" | "inconclusive"; error: string; serial: string; logWindow: SnapshotLogWindow | null };
+
+/**
+ * Dump + parse the LAST dump_begin..dump_end block the bridge emitted INSIDE a marker window opened
+ * before the dump_scene broadcast. The device log is never cleared (src/logwindow.ts): only lines
+ * after the marker are parsed, so a stale dump from an earlier snapshot cannot be returned as this
+ * one; a marker that never shows up in the bounded dump makes the snapshot inconclusive.
+ */
+async function snapshot(serial: string, packageName: string, depth = 8): Promise<SnapshotResult> {
+  const runner: AdbRunner = (args, timeoutMs) => adb(args, timeoutMs ?? 60_000);
+  let window: LogWindow;
+  try {
+    window = await openLogWindow(runner, serial);
+  } catch (e) {
+    return {
+      status: "inconclusive",
+      error: `could not open a log window on ${serial}; nothing was driven or read: ${(e as Error).message}`,
+      serial,
+      logWindow: e instanceof LogWindowOpenError ? { marker: e.marker, markerSeen: false } : null,
+    };
+  }
   await adb(["-s", serial, "shell", "am", "broadcast", "-a", `${packageName}.AGENT_CMD`, "--es", "cmd", "dump_scene", "--ei", "depth", String(depth)]);
   const deadline = Date.now() + 8000;
+  let markerSeen = false;
   while (Date.now() < deadline) {
-    const log = await adb(["-s", serial, "logcat", "-d", "-s", "AgentBridge:V"], 15_000);
-    const lines: string[] = log.stdout.split("\n");
-    const lastIndexWhere = (arr: string[], pred: (l: string) => boolean) => {
-      for (let i = arr.length - 1; i >= 0; i--) if (pred(arr[i])) return i;
-      return -1;
-    };
-    const endIdx = lastIndexWhere(lines, (l) => l.includes("event=dump_end"));
-    if (endIdx >= 0) {
-      const beginIdx = lastIndexWhere(lines.slice(0, endIdx), (l) => l.includes("event=dump_begin"));
-      const rootName = parseBridgeLine(lines[beginIdx])?.fields.root ?? "?";
-      const entities: SceneEntity[] = [];
-      for (const l of lines.slice(beginIdx + 1, endIdx)) {
-        const p = parseBridgeLine(l);
-        if (!p || p.event !== "entity") continue;
-        const pos = p.fields.pos ? (p.fields.pos.split(",").map(Number) as [number, number, number]) : null;
-        entities.push({ name: p.fields.name ?? "?", depth: Number(p.fields.d ?? 0), pos: pos && pos.every((v) => Number.isFinite(v)) ? pos : null, comps: p.fields.comps ?? "" });
+    let read: Awaited<ReturnType<typeof readLogWindow>> | null = null;
+    try {
+      read = await readLogWindow(runner, window, { tags: ["AgentBridge"], timeoutMs: 15_000 });
+    } catch {
+      read = null; // a failed dump is retried until the deadline
+    }
+    if (read) {
+      markerSeen = read.markerSeen;
+      if (read.markerSeen) {
+        const lines = read.lines;
+        const lastIndexWhere = (arr: string[], pred: (l: string) => boolean) => {
+          for (let i = arr.length - 1; i >= 0; i--) if (pred(arr[i])) return i;
+          return -1;
+        };
+        const endIdx = lastIndexWhere(lines, (l) => l.includes("event=dump_end"));
+        if (endIdx >= 0) {
+          const beginIdx = lastIndexWhere(lines.slice(0, endIdx), (l) => l.includes("event=dump_begin"));
+          const rootName = parseBridgeLine(lines[beginIdx])?.fields.root ?? "?";
+          const entities: SceneEntity[] = [];
+          for (const l of lines.slice(beginIdx + 1, endIdx)) {
+            const p = parseBridgeLine(l);
+            if (!p || p.event !== "entity") continue;
+            const pos = p.fields.pos ? (p.fields.pos.split(",").map(Number) as [number, number, number]) : null;
+            entities.push({ name: p.fields.name ?? "?", depth: Number(p.fields.d ?? 0), pos: pos && pos.every((v) => Number.isFinite(v)) ? pos : null, comps: p.fields.comps ?? "" });
+          }
+          return { status: "ok", entities, rootName, serial, logWindow: { marker: window.marker, markerSeen: true } };
+        }
       }
-      return { entities, rootName };
     }
     await new Promise((r) => setTimeout(r, 400));
   }
-  return null;
+  const logWindow = { marker: window.marker, markerSeen };
+  if (!markerSeen) {
+    return {
+      status: "inconclusive",
+      error: `the log window marker ${window.marker} was not seen in the bounded dump within 8s on ${serial} (evicted or never written); the buffer was not cleared — re-run`,
+      serial,
+      logWindow,
+    };
+  }
+  return {
+    status: "no-dump",
+    error: "no dump_begin..dump_end block appeared inside the log window — is the app running with the bridge attached (AgentBridge.attachScene)?",
+    serial,
+    logWindow,
+  };
 }
 
 export function diffSnapshots(before: SceneEntity[], after: SceneEntity[], moveEpsilon = 0.005) {
@@ -164,8 +211,8 @@ export function registerCopilotTools(server: McpServer) {
     async ({ serial, packageName, depth }) => {
       const s = await resolveSerial(serial);
       const snap = await snapshot(s, packageName, depth);
-      if (!snap) return okJson({ status: "no-dump", error: "no dump_begin..dump_end block appeared — is the app running with the bridge attached (AgentBridge.attachScene)?" });
-      return okJson({ status: "ok", rootName: snap.rootName, entityCount: snap.entities.length, entities: snap.entities });
+      if (snap.status !== "ok") return okJson({ status: snap.status, error: snap.error, serial: snap.serial, logWindow: snap.logWindow });
+      return okJson({ status: "ok", rootName: snap.rootName, entityCount: snap.entities.length, entities: snap.entities, serial: snap.serial, logWindow: snap.logWindow });
     },
   );
 

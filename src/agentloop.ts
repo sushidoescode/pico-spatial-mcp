@@ -6,6 +6,7 @@ import { z } from "zod";
 import { expandHome, fail, ok, okJson, sleep, tail } from "./util.js";
 import { AVD_HOME } from "./toolchain.js";
 import { adb, resolveSerial } from "./adb.js";
+import { openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * v0.3 — capabilities a self-running agent loop needs beyond raw observe/control:
@@ -136,28 +137,61 @@ export function registerAgentLoopTools(server: McpServer) {
     "wait_for_log",
     {
       description:
-        "Block until a regex appears in logcat (or timeout). Essential for an agent loop: wait for 'scene loaded', an app-ready marker, or an error, instead of sleeping a fixed time. Returns the matching line(s).",
+        "Block until a regex appears in logcat (or timeout). Essential for an agent loop: wait for 'scene loaded', an app-ready marker, or an error, instead of sleeping a fixed time. By default it opens a marker window first, so only lines logged after the call can match; the device log is never cleared. Returns {matched, elapsedSec, serial, logWindow, lines}; a window whose marker is never seen is an inconclusive error, never a match against the unscoped buffer.",
       inputSchema: {
         pattern: z.string().describe("Regex to match against new logcat lines"),
         serial: z.string().optional(),
         tag: z.string().optional(),
         timeoutSec: z.number().int().default(30),
-        clearFirst: z.boolean().default(true).describe("Clear the log buffer before waiting (recommended)"),
+        clearFirst: z.boolean().default(true).describe("Open a marker window before waiting (recommended): only lines logged after the window opens can match. Nothing is cleared; false polls the whole buffer."),
       },
     },
     async ({ pattern, serial, tag, timeoutSec, clearFirst }) => {
       const s = await resolveSerial(serial);
-      if (clearFirst) await adb(["-s", s, "logcat", "-c"]);
+      const runner: AdbRunner = (args, timeoutMs) => adb(args, timeoutMs ?? 60_000);
+      let window: LogWindow | null = null;
+      if (clearFirst) {
+        try {
+          window = await openLogWindow(runner, s);
+        } catch (e) {
+          return fail(`Inconclusive: could not open a log window on ${s}, so nothing was polled (${(e as Error).message}). status=inconclusive`);
+        }
+      }
       const re = new RegExp(pattern, "i");
-      const deadline = Date.now() + timeoutSec * 1000;
+      const started = Date.now();
+      const deadline = started + timeoutSec * 1000;
       const filter = tag ? [`${tag}:V`, "*:S"] : [];
+      let markerSeen = false;
       while (Date.now() < deadline) {
-        const r = await adb(["-s", s, "logcat", "-d", ...filter], 20_000);
-        const hit = r.stdout.split("\n").filter((l) => re.test(l));
-        if (hit.length) return ok(`Matched after ${Math.round((timeoutSec * 1000 - (deadline - Date.now())) / 1000)}s:\n${hit.slice(-10).join("\n")}`);
+        let lines: string[] | null = null;
+        if (window) {
+          try {
+            const read = await readLogWindow(runner, window, { tags: tag ? [tag] : undefined, timeoutMs: 20_000 });
+            markerSeen = read.markerSeen;
+            lines = read.markerSeen ? read.lines : null; // no marker: nothing here is provably post-window
+          } catch {
+            lines = null; // a failed dump is retried until the deadline
+          }
+        } else {
+          const r = await adb(["-s", s, "logcat", "-d", ...filter], 20_000);
+          lines = r.stdout.split("\n");
+        }
+        const hit = lines ? lines.filter((l) => re.test(l)) : [];
+        if (hit.length) {
+          return okJson({
+            matched: true,
+            elapsedSec: Math.round((Date.now() - started) / 1000),
+            serial: s,
+            logWindow: window ? { marker: window.marker, markerSeen: true } : null,
+            lines: hit.slice(-10),
+          });
+        }
         await sleep(1000);
       }
-      return fail(`Timeout: /${pattern}/ not seen in ${timeoutSec}s`);
+      if (window && !markerSeen) {
+        return fail(`Inconclusive: the log window marker ${window.marker} was never seen on ${s} within ${timeoutSec}s (evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer — re-run. status=inconclusive`);
+      }
+      return fail(`Timeout: /${pattern}/ not seen in ${timeoutSec}s on ${s}${window ? ` (log window ${window.marker}, markerSeen=true)` : ""}`);
     },
   );
 

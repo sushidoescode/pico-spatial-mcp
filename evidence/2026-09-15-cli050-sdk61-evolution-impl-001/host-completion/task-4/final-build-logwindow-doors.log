@@ -1,0 +1,14 @@
+# final build + logwindow suite + doors gate after the iterationsLog.logWindow addition (2026-09-16T10:51:55Z)
+
+build-source: published 191 file(s) for source 1209971aa5df
+build exit=
+ℹ tests 19
+ℹ pass 19
+ℹ fail 0
+logwindow exit=
+  ok   pico_next treats device PASS as positive proof and preserves device FAIL as negative evidence
+Doors test done. Failures: 0
+ℹ tests 17
+ℹ pass 17
+ℹ fail 0
+doors exit=

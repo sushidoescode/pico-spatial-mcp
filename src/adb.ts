@@ -8,6 +8,7 @@ import { hostToolchainIO } from "./toolchain.js";
 import { executableCandidates } from "./picocli.js";
 import { executableNames, resolveRootCandidate, selectInstallation, type FileIdentity, type ToolchainIO } from "./toolchainselection.js";
 import { IdentityCache } from "./identitycache.js";
+import { LogWindowOpenError, logWindowFromMarker, openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * THE one adb lookup (Task S4).
@@ -360,21 +361,28 @@ export function registerAdbTools(server: McpServer) {
   server.registerTool(
     "logcat",
     {
-      description: "Dump recent logcat output, optionally filtered by tag and/or a regex over lines.",
+      description: "Dump recent logcat output, optionally filtered by tag and/or a regex over lines. `clear:true` is the ONE destructive log operation on this server: it erases the device's global log buffer and requires an explicit serial. Scoped observation never needs it — assert_logcat / wait_for_log open a marker window instead.",
       inputSchema: {
         serial: serialParam,
         tag: z.string().optional().describe("Only show this log tag (logcat <tag>:V *:S)"),
         grep: z.string().optional().describe("Case-insensitive regex applied to lines"),
         lines: z.number().int().min(1).max(2000).default(200).describe("Max lines returned (from the end)"),
-        clear: z.boolean().default(false).describe("Clear the log buffer instead of dumping"),
+        clear: z.boolean().default(false).describe("DESTRUCTIVE: erases the device's global log buffer instead of dumping; explicit serial required (no sole-device resolution). This is an operator request, never part of ordinary verification — assert_logcat / wait_for_log scope their reads with a marker window and clear nothing."),
       },
     },
     async ({ serial, tag, grep, lines, clear }) => {
-      const s = await resolveSerial(serial);
       if (clear) {
-        const r = await adb(["-s", s, "logcat", "-c"]);
-        return r.code === 0 ? ok("logcat buffer cleared") : fail(r.stderr);
+        // The explicit, operator-requested clear: the target must be NAMED. No sole-device resolution
+        // can stand in for it, because the operation is irreversible and this host may carry devices
+        // reserved for someone else (docs/findings/CLI050_IMPLEMENTATION_CHECKPOINT.md, Incident 3).
+        const target = serial?.trim() ?? "";
+        if (!target) {
+          return fail("logcat clear:true is destructive (it erases the device's global log buffer) and requires an explicit serial; no sole-device resolution is performed for a clear. Pass serial, or use assert_logcat / wait_for_log, which open a marker window instead of clearing.");
+        }
+        const r = await adb(["-s", target, "logcat", "-c"]);
+        return r.code === 0 ? ok(`logcat buffer cleared on ${target} (destructive; explicit serial ${target})`) : fail(r.stderr || r.stdout || `exit ${r.code}`);
       }
+      const s = await resolveSerial(serial);
       const args = ["-s", s, "logcat", "-d"];
       if (tag) args.push(`${tag}:V`, "*:S");
       const r = await adb(args, 60_000);
@@ -435,17 +443,18 @@ export function registerAdbTools(server: McpServer) {
     "assert_logcat",
     {
       description:
-        "VERIFICATION PRIMITIVE — wait up to timeoutSec for a logcat line matching `pattern` (optionally scoped to `tag`) to appear, polling the buffer. Turns an app's Log.* markers into a machine-checkable pass/fail signal so an agent can PROVE behavior instead of eyeballing it (e.g. assert 'rayCast HIT' after attaching a collider, or 'placed pin #' after a commit). Returns {matched, line, elapsedSec} — matched:false is a normal (non-error) result so callers can branch and escalate. Typical loop: clear → trigger the action (launch / drive input) → assert_logcat.",
+        "VERIFICATION PRIMITIVE — wait up to timeoutSec for a logcat line matching `pattern` (optionally scoped to `tag`) to appear, polling a bounded dump. Turns an app's Log.* markers into a machine-checkable pass/fail signal so an agent can PROVE behavior instead of eyeballing it (e.g. assert 'rayCast HIT' after attaching a collider, or 'placed pin #' after a commit). Returns {matched, line, elapsedSec, serial, logWindow} — matched:false is a normal (non-error) result so callers can branch and escalate; status:'inconclusive' means the window's marker was never seen in the bounded dump (nothing was matched against the unscoped buffer — re-run). Nothing here clears the device log. Typical loop: open a window (clearFirst:true, or write your own marker with adb_shell `log -t pico-mcp <marker>` and pass sinceMarker) → trigger the action (launch / drive input) → assert_logcat.",
       inputSchema: {
         serial: serialParam,
         pattern: z.string().describe("Case-insensitive regex matched against each logcat line, e.g. 'rayCast HIT' or 'placed pin #\\\\d+'"),
         tag: z.string().optional().describe("Restrict to this log tag (logcat <tag>:V *:S), e.g. ClaimSightPin"),
         timeoutSec: z.number().int().min(1).max(180).default(20),
-        clearFirst: z.boolean().default(false).describe("adb logcat -c before polling (use when re-running the same assertion to avoid matching stale lines)"),
+        clearFirst: z.boolean().default(false).describe("Opens a marker window instead of clearing the device log; equivalent to sinceMarker with a fresh marker (kept for compatibility — use when re-running the same assertion so stale lines cannot match). Nothing is erased."),
+        sinceMarker: z.string().optional().describe("Match only lines logged AFTER this marker line (e.g. one you wrote with adb_shell `log -t pico-mcp <marker>` before the action). Takes precedence over clearFirst. A marker absent from the bounded dump makes the result inconclusive — never a match against the unscoped buffer."),
         pollMs: z.number().int().min(200).max(5000).default(700),
       },
     },
-    async ({ serial, pattern, tag, timeoutSec, clearFirst, pollMs }) => {
+    async ({ serial, pattern, tag, timeoutSec, clearFirst, sinceMarker, pollMs }) => {
       const s = await resolveSerial(serial);
       let re: RegExp;
       try {
@@ -453,30 +462,84 @@ export function registerAdbTools(server: McpServer) {
       } catch (e) {
         return fail(`Invalid regex /${pattern}/: ${(e as Error).message}`);
       }
-      if (clearFirst) await adb(["-s", s, "logcat", "-c"]);
+      // A window scopes the poll to lines after its marker (src/logwindow.ts). Without one the whole
+      // buffer is still the (compatible) scope — and either way nothing is cleared.
+      const runner: AdbRunner = (args, timeoutMs) => adb(args, timeoutMs ?? 60_000);
+      let window: LogWindow | null = null;
+      if (sinceMarker) {
+        window = logWindowFromMarker(s, sinceMarker);
+      } else if (clearFirst) {
+        try {
+          window = await openLogWindow(runner, s);
+        } catch (e) {
+          return okJson({
+            matched: false,
+            status: "inconclusive",
+            tag: tag ?? null,
+            pattern,
+            serial: s,
+            logWindow: e instanceof LogWindowOpenError ? { marker: e.marker, markerSeen: false } : null,
+            hint: `could not open a log window on ${s}; nothing was polled: ${(e as Error).message}`,
+          });
+        }
+      }
       const start = Date.now();
       const deadline = start + timeoutSec * 1000;
       let lastTail = "";
+      let markerSeen = false;
       const dumpArgs = ["-s", s, "logcat", "-d", ...(tag ? [`${tag}:V`, "*:S"] : [])];
       while (Date.now() < deadline) {
-        const r = await adb(dumpArgs, 30_000);
-        if (r.code === 0) {
-          const lines = r.stdout.split("\n");
+        let lines: string[] | null = null;
+        if (window) {
+          try {
+            const read = await readLogWindow(runner, window, { tags: tag ? [tag] : undefined, timeoutMs: 30_000 });
+            markerSeen = read.markerSeen;
+            lines = read.markerSeen ? read.lines : null; // no marker: nothing here is provably post-window
+          } catch {
+            lines = null; // a failed dump is retried until the deadline
+          }
+        } else {
+          const r = await adb(dumpArgs, 30_000);
+          if (r.code === 0) lines = r.stdout.split("\n");
+        }
+        if (lines) {
           const hit = lines.find((l) => re.test(l));
           if (hit) {
-            return okJson({ matched: true, line: hit.trim(), elapsedSec: +((Date.now() - start) / 1000).toFixed(1), tag: tag ?? null, pattern });
+            return okJson({
+              matched: true,
+              line: hit.trim(),
+              elapsedSec: +((Date.now() - start) / 1000).toFixed(1),
+              tag: tag ?? null,
+              pattern,
+              serial: s,
+              logWindow: window ? { marker: window.marker, markerSeen: true } : null,
+            });
           }
           lastTail = lines.filter((l) => l.trim()).slice(-8).join("\n");
         }
         await sleep(pollMs);
+      }
+      if (window && !markerSeen) {
+        return okJson({
+          matched: false,
+          status: "inconclusive",
+          timedOutAfterSec: timeoutSec,
+          tag: tag ?? null,
+          pattern,
+          serial: s,
+          logWindow: { marker: window.marker, markerSeen: false },
+          hint: "The log window marker was never seen in the bounded dump (evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer. Re-open the window (clearFirst:true or a fresh sinceMarker) and re-run.",
+        });
       }
       return okJson({
         matched: false,
         timedOutAfterSec: timeoutSec,
         tag: tag ?? null,
         pattern,
+        serial: s,
+        logWindow: window ? { marker: window.marker, markerSeen: true } : null,
         hint: "No matching line within the timeout. Confirm the app emitted the log (it may need an action to trigger it), the tag is right, and the serial is correct.",
-        lastLines: lastTail || "(buffer empty for this tag)",
+        lastLines: lastTail || (window ? "(no lines after the window marker for this tag)" : "(buffer empty for this tag)"),
       });
     },
   );

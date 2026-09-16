@@ -244,7 +244,7 @@ if (doorsModule.registerDoorTools.length < 2) {
 }
 
 // ── every door through its seam (host completion T1, 2026-09-16) — no process ──
-// A fixture server with NO lane at all (`{}`) must be refused by EVERY door at the seam. Ten
+// A fixture server with NO lane at all (`{}`) must be refused by EVERY door at the seam. Nine
 // doors used to call the shared inner client directly, so a fixture that injected only `call`
 // still spawned the REAL inner full-surface server for them — which then ran against whatever
 // adb, HOME and CLI state this process inherited. The block is hermetic against a regressed
@@ -503,9 +503,10 @@ else fail(`innerFailureDetail slice wrong: len ${longDetail.length}`);
   else fail("loopFailureSignature should ignore passing criteria");
 }
 
-// A structural assert clears logcat to isolate its Agent Bridge dump. Therefore launch-time
-// logcat criteria must be consumed first even when the caller supplied structural first. Keep
-// relative order stable within the logcat and non-logcat groups so the exit report stays legible.
+// Logcat criteria are consumed first even when the caller supplied structural first. The order
+// dates from when a structural assert cleared logcat to isolate its Agent Bridge dump; assert_scene
+// now opens its own marker window (host completion T4) and clears nothing, and the stable partition
+// is kept so the exit report keeps its shape. Relative order stays stable within each group.
 if (typeof loopCriteriaInEvidenceSafeOrder !== "function") {
   fail("pico_loop has no evidence-safe criterion ordering helper");
 } else {

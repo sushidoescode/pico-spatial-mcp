@@ -183,6 +183,12 @@ expect("fixture invocation log targets only the fixture",
     && log.entries.every((entry) => entry.serial === null || entry.serial === FIXTURE_SERIAL),
   JSON.stringify(log.entries).slice(0, 800));
 expect("no npm invocation", log.npmCalls.length === 0, JSON.stringify(log.npmCalls).slice(0, 500));
+// The device's global log is never cleared by ordinary verification (host completion T4): no
+// recorded argv carries `logcat` followed by `-c`, and the fixture adb's clear tripwire never fired.
+expect("no global log clear",
+  log.entries.every((entry) => entry.kind !== "fixture-adb-cleared-log")
+    && log.entries.every((entry) => { const at = entry.argv.indexOf("logcat"); return !(at >= 0 && entry.argv.slice(at + 1).includes("-c")); }),
+  JSON.stringify(log.entries.filter((entry) => entry.argv.includes("logcat"))).slice(0, 800));
 
 fs.rmSync(scratch, { recursive: true, force: true });
 

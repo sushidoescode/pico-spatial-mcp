@@ -1,0 +1,7 @@
+# step4 build after site edits (2026-09-16T10:45:00Z)
+
+> pico-spatial-mcp@38.0.0 build
+> node scripts/build-source.mjs
+
+build-source: published 191 file(s) for source fc326a513602
+build exit=
