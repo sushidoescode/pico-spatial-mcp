@@ -13,10 +13,13 @@
  * script and never load `dist/`, so a stale TypeScript build is not their problem and checking it
  * would only produce a confusing failure.
  *
- * The same two scopes also get the hermeticity barrier by default: unless the caller set
- * `$PICO_ADB` itself, the child runs under `FIXTURE_NO_ADB` (scripts/gate-inventory.mjs), a path
- * naming no file, which `src/adb.ts` refuses outright instead of falling through to a real adb.
- * A suite that still reaches adb therefore fails loudly here rather than touching a device.
+ * The same two scopes also get the hermeticity barrier, applied rather than inherited: the child
+ * runs under `FIXTURE_NO_ADB` (scripts/gate-inventory.mjs), a path naming no file, which
+ * `src/adb.ts` refuses outright instead of falling through to a real adb — whatever `$PICO_ADB`
+ * this process inherited (a real adb, an empty string, whitespace) is replaced, not passed on. The
+ * one pass-through is `PICO_GATE_FIXTURE_ADB` naming an executable fake; anything else in that
+ * variable refuses the gate (exit 2) before a child exists. A suite that still reaches adb
+ * therefore fails loudly here rather than touching a device.
  *
  * Every command is spawned with `shell:false` and inherited stdio, in order, bounded by
  * GATE_TIMEOUT_MS. The first nonzero exit is returned and the rest of the gate does not run.
@@ -26,7 +29,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { verifyBuild } from "./build-identity.mjs";
-import { GATES, gateChildEnv } from "./gate-inventory.mjs";
+import { GATES, HARNESS_ADB_VARIABLE, gateChildEnv } from "./gate-inventory.mjs";
 import { npmLaunch } from "./plugin-bootstrap.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -145,7 +148,8 @@ export function runArgv(argv, {
 /**
  * Run every command of one gate, in order. Returns the first nonzero exit code, or 0.
  * Throws only for an unknown gate name or a stale build — both are the caller's mistake, and both
- * happen before any child exists.
+ * happen before any child exists. An invalid PICO_GATE_FIXTURE_ADB is the third pre-spawn refusal:
+ * it resolves 2 with the fix on stderr, so the CLI exit distinguishes it from a failed gate.
  */
 export async function runGate(name, {
   root = repoRoot,
@@ -170,12 +174,20 @@ export async function runGate(name, {
     }
   }
 
-  // The hermeticity barrier, applied here rather than remembered: a `fixture` or
-  // `installed-artifact` child whose caller set no `$PICO_ADB` runs under FIXTURE_NO_ADB, which
-  // `src/adb.ts` refuses without probing anything else. A caller-set value always wins, a
-  // `native-contract` gate is left alone, and `process.env` is never written — the child gets a
-  // fresh object (see gateChildEnv).
-  const childEnv = gateChildEnv(gate, env);
+  // The hermeticity barrier, applied here rather than remembered: every `fixture` or
+  // `installed-artifact` child runs under FIXTURE_NO_ADB, which `src/adb.ts` refuses without
+  // probing anything else — an inherited `$PICO_ADB` is replaced, never trusted. The only
+  // pass-through is an explicit, validated PICO_GATE_FIXTURE_ADB; an invalid one refuses the gate
+  // here, before any spawn. A `native-contract` gate is left alone, and `process.env` is never
+  // written — the child gets a fresh object (see gateChildEnv).
+  let childEnv;
+  try {
+    childEnv = gateChildEnv(gate, env);
+  } catch (error) {
+    if (error?.code !== "GATE_FIXTURE_ADB_INVALID") throw error;
+    process.stderr.write(`[run-gate] ${error.message}\n[run-gate] fix: unset ${HARNESS_ADB_VARIABLE} or point it at an executable fake\n`);
+    return 2;
+  }
   for (const argv of gate.commands) {
     const exit = await runArgv(argv, { root, env: childEnv, timeoutMs, graceMs, platform, spawnChild });
     if (exit !== 0) return exit;

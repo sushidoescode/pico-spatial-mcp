@@ -8,11 +8,13 @@ concurrency:
   group: gates-${{ github.ref }}
   cancel-in-progress: true
 
-# The hermeticity barrier every lane runs under. scripts/run-gate.mjs applies the same literal
-# (FIXTURE_NO_ADB in scripts/gate-inventory.mjs) to every fixture/installed-artifact gate child
-# whose caller set nothing; this workflow-level value also covers the one raw `node --test` step
-# below that does not go through run-gate. src/adb.ts fails closed on an explicit adb that names
-# no file, so a suite that still reaches adb fails loudly instead of starting the runner's adb.
+# The hermeticity barrier for the one step below that does not go through run-gate: the raw
+# `node --test test/homeenvironmenthost.mjs` step in vcam-native. Every fixture/installed-artifact
+# gate child gets the same literal (FIXTURE_NO_ADB in scripts/gate-inventory.mjs) from
+# scripts/run-gate.mjs, which REPLACES any inherited PICO_ADB — this workflow value included — so
+# for gate children this block is belt-and-braces, not the barrier. src/adb.ts fails closed on an
+# explicit adb that names no file, so a suite that still reaches adb fails loudly instead of
+# starting the runner's adb.
 env:
   PICO_ADB: /fixture/no/such/adb
 

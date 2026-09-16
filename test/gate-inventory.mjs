@@ -26,6 +26,7 @@ import {
   GATES,
   GATE_HOSTS,
   GATE_SCOPES,
+  HARNESS_ADB_VARIABLE,
   gateChildEnv,
   gateHostCounts,
   gateScriptCommand,
@@ -386,9 +387,11 @@ test("commands run sequentially, with no shell, inheriting stdio, in the given r
 //
 // The 38.0.0 checkpoint's every recorded run exported PICO_ADB=/fixture/no/such/adb by hand, and
 // three RED-phase runs reached real hardware before that ruling existed. These cases pin the
-// barrier as run-gate behaviour: a fixture or installed-artifact child whose caller set nothing
-// runs under the literal; a caller-set value always wins; a native-contract child is untouched;
-// and nothing here writes process.env.
+// barrier as run-gate behaviour: every fixture or installed-artifact child runs under the literal,
+// whatever PICO_ADB the caller's shell inherited (a real adb, an empty string, whitespace — the
+// first enforced version let a caller-set value through, and src/adb.ts read an empty one as
+// unset); the ONE pass-through is PICO_GATE_FIXTURE_ADB naming an executable fake, validated
+// before any spawn; a native-contract child is untouched; and nothing here writes process.env.
 
 test("FIXTURE_NO_ADB is the exact literal the checkpoint's runs exported, and names no file", () => {
   assert.equal(FIXTURE_NO_ADB, "/fixture/no/such/adb");
@@ -413,20 +416,18 @@ test("an installed-artifact gate child gets the same default", async () => {
   for (const call of record) assert.equal(call.options.env.PICO_ADB, FIXTURE_NO_ADB);
 });
 
-test("a caller-set PICO_ADB always wins over the default", async () => {
-  const record = [];
-  await runGate("test:ledger", {
-    root: repoRoot,
-    env: { PATH: "/usr/bin", PICO_ADB: "/opt/fixture/own-adb" },
-    spawnChild: fakeSpawn(record),
-    verify: fresh,
-  });
-  assert.deepEqual(record[0].options.env, { PATH: "/usr/bin", PICO_ADB: "/opt/fixture/own-adb" });
-  // An explicitly EMPTY value is still the caller's choice (src/adb.ts treats it as unset and
-  // walks PATH), not an invitation to substitute the fixture path.
-  const emptied = [];
-  await runGate("test:ledger", { root: repoRoot, env: { PICO_ADB: "" }, spawnChild: fakeSpawn(emptied), verify: fresh });
-  assert.deepEqual(emptied[0].options.env, { PICO_ADB: "" });
+test("an inherited PICO_ADB is replaced by the pin, whatever it holds: a real adb, empty, or whitespace", async () => {
+  // The first enforced barrier let a caller-set value through ("the caller's choice"), which
+  // re-opened the same door from any shell that had exported a real adb — and src/adb.ts read an
+  // EMPTY value as unset and walked PATH. Neither is the caller's choice inside a fixture gate.
+  for (const inherited of ["/opt/fixture/own-adb", "", "   ", "\t"]) {
+    const record = [];
+    const callerEnv = { PATH: "/usr/bin", PICO_ADB: inherited };
+    const exit = await runGate("test:ledger", { root: repoRoot, env: callerEnv, spawnChild: fakeSpawn(record), verify: fresh });
+    assert.equal(exit, 0, JSON.stringify(inherited));
+    assert.deepEqual(record[0].options.env, { PATH: "/usr/bin", PICO_ADB: FIXTURE_NO_ADB }, JSON.stringify(inherited));
+    assert.deepEqual(callerEnv, { PATH: "/usr/bin", PICO_ADB: inherited }, "the caller's env object is not written");
+  }
 });
 
 test("a native-contract gate child gets no PICO_ADB default", async () => {
@@ -453,6 +454,85 @@ test("the default is built into the child env, never written to process.env", as
   assert.deepEqual(env, {}, "the env object the caller passed must stay as it was");
   assert.notEqual(gateChildEnv(GATES["test:ledger"], env), env, "a fixture gate gets a fresh env object");
   assert.equal(gateChildEnv(GATES["test:vcamtransport-native"], env), env, "a native-contract gate gets the very same object");
+});
+
+test("an inherited real PICO_ADB is replaced by the fixture pin in fixture gates", () => {
+  const env = { PATH: "/usr/bin", PICO_ADB: "/opt/homebrew/bin/adb" };
+  const child = gateChildEnv(GATES["test:eye"], env);
+  assert.equal(child.PICO_ADB, FIXTURE_NO_ADB);
+  assert.equal(env.PICO_ADB, "/opt/homebrew/bin/adb", "the caller's env object is not written");
+});
+
+test("an empty or whitespace PICO_ADB is replaced, never passed through", () => {
+  for (const value of ["", "   ", "\t"]) {
+    assert.equal(gateChildEnv(GATES["test:eye"], { PICO_ADB: value }).PICO_ADB, FIXTURE_NO_ADB, JSON.stringify(value));
+  }
+});
+
+test("installed-artifact gates are pinned exactly like fixture gates", () => {
+  assert.equal(gateChildEnv(GATES["test:tarball"], { PICO_ADB: "/real/adb" }).PICO_ADB, FIXTURE_NO_ADB);
+});
+
+test("native-contract gates get the identical env object and no pin", () => {
+  const env = { PATH: "/usr/bin", PICO_ADB: "/real/adb" };
+  assert.equal(gateChildEnv(GATES["test:vcamtransport-native"], env), env);
+});
+
+test("the harness override passes an explicit fake executable through as PICO_ADB", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gate-fake-adb-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const fake = path.join(dir, "adb");
+  fs.writeFileSync(fake, "#!/bin/sh\nexit 66\n", { mode: 0o755 });
+  const child = gateChildEnv(GATES["test:eye"], { PICO_ADB: "/real/adb", [HARNESS_ADB_VARIABLE]: fake });
+  assert.equal(child.PICO_ADB, fake);
+  assert.equal(child[HARNESS_ADB_VARIABLE], fake, "the override variable itself is kept so the child can see why");
+});
+
+test("an invalid harness override refuses to spawn the gate instead of falling back", () => {
+  // Relative, nonexistent, a directory (passes X_OK, is not a file), and blank: none may quietly
+  // become the pin or pass through — the harness asked for a fake and did not get one.
+  for (const bad of ["relative/adb", "/no/such/fake-adb", os.tmpdir(), "", "   "]) {
+    assert.throws(() => gateChildEnv(GATES["test:eye"], { [HARNESS_ADB_VARIABLE]: bad }), (error) => error.code === "GATE_FIXTURE_ADB_INVALID", bad);
+  }
+});
+
+test("run-gate hands a valid harness override to the child as PICO_ADB, replacing the inherited value", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "run-gate-fake-adb-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const fake = path.join(dir, "adb");
+  fs.writeFileSync(fake, "#!/bin/sh\nexit 66\n", { mode: 0o755 });
+  const record = [];
+  const exit = await runGate("test:ledger", {
+    root: repoRoot,
+    env: { PATH: "/usr/bin", PICO_ADB: "/real/adb", [HARNESS_ADB_VARIABLE]: fake },
+    spawnChild: fakeSpawn(record),
+    verify: fresh,
+  });
+  assert.equal(exit, 0);
+  assert.deepEqual(record[0].options.env, { PATH: "/usr/bin", PICO_ADB: fake, [HARNESS_ADB_VARIABLE]: fake });
+});
+
+test("run-gate refuses a gate whose harness override is invalid: exit 2, the fix printed, nothing spawned", async () => {
+  const record = [];
+  const stderr = [];
+  const write = process.stderr.write;
+  process.stderr.write = (chunk) => { stderr.push(String(chunk)); return true; };
+  let exit;
+  try {
+    exit = await runGate("test:ledger", {
+      root: repoRoot,
+      env: { PATH: "/usr/bin", [HARNESS_ADB_VARIABLE]: "/no/such/fake-adb" },
+      spawnChild: fakeSpawn(record),
+      verify: fresh,
+    });
+  } finally {
+    process.stderr.write = write;
+  }
+  assert.equal(exit, 2);
+  assert.deepEqual(record, [], "an invalid override must prevent every child, not just the first");
+  const printed = stderr.join("");
+  assert.match(printed, /PICO_GATE_FIXTURE_ADB="\/no\/such\/fake-adb"/);
+  assert.match(printed, /unset PICO_GATE_FIXTURE_ADB or point it at an executable fake/);
 });
 
 test("gates.yml carries the same literal at workflow level, covering the one raw node --test step", () => {

@@ -22,30 +22,67 @@
  *   commands — the original argv, in order. One array per `&&` segment of the old script string;
  *              `run-gate` spawns each with `shell:false`, so no token is ever re-interpreted.
  */
+import fs from "node:fs";
+import path from "node:path";
 
 export const GATE_HOSTS = Object.freeze(["linux", "windows", "macos"]);
 export const GATE_SCOPES = Object.freeze(["fixture", "native-contract", "installed-artifact"]);
 
 /**
- * The `$PICO_ADB` every `fixture` and `installed-artifact` gate child runs under unless the caller
- * set one: a path that names no file, so `src/adb.ts` — which fails CLOSED on an explicit override
- * it cannot use and probes nothing else — turns any suite that still reaches a real adb into a
- * loud failure instead of a device contact.
+ * The `$PICO_ADB` every `fixture` and `installed-artifact` gate child runs under: a path that
+ * names no file, so `src/adb.ts` — which fails CLOSED on an explicit override it cannot use and
+ * probes nothing else — turns any suite that still reaches a real adb into a loud failure instead
+ * of a device contact.
  *
  * This is the exact literal the 38.0.0 checkpoint's every recorded run exported by hand, made an
  * invariant. Three RED-phase runs in that checkpoint reached real hardware because the barrier was
  * procedural (a ruling to export it) rather than enforced: a real `adb devices -l` against the
  * host's adb server (S4), a real device listing alongside a real packer launch (R4/C5), and ~20
- * irreversible `logcat -c` clears of the user's emulator (C6). Fixtures that need their own adb
- * already name it in the child env, which is why a caller-set value always wins here.
- * `native-contract` gates compile native sources and never resolve adb, so they get no default.
+ * irreversible `logcat -c` clears of the user's emulator (C6). The first enforced version still
+ * let an inherited `PICO_ADB` through ("a caller-set value wins"), which re-opened the same door
+ * from any shell that had exported a real adb — and `src/adb.ts` read an empty value as unset and
+ * walked PATH. Neither is trusted now: an inherited value is REPLACED, whatever it holds. Fixtures
+ * that need their own adb name it in the env of the children THEY spawn, which this pin never
+ * touches. `native-contract` gates compile native sources and never resolve adb, so they get none.
  */
 export const FIXTURE_NO_ADB = "/fixture/no/such/adb";
 
-/** The env a gate child is spawned with. Never mutates the env it is handed. */
-export function gateChildEnv(gate, env) {
+/** The ONE way a fixture gate may see a working adb: the harness names a fake executable explicitly. */
+export const HARNESS_ADB_VARIABLE = "PICO_GATE_FIXTURE_ADB";
+
+function isExecutableFile(target) {
+  try {
+    fs.accessSync(target, fs.constants.X_OK);
+    return fs.statSync(target).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The env a gate child is spawned with. Never mutates the env it is handed.
+ * Fixture and installed-artifact gates ALWAYS get `PICO_ADB` pinned to a path that names no file —
+ * an inherited value (real, empty or whitespace) is replaced, not trusted — unless the harness
+ * explicitly names a fake executable in PICO_GATE_FIXTURE_ADB. `src/adb.ts` refuses an explicit adb
+ * that is unusable, so a suite that still reaches adb fails loudly instead of touching a device.
+ * An override that is not an absolute path to an existing executable file throws (code
+ * GATE_FIXTURE_ADB_INVALID), so the gate is refused before any child exists rather than quietly
+ * downgraded to the pin or passed through.
+ */
+export function gateChildEnv(gate, env, io = { isExecutableFile }) {
   if (gate.scope === "native-contract") return env;
-  if (env.PICO_ADB !== undefined) return env;
+  const override = env[HARNESS_ADB_VARIABLE];
+  if (override !== undefined) {
+    if (typeof override !== "string" || !path.isAbsolute(override) || !io.isExecutableFile(override)) {
+      const error = new Error(
+        `${HARNESS_ADB_VARIABLE}=${JSON.stringify(override)} must be an absolute path to an existing executable fake adb; `
+        + `refusing to spawn ${gate.scope} gate children`,
+      );
+      error.code = "GATE_FIXTURE_ADB_INVALID";
+      throw error;
+    }
+    return { ...env, PICO_ADB: override };
+  }
   return { ...env, PICO_ADB: FIXTURE_NO_ADB };
 }
 
