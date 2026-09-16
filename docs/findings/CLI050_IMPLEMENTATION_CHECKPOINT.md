@@ -423,6 +423,19 @@ all twelve green with the export: `test:lint`, `test:docsmeta`, `test:distributi
 `test:tarball`, `test:knowledge-lifecycle`, `test:buildfreshness`,
 `test:plugin-bootstrap-freshness`).
 
+### Step 5c — the final battery on the branch tip (controller run, after the clean re-review)
+
+Run by the controller on the final tree (tip `8729bbd`; the evidence-only commit that records this run
+adds no source) with no `PICO_ADB` exported, run-gate's default carrying the pin, and a marker-writing
+tripwire `adb` first on `PATH`. `npm run build` published 190 files for source `eb105535d137`, the
+identity the final receipt records. Result: `BATTERY FAIL 54/55 passed; 1 failed: test:claims [exit 1]`
+in 542 s, the one ruled host-state red; `test:runrevision` passed this time (327/327), consistent with the
+timing-margin reading in Step 5b. Tripwire marker absent. Log:
+`evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/final/battery-38.0.0-final.log` (tracked)
+with its runner output beside it. The SDD ledger, briefs, task reports and both review reports are copied
+under `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/sdd-workspace/` so the process record and the
+verbatim incident quotes outlive the gitignored workspace.
+
 ### Step 6 — the distributable
 
 **The final artifact (fix wave, republished from the final tree).** Same non-replacing route,
