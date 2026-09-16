@@ -96,7 +96,8 @@ acceptance, and the same limit applies to every line here.
   `docs/SDK_6_0_0_DRIFT.md`, recorded as such), and vault lookups headline `target-verified` only
   on verified matches with explicit provenance.
 
-The entries below land in the same 38.0.0 line from the 2026-09-16 host-only completion pass.
+The entries below land in the same 38.0.0 line from the 2026-09-16 host-only completion pass,
+[docs/findings/CLI050_HOST_COMPLETION_CHECKPOINT.md](docs/findings/CLI050_HOST_COMPLETION_CHECKPOINT.md).
 They carry the same evidence limit as everything above: fixture- and host-executed, never native,
 visual, device, cross-platform or end-to-end.
 

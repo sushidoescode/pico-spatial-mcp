@@ -1,0 +1,57 @@
+# step6 npm run --silent test:docsmeta (final checkpoint text) (2026-09-16T13:31:53Z)
+package.json version: 38.0.0
+
+  ok   plugin.json carries version 38.0.0
+  ok   .claude-plugin/plugin.json carries version 38.0.0
+  ok   .claude-plugin/marketplace.json carries version 38.0.0
+  ok   .claude-plugin/marketplace.json carries version 38.0.0
+  ok   .codex-plugin/plugin.json carries version 38.0.0
+  ok   .agents/plugins/marketplace.json carries version 38.0.0
+  ok   .cursor-plugin/plugin.json carries version 38.0.0
+  ok   .cursor-plugin/marketplace.json carries version 38.0.0
+  ok   .github/plugin/marketplace.json carries version 38.0.0
+  ok   .github/plugin/marketplace.json carries version 38.0.0
+  ok   package-lock.json version carries version 38.0.0
+  ok   package-lock.json packages[''].version carries version 38.0.0
+  ok   plugin.json targets Agent Plugins 1.0.0
+  ok   portable and Claude manifests carry one plugin identity
+  ok   sync-metadata --check: no stale version/tool-count literals
+  ok   all 189 relative markdown links resolve (77 git-tracked files: root *.md + docs/**)
+  WARN homepage/origin check skipped: ENOTDIR: not a directory, open '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/.git/config'
+
+Docs/metadata gate done. Failures: 0
+✔ publicMarkdownFiles keeps tracked root and docs Markdown, and drops everything else (1.37ms)
+✔ nested tracked Markdown outside docs/ is not public documentation (0.670125ms)
+✔ selection is ordered by code unit, not by locale, and deduplicated (0.685125ms)
+✔ selection never reads the filesystem, so an untracked note cannot join the set (1.402625ms)
+✔ a path that climbs out of the checkout is never public documentation (0.973042ms)
+✔ publicMarkdownFiles refuses a caller that supplies no tracked paths (0.707834ms)
+✔ parseTrackedPaths reads NUL-separated git output, including a trailing separator (0.053875ms)
+✔ parsePackagedInventory accepts an explicit list and refuses anything vaguer (0.106875ms)
+✔ relativeLinkFailures reports a tracked broken link (0.824625ms)
+✔ a broken link carries the file, the target as authored, and a known reason (0.969875ms)
+✔ percent-encoded targets are decoded before they are resolved (1.104709ms)
+✔ a malformed percent escape is a failure, not a crash (0.82625ms)
+✔ a symlink that leaves the checkout fails even though the target exists (0.956667ms)
+✔ a selected document that is itself a symlink out of the checkout is refused, unread (0.916125ms)
+✔ a packaged inventory cannot smuggle in a document that resolves outside the checkout (0.964ms)
+✔ a relative path that climbs out of the checkout fails even though the target exists (0.811666ms)
+✔ a relative path inside the checkout that climbs and comes back is fine (0.865584ms)
+✔ http, mailto, other schemes, protocol-relative, fragment-only and autolink targets are not checked (0.693375ms)
+✔ a fragment is stripped before the target is resolved (0.961542ms)
+✔ fenced blocks and inline code carry example paths, not links (0.791375ms)
+✔ image links and link titles are handled like the gate always handled them (0.896042ms)
+✔ a selected file that cannot be read is a failure, not a thrown gate (0.577667ms)
+✔ relativeLinkReport counts every relative link it checked across every file (1.068208ms)
+✔ git ls-files feeds selection: staged docs are in, ignored local notes are out (89.705709ms)
+✔ test/docsmeta.mjs selects through git ls-files and refuses to guess without it (0.228709ms)
+✔ the docs gate runs this suite (0.570334ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 145.462334
+exit=0
