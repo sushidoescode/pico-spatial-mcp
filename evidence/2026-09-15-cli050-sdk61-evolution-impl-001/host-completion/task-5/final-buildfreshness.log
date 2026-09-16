@@ -1,0 +1,35 @@
+✔ source edits change the input identity and invalidate the receipt (3.984791ms)
+✔ the input identity is a sorted, deterministic digest over sources, config, lockfile and toolchain (1.325458ms)
+✔ a successful build publishes dist with a portable receipt and no leftover scratch (2.915167ms)
+✔ removing a source removes its emitted module on the next successful build (3.1815ms)
+✔ lockfile and tsconfig edits invalidate the receipt (3.338ms)
+✔ the installed TypeScript version participates in the identity (3.379417ms)
+✔ a failed compilation preserves the previously published output (1.919333ms)
+✔ a source change during compilation is rejected and the old output survives (1.691667ms)
+✔ tampered, missing and orphaned output invalidates the receipt (4.117375ms)
+✔ a missing, unparsable or half-published build is never current (1.710667ms)
+✔ an independent writer waits for the lock, then fails without stealing it (7.178208ms)
+✔ a waiting writer proceeds once the holder releases the lock (1.440375ms)
+✔ only the exact active lease for the same root is reused (1.706292ms)
+✔ buildSource reuses a caller-held lease instead of deadlocking on itself (1.529167ms)
+build-source: recovered scratch from an interrupted build: .dist-staging-abandoned
+✔ the production compiler runs the checkout's TypeScript through this node binary (6.000917ms)
+✔ a failed publication restores the previous dist and keeps no backup behind (2.082791ms)
+✔ every destructive step refuses paths the build does not own (1.538292ms)
+✔ holding the lock sweeps scratch an interrupted build left, and nothing else (1.920875ms)
+✔ the next build recovers scratch an interrupted build left behind (1.815667ms)
+✔ an interrupt releases this build's lock and staging, then re-raises the signal (1.928625ms)
+✔ an interrupt never releases a lock that is no longer this build's (0.979791ms)
+✔ a lock whose holder has exited is reported as dead, with a recovery command, not stolen (29.959167ms)
+✔ two concurrent builds under one lease are serialized, and neither sweeps the other (2.506875ms)
+✔ the sweep spares staging an active build is using (1.8705ms)
+✔ an interrupt aborts the compiler before it removes the staging tree (1.001292ms)
+✔ an interrupt stops the production compiler's child process (499.156292ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 651.237458
