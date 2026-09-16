@@ -11,6 +11,7 @@ import { appendAutoJudgedEntry } from "./ledger.js";
 import { sendXrRecenter } from "./grpc.js";
 import { adbExecutable } from "./adb.js";
 import { inspectPng } from "./artifactinspection.js";
+import { observationCapturePath } from "./capturepaths.js";
 
 /**
  * eye.ts — v6.3 THE TRUSTWORTHY AUTOMATED EYE + DETERMINISTIC CAPTURE (now MR-aware).
@@ -310,7 +311,7 @@ export function registerEyeTools(
         "DETERMINISTIC capture (v6.2). Grabs the emulator's forward immersive frame via `adb exec-out screencap` — byte-stable across repeated captures and across kill+relaunch (measured MAE=0) because content is authored in the forward FOV and this path does not drift (unlike the GUI free-cam orbit). With recenter:true it sends the actual gRPC xr_command RECENTER first; command acceptance is reported, while its rendered-pose effect remains unverified on emulator 0.13.1. Returns the saved path + content sha256 + dimensions + objective measurements. The bytes are structurally inspected (signature, chunk CRCs, raster) before anything is written: a truncated or non-image screencap is refused rather than saved as the canonical frame. Pass expectSha to detect drift instead of silently verifying a different view.",
       inputSchema: {
         serial: z.string().optional().describe("adb device serial (default emulator-5554)."),
-        outPath: z.string().optional().describe("Full-res PNG output path (default /tmp/pico-render/canonical.png)."),
+        outPath: z.string().optional().describe("Full-res PNG output path. Default: a run-unique RETAINED file under the observation root, never a fixed shared path a later capture can overwrite. The default TARGET is unchanged (emulator-5554)."),
         recenter: z.boolean().optional().describe("Send gRPC xr_command RECENTER before capture. The command is real; its rendered-pose effect is unverified on emulator 0.13.1. Default false."),
         settleMs: z.number().int().optional().describe("Settle delay before capture (default 600ms)."),
         expectSha: z.string().optional().describe("Expected content sha256 — the tool reports match/DRIFT instead of silently returning a different view."),
@@ -319,7 +320,7 @@ export function registerEyeTools(
     async ({ serial, outPath, recenter, settleMs, expectSha }) => {
       const adb = (deps.resolveAdbFn ?? resolveAdb)();
       const dev = serial ?? "emulator-5554";
-      const full = expandHome(outPath ?? "/tmp/pico-render/canonical.png");
+      const full = expandHome(outPath ?? observationCapturePath("canonical", "canonical.png"));
       fs.mkdirSync(path.dirname(full), { recursive: true });
       let recenterEffect: "unverified" | undefined;
       if (recenter) {
