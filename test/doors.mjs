@@ -440,6 +440,32 @@ if (doorsModule.registerDoorTools.length < 2) {
     if (!structuredSuccess.isError && sameJson(JSON.parse(structuredSuccess.content[0].text), { running: true, serial: "emulator-5554" }))
       ok("pico_emulator decodes a structured success from its text block (documented domain-lane semantics)");
     else fail(`pico_emulator structured-success decoding drifted: ${JSON.stringify(structuredSuccess).slice(0, 300)}`);
+
+    // domain lane — pico_perf carries an EXPLICIT device through to perf_diagnose (host completion
+    // T5). The door forwarded only packageName/durationSec, and zod strips what a schema does not
+    // declare, so a caller on a multi-device host could not say which device to profile: every
+    // door-driven run silently went to the wrapper's default target.
+    responses.set("perf_diagnose", {
+      content: [{ type: "text", text: JSON.stringify({ status: "ok", requestedDevice: "fixture-serial", measurement: "missing" }) }],
+    });
+    const perfExplicit = await laneClient.callTool({
+      name: "pico_perf",
+      arguments: { packageName: "com.example.fixture", durationSec: 10, device: "fixture-serial" },
+    });
+    const perfExplicitCall = rawCalls.at(-1);
+    if (!perfExplicit.isError && perfExplicitCall?.name === "perf_diagnose"
+        && sameJson(perfExplicitCall.args, { packageName: "com.example.fixture", durationSec: 10, device: "fixture-serial" }))
+      ok("pico_perf forwards an explicit device verbatim to perf_diagnose");
+    else fail(`pico_perf dropped or rewrote the explicit device: ${JSON.stringify({ forwarded: perfExplicitCall, result: perfExplicit }).slice(0, 400)}`);
+
+    // …and omitting it forwards NO device key, so the wrapper's documented default still decides.
+    const perfDefault = await laneClient.callTool({ name: "pico_perf", arguments: { packageName: "com.example.fixture" } });
+    const perfDefaultCall = rawCalls.at(-1);
+    if (!perfDefault.isError && perfDefaultCall?.name === "perf_diagnose"
+        && sameJson(perfDefaultCall.args, { packageName: "com.example.fixture" })
+        && !Object.hasOwn(perfDefaultCall.args, "device"))
+      ok("pico_perf with no device forwards no device key (the wrapper's documented default target stands)");
+    else fail(`pico_perf invented a device for a caller that named none: ${JSON.stringify(perfDefaultCall).slice(0, 300)}`);
   } finally {
     await laneClient.close();
     await laneServer.close();

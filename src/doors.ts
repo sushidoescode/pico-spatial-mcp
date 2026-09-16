@@ -573,8 +573,12 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
 
   door(
     "pico_perf",
-    "DOOR 7 — Profile a running app with PICO's OFFICIAL profiler (pico-cli perf): FPS percentiles, CPU/GPU, jank windows, and PICO's own diagnosis engine. Structural evidence — numbers, not looks.",
-    { packageName: z.string(), durationSec: z.number().optional() },
+    "DOOR 7 — Profile a running app with PICO's OFFICIAL profiler (pico-cli perf): FPS percentiles, CPU/GPU, jank windows, and PICO's own diagnosis engine. Structural evidence — numbers, not looks. The target is the explicit `device` you pass or the wrapper's documented default; either way the result names it as requestedDevice.",
+    {
+      packageName: z.string(),
+      durationSec: z.number().optional(),
+      device: z.string().optional().describe("adb serial to profile; forwarded verbatim. Omitted: the wrapper's documented default target."),
+    },
     async (args) => {
       const call = await doorCall();
       return call("perf_diagnose", args);

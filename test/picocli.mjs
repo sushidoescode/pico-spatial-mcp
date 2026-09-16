@@ -574,6 +574,13 @@ fakeLiveRunner.calls.every((call) => !call.args.includes("monitor"))
   ? ok("no dispatched perf argv contains `monitor`")
   : fail("a perf dispatch still uses the rejected monitor route");
 
+// Explicit target identity (host completion T5): the device the run was ASKED to profile is part
+// of the result, on every outcome — a graded run and a refusal alike. Without it a caller who
+// named a device (pico_perf now forwards one) cannot tell from the result which one was profiled.
+dispatched.requestedDevice === "fixture-serial"
+  ? ok("a graded perf result names the device it was asked to profile")
+  : fail(`a graded perf result does not name its target: ${JSON.stringify(dispatched.requestedDevice)}`);
+
 // The WHOLE raw report is copied into the immutable observation run directory, so the evidence
 // survives even if the CLI's own output path is later overwritten.
 const { retainPicoCliObservation } = await import("../dist/picocli.js");
@@ -642,6 +649,9 @@ gatedResult.status === "failed" && gatedResult.failureClass === "setup-required"
   && JSON.stringify(gatedResult.capability?.evidence) === JSON.stringify(["/fixture/evidence/stdout.txt", "/fixture/evidence/stderr.txt"])
   ? ok("an unprovisioned profiler refuses without spawning and returns the neutral setup sentence plus its evidence paths")
   : fail(`gated perf refusal wrong: ${JSON.stringify(gatedResult)}`);
+gatedResult.requestedDevice === "fixture-serial"
+  ? ok("a perf REFUSAL names the device it was asked to profile too")
+  : fail(`a perf refusal does not name its target: ${JSON.stringify(gatedResult.requestedDevice)}`);
 gatedResult.capability?.operation === "perf-live" && gatedResult.familyGate === undefined
   && gatedResult.remediationLimit === undefined
   ? ok("an evidence-backed perf-live gate needs no family answer and claims no remediation limit")

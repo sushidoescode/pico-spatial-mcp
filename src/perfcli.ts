@@ -119,6 +119,10 @@ export type PerfDiagnoseResult = {
   summary?: any;
   jankWindowCount?: number;
   jankWindows?: any[];
+  /** The device this run was asked to profile — the caller's explicit serial, or the default this
+   *  wrapper substituted when none was named. Explicit target identity: a report validated against
+   *  one device must never be read as evidence about another. */
+  requestedDevice?: string;
   honesty?: string;
   picoCli?: PicoCliProvenance;
   setupCommand?: { path: string; args: string[] };
@@ -399,7 +403,19 @@ function perfFamilyGate(family: readonly OperationCapability[]): OperationCapabi
   return family.find((candidate) => /^(?:utilities-not-installed|environment):/.test(candidate.reason)) ?? null;
 }
 
+/**
+ * Every outcome — a capability refusal, a failed or timed-out run, an unusable report, or a graded
+ * one — names the device this wrapper was asked to profile. The request is the authority on that,
+ * so it is written over whatever the inner result carried.
+ */
 export async function collectPerfLive(
+  request: PerfDiagnoseRequest,
+  runtime: PerfDiagnoseRuntime,
+): Promise<PerfDiagnoseResult> {
+  return { ...(await collectPerfLiveResult(request, runtime)), requestedDevice: request.device };
+}
+
+async function collectPerfLiveResult(
   request: PerfDiagnoseRequest,
   runtime: PerfDiagnoseRuntime,
 ): Promise<PerfDiagnoseResult> {
@@ -615,6 +631,8 @@ export async function runPerfDiagnose(
   packageName: string,
   opts: { durationSec?: number; device?: string } = {},
 ): Promise<PerfDiagnoseResult> {
+  // The target is decided before anything can fail, so even a refusal names the device it is about.
+  const device = opts.device ?? DEFAULT_PERF_DEVICE;
   const ensured = await ensurePicoCli();
   if (ensured.status !== "ok") {
     return {
@@ -623,12 +641,12 @@ export async function runPerfDiagnose(
       failureClass: ensured.failureClass,
       note: ensured.note,
       ...(ensured.outputTail ? { outputTail: ensured.outputTail } : {}),
+      requestedDevice: device,
     };
   }
   let cli = picoCliFromEnsure(ensured)!;
   let provenance = { picoCli: picoCliProvenance(ensured) };
   const sec = Math.min(120, Math.max(5, Math.round(opts.durationSec ?? 15)));
-  const device = opts.device ?? DEFAULT_PERF_DEVICE;
   const outDir = path.join(os.homedir(), ".pico-mcp", "perf");
   const reportPath = path.join(outDir, `${packageName}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
 
@@ -703,7 +721,9 @@ export function registerPerfCliTools(server: McpServer) {
         "environment-gated profiler is refused with the CLI's own reason and the retained evidence paths, and this " +
         "server never sets PICO_HOME and never runs setup. The report is validated before it is reported — its package " +
         "identity must match the request, its schema must be a published one (reportVersion 0.2.0/0.1.0), and a report " +
-        "file that predates the run is refused. Read `measurement` before reading any number: 'missing' (including the " +
+        "file that predates the run is refused. The result reports `requestedDevice` — the explicit `device` you named or " +
+        "the default this wrapper substituted — so a report is never read against the wrong target. " +
+        "Read `measurement` before reading any number: 'missing' (including the " +
         "profiler's own SKIP/INSUFFICIENT_DATA) is NOT a pass, and Spatial Runtime FPS never stands in for app FPS. " +
         "Resolves the latest managed @picoxr/pico-cli lazily on first use and runs its absolute path; successful resolution " +
         "is reported in picoCli provenance. Failures carry an honest failureClass for managed policy/freshness, " +
@@ -733,11 +753,12 @@ export function registerPerfCliTools(server: McpServer) {
         summary: z.unknown().optional().describe("pico-cli's summary: appFps percentiles p5/p10/p50 (FPS LOWS — there is no p95), sysFps, CPU/GPU counters. appFps 0/absent = no app 3D frames: not measured, never 'GPU idle'."),
         jankWindowCount: z.number().optional(),
         jankWindows: z.array(z.unknown()).optional().describe("Top jank windows (at most 5)."),
+        requestedDevice: z.string().optional().describe("The device this run was asked to profile: your explicit `device`, or the default this wrapper substituted when you named none. Read it before reading any number — a report validated against one device is not evidence about another."),
       }).passthrough(),
       inputSchema: {
         packageName: z.string().describe("Target app package (must be running), e.g. com.example.knockdownxr"),
         durationSec: z.number().min(5).max(120).optional().describe("Sampling window in seconds (default 15)."),
-        device: z.string().optional().describe("Device serial (default emulator-5554)."),
+        device: z.string().optional().describe(`Device serial to profile. Omitted: this wrapper's documented default target, ${DEFAULT_PERF_DEVICE}. Whichever decided, the result reports it as requestedDevice.`),
       },
     },
     async ({ packageName, durationSec, device }) => okJsonStructured(await runPerfDiagnose(packageName, { durationSec, device }) as unknown as Record<string, unknown>),
