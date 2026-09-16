@@ -451,7 +451,37 @@ test("a receipt from another Node major blocks hidden-lockfile adoption and dema
   assert.equal(unknown.current, false);
   assert.equal(unknown.acceptedBy, null);
   assert.equal(unknown.provenance, null);
-  assert.match(unknown.reasons.join("\n"), /does not record the Node major/);
+  assert.match(unknown.reasons.join("\n"), /Node major of the recorded install could not be read/);
+});
+
+test("a receipt that EXISTS but cannot be read is unknown provenance, not an opening for npm's record", () => {
+  // The gate asks whether a recorded install can vouch for this Node major. A receipt that cannot
+  // be read cannot vouch for anything — but `present` was false for every readFileSync failure, so
+  // an unreadable (root-owned, EACCES) or EISDIR receipt skipped the gate entirely and npm's record
+  // was consulted after all. A directory in the receipt's place reproduces that without needing to
+  // drop privileges: the entry exists on every platform's stat and reading it fails with EISDIR.
+  const root = createCheckout();
+  installDependenciesInto(root);
+  writeHiddenLockfile(root);
+  assert.equal(matchesHiddenLockfile(root).matches, true, "npm's record must match, or this proves nothing");
+  fs.mkdirSync(path.join(root, DEPENDENCY_RECEIPT_NAME));
+
+  const verdict = verifyDependencies(root);
+  assert.equal(verdict.current, false);
+  assert.equal(verdict.acceptedBy, null, "an install we cannot read is never accepted on npm's record");
+  assert.equal(verdict.provenance, null);
+  const reasons = verdict.reasons.join("\n");
+  assert.match(reasons, /\.pico-dependencies\.json is unreadable \(EISDIR/, "the refusal must name the receipt it could not read");
+  assert.match(reasons, /Node major of the recorded install could not be read/, "…and why that makes the provenance unknown");
+  assert.doesNotMatch(reasons, /npm has no record|hidden lockfile records|does not list/, "the hidden lockfile must not have been consulted at all");
+
+  // An ENOENT receipt is a different thing entirely — nothing was ever recorded here — and npm's
+  // record still answers for it. That distinction is the whole point of `present`.
+  fs.rmdirSync(path.join(root, DEPENDENCY_RECEIPT_NAME));
+  const absent = verifyDependencies(root);
+  assert.equal(absent.current, true);
+  assert.equal(absent.acceptedBy, ACCEPTED_BY.hiddenLockfile);
+  assert.equal(absent.provenance, RECORDED_SOURCE.hiddenLockfile);
 });
 
 test("hidden-lockfile adoption records its provenance and never reports npm-ci", () => {

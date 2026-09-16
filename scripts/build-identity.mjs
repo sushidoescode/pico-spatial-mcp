@@ -236,17 +236,22 @@ export function matchesHiddenLockfile(root) {
 /**
  * `{current, reasons[]}` plus the evidence, from a receipt alone.
  *
- * Also reports `present` (a receipt file was read at all), the `nodeMajor` it records and the
- * `source` it claims, so `verifyDependencies` can decide whether npm's own record is allowed to
- * speak for this tree. `nodeMajor` is null whenever the file could not be read far enough to carry
- * one — a recorded install of unknown provenance, which is not the same thing as no install.
+ * Also reports `present` (a receipt EXISTS here, whether or not it could be read or parsed), the
+ * `nodeMajor` it records and the `source` it claims, so `verifyDependencies` can decide whether
+ * npm's own record is allowed to speak for this tree. `nodeMajor` is null whenever the file could
+ * not be read far enough to carry one — a recorded install of unknown provenance, which is not the
+ * same thing as no install. Only ENOENT is "no install was ever recorded here": an EACCES or EISDIR
+ * receipt demonstrably exists, and reporting it as absent is what let an unreadable receipt hand a
+ * cross-major tree to npm's record.
  */
 function receiptVerdict(checkout, identity) {
   const unusable = (reason, extra = {}) => ({ current: false, reasons: [reason], present: true, nodeMajor: null, source: null, ...extra });
   let raw;
   try { raw = fs.readFileSync(path.join(checkout, DEPENDENCY_RECEIPT_NAME), "utf8"); }
   catch (error) {
-    return { current: false, present: false, nodeMajor: null, source: null, reasons: [error.code === "ENOENT"
+    // ENOENT is the only absence. Every other failure — EACCES, EISDIR, EIO — is a receipt that is
+    // here and that we cannot account for, which is unknown provenance, not a clean slate.
+    return { current: false, present: error.code !== "ENOENT", nodeMajor: null, source: null, reasons: [error.code === "ENOENT"
       ? `no install has been recorded here yet (${DEPENDENCY_RECEIPT_NAME} does not exist)`
       : `${DEPENDENCY_RECEIPT_NAME} is unreadable (${error.code ?? error.message})`] };
   }
@@ -285,8 +290,11 @@ function receiptVerdict(checkout, identity) {
  */
 function crossMajorReason(recordedMajor) {
   const cannotVouch = "the hidden lockfile cannot vouch for native or optional dependencies across majors, so this install is reinstalled";
+  // `null` covers every way a receipt can be here and still not say which major installed the tree:
+  // the pre-change shape that has no such field, and one that is unreadable, unparsable or written
+  // to a schema this build does not know.
   return recordedMajor === null
-    ? `${DEPENDENCY_RECEIPT_NAME} does not record the Node major it was installed under, so that install's provenance is unknown; ${cannotVouch}`
+    ? `the Node major of the recorded install could not be read from ${DEPENDENCY_RECEIPT_NAME}, so its provenance is unknown; ${cannotVouch}`
     : `installed under Node ${recordedMajor}, running Node ${nodeMajor()}; ${cannotVouch}`;
 }
 

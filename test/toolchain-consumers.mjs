@@ -1098,28 +1098,52 @@ test("check_toolchain_updates reports the SELECTED installation's emulator and e
   const versions = installedVersions(io);
   assert.equal(versions.emulator, "6.1.0");
   assert.equal(versions.editor, "6.1.0");
-  assert.equal(versions.selection.version, "6.1");
-  assert.equal(versions.selection.rootSource, "PICO_HOME");
+  assert.deepEqual(versions.selection.emulator, { version: "6.1", rootSource: "PICO_HOME" });
+  assert.deepEqual(versions.selection.editor, { version: "6.1", rootSource: "PICO_HOME" });
   assert.equal(versions.sdkMaven, "6.0.0", "the scaffold's Gradle pin is a separate fact and stays as it is");
   assert.ok(!io.reads.some((target) => target.includes("/0.13/")), `a legacy payload was read: ${io.reads.filter((t) => t.includes("/0.13/")).join(", ")}`);
 
+  // The two components are selected INDEPENDENTLY (`required` filters candidate installations), so
+  // a host that upgraded its emulator to 6.1 and left the editor on 0.13 — two separately
+  // downloaded payloads, an ordinary state — resolves two different versions. One shared
+  // `selection` field would name 6.1 as the origin of a 0.13.3 editor version.
+  const split = toolchainIOFromTree({
+    platform: "darwin", home: "/fixture", env: { PICO_HOME: S6_ROOT },
+    files: {
+      [`${S6_ROOT}/6.1/emulator/emulator`]: { bytes: "emulator-6.1", executable: true },
+      [`${S6_ROOT}/6.1/emulator/package.xml`]: { bytes: "<revision><major>6</major><minor>1</minor><micro>0</micro></revision>" },
+      [`${S6_ROOT}/0.13/emulator/emulator`]: { bytes: "emulator-0.13", executable: true },
+      [`${S6_ROOT}/0.13/emulator/package.xml`]: { bytes: "<revision><major>0</major><minor>13</minor><micro>3</micro></revision>" },
+      [`${S6_ROOT}/0.13/editor/Spatial Editor.app/Contents/MacOS/Spatial Editor`]: { bytes: "editor-0.13", executable: true },
+      [`${S6_ROOT}/0.13/editor/Spatial Editor.app/Contents/MacOS/version`]: { bytes: "0.13.3\n" },
+    },
+  });
+  const halfUpgraded = installedVersions(split);
+  assert.equal(halfUpgraded.emulator, "6.1.0", "the newest installation carrying an emulator answers for the emulator");
+  assert.equal(halfUpgraded.editor, "0.13.3", "…and the only installation carrying an editor answers for the editor");
+  assert.deepEqual(halfUpgraded.selection.emulator, { version: "6.1", rootSource: "PICO_HOME" });
+  assert.deepEqual(halfUpgraded.selection.editor, { version: "0.13", rootSource: "PICO_HOME" },
+    "each component discloses the installation ITS version was read from");
+
   // Nothing selectable: the selection layer's own structured refusal is reported, not an invented
-  // path and not a fabricated version.
+  // path and not a fabricated version — per component, since either can fail on its own.
   const empty = toolchainIOFromTree({ platform: "darwin", home: "/fixture", env: { PICO_HOME: "/sdk" }, files: {} });
   const unavailable = installedVersions(empty);
   assert.equal(unavailable.emulator, "unknown");
   assert.equal(unavailable.editor, "unknown");
-  assert.equal(unavailable.selection.unavailable, "unavailable/root-unavailable");
-  assert.equal(unavailable.selection.version, undefined);
+  assert.deepEqual(unavailable.selection.emulator, { unavailable: "unavailable/root-unavailable" });
+  assert.deepEqual(unavailable.selection.editor, { unavailable: "unavailable/root-unavailable" });
 
   // A selected installation whose payload files are absent is "unknown", never a guessed version.
   const noPayload = mixedHostIO({ PICO_HOME: S6_ROOT });
   const silent = installedVersions(noPayload);
   assert.equal(silent.emulator, "unknown");
   assert.equal(silent.editor, "unknown");
-  assert.equal(silent.selection.version, "6.1", "the selection still resolved; only its metadata files are missing");
+  assert.equal(silent.selection.emulator.version, "6.1", "the selection still resolved; only its metadata files are missing");
+  assert.equal(silent.selection.editor.version, "6.1");
 
-  // Off macOS the editor bundle is not published at all, and the emulator half still answers.
+  // Off macOS the editor bundle is not published at all, and the emulator half still answers — the
+  // case a single shared `selection` could not express without lying about one of them.
   const linux = toolchainIOFromTree({
     platform: "linux", home: "/home/dev", env: { PICO_HOME: "/opt/pico" },
     files: {
@@ -1130,7 +1154,8 @@ test("check_toolchain_updates reports the SELECTED installation's emulator and e
   const offMac = installedVersions(linux);
   assert.equal(offMac.emulator, "6.1.0");
   assert.equal(offMac.editor, "unknown");
-  assert.equal(offMac.selection.version, "6.1");
+  assert.deepEqual(offMac.selection.emulator, { version: "6.1", rootSource: "PICO_HOME" });
+  assert.deepEqual(offMac.selection.editor, { unavailable: "unavailable/component-unsupported-platform" });
 
   // …and the module carries no executed legacy path any more. Comments documenting the 0.13.3
   // provenance of the historical pin are exactly what this scan must leave alone.
@@ -1140,7 +1165,8 @@ test("check_toolchain_updates reports the SELECTED installation's emulator and e
     assert.doesNotMatch(line, /sdk\/0\.13/, `a legacy path literal survived: ${line.trim()}`);
     assert.doesNotMatch(line, /os\.homedir/, `a home-directory default survived: ${line.trim()}`);
   }
-  assert.match(source, /resolveOperationToolchain\(/, "the versions must come from the shared selection");
+  assert.match(source, /resolveToolchain\(\{ required: \[component\] \}, io\)/, "the versions must come from the shared selection layer, per component");
+  assert.doesNotMatch(source, /unavailable\/not-resolved/, "only the selection layer's own structured codes may be emitted here");
 });
 
 test("S6 matrix: the same mixed host on win32 and linux FIXTURES selects the 6.1 payload published for that platform", async () => {

@@ -2,8 +2,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as path from "node:path";
 import { okJson } from "./util.js";
-import { hostToolchainIO, isToolchainFailure, resolveOperationToolchain } from "./toolchain.js";
-import type { RootSource, ToolchainIO, UnusableToolchain } from "./toolchainselection.js";
+import { hostToolchainIO, isToolchainFailure } from "./toolchain.js";
+import { resolveToolchain } from "./toolchainselection.js";
+import type { RootSource, ToolchainIO, ToolComponent } from "./toolchainselection.js";
 
 /**
  * toolchainwatch.ts — check whether the installed PICO toolchain is current.
@@ -14,58 +15,77 @@ import type { RootSource, ToolchainIO, UnusableToolchain } from "./toolchainsele
  * available. Read-only: it fetches metadata and downloads nothing.
  *
  * WHICH install is "installed": the emulator and editor components of the SELECTED PICO toolchain,
- * resolved through the same per-call selection every other operation runs, so $PICO_HOME, a
+ * resolved through the same component-valid selection every other operation runs, so $PICO_HOME, a
  * project's `spatial.tools.dir` and an explicit version pin all apply. Until the 38.0.0 fix wave
  * this module read `~/Library/PICO/sdk/0.13/emulator/package.xml` and the 0.13 editor's `version`
  * file from module-scope literals — so on a host carrying 0.13 beside 6.1 it reported the LEGACY
  * payload as installed, and the verdict below advertised an upgrade the host already had.
+ *
+ * The two components are selected SEPARATELY, and their answers are disclosed separately. A
+ * selection is filtered by the components it is asked for, so a host that upgraded its emulator to
+ * 6.1 and left its editor on 0.13 — two separately downloaded payloads, an ordinary state —
+ * legitimately resolves two different installations. One shared `selection` field would then name
+ * the wrong origin for one of the two versions it claims to account for.
  */
 const TCC_URL = "https://lf3-config.bytetcc.com/obj/tcc-config-web/tcc-v2-data-pico.spatial-plugin.emulator-default";
 const MAVEN_BOM = "https://artifact.bytedance.com/repository/Volcengine/com/pico/spatial/bom/maven-metadata.xml";
 
+/** Where ONE component's version was read from, or the selection layer's own structured refusal. */
+export type ComponentSelection = { version: string; rootSource: RootSource } | { unavailable: string };
+
 export interface InstalledToolchainVersions {
-  /** The selected installation's emulator revision, or "unknown" when nothing declares one. */
+  /** The selected emulator installation's declared revision, or "unknown" when none declares one. */
   emulator: string;
-  /** The selected installation's Spatial Editor version, or "unknown" (macOS-only component). */
+  /** The selected editor installation's version, or "unknown" (the editor is macOS-only). */
   editor: string;
   /** The Gradle dependency line our scaffolds pin — an app-side fact, not an installed payload. */
   sdkMaven: string;
-  /** Where the two versions above were read from, or the selection layer's own refusal. */
-  selection: { version: string; rootSource: RootSource } | { unavailable: string };
-}
-
-/** The declared version of a component of the SELECTED installation, never a guessed one. */
-function readInstalledVersion(io: ToolchainIO, bin: string, fileName: string, parse: (text: string) => string | null): string {
-  const P = io.platform === "win32" ? path.win32 : path.posix;
-  const bytes = io.read(P.join(P.dirname(bin), fileName));
-  if (!bytes) return "unknown";
-  return parse(bytes.toString("utf8")) ?? "unknown";
+  /** Per component: the installation THAT component's version above was read from, or why none. */
+  selection: { emulator: ComponentSelection; editor: ComponentSelection };
 }
 
 /**
- * What is installed, read from the selected installation through `io`. Never throws: a component
- * that cannot be selected, or whose metadata file is absent, is "unknown" rather than a guess.
+ * One component's declared version and the installation it came from, read through `io`.
+ *
+ * Never throws and never guesses: a component that cannot be selected reports the selection layer's
+ * own structured code, and a selected installation whose metadata file is absent or unparsable
+ * reports "unknown" against the selection that was made.
  */
+function installedComponent(
+  io: ToolchainIO,
+  component: ToolComponent,
+  fileName: string,
+  parse: (text: string) => string | null,
+): { version: string; selection: ComponentSelection } {
+  const selected = resolveToolchain({ required: [component] }, io);
+  if (isToolchainFailure(selected)) return { version: "unknown", selection: { unavailable: selected.code } };
+
+  const where: ComponentSelection = { version: selected.version, rootSource: selected.rootSource };
+  // The component is in `required`, so a selection that succeeded carries it; `files` is a partial
+  // record, and an absent entry is reported as an unknown version against a real selection rather
+  // than as a selection failure that did not happen.
+  const bin = selected.files[component]?.path;
+  if (!bin) return { version: "unknown", selection: where };
+
+  const P = io.platform === "win32" ? path.win32 : path.posix;
+  const bytes = io.read(P.join(P.dirname(bin), fileName));
+  if (!bytes) return { version: "unknown", selection: where };
+  return { version: parse(bytes.toString("utf8")) ?? "unknown", selection: where };
+}
+
+/** What is installed, per component, read from each component's own selected installation. */
 export function installedVersions(io: ToolchainIO = hostToolchainIO()): InstalledToolchainVersions {
-  const emulator = resolveOperationToolchain({ required: ["emulator"], primary: "emulator" }, io);
-  const editor = resolveOperationToolchain({ required: ["editor"], primary: "editor" }, io);
+  const emulator = installedComponent(io, "emulator", "package.xml", (xml) =>
+    xml.match(/<revision>\s*<major>(\d+)<\/major>\s*<minor>(\d+)<\/minor>\s*<micro>(\d+)<\/micro>/)?.slice(1, 4).join(".")
+    ?? xml.match(/rev(?:ision)?[^0-9]*([0-9.]+)/i)?.[1] ?? null);
+  const editor = installedComponent(io, "editor", "version", (text) => text.match(/[\d.]+/)?.[0] ?? null);
 
-  const out: InstalledToolchainVersions = {
-    emulator: isToolchainFailure(emulator) ? "unknown" : readInstalledVersion(io, emulator.bin, "package.xml", (xml) =>
-      xml.match(/<revision>\s*<major>(\d+)<\/major>\s*<minor>(\d+)<\/minor>\s*<micro>(\d+)<\/micro>/)?.slice(1, 4).join(".")
-      ?? xml.match(/rev(?:ision)?[^0-9]*([0-9.]+)/i)?.[1] ?? null),
-    editor: isToolchainFailure(editor) ? "unknown" : readInstalledVersion(io, editor.bin, "version", (text) => text.match(/[\d.]+/)?.[0] ?? null),
+  return {
+    emulator: emulator.version,
+    editor: editor.version,
     sdkMaven: "6.0.0", // the gradle dependency line our scaffolds pin
-    selection: { unavailable: "unavailable/not-resolved" },
+    selection: { emulator: emulator.selection, editor: editor.selection },
   };
-
-  // The emulator is the cross-platform component, so it names the selection when it resolved; the
-  // editor answers for it on a host that carries one and no emulator. When neither does, the
-  // selection layer's own structured code is reported instead of an invented location.
-  const named = !isToolchainFailure(emulator) ? emulator : !isToolchainFailure(editor) ? editor : null;
-  if (named?.selection) out.selection = { version: named.selection.version, rootSource: named.selection.rootSource };
-  else out.selection = { unavailable: ((isToolchainFailure(emulator) ? emulator : editor) as UnusableToolchain).code };
-  return out;
 }
 
 export function registerToolchainWatchTools(server: McpServer) {
@@ -73,7 +93,7 @@ export function registerToolchainWatchTools(server: McpServer) {
     "check_toolchain_updates",
     {
       description:
-        "Check whether your installed PICO toolchain is current. Polls the update channel the PICO Android Studio plugin reads plus public Maven metadata, then diffs both against your local install. Reports the advertised versions per (osVersion, package), which artifacts are publicly downloadable, and the installed-vs-available delta — so you can take an upgrade as soon as one is available to you. 'installed' is the emulator and editor of the SELECTED toolchain ($PICO_HOME / spatial.tools.dir / the newest usable version), never a hardcoded location, and `installed.selection` discloses which installation was read (or the structured unavailable/* reason none could be). Read-only: fetches metadata, downloads nothing.",
+        "Check whether your installed PICO toolchain is current. Polls the update channel the PICO Android Studio plugin reads plus public Maven metadata, then diffs both against your local install. Reports the advertised versions per (osVersion, package), which artifacts are publicly downloadable, and the installed-vs-available delta — so you can take an upgrade as soon as one is available to you. 'installed' is the emulator and editor of the SELECTED toolchain ($PICO_HOME / spatial.tools.dir / the newest usable version), never a hardcoded location. Each component is selected on its own, so `installed.selection.emulator` and `installed.selection.editor` each disclose the installation THAT version was read from (or the structured unavailable/* reason none could be) — on a host that upgraded one payload and not the other they legitimately differ. Read-only: fetches metadata, downloads nothing.",
       inputSchema: {
         includeRaw: z.boolean().optional().describe("Include the raw channel package list (default false)."),
       },
