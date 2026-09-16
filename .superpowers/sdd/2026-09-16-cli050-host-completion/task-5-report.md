@@ -226,3 +226,160 @@ Final sweep: `final-build.log`, `final-buildfreshness.log`,
 Adjacent: `adjacent-runrevision.log`, `adjacent-conformance.log`, `adjacent-runreceipt.log`,
 `adjacent-preflight.log`.
 Production default io: `verify-installedversions-default-io.log`.
+
+---
+
+# Fix report — review round 1 (commit `e1ae6c5`)
+
+Two Important findings plus three folded minors, all fixed in the same worktree, TDD as before.
+`npm run build` before every test run; `PICO_ADB=/fixture/no/such/adb` exported throughout. Nothing
+under `evidence/` was modified or deleted — the superseded `verify-installedversions-default-io.log`
+is left exactly as it was, and the replacement is a new file.
+
+## IMPORTANT 1 — an existing-but-unreadable receipt bypassed the gate
+
+**What changed.** `scripts/build-identity.mjs` `receiptVerdict`: `present: false` → `present:
+error.code !== "ENOENT"`. ENOENT is the only absence; EACCES, EISDIR and EIO are a receipt that is
+here and cannot be accounted for, which is unknown provenance, not a clean slate. The docstring at
+`:241` now says that in the same words the code enforces.
+
+`crossMajorReason`'s null branch was reworded with it. It used to read "`.pico-dependencies.json`
+does not record the Node major it was installed under" — a claim about file *contents*, which is not
+something we can assert about a file we could not read. It now reads "the Node major of the recorded
+install could not be read from `.pico-dependencies.json`, so its provenance is unknown; …", which is
+true for every way the field can be missing: the pre-change shape, an unparsable file, an unknown
+`schemaVersion`, and now an unreadable one. The numeric branch keeps the brief-mandated
+`installed under Node <a>, running Node <b>` wording verbatim. One earlier assertion was updated to
+the new phrase; no gate pins either string.
+
+**Covering test.** `test/plugin-bootstrap-freshness.mjs` — *"a receipt that EXISTS but cannot be read
+is unknown provenance, not an opening for npm's record"*. It puts a **directory** where the receipt
+belongs, which yields EISDIR on every platform without needing to drop privileges or rely on
+`chmod 000` behaviour under a test runner, with a **matching** hidden lockfile (asserted via
+`matchesHiddenLockfile(root).matches === true` first, so the test proves something). It asserts
+`current:false`, `acceptedBy:null`, `provenance:null`, reasons matching both
+`/\.pico-dependencies\.json is unreadable \(EISDIR/` and
+`/Node major of the recorded install could not be read/`, and — the part that proves the gate ran —
+`doesNotMatch(/npm has no record|hidden lockfile records|does not list/)`, i.e. `matchesHiddenLockfile`
+contributed no reason because it was never consulted. It then removes the directory and asserts the
+ENOENT case is *still* adopted (`current:true`, `acceptedBy:"hidden-lockfile"`), which is what keeps
+`present` a distinction rather than a blanket refusal.
+
+**RED.** `fix1-red-unreadable-receipt.log` — 30 pass / 1 fail,
+`AssertionError … true !== false` at `test/plugin-bootstrap-freshness.mjs:470`
+(`assert.equal(verdict.current, false)`). That `true` **is** the defect: the unreadable receipt was
+accepted on npm's record.
+
+## IMPORTANT 2 — `selection` was singular but resolved per component
+
+**What changed.** `src/toolchainwatch.ts`. `installedVersions` now returns
+`selection: { emulator: ComponentSelection; editor: ComponentSelection }`, each either
+`{ version, rootSource }` or `{ unavailable: <structured code> }`. A new exported type
+`ComponentSelection` names the union. The module docstring and the `check_toolchain_updates`
+description both now state that each component is selected on its own and that the two may
+legitimately differ on a half-upgraded host — replacing the promise that one field named where
+*both* versions came from.
+
+The per-component work moved into one helper, `installedComponent(io, component, fileName, parse)`,
+which resolves, records where it resolved, then reads that installation's metadata file. Three
+distinct outcomes stay distinguishable: selection refused (`{unavailable: code}`, version
+`"unknown"`), selection fine but the component file absent from `files` (`"unknown"` against a real
+selection), and selection fine but the metadata file absent or unparsable (same). No guesses.
+
+**Covering test.** `test/toolchain-consumers.mjs`, same test, extended: a split-version fixture with
+an emulator under both 6.1 and 0.13 and an editor **only** under 0.13. It asserts
+`emulator === "6.1.0"`, `editor === "0.13.3"`,
+`selection.emulator === {version:"6.1", rootSource:"PICO_HOME"}` and
+`selection.editor === {version:"0.13", rootSource:"PICO_HOME"}`. The pre-existing cases were
+converted to the per-component shape, and the linux case now asserts
+`selection.editor === {unavailable:"unavailable/component-unsupported-platform"}` beside a resolved
+emulator — the case a single shared field could not express without lying about one of them.
+
+**RED.** `fix1-red-per-component-selection.log` — 176 pass / 1 fail,
+`AssertionError … Expected values to be strictly deep-equal` on the first per-component assertion.
+
+## FOLDED MINOR 1 — dead invented code
+
+`selection: { unavailable: "unavailable/not-resolved" }` is gone; the new return builds `selection`
+directly from the two component results, so there is no placeholder to overwrite. The test now
+asserts `doesNotMatch(source, /unavailable\/not-resolved/)`, so it cannot come back.
+
+## FOLDED MINOR 2 — the cast
+
+`as UnusableToolchain` is gone. Rather than narrow around `OperationToolchain`'s nullable
+`selection` — which would have left an unreachable branch needing *some* code to report —
+`installedComponent` resolves through `resolveToolchain({ required: [component] }, io)`, the
+component-valid selection layer the brief itself named (`resolveHostToolchain` is that call bound to
+`hostToolchainIO()`, and takes no `io`). Its return is a clean two-case
+`SelectedToolchain | UnusableToolchain` union that `isToolchainFailure` narrows in one line, exactly
+as the finding asked. Nothing else about the resolution changes: `resolveOperationToolchain` already
+delegated to `resolveToolchain` for the same request, and this module used neither of the two things
+it adds (an `androidProjectRoot` claim and `$PICO_SPATIALBUNDLE` override handling). The test's
+source scan was updated to pin the entry point actually used:
+`/resolveToolchain\(\{ required: \[component\] \}, io\)/`. `npx tsc --noEmit` clean.
+
+## FOLDED MINOR 4 — real captured evidence
+
+New file (the old one untouched):
+`evidence/…/host-completion/task-5/fix1-verify-installedversions-default-io-captured.log`.
+It is the raw stdout+stderr of `bash -x`, so every command is echoed **by the shell** immediately
+before it runs — no transcription, no paraphrase. Two runs against the PRODUCTION default io
+(`hostToolchainIO()` over the real filesystem), both under `HOME` redirected to an empty scratch
+directory:
+
+1. no `PICO_HOME` — the program prints `osHomedir` and `DEFAULT_TOOLS_ROOT` itself, and
+   `DEFAULT_TOOLS_ROOT` is
+   `…/scratchpad/fix1/fakehome/Library/PICO/sdk`. That is the self-evidencing part the old log was
+   missing: the documented default root is `~/Library/PICO/sdk` expanded through `os.homedir()` at
+   import (`src/util.ts:108-112`), so with `HOME` redirected this machine's own `~/Library/PICO` is
+   not a path this process can reach. The result is `unavailable/root-unavailable` for **both**
+   components — had it fallen back anywhere else, it would not be.
+2. `PICO_HOME` at a scratch root carrying the split-version layout — `emulator: "6.1.0"` from 6.1,
+   `editor: "0.13.3"` from 0.13, each with its own selection. This also closes the review's
+   "cannot verify from diff alone" note that the **editor read path** was only ever exercised by the
+   fixture io: here it reads a real `Spatial Editor.app/Contents/MacOS/version` off a real disk.
+
+`find` output for both scratch trees is captured in the same log, so what the process could see is
+visible rather than asserted. The scratch trees were removed afterwards.
+
+## Commands and results
+
+```
+$ npm run build                                   # published 192 file(s) for source 45870a98806a
+$ npm run --silent test:plugin-bootstrap-freshness   PASS  (31 tests, 31 pass, 0 fail)
+$ npm run --silent test:buildfreshness               PASS
+$ npm run --silent test:sdkselection                 PASS  (177 tests, 177 pass, 0 fail)
+$ npm run --silent test:doors                        PASS
+$ npm run --silent test:prompts                      PASS
+$ npm run --silent test:lint                         PASS
+$ npm run --silent test:picocli                      PASS
+$ npm run --silent test:docsmeta                     PASS
+$ npm run --silent test:distribution-adoption        PASS
+```
+
+Logs (all force-added, `fix1-` prefix, in
+`/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/task-5/`):
+`fix1-red-unreadable-receipt.log`, `fix1-red-per-component-selection.log`,
+`fix1-green-plugin-bootstrap-freshness.log`, `fix1-green-buildfreshness.log`,
+`fix1-green-sdkselection.log`, `fix1-build.log`, `fix1-gate-*.log` (nine),
+`fix1-verify-installedversions-default-io-captured.log`.
+
+## Not fixed, and why
+
+- **Review Minor 3** (the cross-major gate never had an *isolated* RED; the step-2 run aborted at
+  the earlier `receipt.nodeMajor` assertion) is a fact about a run that has already happened and
+  cannot be re-created honestly after the fact. It is recorded here rather than papered over. The
+  closest thing this round produces is `fix1-red-unreadable-receipt.log`, which *is* an isolated RED
+  for the same gate's unreadable branch and shows the laundering directly (`current: true`).
+- **Review Minors 5 and 6** were not in the fix list. Minor 5 (the doors fixture reusing one canned
+  `perf_diagnose` response for both calls) is cosmetic — both assertions read only the forwarded
+  args. Minor 6 (a future `IDENTITY_SCHEMA_VERSION` bump now costs one `npm ci` per host instead of
+  a free adoption) is deliberate and controller-sanctioned; it is carried forward here so it is not
+  rediscovered as a surprise.
+
+## Concerns after this round
+
+Unchanged from the first report, minus the two that were fixed. The `requestedDevice` deviation
+stands as reviewed ("judged on its merits: correct"). All evidence remains host-fixture,
+source-derived or real-filesystem-scratch — no emulator, device, `pico-cli perf` run or rendered
+frame is involved, so nothing here establishes device or visual acceptance.
