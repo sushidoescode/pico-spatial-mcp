@@ -795,19 +795,79 @@ test("the boundary prepare step opens a -b all window, writes its sidecar, and s
 });
 
 // ── the source-level guard ───────────────────────────────────────────────────────────────────────
-// Pins the ONE allowed clear by file:line — the `logcat` tool's explicit, operator-requested
-// `clear:true`, which refuses to run without a named serial. Any other clear form in src/ (a
-// `"logcat", "-c"` argv, a `-b <buffer>` variant, or the shell text) fails this test by name.
-test("no src file clears logcat implicitly; the explicit logcat tool is the only clear", () => {
-  const src = new URL("../src/", import.meta.url);
-  const offenders = [];
-  for (const name of fs.readdirSync(src).filter((n) => n.endsWith(".ts"))) {
-    const text = fs.readFileSync(new URL(name, src), "utf8");
+// Inverted rather than line-pinned (fix wave FW1, Minor 3): every `logcat … -c` spelling the old
+// guard covered — a `"logcat", "-c"` argv, its `-b <buffer>` variant, the shell text `logcat -c` —
+// is collected from every src/*.ts, and there must be exactly ONE, in src/adb.ts, in the
+// explicit-serial form `["-s", target, "logcat", "-c"]`, inside the `if (clear) {` branch that has
+// already refused a missing serial. No other site clears, whatever line the allowed one moves to.
+const CLEAR_SPELLINGS = [/"logcat",\s*(?:"-b",\s*"[a-z]+",\s*)?"-c"/, /logcat -c/];
+const EXPLICIT_SERIAL_CLEAR = /await adb\(\["-s", target, "logcat", "-c"\]\)/;
+
+/** Every line of every file that spells a logcat clear: `{ file, line, text }`. */
+function findLogcatClearSites(files) {
+  const sites = [];
+  for (const { name, text } of files) {
     for (const [index, line] of text.split("\n").entries()) {
-      if (/"logcat",\s*(?:"-b",\s*"[a-z]+",\s*)?"-c"/.test(line) || /logcat -c/.test(line)) offenders.push(`${name}:${index + 1}`);
+      if (CLEAR_SPELLINGS.some((re) => re.test(line))) sites.push({ file: name, line: index + 1, text: line });
     }
   }
-  assert.deepEqual(offenders, ["adb.ts:382"], offenders.join(", ")); // pin the one allowed site by file:line
-  const pinned = fs.readFileSync(new URL("adb.ts", src), "utf8").split("\n")[381];
-  assert.match(pinned, /await adb\(\["-s", target, "logcat", "-c"\]\)/, `adb.ts:382 is no longer the explicit clear: ${pinned}`);
+  return sites;
+}
+
+/**
+ * The guard: exactly one clear, in adb.ts, in the explicit-serial argv form, and the statement sits
+ * inside an `if (clear) {` branch (at most 20 lines above) that has already refused an empty serial —
+ * `const target = serial?.trim() ?? ""`, `if (!target)`, and a `fail(...)` naming the requirement.
+ */
+function assertOnlyExplicitSerialClear(files) {
+  const sites = findLogcatClearSites(files);
+  const named = sites.map((s) => `${s.file}:${s.line}`);
+  assert.equal(sites.length, 1, `exactly one logcat clear may exist in src/, found ${sites.length}: ${named.join(", ") || "none"}`);
+  const [site] = sites;
+  assert.equal(site.file, "adb.ts", `the one clear must be the logcat tool's explicit clear in adb.ts, not ${named[0]}`);
+  assert.match(site.text, EXPLICIT_SERIAL_CLEAR, `${named[0]} is not the explicit-serial clear: ${site.text.trim()}`);
+  const lines = files.find((f) => f.name === "adb.ts").text.split("\n");
+  const above = lines.slice(Math.max(0, site.line - 1 - 20), site.line - 1);
+  const branchAt = above.findLastIndex((l) => /^\s*if \(clear\) \{\s*$/.test(l));
+  assert.ok(branchAt >= 0, `${named[0]} must sit inside the logcat tool's \`if (clear) {\` branch (none within 20 lines above)`);
+  const guard = above.slice(branchAt).join("\n");
+  assert.match(guard, /const target = serial\?\.trim\(\) \?\? "";/, `${named[0]}: the branch must derive the target from the explicit serial only`);
+  assert.match(guard, /if \(!target\) \{/, `${named[0]}: the branch must refuse a missing serial before clearing`);
+  assert.match(guard, /return fail\([^\n]*explicit serial/, `${named[0]}: the refusal must name the explicit-serial requirement`);
+  return site;
+}
+
+const readSrcFiles = () => {
+  const src = new URL("../src/", import.meta.url);
+  return fs.readdirSync(src).filter((n) => n.endsWith(".ts")).map((name) => ({ name, text: fs.readFileSync(new URL(name, src), "utf8") }));
+};
+
+test("no src file clears logcat implicitly; the explicit logcat tool is the only clear", () => {
+  const site = assertOnlyExplicitSerialClear(readSrcFiles());
+  assert.equal(site.file, "adb.ts");
+});
+
+test("the inverted guard rejects a second clear, a clear outside adb.ts, and a clear without the explicit-serial refusal", () => {
+  const real = readSrcFiles();
+  const adb = real.find((f) => f.name === "adb.ts");
+  // a second site anywhere — in each spelling the old guard covered
+  for (const text of ['await adb(["-s", s, "logcat", "-c"]);', 'await adb(["-s", s, "logcat", "-b", "main", "-c"]);', 'await adb(["-s", s, "shell", "logcat -c"]);']) {
+    assert.throws(
+      () => assertOnlyExplicitSerialClear([...real, { name: "rogue.ts", text: `export async function rogue(s) {\n  ${text}\n}\n` }]),
+      (error) => /exactly one logcat clear/.test(error.message) && /rogue\.ts:2/.test(error.message) && /adb\.ts:\d+/.test(error.message),
+      text,
+    );
+  }
+  // the one clear living somewhere other than the logcat tool
+  const moved = real.filter((f) => f.name !== "adb.ts").concat(
+    { name: "adb.ts", text: adb.text.replace(EXPLICIT_SERIAL_CLEAR, 'await adb(["-s", target, "logcat", "-d"])') },
+    { name: "elsewhere.ts", text: 'const r = await adb(["-s", target, "logcat", "-c"]);\n' },
+  );
+  assert.throws(() => assertOnlyExplicitSerialClear(moved), /must be the logcat tool's explicit clear in adb\.ts, not elsewhere\.ts:1/);
+  // the explicit-serial derivation replaced by sole-device resolution above the clear
+  const unguarded = real.map((f) => (f.name === "adb.ts" ? { name: f.name, text: f.text.replace(/const target = serial\?\.trim\(\) \?\? "";/, "const target = await resolveSerial(serial);") } : f));
+  assert.throws(() => assertOnlyExplicitSerialClear(unguarded), /derive the target from the explicit serial only/);
+  // a clear that names a resolved serial instead of the explicit target
+  const resolved = real.map((f) => (f.name === "adb.ts" ? { name: f.name, text: f.text.replace(EXPLICIT_SERIAL_CLEAR, 'await adb(["-s", s, "logcat", "-c"])') } : f));
+  assert.throws(() => assertOnlyExplicitSerialClear(resolved), /is not the explicit-serial clear/);
 });
