@@ -451,7 +451,7 @@ export function registerAdbTools(server: McpServer) {
         timeoutSec: z.number().int().min(1).max(180).default(20),
         clearFirst: z.boolean().default(false).describe("Opens a marker window instead of clearing the device log; equivalent to sinceMarker with a fresh marker (kept for compatibility — use when re-running the same assertion so stale lines cannot match). Nothing is erased."),
         sinceMarker: z.string().optional().describe("Match only lines logged AFTER this marker line (e.g. one you wrote with adb_shell `log -t pico-mcp <marker>` before the action). Takes precedence over clearFirst. A marker absent from the bounded dump makes the result inconclusive — never a match against the unscoped buffer."),
-        maxLines: z.number().int().min(100).max(200000).optional().describe("Bound on each raw dump (`logcat -t <n>`). logd applies it to the selected buffers BEFORE the tag filter, so on a chatty device a small tail can drop the window marker while the filtered output stays short — the result is then inconclusive, never a false pass. Default 20000 (the module default of 4000 suits short reads; this tool polls for up to 180 s). Raise it for a long poll on a busy device: `-t <n>` never returns more than the buffer holds."),
+        maxLines: z.number().int().min(100).max(200000).optional().describe("Bound on each raw dump (`logcat -t <n>`) of a WINDOWED read — one opened by clearFirst:true or named by sinceMarker. Without a window there is nothing to slice after, so the poll dumps the whole buffer and this input is inert. logd applies the bound to the selected buffers BEFORE the tag filter, so on a chatty device a small tail can drop the window marker while the filtered output stays short — the result is then inconclusive, never a false pass. Default 20000 (the module default of 4000 suits short reads; this tool polls for up to 180 s). Raise it for a long poll on a busy device: `-t <n>` never returns more than the buffer holds."),
         pollMs: z.number().int().min(200).max(5000).default(700),
       },
     },
@@ -467,6 +467,7 @@ export function registerAdbTools(server: McpServer) {
       // buffer is still the (compatible) scope — and either way nothing is cleared.
       const runner: AdbRunner = (args, timeoutMs) => adb(args, timeoutMs ?? 60_000);
       // A long poller's bound (src/logwindow.ts): the raw tail logd keeps BEFORE the tag filter.
+      // It applies to the windowed read only; the unwindowed branch below dumps the whole buffer.
       const bound = maxLines ?? LONG_POLL_LOG_WINDOW_MAX_LINES;
       let window: LogWindow | null = null;
       if (sinceMarker) {

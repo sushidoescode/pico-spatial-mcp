@@ -28,7 +28,9 @@ import { randomUUID } from "node:crypto";
  * `-t <count>` is applied by logd to the selected buffers BEFORE the client-side tag filter, so a
  * busy device can push the marker out of the tail even when the filtered output is short; that is
  * exactly the case `markerSeen: false` reports. The module default (DEFAULT_LOG_WINDOW_MAX_LINES,
- * 4000) suits a short, tag-filtered read — assert_scene, probe_planes, live_scene_snapshot. The
+ * 4000) suits a short read — assert_scene, probe_planes and live_scene_snapshot (tag-filtered), and
+ * the boundary experiment's prepare read (boundaryexperiment.ts, `-b all` and untagged, but its one
+ * dump immediately follows the marker write, so the marker sits at the very end of the tail). The
  * callers that poll for long pass a larger bound instead of trusting a partial tail:
  * assert_logcat (polls up to 180 s) and wait_for_log read with LONG_POLL_LOG_WINDOW_MAX_LINES
  * (20000) unless their optional `maxLines` input says otherwise; build_and_run reads its
@@ -41,7 +43,7 @@ import { randomUUID } from "node:crypto";
 
 export const LOG_WINDOW_TAG = "pico-mcp";
 
-/** The default bound on one dump: a short, tag-filtered read. Long pollers pass one of the bounds below. */
+/** The default bound on one dump: a short read (tag-filtered, or the boundary prepare dump taken right after its marker write). Long pollers pass one of the bounds below. */
 export const DEFAULT_LOG_WINDOW_MAX_LINES = 4000;
 /** What assert_logcat, wait_for_log and build_and_run read with — polls of tens of seconds. */
 export const LONG_POLL_LOG_WINDOW_MAX_LINES = 20_000;

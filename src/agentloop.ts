@@ -144,13 +144,14 @@ export function registerAgentLoopTools(server: McpServer) {
         tag: z.string().optional(),
         timeoutSec: z.number().int().default(30),
         clearFirst: z.boolean().default(true).describe("Open a marker window before waiting (recommended): only lines logged after the window opens can match. Nothing is cleared; false polls the whole buffer."),
-        maxLines: z.number().int().min(100).max(200000).optional().describe("Bound on each raw dump (`logcat -t <n>`). logd applies it to the selected buffers BEFORE the tag filter, so on a chatty device a small tail can drop the window marker while the filtered output stays short — the wait is then inconclusive, never a false match. Default 20000 (the module default of 4000 suits short reads; this tool polls for tens of seconds). Raise it for a long wait on a busy device: `-t <n>` never returns more than the buffer holds."),
+        maxLines: z.number().int().min(100).max(200000).optional().describe("Bound on each raw dump (`logcat -t <n>`) of a WINDOWED read — the one clearFirst:true opens. With clearFirst:false there is no marker to slice after, so the wait dumps the whole buffer and this input is inert. logd applies the bound to the selected buffers BEFORE the tag filter, so on a chatty device a small tail can drop the window marker while the filtered output stays short — the wait is then inconclusive, never a false match. Default 20000 (the module default of 4000 suits short reads; this tool polls for tens of seconds). Raise it for a long wait on a busy device: `-t <n>` never returns more than the buffer holds."),
       },
     },
     async ({ pattern, serial, tag, timeoutSec, clearFirst, maxLines }) => {
       const s = await resolveSerial(serial);
       const runner: AdbRunner = (args, timeoutMs) => adb(args, timeoutMs ?? 60_000);
       // A long poller's bound (src/logwindow.ts): the raw tail logd keeps BEFORE the tag filter.
+      // It applies to the windowed read only; with clearFirst:false the poll dumps the whole buffer.
       const bound = maxLines ?? LONG_POLL_LOG_WINDOW_MAX_LINES;
       let window: LogWindow | null = null;
       if (clearFirst) {
