@@ -155,6 +155,27 @@ test("a set-but-unusable PICO_ADB FAILS CLOSED and probes nothing else", () => {
   assert.ok(!io.reads.some((p) => p === PATH_ADB || p === BUNDLED_ADB), "no fallback payload may be read");
 });
 
+test("a set-but-blank PICO_ADB is an explicit override that fails closed, probing nothing", () => {
+  // A blank export is still an export. Reading it as "unset" walked PATH — so a harness that
+  // pinned PICO_ADB blank, or a shell that exported one, quietly found a real adb underneath.
+  // Same fail-closed path as a nonexistent file: refused, and no candidate probed or read.
+  for (const value of ["", "  ", "\t"]) {
+    clearAdbResolutionCache();
+    const io = adbIO({
+      env: { PICO_ADB: value, PATH: "/usr/local/bin", PICO_HOME: "/fixture/Library/PICO/sdk" },
+      files: { [PATH_ADB]: { bytes: "path-adb", executable: true }, ...sdkTree("bundled-adb") },
+    });
+    const r = resolveAdbExecutable(io);
+    assert.equal(r.status, "unavailable", JSON.stringify(value));
+    assert.equal(r.code, "unavailable/adb-override-unusable", JSON.stringify(value));
+    assert.equal(r.overrideRejected?.path, "", JSON.stringify(value));
+    assert.match(r.overrideRejected.reason, /set but empty/, JSON.stringify(value));
+    assert.deepEqual(r.probed, [], `${JSON.stringify(value)}: no PATH or bundled candidate is probed`);
+    assert.ok(!io.reads.some((p) => p === PATH_ADB || p === BUNDLED_ADB), `${JSON.stringify(value)}: no fallback payload may be read`);
+    assert.throws(() => adbExecutable(io), /\$PICO_ADB="" is set but empty/, `${JSON.stringify(value)}: adbExecutable must refuse rather than walk PATH`);
+  }
+});
+
 test("adbExecutable THROWS on an unusable explicit override, naming the path and the reason", () => {
   const cases = [
     { label: "missing", files: {}, reason: /names no existing file/ },

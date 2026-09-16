@@ -23,7 +23,10 @@ import { IdentityCache } from "./identitycache.js";
  *      disclosed, so a pinned adb is identified rather than trusted by filename. It fails CLOSED:
  *      a set-but-unusable override is refused outright and NOTHING else is probed, because
  *      quietly running a different binary than the one an operator named is the failure this
- *      whole task exists to remove. `adbExecutable` turns that refusal into a throw.
+ *      whole task exists to remove. A set-but-BLANK value (empty or whitespace) is an override
+ *      too and takes the same path: reading it as "unset" walked PATH, which is exactly how a
+ *      fixture gate that pinned it blank would have found a real adb. `adbExecutable` turns that
+ *      refusal into a throw.
  *   2. PATH — searched in JS through the shared PATH/PATHEXT helper, never a POSIX `which`
  *      subprocess, so the lookup is identical on Windows and costs no process.
  *   3. the SELECTED toolchain's bundled `adb` component — the S1 selection, so it follows the
@@ -112,7 +115,8 @@ export function resolveAdbExecutable(io: AdbIO = hostAdbIO()): AdbResolution {
     status: "unavailable",
     code: "unavailable/adb-override-unusable",
     detail:
-      `$PICO_ADB=${rejection.path} ${rejection.reason}. An explicitly configured adb is never ` +
+      // an empty path must still read as a set variable: `$PICO_ADB="" is set but empty`
+      `$PICO_ADB=${rejection.path === "" ? '""' : rejection.path} ${rejection.reason}. An explicitly configured adb is never ` +
       "replaced by a PATH or bundled candidate, so no fallback was attempted — correct $PICO_ADB, " +
       "or unset it to use PATH and the selected toolchain's bundled platform-tools.",
     overrideRejected: rejection,
@@ -125,8 +129,15 @@ export function resolveAdbExecutable(io: AdbIO = hostAdbIO()): AdbResolution {
     | { kind: "winner"; source: AdbSource; path: string }
     | { kind: "override-rejected"; rejection: AdbOverrideRejection }
     | { kind: "none" } => {
-    const declared = (io.env.PICO_ADB ?? "").trim();
-    if (declared) {
+    const raw = io.env.PICO_ADB;
+    if (raw !== undefined) {
+      const declared = raw.trim();
+      // Set-but-blank is still SET. An operator who exported an empty PICO_ADB did not ask for
+      // the PATH/bundled chain, and a harness that pinned it blank must not find a real adb
+      // underneath; it is refused like a nonexistent file, and nothing is probed.
+      if (declared === "") {
+        return { kind: "override-rejected", rejection: { path: "", reason: "is set but empty — unset PICO_ADB to use the PATH/bundled chain, or name an absolute executable" } };
+      }
       probed.push(declared);
       // An explicit configuration fails CLOSED, like every other explicit root and pin on this
       // track. Falling through to PATH would run a different binary than the operator named, and
