@@ -1,0 +1,588 @@
+=== FINAL VERIFICATION 2026-09-16T10:30:06Z ===
+PICO_ADB=/fixture/no/such/adb
+HEAD=e36cb68
+
+> pico-spatial-mcp@38.0.0 build
+> node scripts/build-source.mjs
+
+build-source: published 191 file(s) for source 2246cdcfe22e
+
+### node --test test/publish-tarball.mjs
+✔ publishes a verified tarball alongside prior versions, leaving every one of them untouched (11.182459ms)
+✔ refuses to replace an existing artifact, and the prior bytes and directory listing do not move (5.800167ms)
+✔ refuses a source whose digest is not the digest that passed verification, and writes nothing (1.250541ms)
+✔ an interrupted copy removes its own temporary and never creates the destination (2.263792ms)
+✔ re-reads the staged bytes and refuses to publish a copy that does not hash to the verified digest (5.033625ms)
+✔ refuses to publish where hard links are unavailable instead of falling back to rename (5.633917ms)
+✔ every link-unsupported errno refuses publication, and the refusal names the cause (27.145083ms)
+✔ creates a missing destination directory, and refuses malformed arguments before touching disk (5.282833ms)
+✔ writes the receipt beside the artifact and never overwrites an existing one (8.587542ms)
+✔ the publication module contains no directory enumeration and no recursive removal (0.361542ms)
+✔ verify-tarball publishes through the helper and removes nothing but its own sandbox (0.201583ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 109.039125
+### EXIT=0
+
+### npm run --silent test:tarball
+✔ publishes a verified tarball alongside prior versions, leaving every one of them untouched (6.724ms)
+✔ refuses to replace an existing artifact, and the prior bytes and directory listing do not move (5.4225ms)
+✔ refuses a source whose digest is not the digest that passed verification, and writes nothing (1.103375ms)
+✔ an interrupted copy removes its own temporary and never creates the destination (1.917208ms)
+✔ re-reads the staged bytes and refuses to publish a copy that does not hash to the verified digest (5.359791ms)
+✔ refuses to publish where hard links are unavailable instead of falling back to rename (4.997791ms)
+✔ every link-unsupported errno refuses publication, and the refusal names the cause (25.989334ms)
+✔ creates a missing destination directory, and refuses malformed arguments before touching disk (5.114459ms)
+✔ writes the receipt beside the artifact and never overwrites an existing one (8.790125ms)
+✔ the publication module contains no directory enumeration and no recursive removal (0.317667ms)
+✔ verify-tarball publishes through the helper and removes nothing but its own sandbox (0.196375ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 101.82725
+sandbox: /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico mcp tester é Qyu5YB
+
+  ok   packed pico-spatial-mcp-38.0.0.tgz (2114 kB, sha256 26048242bb80a2039118aca89c03b23cf6c13d605bd3545bd71164690cfc4ab3)
+  ok   installed into a clean directory with --omit=dev
+  ok   installed home environment dataset directory contains exactly the versioned JSON
+  ok   installed home environment dataset bytes match the exact packed source dataset
+  ok   home environment dataset ships in the installed package
+  ok   installed dataset keeps Mesume Day excluded for its zero-geometry public-parser failure
+  ok   installed dataset keeps both Livingroom refresh surface extensions
+  ok   installed dataset keeps the evidence-falsified Day guarantees and optional cluster ranges
+  ok   installed dataset retains complete one-to-one measured-potential Livingroom ranking inputs
+  ok   installed dataset carries only accepted, syntactically pinned refresh evidence
+  ok   installed selector ranks complete Day/Night potential and receipts the canonical dataset hash
+  ok   derived out-of-dist dependencies from the build: appskeleton, assets, briefs, data, package.json, scripts, tools, unityskeleton
+  ok   payload present: appskeleton/
+  ok   payload present: assets/
+  ok   payload present: briefs/
+  ok   payload present: data/
+  ok   payload present: package.json/
+  ok   payload present: scripts/
+  ok   payload present: tools/
+  ok   payload present: unityskeleton/
+  ok   reviewed SDK-compatibility payload verified (3 files, index + every referenced record/basis)
+  ok   briefs/ carries 22 briefs
+  ok   brief canary parses: gallery.json
+  ok   brief canary parses: knockdown.json
+  ok   no build droppings anywhere in the package
+  ok   no absolute home paths in any shipped file
+  ok   TESTERS.md ships
+  ok   reader-facing doc ships: SKILLS.md
+  ok   reader-facing doc ships: DESIGN.md
+  ok   reader-facing doc ships: GETTING_STARTED.md
+  ok   app skeleton ships complete and non-empty (17 canaries)
+  ok   appskeleton/gradlew kept its exec bit through pack+install
+  ok   gradle wrapper jar ships intact
+  ok   dot-less _gitignore survived packing (npm drops files named .gitignore)
+  ok   menu.bundle ships for GameMenu briefs
+  ok   unity skeleton ships complete (11 canaries)
+  ok   unityskeleton _gitignore survived packing
+  ok   bin entry has a shebang
+pico-spatial-mcp ready (stdio)
+  ok   installed server listed exactly 255 tools for darwin (255 on the full macOS surface)
+  ok   all 43 anchor tools present
+  ok   preflight_env ran from the installed copy (14 checks, status: problems)
+  ok   preflight fixes contain no repo-only commands
+pico-spatial-mcp ready (stdio)
+  ok   doors surface registered all 18 door tools
+pico-spatial-mcp ready (stdio)
+  ok   a door tool completed its inner self-client spawn from a path containing a space
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+  ok   20 concurrent first door calls on the installed artifact started exactly one inner server (all unavailable)
+  ok   installed pico_look forwards the inner screencap failure as isError, never as status ok (stub adb ran: 1 invocation(s), screencap argv recorded)
+pico-spatial-mcp ready (stdio)
+  ok   PICO_MCP_SURFACE unset serves the 18-tool doors surface (full stays explicit opt-in)
+  ok   packed dist/build-receipt.json binds the payload to source 2246cdcfe22e / output 0e0396e38ce0
+
+Tarball verification done. Failures: 0
+### EXIT=0
+
+### npm run --silent test:eye
+  ok   visual judge discloses a rejected evidence write instead of saying recorded
+  ok   XR recenter helper sends xr_command RECENTER
+  ok   capture_canonical binds RECENTER and screencap to one requested serial
+  ok   capture_canonical reports the inspected frame's real dimensions
+  ok   capture_canonical refuses a malformed >1000-byte screencap and writes nothing (1400 bytes)
+  ok   capture_canonical's default path is a run-unique file under the observation root (/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/eye-default-capture-path-CQxrxX/.pico-mcp/cli/observations/canonical/20260916T103023639Z-071b126a-c109-48ca-9f33-0e61858f518a/canonical.png)
+  ok   capture_canonical's default path is never the fixed shared /tmp/pico-render file
+  ok   two default captures RETAIN both frames instead of one overwriting the other
+  ok   capture_canonical still defaults to the emulator-5554 target (["-s","emulator-5554"])
+  ok   visual_judge persists a canonical measured claim, never the caller's dragons prose
+  ok   visual_judge stores the exact predicate/checks and labels caller prose unverified context
+  ok   visual_judge measures and persists one immutable byte snapshot when the source path is overwritten
+  ok   judge PASSes when count matches (6==6)
+  ok   judge does NOT silently PASS an over-claim (3 objects claimed as 6)
+  ok   judge FAILs a mostly-black frame that should have content
+  ok   judge ESCALATEs on a near-miss (5 vs 6)
+  ok   judge never returns vision_verified (only PASS/FAIL/ESCALATE)
+  ok   THE HAZARD IS CLOSED: an in-band dark-island count on a passthrough frame must NOT auto-PASS
+  ok   passthrough: notMostlyBlack contributes ZERO confidence (no padding) and escalates
+  ok   passthrough: a zero dark-island count does not hardFail (count is meaningless, not absent content)
+  ok   passthrough + color-key 4/4 → PASS on the authored palette alone (the MR auto_judged lane)
+  ok   passthrough + color-key 0/4 → FAIL (authored content measurably absent)
+  ok   passthrough + color-key 3/4 (0.75 < 0.8) → ESCALATE
+  ok   passthrough + unavailable color-key (all-neutral palette) → ESCALATE, never PASS
+  ok   a single distinct authored color is too weak to auto-judge → ESCALATE
+  ok   non-passthrough frames keep the legacy lane untouched (6==6 still PASSes at coverage 0.06)
+  ok   Swan capture-derived swatches find all seven authored color keys (found 7: launchPad,rocket,earth,atmosphere,orbiter,orbitPath,telemetryPylons; missing none)
+  ok   (a) void frame: count path still counts the 4 bright primitives (measured 4)
+  ok   (a) void frame is NOT passthrough (coverage 0.092)
+  ok   (a) judge PASSes 4/4 on the void frame (legacy VR lane intact)
+  ok   (b) busy frame measures as passthrough (coverage 0.944)
+  ok   (b) count path ESCALATES on the passthrough frame — never PASS, never FAIL
+  ok   (b) passthrough confidence is 0 without a color-key path (advisory checks pad nothing)
+  ok   (b) color-key path finds all 4 authored colors on the passthrough frame (found 4: sphereOrange,sphereBlue,cubeGreen,tableTan)
+  ok   (b) judge PASSes via the color-keyed MR lane (conf 1)
+  ok   (b) an all-neutral authored palette degrades honestly (unavailable, names the neutrals)
+  ok   (b) all-neutral palette + passthrough → ESCALATE
+  ok   (c) hazard frame: high coverage (0.960) with dark islands IN the expected band (measured 2)
+  ok   (c) THE AUTO-PASS HAZARD: in-band dark islands on a high-coverage frame must NOT pass
+  ok   CALIBRATION: eye measures 6 objects on the human-verified 6-card golden (measured 6)
+  ok   CALIBRATION: golden is not mostly black
+  ok   CALIBRATION: eye PASSes the golden at high confidence (conf 1)
+
+Eye calibration test done. Failures: 0
+  ok   nonzero usdrecord exit rejects the attempt and preserves a stale requested output
+  ok   code-zero invalid output is rejected before publish
+  ok   too-small output is rejected before publish
+  ok   effectively black output is rejected before publish
+  ok   zero-object output is rejected before publish
+  ok   accepted render atomically publishes and records a canonical hash/measurement claim
+  ok   USD receipt binds exact measured fields and keeps caller prose explicitly unverified
+  ok   ledger rejection is surfaced as non-rendered evidence status with no durable composition proof
+
+USD render producer test done. Failures: 0
+### EXIT=0
+
+### npm run --silent test:observation
+✔ sha256Bytes and sha256File agree with the reference digest of the same fixture (0.586583ms)
+✔ sha256File reports a missing file instead of throwing or inventing a digest (2.248208ms)
+✔ a valid small PNG inspects as valid with its real dimensions and bit depth (1.378666ms)
+✔ a truncated PNG larger than 1000 bytes is INVALID — the size floor alone must not accept it (0.148542ms)
+✔ arbitrary nonempty bytes above the capture floor are not a PNG (0.116333ms)
+✔ a valid PNG below the capture-evidence floor is still a valid PNG, and says it is below the floor (0.291333ms)
+✔ a valid short MP4 reports its MEASURED duration and its declared video track (0.464791ms)
+✔ an MP4 whose only track is audio is a valid container with NO video stream (0.075792ms)
+✔ arbitrary nonempty bytes are not an MP4 (0.067875ms)
+✔ a truncated MP4 box header fails closed instead of reporting a partial duration (0.102625ms)
+✔ an MP4 missing mdat is refused — a header with no media payload is not a recording (0.072167ms)
+✔ a valid dark frame is INCONCLUSIVE about the capture route, never proof of failed rendering (1.020791ms)
+✔ a valid lit frame classifies as lit with a real mean luma (0.564208ms)
+✔ a malformed image is undecodable, not dark (0.060417ms)
+✔ with no decoder available the answer is UNVALIDATED, never a successful decode (0.089834ms)
+✔ an injected decoder is used when present, and its failure stays unvalidated (0.071209ms)
+✔ the inspection module cannot reach a process, a device, or a decoder on PATH (0.123959ms)
+✔ a valid short recording is validated, with a MEASURED duration that is not the request (0.155542ms)
+✔ a recording with no video stream is a validated container that declares no video (0.079208ms)
+✔ a nonempty file that is not a container is INVALID media, not a recording (0.08025ms)
+✔ a recording that cannot be read at all is UNVALIDATED, never a successful decode (0.044958ms)
+✔ capture_record still caps the request at 180 s and defaults short (0.149917ms)
+✔ a clean observation records every identity field as OBSERVED and is not a receipt (22.415625ms)
+✔ identity that could not be observed is explicitly MISSING with a reason, never synthesised (14.445708ms)
+✔ installed APK digest ≠ local APK digest → mismatch, and nothing is launched (0.628958ms)
+✔ a FOREIGN app in the foreground is a conflict with the observed package — and is never stopped (10.301708ms)
+✔ a boot identity that changes across the observation is INCONCLUSIVE (12.993542ms)
+✔ a PID that changes across the observation is INCONCLUSIVE (12.993917ms)
+✔ a process START that changes under the SAME PID is INCONCLUSIVE — PID reuse is not continuity (12.995292ms)
+✔ capture bytes substituted after the observation → tampered, and the frame is not evidence (12.955959ms)
+✔ a malformed image larger than 1000 bytes is INVALID MEDIA, not a capture (9.958458ms)
+✔ arbitrary nonempty bytes above the size floor are also invalid media (10.027666ms)
+✔ a capture that FAILED is capture:'unavailable' and never status ok/observed (10.885708ms)
+✔ a valid DARK frame is an inconclusive capture route, not a rendering failure (13.025167ms)
+✔ a boot identity that was never observed is INCONCLUSIVE, not a clean observation (12.960708ms)
+✔ a foreground that was never observed is INCONCLUSIVE — the frame is unattributable (13.02275ms)
+✔ an UNKNOWN crash state is INCONCLUSIVE — unknown is not 'no crash' (12.944292ms)
+✔ logcat is never cleared, is bounded, and is scoped to the observed PID (12.97925ms)
+✔ a FATAL with no attribution to this package or PID is NOT this app's crash (14.987709ms)
+✔ a FATAL naming this package IS attributed (13.014792ms)
+✔ a log read that fails leaves logs unavailable and never implies 'no crash' (12.971791ms)
+✔ each observation gets a unique run directory under the observation root, and refuses replacement (41.266208ms)
+✔ no capture is written to the old mutable package-keyed /tmp path (14.084625ms)
+✔ the serial is REQUIRED — there is no emulator-5554 default to leak into (2.71575ms)
+✔ the canonical and emulator LOOK captures name no fixed shared output path (0.474125ms)
+✔ observationCapturePath roots every kind under the observation store and never repeats a run (1.451667ms)
+✔ an unresolvable adb is refused before any device command runs (0.627125ms)
+✔ the loud-runner fixture would actually catch a spawn (0.291209ms)
+✔ capture_frame refuses to capture without an explicit serial, before resolving adb (0.691541ms)
+✔ capture_record refuses to record without an explicit device, before any CLI work (1.218917ms)
+ℹ tests 50
+ℹ suites 0
+ℹ pass 50
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 365.542834
+### EXIT=0
+
+### npm run --silent test:doors
+  ok   pico_next treats device PASS as positive proof and preserves device FAIL as negative evidence
+  ok   pico_build_app requires a receipt-bound capture and never labels an unlooked calibrated-eye result verified
+  ok   pico_build_app returns the fleet receipt identity, exact capture, and usable absolute project path
+  ok   pico_record forwards the build receipt ID with the exact looked-capture record request
+  ok   pico_loop carries the receipt identity, exact capture, and usable absolute project path through its exit
+  ok   pico_loop discloses a failed ledger lane with the tool's own words first
+  ok   pico_loop cannot accept a receiptless run and returns explicit null receipt identity
+  ok   pico_look on a call-only fixture server refuses with the door failure envelope naming the missing callRaw seam (no inner call, no domain call)
+  ok   pico_verify_app on a call-only fixture server refuses with the door failure envelope naming the missing callRaw seam (no inner call, no domain call)
+  ok   a call-only fixture server still serves domain-lane doors through the injected call
+  ok   the bare fixture server registers exactly the 16 doors this block drives
+  ok   every door refuses through the seam on a {} fixture (16/16)
+  ok   doors.ts has exactly three inner() sites (innerCall, doorCall, doorCallRaw)
+  ok   pico_look forwards an image block + structuredContent verbatim (raw lane)
+  ok   pico_look forwards an inner isError text result as an error, not a success object
+  ok   pico_look forwards an embedded resource block verbatim (raw lane)
+  ok   pico_verify_app forwards a structured failure verbatim (isError + structuredContent) with its args intact
+  ok   pico_emulator returns the decoded inner JSON object unchanged (domain lane success)
+  ok   pico_emulator carries an inner isError as status:error with the tool's own words (domain lane), never {status:'ok', detail}
+  ok   pico_emulator keeps a structured failure's structuredContent beside the inner error text
+  ok   pico_emulator decodes a structured success from its text block (documented domain-lane semantics)
+  ok   briefIdOf stays /^door\d+$/ on a 609-char brief (door905610)
+  ok   com.fleet.<id> passes scaffold's package regex for the 500+ char brief
+  ok   briefIdOf is deterministic and long briefs no longer all collide
+  ok   innerFailureDetail surfaces the first zod issue as path: message
+  ok   innerFailureDetail keeps 600 chars of an unparseable payload (was 150)
+  ok   loopFailureSignature is stable across varying detail tails (first-line normalized)
+  ok   loopFailureSignature collapses jittering measurements (digit-normalized)
+  ok   loopFailureSignature distinguishes genuinely different failures
+  ok   loopFailureSignature is empty when nothing failed (passes never count as a signature)
+  ok   pico_loop consumes launch logcat before structural asserts can clear it
+  ok   pico_loop treats a camera-pose-only replan as real progress
+  ok   replan_spec reports patched only when the AppSpec actually changes
+  ok   pico_loop keeps undriven logcat/structural/perf failures manual
+  ok   pico_loop preserves fleet-shaped eye checks and repairs only a measured black/empty frame
+  ok   pico_loop does not invent camera or interaction repairs from unsupported measured failures
+  ok   pico_loop recommends CLI setup only for an explicitly classified perf setup refusal
+  ok   pico_loop distinguishes an eye ESCALATE from an unscored look obligation
+  ok   pico_loop earns auto_judged only from a durably recorded visual PASS
+pico-spatial-mcp ready (stdio)
+  ok   doors surface exposes exactly 18 tools
+  ok   pico_ship exposes the exact app/lane/projectDir checklist contract and debug-only receipt boundary
+  ok   pico_record advertises canonical keys, caller-recordable tiers, structured device outcomes, and exact receipt binding
+pico-spatial-mcp ready (stdio)
+  ok   pico_sdk orchestrates the inner server (status: unavailable)
+  ok   pico_sdk takes hint inputs only and labels a projectless lookup unavailable
+  ok   door errors carry a fix pointer
+  ok   pico_build_app brief-only call returns the scaffold + the draftSpec re-call fix
+  ok   crystals-brief scaffold has a grid layout + a spin anim (display archetype fired)
+  ok   needs-authoring names the archetype + the matched keyword(s) that steered it
+  ok   plan-failed schema hints carry path + expected shape + known-good example fragment
+  ok   pico_fix maps free text to a KB symptom (build_failed) without schema leakage
+  ok   pico_doctor surfaces 13 preflight checks, all fix-pointed
+  ok   default pico_doctor is managed-store read-only and explains lazy first use
+  ok   doors keeps one inner-server lifetime across managed ensure without PATH mutation
+  ok   pico_emulator restart returns the cold-restart command + recalibration reminder (not executed)
+  ok   pico_next returns a nextAction naming a real door (pico_doctor) + 2 alternative(s)
+  ok   pico_record records a structural claim and returns the ledger-generated report
+  ok   pico_record appends a retraction while retaining immutable claim history
+  ok   pico_record passes the ledger's vision_verified rejection through untouched
+  ok   pico_record rejects mixed record/retract fields without appending either action
+  ok   pico_record rejects runReceiptId on the retraction lane
+  ok   pico_loop invalid draftSpec → plan-failed with fix, zero build iterations
+  ok   pico_loop rejects an empty acceptance list at the schema
+  ok   pico_loop pre-flights a patternless logcat criterion (invalid-acceptance, zero builds)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+  ok   20 concurrent first door calls started exactly one inner server (all unavailable)
+  ok   the e2e adb stub exists and is executable immediately before pico_look
+  ok   pico_look forwards the inner screencap failure as isError over the real inner transport (stub adb ran: 1 invocation(s), screencap argv recorded)
+pico-spatial-mcp ready (stdio)
+  ok   PICO_MCP_SURFACE unset serves the doors surface (18 tools) — full stays explicit opt-in
+  ok   every src/ self-spawn of the server pins PICO_MCP_SURFACE explicitly
+pico-spatial-mcp ready (stdio)
+  ok   verify_pico_apk waits for immersive teardown before relaunch (2032ms) and observes the process
+  ok   verify_pico_apk returns observed identity (serial, installed digest, boot id) and publishes the capture into a run directory
+  ok   verify_pico_apk reports the full-space rejection as a structured, non-clean result
+  ok   verify_pico_apk reports a foreign foreground as a conflict carrying the observed evidence
+  ok   ordinary verification stopped only the packages it was given (3 force-stops, none foreign)
+  ok   verification never cleared the global log and read it bounded, once per observation
+  ok   every device command named the explicit serial (fixture-doors-72318) — no default target was used
+  ok   no capture was written to the old package-keyed mutable /tmp path
+
+Doors test done. Failures: 0
+✔ createSingleFlightClient shares one in-flight connect across 20 concurrent callers (2.041042ms)
+✔ createSingleFlightClient clears the pending state after a failed first initialization so a retry connects again (0.647542ms)
+✔ provider: 20 concurrent acquires share one connect, one child and one identity in generation 1 (0.242625ms)
+✔ provider: a failed first initialization rejects every waiter with the same error and the retry starts generation 2 (0.248959ms)
+✔ provider: retiring generation 1 while generation 2 is connecting never retires generation 2 (0.219292ms)
+✔ provider: close during initialization never hands out the client and the next acquire reconnects (0.298041ms)
+✔ provider: a transport-driven retirement through the session reconnects on the next acquire (0.198ms)
+✔ provider: retire is idempotent and a stale client cannot retire the live generation (0.20025ms)
+✔ provider: a connect that retires its session synchronously is never installed as the live generation; the next acquire reconnects (0.145208ms)
+✔ provider: a connect that retires its session synchronously and then fails leaves no wedged slot either (0.116125ms)
+✔ provider: calls go through the live generation's client (0.325833ms)
+✔ domain lane: a successful text result keeps today's decoding (JSON text → object, other text → string) (0.093625ms)
+✔ domain lane: a successful structured result decodes the TEXT block (structuredContent is not merged — that is the raw lane's job) (0.032334ms)
+✔ domain lane: isError is never a success object — it becomes the documented status:error payload carrying the inner text (0.054291ms)
+✔ domain lane: a structured failure carries structuredContent beside the inner text (0.033666ms)
+✔ domain lane: an isError result without text still names the tool and never reads as success (0.022292ms)
+✔ textOf joins text blocks (non-text blocks are empty segments, as before C5); domainValueText yields the tool's own words for a lane error (0.031875ms)
+ℹ tests 17
+ℹ suites 0
+ℹ pass 17
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 36.193209
+### EXIT=0
+
+### npm run --silent test:lint
+Testing 38 built-in lint rules (positive + negative fixtures each)...
+
+  ok   compose-fork-direct-dependency [error]
+  ok   displayColor-flat-white [error]
+  ok   mesh-collider-alignment [warn]
+  ok   collisioncomponent-no-arg [error]
+  ok   raycast-without-physicsworld [error]
+  ok   menu-dispatch-missing-move-route [error]
+  ok   collisioncasthitmode-closest [error]
+  ok   spotlight-cone-radians [error]
+  ok   physics-ccd-continuous [error]
+  ok   physics-destroy-respawn [error]
+  ok   physics-kinematic-flip [error]
+  ok   rotation-rotateVector [error]
+  ok   transform-scale-property [warn]
+  ok   particlecomponent-ctor [error]
+  ok   text-component [error]
+  ok   raw-glb-runtime-load [error]
+  ok   usd-glb-reference [error]
+  ok   stage-lighting-in-mixed [warn]
+  ok   dynamic-full-stage-emulator-safety [warn]
+  ok   defaultstage-windowcontainer-metadata [warn]
+  ok   bundle-md5-diff [error]
+  ok   am-start-without-forcestop [warn]
+  ok   compose-material-in-spatial-ui [error]
+  ok   compose-setcontent-without-picotheme [error]
+  ok   entityquerycondition-custom [error]
+  ok   ecs-system-nonexistent-override [error]
+  ok   registersystem-without-unregister [error]
+  ok   animationresource-never-closed [error]
+  ok   assetbundle-never-closed [error]
+  ok   toglobal-without-close [error]
+  ok   vibrant-encoding-destroyed [warn]
+  ok   picotheme-colortokens-restricted [error]
+  ok   resource-closed-without-toglobal [warn]
+  ok   mediaplayer-never-closed [error]
+  ok   trackingmanager-never-stopped [error]
+  ok   subscription-never-cancelled [error]
+  ok   interactable-collider-full [error]
+  ok   scaffold-log-tag-drift [warn]
+
+  ok   integration blob surfaced 5 violations
+
+  ok   published gate-battery size agrees across scripts/gate-inventory.mjs, package.json, gates.yml, README.md, and docs/COLLABORATORS.md (55 invocations / 54 test: suites; linux 52, windows 1, macos 2)
+  ok   S5: vault findings stay advisory beside an unavailable declaration identity that names package.xml
+  ok   S5: the project identity is read from projectDir and reported in the advisory block
+  ok   S5: unavailable linkage is stated without any target-validation wording
+  ok   S5: clean is derived from violations and project errors only (vault linkage does not enter)
+  ok   S5: without a project hint an unknown-symbol finding still leaves clean true and reports no target
+  ok   S5: a retained-lessons violation still makes clean false, independent of the vault block
+  ok   S5: a declared 0.13.3 vault against a 6.1.0 project reports unknown linkage
+  ok   S5: the no-findings note calls the lookup historical, not a target SDK validation
+  ok   S5: the packaged index has no records, so nothing is verified and nothing is rejected
+  ok   S5: the advisory block reports the packaged index as present with no records, distinct from missing
+  ok   S5: clean semantics unchanged with a declared vault and a project hint
+
+Lint fixture test done. Failures: 0
+[run-gate] node test/eye.mjs failed: ENOENT
+[run-gate] node test/eye.mjs was terminated by SIGTERM
+[run-gate] node missing.mjs failed: spawn failed
+✔ GATES declares a host, a scope, and at least one argv array for every gate (0.488375ms)
+✔ the repository's package.json and gates.yml agree with the inventory (0.736625ms)
+✔ every public gate script is routed through run-gate, and nothing else is (0.152542ms)
+✔ the native Windows lane keeps its exact three constituent suites (0.068292ms)
+✔ macOS keeps both native CMIO contracts, and only those (0.069125ms)
+✔ test:runrevision is a Linux gate, not an orphan script (0.044084ms)
+✔ the build-freshness and plugin-bootstrap-freshness suites are named Linux fixture gates (0.064916ms)
+✔ multi-command gates keep every && tail as its own sequential argv array (0.044958ms)
+✔ every argv target file that the inventory names exists in the checkout (0.592292ms)
+✔ a gate the workflow stops invoking is reported as missing (0.262833ms)
+✔ a gate invoked twice is reported as a duplicate (0.251625ms)
+✔ a workflow step invoking an unknown gate is reported (0.4545ms)
+✔ a gate run by a lane whose runner OS disagrees with its host is reported (0.290625ms)
+✔ a package script with no host assignment is reported (0.160958ms)
+✔ an inventory entry with no package script is reported (0.15075ms)
+✔ a lane whose runner OS cannot be recognized is reported rather than silently trusted (0.155875ms)
+✔ workflow lanes carry their job name, runner, host family, and gate invocations (0.140666ms)
+✔ runner labels map to host families, and an unknown label maps to null (0.023375ms)
+✔ published counts are derived from the inventory, never typed (0.061875ms)
+✔ the shape checks survive a synthetic inventory, so no repository total is baked in (0.113375ms)
+✔ a stale build fails the gate before any child is spawned (0.24175ms)
+✔ an installed-artifact gate is freshness-checked too (0.069375ms)
+✔ a native-contract gate skips the freshness check, because it never loads dist/ (0.217708ms)
+✔ commands run sequentially, with no shell, inheriting stdio, in the given root (0.081458ms)
+✔ FIXTURE_NO_ADB is the exact literal the checkpoint's runs exported, and names no file (0.022542ms)
+✔ a fixture gate child gets PICO_ADB=FIXTURE_NO_ADB when the caller set none (0.045833ms)
+✔ an installed-artifact gate child gets the same default (0.055334ms)
+✔ an inherited PICO_ADB is replaced by the pin, whatever it holds: a real adb, empty, or whitespace (0.123416ms)
+✔ a native-contract gate child gets no PICO_ADB default (0.042958ms)
+✔ the default is built into the child env, never written to process.env (0.044583ms)
+✔ an inherited real PICO_ADB is replaced by the fixture pin in fixture gates (0.027208ms)
+✔ an empty or whitespace PICO_ADB is replaced, never passed through (0.034833ms)
+✔ installed-artifact gates are pinned exactly like fixture gates (0.021208ms)
+✔ native-contract gates get the identical env object and no pin (0.017375ms)
+✔ the harness override passes an explicit fake executable through as PICO_ADB (0.542667ms)
+✔ an invalid harness override refuses to spawn the gate instead of falling back (0.093334ms)
+✔ run-gate hands a valid harness override to the child as PICO_ADB, replacing the inherited value (0.37225ms)
+✔ run-gate refuses a gate whose harness override is invalid: exit 2, the fix printed, nothing spawned (0.081375ms)
+✔ gates.yml carries the same literal at workflow level, covering the one raw node --test step (0.341584ms)
+✔ the first nonzero exit propagates and stops the remaining commands (0.042791ms)
+✔ a spawn error and a killed child are both nonzero, and stop the gate (0.256291ms)
+✔ an unknown gate name is refused by name (0.040875ms)
+✔ runArgv resolves nonzero without throwing when the child cannot start (0.037291ms)
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-eL3Esz/ignores-sigterm.mjs exceeded 0s; sending SIGTERM
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-eL3Esz/ignores-sigterm.mjs ignored SIGTERM for 1s; sending SIGKILL
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-eL3Esz/ignores-sigterm.mjs was terminated by SIGKILL after exceeding 0s
+✔ a real child that ignores SIGTERM is still bounded: SIGKILL lands after the grace (1007.934334ms)
+[run-gate] node test/eye.mjs exceeded 0s; sending SIGTERM
+[run-gate] node test/eye.mjs ignored SIGTERM for 0s; sending SIGKILL
+[run-gate] node test/eye.mjs was terminated by SIGKILL after exceeding 0s
+✔ a timed-out gate stops before its remaining commands (23.053208ms)
+✔ only npm goes through the Windows launch shim; node and sh are spawned directly (0.56925ms)
+✔ the battery plan skips by scope, not by lane: only another OS's native contracts are off-limits (0.561041ms)
+✔ the repository plan derives from the inventory, not from package-script discovery (0.149458ms)
+✔ a reserved log never overwrites previous evidence (0.850166ms)
+✔ runBattery reserves a new log rather than replacing the one already there (0.728333ms)
+✔ runBattery continues after failures, retains every section, and summarizes (0.730292ms)
+✔ the summary states how many gates were skipped off-platform, so a short PASS cannot read as a full one (0.441416ms)
+✔ null status, spawn error, and signal count as one failure without aborting (0.438583ms)
+✔ battery npm launch is argv-safe and portable across POSIX and Windows (0.116208ms)
+✔ default battery log path is rooted in the host temp directory (0.068125ms)
+✔ battery CLI runs the planned gates and writes the requested aggregate log (27.399625ms)
+✔ all-pass run reports an exact zero-failure summary (0.47575ms)
+ℹ tests 57
+ℹ suites 0
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1076.653959
+### EXIT=0
+
+### npm run --silent test:docsmeta
+package.json version: 38.0.0
+
+  ok   plugin.json carries version 38.0.0
+  ok   .claude-plugin/plugin.json carries version 38.0.0
+  ok   .claude-plugin/marketplace.json carries version 38.0.0
+  ok   .claude-plugin/marketplace.json carries version 38.0.0
+  ok   .codex-plugin/plugin.json carries version 38.0.0
+  ok   .agents/plugins/marketplace.json carries version 38.0.0
+  ok   .cursor-plugin/plugin.json carries version 38.0.0
+  ok   .cursor-plugin/marketplace.json carries version 38.0.0
+  ok   .github/plugin/marketplace.json carries version 38.0.0
+  ok   .github/plugin/marketplace.json carries version 38.0.0
+  ok   package-lock.json version carries version 38.0.0
+  ok   package-lock.json packages[''].version carries version 38.0.0
+  ok   plugin.json targets Agent Plugins 1.0.0
+  ok   portable and Claude manifests carry one plugin identity
+  ok   sync-metadata --check: no stale version/tool-count literals
+  ok   all 169 relative markdown links resolve (76 git-tracked files: root *.md + docs/**)
+  WARN homepage/origin check skipped: ENOTDIR: not a directory, open '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-hc-t3-2026-09-16/.git/config'
+
+Docs/metadata gate done. Failures: 0
+✔ publicMarkdownFiles keeps tracked root and docs Markdown, and drops everything else (1.360542ms)
+✔ nested tracked Markdown outside docs/ is not public documentation (0.610541ms)
+✔ selection is ordered by code unit, not by locale, and deduplicated (0.654ms)
+✔ selection never reads the filesystem, so an untracked note cannot join the set (1.351875ms)
+✔ a path that climbs out of the checkout is never public documentation (0.868167ms)
+✔ publicMarkdownFiles refuses a caller that supplies no tracked paths (0.696834ms)
+✔ parseTrackedPaths reads NUL-separated git output, including a trailing separator (0.051541ms)
+✔ parsePackagedInventory accepts an explicit list and refuses anything vaguer (0.298ms)
+✔ relativeLinkFailures reports a tracked broken link (0.92075ms)
+✔ a broken link carries the file, the target as authored, and a known reason (1.050125ms)
+✔ percent-encoded targets are decoded before they are resolved (0.927416ms)
+✔ a malformed percent escape is a failure, not a crash (0.791791ms)
+✔ a symlink that leaves the checkout fails even though the target exists (1.025333ms)
+✔ a selected document that is itself a symlink out of the checkout is refused, unread (0.824292ms)
+✔ a packaged inventory cannot smuggle in a document that resolves outside the checkout (0.92375ms)
+✔ a relative path that climbs out of the checkout fails even though the target exists (0.827125ms)
+✔ a relative path inside the checkout that climbs and comes back is fine (0.792292ms)
+✔ http, mailto, other schemes, protocol-relative, fragment-only and autolink targets are not checked (0.667917ms)
+✔ a fragment is stripped before the target is resolved (1.106209ms)
+✔ fenced blocks and inline code carry example paths, not links (0.8345ms)
+✔ image links and link titles are handled like the gate always handled them (0.85975ms)
+✔ a selected file that cannot be read is a failure, not a thrown gate (0.598666ms)
+✔ relativeLinkReport counts every relative link it checked across every file (1.173958ms)
+✔ git ls-files feeds selection: staged docs are in, ignored local notes are out (95.972083ms)
+✔ test/docsmeta.mjs selects through git ls-files and refuses to guess without it (0.226083ms)
+✔ the docs gate runs this suite (0.483542ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 151.157583
+### EXIT=0
+
+### npm run --silent test:distribution-adoption
+✔ portable core and host overlays use only their documented MCP contracts (0.992833ms)
+✔ all host marketplaces use their exact source descriptor and synchronized metadata (26.079667ms)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+✔ installed tarball keeps default startup, tools/list, and pico_doctor read-only (2967.098916ms)
+✔ installed tarball wrapper lazily uses exact managed latest without touching ambient CLI or PATH (1534.258208ms)
+✔ setup-required wrapper results stay source/freshness-neutral and never execute setup (3892.877375ms)
+✔ public schemas and missing-vault results route setup through ensure_pico_cli (273.133708ms)
+✔ KnowledgeBridge classifies setup refusal anywhere in bounded startup stderr (1460.5285ms)
+✔ bootstrap root/platform/prerequisite decisions are independent of the caller cwd (0.937375ms)
+✔ Windows bootstrap runs fixed npm scripts through ComSpec without shell interpolation (3.998084ms)
+✔ a non-timeout npm failure is nonzero and never launches MCP (85.040084ms)
+✔ cold bootstrap keeps npm on stderr, uses absolute child argv, and propagates child exit (254.276417ms)
+✔ documented portable and Claude token contracts launch from a hostile cwd (509.150375ms)
+✔ bounded bootstrap children are killed after timeout (84.068417ms)
+✔ bootstrap forwards SIGTERM to the MCP child (65.01275ms)
+✔ knowledge_api exposes all eight strict grounded action schemas (1.459625ms)
+✔ KnowledgeBridge calls every action through one persistent serialized stdio MCP client (264.212541ms)
+✔ KnowledgeBridge returns remote tool errors without retiring switched workspace state (267.017208ms)
+✔ KnowledgeBridge deduplicates concurrent startup and caps returned text (264.232375ms)
+✔ KnowledgeBridge production environment forwards the full host environment (255.909166ms)
+✔ KnowledgeBridge observes a timed-out generation exit before starting its replacement (3661.551459ms)
+✔ KnowledgeBridge resets after startup timeout, call timeout, and protocol failure, then recovers (2350.3015ms)
+✔ KnowledgeBridge reports a missing pico-cli command as unavailable (1.181458ms)
+✔ KnowledgeBridge custom injected command bypasses managed resolution (261.545083ms)
+✔ KnowledgeBridge production child follows managed path/version changes and retires on disabled (1894.799584ms)
+✔ registered knowledge_api keeps the flattened union strict (269.717083ms)
+✔ preflight_lint queries only an opt-in advisory graph second opinion without changing clean (3.260458ms)
+✔ missing pico-cli leaves opt-in preflight_lint clean and labels knowledge unavailable (1.376125ms)
+✔ preflight prints the verified emulator-bundle install route but never runs it (1.770458ms)
+✔ public adoption docs keep bundle installation, AVD creation, and build tooling distinct (0.326708ms)
+✔ operational docs publish one exact canonical managed CLI policy block (4.030791ms)
+✔ managed CLI policy gate rejects alternate modes and automatic mutation claims (9.100333ms)
+✔ managed CLI policy gate accepts external and global prose that does not define resolution policy (2.627541ms)
+✔ managed-latest finding distinguishes live ledger proof from isolated synthetic battery calls (0.174542ms)
+✔ managed CLI implementation plan no longer teaches a freshness-overclaiming setup note (0.114125ms)
+✔ answers-by-measurement publishes exactly seven narrow answers backed by tracked citations (16.664459ms)
+✔ public docs do not use ignored .dev files as evidence (17.558417ms)
+✔ every named gate invocation is assigned to one workflow lane whose runner OS matches the inventory (0.941917ms)
+✔ pico-cli 0.4.2 docs state the measured scope and corrected deltas (0.337916ms)
+✔ the scene-understanding ceiling does not resurrect the superseded zero-mesh claim (0.090417ms)
+✔ public guidance does not resurrect refuted capture, scene-understanding, or mesh-collider absolutes (41.559458ms)
+✔ published schema-token measurements name the tokenizer and context boundary (0.28325ms)
+✔ official-samples guidance retracts the untracked 8/8 runtime claim (0.23675ms)
+✔ distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and an inventory-derived gate battery (1.295ms)
+ℹ tests 43
+ℹ suites 0
+ℹ pass 43
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20797.831625
+### EXIT=0

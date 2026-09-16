@@ -1,0 +1,55 @@
+✔ publishes a verified tarball alongside prior versions, leaving every one of them untouched (7.715708ms)
+✔ refuses to replace an existing artifact, and the prior bytes and directory listing do not move (5.572875ms)
+✔ refuses a source whose digest is not the digest that passed verification, and writes nothing (1.126916ms)
+✔ an interrupted copy removes its own temporary and never creates the destination (1.952375ms)
+✔ re-reads the staged bytes and refuses to publish a copy that does not hash to the verified digest (5.438334ms)
+✖ refuses to publish where hard links are unavailable instead of falling back to rename (4.779708ms)
+✖ every link-unsupported errno refuses publication, and the refusal names the cause (4.812125ms)
+✔ creates a missing destination directory, and refuses malformed arguments before touching disk (5.364458ms)
+✔ writes the receipt beside the artifact and never overwrites an existing one (8.690084ms)
+✔ the publication module contains no directory enumeration and no recursive removal (0.370458ms)
+✔ verify-tarball publishes through the helper and removes nothing but its own sandbox (0.232ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 9
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 81.477167
+
+✖ failing tests:
+
+test at test/publish-tarball.mjs:183:1
+✖ refuses to publish where hard links are unavailable instead of falling back to rename (4.779708ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-hc-t3-2026-09-16/test/publish-tarball.mjs:197:10)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at test/publish-tarball.mjs:219:1
+✖ every link-unsupported errno refuses publication, and the refusal names the cause (4.812125ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-hc-t3-2026-09-16/test/publish-tarball.mjs:225:12)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    operator: 'throws',
+    diff: 'simple'
+  }
