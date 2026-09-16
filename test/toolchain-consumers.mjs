@@ -1081,6 +1081,68 @@ test("S6 matrix (fix wave): install_editor_palette operates on the SELECTED edit
   assert.match(source, /resolveOperationToolchain\(\{ required: \["editor"\], primary: "editor" \}/);
 });
 
+test("check_toolchain_updates reports the SELECTED installation's emulator and editor versions, never a hardcoded 0.13 path", async () => {
+  // `installedVersions` is the "installed" half of the update verdict: the thing the advertised
+  // channel is diffed against. It read ~/Library/PICO/sdk/0.13/... from a module-scope literal, so
+  // on a host carrying 0.13 beside 6.1 it reported the LEGACY payload as installed and the verdict
+  // advertised an upgrade the host already had. Both payloads exist in this fixture and they carry
+  // different versions, so reading the wrong one is a wrong answer rather than a lucky one.
+  const { installedVersions } = await import("../dist/toolchainwatch.js");
+  const io = mixedHostIO({ PICO_HOME: S6_ROOT }, {
+    [`${S6_ROOT}/0.13/emulator/package.xml`]: { bytes: "<revision><major>0</major><minor>13</minor><micro>3</micro></revision>" },
+    [`${S6_ROOT}/6.1/emulator/package.xml`]: { bytes: "<revision><major>6</major><minor>1</minor><micro>0</micro></revision>" },
+    [`${S6_ROOT}/0.13/editor/Spatial Editor.app/Contents/MacOS/version`]: { bytes: "0.13.3\n" },
+    [`${S6_ROOT}/6.1/editor/Spatial Editor.app/Contents/MacOS/version`]: { bytes: "6.1.0\n" },
+  });
+
+  const versions = installedVersions(io);
+  assert.equal(versions.emulator, "6.1.0");
+  assert.equal(versions.editor, "6.1.0");
+  assert.equal(versions.selection.version, "6.1");
+  assert.equal(versions.selection.rootSource, "PICO_HOME");
+  assert.equal(versions.sdkMaven, "6.0.0", "the scaffold's Gradle pin is a separate fact and stays as it is");
+  assert.ok(!io.reads.some((target) => target.includes("/0.13/")), `a legacy payload was read: ${io.reads.filter((t) => t.includes("/0.13/")).join(", ")}`);
+
+  // Nothing selectable: the selection layer's own structured refusal is reported, not an invented
+  // path and not a fabricated version.
+  const empty = toolchainIOFromTree({ platform: "darwin", home: "/fixture", env: { PICO_HOME: "/sdk" }, files: {} });
+  const unavailable = installedVersions(empty);
+  assert.equal(unavailable.emulator, "unknown");
+  assert.equal(unavailable.editor, "unknown");
+  assert.equal(unavailable.selection.unavailable, "unavailable/root-unavailable");
+  assert.equal(unavailable.selection.version, undefined);
+
+  // A selected installation whose payload files are absent is "unknown", never a guessed version.
+  const noPayload = mixedHostIO({ PICO_HOME: S6_ROOT });
+  const silent = installedVersions(noPayload);
+  assert.equal(silent.emulator, "unknown");
+  assert.equal(silent.editor, "unknown");
+  assert.equal(silent.selection.version, "6.1", "the selection still resolved; only its metadata files are missing");
+
+  // Off macOS the editor bundle is not published at all, and the emulator half still answers.
+  const linux = toolchainIOFromTree({
+    platform: "linux", home: "/home/dev", env: { PICO_HOME: "/opt/pico" },
+    files: {
+      "/opt/pico/6.1/emulator/emulator": { bytes: "emulator-6.1", executable: true },
+      "/opt/pico/6.1/emulator/package.xml": { bytes: "<revision><major>6</major><minor>1</minor><micro>0</micro></revision>" },
+    },
+  });
+  const offMac = installedVersions(linux);
+  assert.equal(offMac.emulator, "6.1.0");
+  assert.equal(offMac.editor, "unknown");
+  assert.equal(offMac.selection.version, "6.1");
+
+  // …and the module carries no executed legacy path any more. Comments documenting the 0.13.3
+  // provenance of the historical pin are exactly what this scan must leave alone.
+  const source = fs.readFileSync(path.join(repoRoot, "src", "toolchainwatch.ts"), "utf8");
+  for (const line of source.split("\n")) {
+    if (line.trimStart().startsWith("*") || line.trimStart().startsWith("//")) continue;
+    assert.doesNotMatch(line, /sdk\/0\.13/, `a legacy path literal survived: ${line.trim()}`);
+    assert.doesNotMatch(line, /os\.homedir/, `a home-directory default survived: ${line.trim()}`);
+  }
+  assert.match(source, /resolveOperationToolchain\(/, "the versions must come from the shared selection");
+});
+
 test("S6 matrix: the same mixed host on win32 and linux FIXTURES selects the 6.1 payload published for that platform", async () => {
   // Fixture-only evidence. An in-memory tree proves the selection LOGIC is platform-correct; it
   // is not a claim that this server has been run on Windows or Linux, and no native payload,
