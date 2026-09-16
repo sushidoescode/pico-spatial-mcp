@@ -185,7 +185,7 @@ export async function runGate(name, {
     childEnv = gateChildEnv(gate, env);
   } catch (error) {
     if (error?.code !== "GATE_FIXTURE_ADB_INVALID") throw error;
-    process.stderr.write(`[run-gate] ${error.message}\n[run-gate] fix: unset ${HARNESS_ADB_VARIABLE} or point it at an executable fake\n`);
+    process.stderr.write(`[run-gate] ${error.message}\n[run-gate] fix: unset ${HARNESS_ADB_VARIABLE} or point it at an executable fake — never a real adb\n`);
     return 2;
   }
   for (const argv of gate.commands) {

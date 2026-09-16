@@ -496,6 +496,104 @@ test("an invalid harness override refuses to spawn the gate instead of falling b
   }
 });
 
+// The hatch must not hand a REAL adb through (fix wave FW1, Minor 4). "Absolute + executable" is
+// satisfied by /opt/homebrew/bin/adb just as well as by a fake, and the variable's name plus the fix
+// text were the whole guard. Now the override's realpath is compared — filesystem reads only, never
+// a spawn — against every adb/adb.exe found directly in a directory on the CALLER env's PATH, up to
+// three levels under $PICO_HOME, or up to three levels under ~/Library/PICO (HOME from the caller
+// env), and a match is refused with the same code. Every case below builds its own PATH, PICO_HOME
+// and HOME in temp directories; none reads the host's PATH.
+function tempDir(t, label) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `gate-hatch-${label}-`));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+const writeFakeAdb = (file) => {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "#!/bin/sh\nexit 66\n", { mode: 0o755 });
+  return file;
+};
+const isRealAdbRefusal = (error) => error.code === "GATE_FIXTURE_ADB_INVALID" && /must not be a real adb/.test(error.message);
+
+test("a fake adb in a directory on no lookup path passes the hatch", (t) => {
+  const fake = writeFakeAdb(path.join(tempDir(t, "fake"), "adb"));
+  const env = { PATH: tempDir(t, "bin"), HOME: tempDir(t, "home"), PICO_HOME: tempDir(t, "picohome"), PICO_ADB: "/real/adb", [HARNESS_ADB_VARIABLE]: fake };
+  assert.equal(gateChildEnv(GATES["test:eye"], env).PICO_ADB, fake);
+});
+
+test("the same fake placed first on the caller's PATH is refused as a real adb", (t) => {
+  const bin = tempDir(t, "pathbin");
+  const onPath = writeFakeAdb(path.join(bin, "adb"));
+  const env = { PATH: [bin, tempDir(t, "other")].join(path.delimiter), HOME: tempDir(t, "home"), [HARNESS_ADB_VARIABLE]: onPath };
+  assert.throws(() => gateChildEnv(GATES["test:eye"], env), (error) => isRealAdbRefusal(error) && /PATH/.test(error.message) && error.message.includes(onPath));
+  // …and adb.exe is an adb too
+  const winBin = tempDir(t, "winbin");
+  const exe = writeFakeAdb(path.join(winBin, "adb.exe"));
+  assert.throws(() => gateChildEnv(GATES["test:eye"], { PATH: winBin, HOME: tempDir(t, "home2"), [HARNESS_ADB_VARIABLE]: exe }), isRealAdbRefusal);
+});
+
+test("a symlink to a PATH adb is refused by realpath, not by spelling", (t) => {
+  const bin = tempDir(t, "pathbin");
+  const onPath = writeFakeAdb(path.join(bin, "adb"));
+  const link = path.join(tempDir(t, "links"), "definitely-a-fake-adb");
+  fs.symlinkSync(onPath, link);
+  assert.throws(
+    () => gateChildEnv(GATES["test:eye"], { PATH: bin, HOME: tempDir(t, "home"), [HARNESS_ADB_VARIABLE]: link }),
+    (error) => isRealAdbRefusal(error) && error.message.includes(fs.realpathSync(onPath)),
+  );
+});
+
+test("an adb up to three levels under $PICO_HOME or ~/Library/PICO is refused; deeper is not searched", (t) => {
+  const picoHome = tempDir(t, "picohome");
+  const home = tempDir(t, "home");
+  const emptyBin = tempDir(t, "bin");
+  const three = writeFakeAdb(path.join(picoHome, "a", "b", "adb"));
+  assert.throws(
+    () => gateChildEnv(GATES["test:eye"], { PATH: emptyBin, HOME: home, PICO_HOME: picoHome, [HARNESS_ADB_VARIABLE]: three }),
+    (error) => isRealAdbRefusal(error) && /PICO_HOME/.test(error.message),
+  );
+  const four = writeFakeAdb(path.join(picoHome, "a", "b", "c", "adb"));
+  assert.equal(gateChildEnv(GATES["test:eye"], { PATH: emptyBin, HOME: home, PICO_HOME: picoHome, [HARNESS_ADB_VARIABLE]: four }).PICO_ADB, four, "the walk is bounded at three levels");
+  // ~/Library/PICO/sdk/platform-tools/adb is three levels under ~/Library/PICO
+  const library = writeFakeAdb(path.join(home, "Library", "PICO", "sdk", "platform-tools", "adb"));
+  assert.throws(
+    () => gateChildEnv(GATES["test:eye"], { PATH: emptyBin, HOME: home, [HARNESS_ADB_VARIABLE]: library }),
+    (error) => isRealAdbRefusal(error) && /Library\/PICO/.test(error.message),
+  );
+});
+
+test("native-contract gates are untouched by the hatch hardening", (t) => {
+  const bin = tempDir(t, "pathbin");
+  const onPath = writeFakeAdb(path.join(bin, "adb"));
+  const env = { PATH: bin, PICO_ADB: "/real/adb", [HARNESS_ADB_VARIABLE]: onPath };
+  assert.equal(gateChildEnv(GATES["test:vcamtransport-native"], env), env, "a shell contract runs under exactly the env it was handed");
+});
+
+test("run-gate refuses a harness override that is an adb on the caller's PATH: exit 2, the fix says never a real adb, nothing spawned", async (t) => {
+  const bin = tempDir(t, "pathbin");
+  const onPath = writeFakeAdb(path.join(bin, "adb"));
+  const record = [];
+  const stderr = [];
+  const write = process.stderr.write;
+  process.stderr.write = (chunk) => { stderr.push(String(chunk)); return true; };
+  let exit;
+  try {
+    exit = await runGate("test:ledger", {
+      root: repoRoot,
+      env: { PATH: bin, HOME: tempDir(t, "home"), [HARNESS_ADB_VARIABLE]: onPath },
+      spawnChild: fakeSpawn(record),
+      verify: fresh,
+    });
+  } finally {
+    process.stderr.write = write;
+  }
+  assert.equal(exit, 2);
+  assert.deepEqual(record, [], "a real adb in the hatch must prevent every child");
+  const printed = stderr.join("");
+  assert.match(printed, /must not be a real adb/);
+  assert.match(printed, /unset PICO_GATE_FIXTURE_ADB or point it at an executable fake — never a real adb/);
+});
+
 test("run-gate hands a valid harness override to the child as PICO_ADB, replacing the inherited value", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "run-gate-fake-adb-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -532,7 +630,7 @@ test("run-gate refuses a gate whose harness override is invalid: exit 2, the fix
   assert.deepEqual(record, [], "an invalid override must prevent every child, not just the first");
   const printed = stderr.join("");
   assert.match(printed, /PICO_GATE_FIXTURE_ADB="\/no\/such\/fake-adb"/);
-  assert.match(printed, /unset PICO_GATE_FIXTURE_ADB or point it at an executable fake/);
+  assert.match(printed, /unset PICO_GATE_FIXTURE_ADB or point it at an executable fake — never a real adb/);
 });
 
 test("gates.yml carries the same literal at workflow level, covering the one raw node --test step", () => {

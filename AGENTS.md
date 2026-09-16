@@ -60,7 +60,9 @@ shell gates, which compile native sources and never load `dist/`. `run-gate` als
 in the inventory), replacing whatever your shell inherited — a real adb, an empty string and
 whitespace are all discarded, never passed through; the one pass-through is `PICO_GATE_FIXTURE_ADB`
 naming an absolute executable fake, and anything else in that variable refuses the gate (exit 2)
-before a child exists. `src/adb.ts` refuses an explicit adb that names no file — a blank `PICO_ADB`
+before a child exists — a real adb included: an override whose realpath is an adb found in a
+directory on the caller's PATH or up to three levels under `$PICO_HOME` or `~/Library/PICO` is
+refused the same way, by filesystem reads alone. `src/adb.ts` refuses an explicit adb that names no file — a blank `PICO_ADB`
 included — and probes nothing else, so a suite that still reaches adb fails loudly instead of
 touching a device. `gates.yml` keeps the same value at workflow level; it is the barrier only for
 the one raw `node --test` step (run-gate replaces it for every gate child). A direct

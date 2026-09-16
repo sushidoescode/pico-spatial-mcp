@@ -23,6 +23,7 @@
  *              `run-gate` spawns each with `shell:false`, so no token is ever re-interpreted.
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 export const GATE_HOSTS = Object.freeze(["linux", "windows", "macos"]);
@@ -59,6 +60,66 @@ function isExecutableFile(target) {
   }
 }
 
+const ADB_BASENAMES = Object.freeze(["adb", "adb.exe"]);
+/** How many directory levels under `$PICO_HOME` and `~/Library/PICO` the real-adb lookup descends. */
+export const REAL_ADB_SCAN_DEPTH = 3;
+
+function realpathOrNull(target) {
+  try {
+    return fs.realpathSync(target);
+  } catch {
+    return null;
+  }
+}
+
+function isFile(target) {
+  try {
+    return fs.statSync(target).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Every adb the caller's environment could reach WITHOUT the hatch, as realpaths, each labelled
+ * with where it was found: `adb`/`adb.exe` directly in a directory on the caller env's PATH, and up
+ * to REAL_ADB_SCAN_DEPTH levels under `$PICO_HOME` and under `~/Library/PICO` (HOME from the caller
+ * env, falling back to the OS home). Filesystem reads only — nothing is spawned and no adb server
+ * is contacted. Unreadable directories and dangling links are skipped, and symlinked directories
+ * are not followed; the depth bound keeps the walk small either way.
+ */
+export function knownRealAdbs(env) {
+  const found = new Map(); // realpath -> where it was found
+  const add = (candidate, where) => {
+    if (!isFile(candidate)) return;
+    const real = realpathOrNull(candidate);
+    if (real !== null && !found.has(real)) found.set(real, where);
+  };
+  const pathValue = [env.PATH, env.Path].find((value) => typeof value === "string") ?? "";
+  for (const dir of pathValue.split(path.delimiter)) {
+    if (!dir) continue;
+    for (const name of ADB_BASENAMES) add(path.join(dir, name), `PATH entry ${dir}`);
+  }
+  const walk = (root, where, depth) => {
+    if (depth < 1) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(root, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(root, entry.name);
+      if (ADB_BASENAMES.includes(entry.name)) add(full, where);
+      else if (entry.isDirectory()) walk(full, where, depth - 1);
+    }
+  };
+  if (typeof env.PICO_HOME === "string" && env.PICO_HOME.trim()) walk(env.PICO_HOME.trim(), "$PICO_HOME", REAL_ADB_SCAN_DEPTH);
+  const home = [env.HOME, env.USERPROFILE].find((value) => typeof value === "string" && value.trim()) ?? os.homedir();
+  walk(path.join(home, "Library", "PICO"), "~/Library/PICO", REAL_ADB_SCAN_DEPTH);
+  return found;
+}
+
 /**
  * The env a gate child is spawned with. Never mutates the env it is handed.
  * Fixture and installed-artifact gates ALWAYS get `PICO_ADB` pinned to a path that names no file —
@@ -67,20 +128,27 @@ function isExecutableFile(target) {
  * that is unusable, so a suite that still reaches adb fails loudly instead of touching a device.
  * An override that is not an absolute path to an existing executable file throws (code
  * GATE_FIXTURE_ADB_INVALID), so the gate is refused before any child exists rather than quietly
- * downgraded to the pin or passed through.
+ * downgraded to the pin or passed through. The hatch is for FAKES: an override whose realpath is an
+ * adb the caller's environment could reach anyway — in a directory on its PATH, under $PICO_HOME or
+ * under ~/Library/PICO (`knownRealAdbs`, filesystem reads only) — is a real adb wearing the
+ * variable's name and is refused with the same code ("must not be a real adb").
  */
-export function gateChildEnv(gate, env, io = { isExecutableFile }) {
+export function gateChildEnv(gate, env, io = { isExecutableFile, realpath: realpathOrNull, knownRealAdbs }) {
   if (gate.scope === "native-contract") return env;
   const override = env[HARNESS_ADB_VARIABLE];
   if (override !== undefined) {
-    if (typeof override !== "string" || !path.isAbsolute(override) || !io.isExecutableFile(override)) {
-      const error = new Error(
-        `${HARNESS_ADB_VARIABLE}=${JSON.stringify(override)} must be an absolute path to an existing executable fake adb; `
-        + `refusing to spawn ${gate.scope} gate children`,
-      );
+    const refuse = (why) => {
+      const error = new Error(`${HARNESS_ADB_VARIABLE}=${JSON.stringify(override)} ${why}; refusing to spawn ${gate.scope} gate children`);
       error.code = "GATE_FIXTURE_ADB_INVALID";
-      throw error;
+      return error;
+    };
+    if (typeof override !== "string" || !path.isAbsolute(override) || !io.isExecutableFile(override)) {
+      throw refuse("must be an absolute path to an existing executable fake adb");
     }
+    const real = io.realpath(override);
+    if (real === null) throw refuse("must be an absolute path to an existing executable fake adb (its real path could not be resolved)");
+    const where = io.knownRealAdbs(env).get(real);
+    if (where !== undefined) throw refuse(`must not be a real adb — it resolves to ${real}, the adb found in ${where}`);
     return { ...env, PICO_ADB: override };
   }
   return { ...env, PICO_ADB: FIXTURE_NO_ADB };
