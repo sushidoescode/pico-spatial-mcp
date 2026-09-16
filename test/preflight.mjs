@@ -648,5 +648,52 @@ fs.rmSync(cachedManaged.root, { recursive: true, force: true });
     ? ok("PARTIAL/4 keeps the expected degraded warning and the envelope's remediation")
     : fail(`PARTIAL remediation lost: ${JSON.stringify(partialRow)}`);
 }
+// ── Task 1 fold (host completion, 2026-09-16): a set-but-blank PICO_ADB is an override the doctor refuses ──
+// src/adb.ts refuses an empty or whitespace PICO_ADB and probes nothing; this row used to trim it
+// to "" and read that as "unset", probing PATH and then running `adb devices` behind it. The row
+// must classify the variable exactly as the adapter does: fail with the set-but-empty reason,
+// probe NO PATH or bundled candidate, and leave the emulator row unable to run `devices`. A working
+// PATH adb and a working bundled adb are present precisely so the row cannot pass by falling
+// through to either.
+{
+  const SELECTED = "/sdk/6.1/emulator/system-images/platform-tools/adb";
+  const adbInspection = {
+    status: "ok", root: "/sdk", rootSource: "PICO_HOME", version: "6.1", reason: "newest-usable",
+    files: { adb: { path: SELECTED, sha256: "a".repeat(64) } }, identity: "b".repeat(64),
+  };
+  for (const blank of ["", "   ", "\t"]) {
+    const label = JSON.stringify(blank);
+    const probed = [];
+    const calls = [];
+    const io = {
+      ...healthyIO,
+      adbInspection,
+      adbOverride: blank,
+      exec: (cmd, args) => {
+        calls.push([cmd, ...args]);
+        if (args[0] === "version") { probed.push(cmd); return { ok: true, stdout: "Android Debug Bridge version 1.0.41", stderr: "" }; }
+        return healthyIO.exec(cmd, args);
+      },
+    };
+    const checks = runPreflightChecks(io);
+    const row = checks.find((x) => x.name === "adb");
+    const emulator = checks.find((x) => x.name === "emulator");
+    row && row.status === "fail" && /\$PICO_ADB=""/.test(row.detail) && /is set but empty/.test(row.detail)
+      && /nothing else was probed/i.test(row.detail) && typeof row.fix === "string" && /unset/i.test(row.fix)
+      ? ok(`adb row refuses a blank PICO_ADB (${label}) with the adapter's set-but-empty reason`)
+      : fail(`adb row mishandled a blank PICO_ADB (${label}): ${JSON.stringify(row)}`);
+    probed.length === 0
+      ? ok(`a blank PICO_ADB (${label}) probes no PATH or bundled candidate`)
+      : fail(`a blank PICO_ADB (${label}) still probed ${JSON.stringify(probed)}`);
+    const devices = calls.filter((argv) => argv.includes("devices"));
+    devices.length === 0
+      ? ok(`no adb devices runs behind a refused blank PICO_ADB (${label})`)
+      : fail(`adb devices ran behind a blank PICO_ADB (${label}): ${JSON.stringify(devices)}`);
+    emulator && emulator.status === "unknown" && /without adb/i.test(emulator.detail)
+      ? ok(`the emulator row (${label}) stays unknown: cannot check without adb`)
+      : fail(`the emulator row (${label}) did not stay unknown: ${JSON.stringify(emulator)}`);
+  }
+}
+
 console.log(`\nPreflight test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

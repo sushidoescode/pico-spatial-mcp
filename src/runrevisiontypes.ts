@@ -446,7 +446,7 @@ export type FleetReceiptSummaryV1 = {
   sourceCapturePath: string; captureSha256: Sha256; evidenceType: "structural"; lookRequired: true;
 };
 export type NativeFleetFailureStageV1 =
-  | "source-identity" | "build" | "build-input-continuity"
+  | "adb-resolution" | "source-identity" | "build" | "build-input-continuity"
   | "apk-resolution" | "apk-publication" | "apk-inspection"
   | "install" | "installed-byte-identity" | "after-install"
   | "device-identity" | "launch" | "pid" | "foreground"

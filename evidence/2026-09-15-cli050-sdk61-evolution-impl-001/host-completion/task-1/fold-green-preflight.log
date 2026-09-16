@@ -1,0 +1,106 @@
+# GREEN — Task 1 fold (preflight blank PICO_ADB) — 2026-09-16T10:02:27Z — HEAD 313c03a + uncommitted fold changes; dist rebuilt (source afc8c6907105)
+# cmd: PICO_ADB=/fixture/no/such/adb node test/preflight.mjs
+  ok   check present: node
+  ok   check present: adb
+  ok   check present: emulator
+  ok   check present: grpc
+  ok   check present: accessibility
+  ok   check present: calibration
+  ok   check present: disk
+  ok   node (fail) carries a pointed fix
+  ok   adb (fail) carries a pointed fix
+  ok   pico-sdk (unknown) carries a pointed fix
+  ok   jdk (fail) carries a pointed fix
+  ok   imagemagick (warn) carries a pointed fix
+  ok   app-skeleton (fail) carries a pointed fix
+  ok   unity-lane (fail) carries a pointed fix
+  ok   pico-cli (warn) carries a pointed fix
+  ok   emulator (unknown) carries a pointed fix
+  ok   grpc (unknown) carries a pointed fix
+  ok   accessibility (unknown) carries a pointed fix
+  ok   calibration (warn) carries a pointed fix
+  ok   disk (unknown) carries a pointed fix
+  ok   healthy env passes: node
+  ok   healthy env passes: adb
+  ok   healthy env passes: emulator
+  ok   healthy env passes: calibration
+  ok   healthy env passes unity-lane
+  ok   pico-cli inspection remains policy-honest: disabled
+  ok   pico-cli inspection remains policy-honest: managed-cached empty
+  ok   pico-cli inspection remains policy-honest: managed-latest corrupt immutable cache
+  ok   pico-cli inspection remains policy-honest: external unusable
+  ok   pico-cli inspection remains policy-honest: invalid configuration
+  ok   runnable pico-cli inspection preserves provenance: managed cached
+  ok   runnable pico-cli inspection preserves provenance: external
+  ok   pico-cli structured status is read-only, exact-argv, and never a doctor probe
+  ok   nested pico-cli returned remediation is surfaced with deterministic precedence
+  ok   non-zero pico-cli exit preserves its valid FAILED envelope and exact nested remediation
+  ok   stale calibration fails with the recalibrate fix
+  ok   calibration on file + emulator down => unknown with a fix
+  ok   stale ISO-string calibration fails with the recalibrate fix
+  ok   fresh ISO-string calibration passes
+  ok   unparseable calibration `at` falls back to mtime and reports stale
+pico-spatial-mcp ready (stdio)
+  ok   preflight_env is managed-store read-only when empty (status: problems)
+pico-spatial-mcp ready (stdio)
+  ok   preflight_env remains read-only and policy-honest: disabled
+pico-spatial-mcp ready (stdio)
+  ok   preflight_env remains read-only and policy-honest: managed-cached empty
+pico-spatial-mcp ready (stdio)
+  ok   preflight_env remains read-only and policy-honest: invalid external config
+pico-spatial-mcp ready (stdio)
+  ok   preflight_env probes configured external CLI read-only without relabeling it managed/latest
+pico-spatial-mcp ready (stdio)
+  ok   preflight_env inspects cached managed CLI and emulator status without registry/install/setup or capability discovery
+  ok   pico-sdk row reports the SELECTED version, not the legacy 0.13 directory
+  ok   pico-sdk row names the selected root source
+  ok   an empty 0.13 directory no longer makes an unavailable selection pass
+  ok   pico-sdk row reports packer and emulator versions separately
+  ok   pico-sdk row discloses a missing emulator payload without failing the build SDK
+  ok   pico-sdk row is unknown (not pass) when no structural selection was supplied
+  ok   adb row reports an explicit PICO_ADB with its provenance
+  ok   adb row probes the explicit override and nothing else
+  ok   adb row prefers PATH over the bundled payload
+  ok   adb row probes PATH before the selected payload
+  ok   adb row falls back to the SELECTED toolchain's bundled adb
+  ok   the legacy 0.13 path is not probed before the selected payload
+  ok   an unusable PICO_ADB fails closed and is disclosed
+  ok   a rejected override stops the probe: no PATH or bundled candidate is consulted
+  ok   a failing adb row with no override lists every probed candidate and carries a fix
+  ok   jdk inspection follows the injected context (/jdk-a, executable=true)
+  ok   gradleEnv agrees with the same context (/jdk-a)
+  ok   the jdk row reports exactly what the Gradle lane would get (/jdk-a)
+  ok   jdk inspection follows the injected context (/jdk-b, executable=true)
+  ok   gradleEnv agrees with the same context (/jdk-b)
+  ok   the jdk row reports exactly what the Gradle lane would get (/jdk-b)
+  ok   jdk inspection follows the injected context (/jdk-b, executable=false)
+  ok   gradleEnv agrees with the same context (/jdk-b)
+  ok   the jdk row reports exactly what the Gradle lane would get (/jdk-b)
+  ok   the jdk row names JAVA_HOME as the source when the injected environment declares it
+  ok   emulator-status consumer: SUCCESS with exit 0 => pass
+  ok   emulator-status consumer: SUCCESS with exit 3 is inconsistent => warn
+  ok   emulator-status consumer: SUCCESS without an observed exit code but a failed process => warn
+  ok   emulator-status consumer: wrong tool envelope => warn
+  ok   emulator-status consumer: missing tool_name => warn
+  ok   emulator-status consumer: PARTIAL with exit 4 => warn
+  ok   emulator-status consumer: FAILED with exit 3 => warn
+  ok   emulator-status consumer: malformed JSON => warn
+  ok   emulator-status consumer: timeout => warn
+  ok   emulator-status consumer: spawn error => warn
+  ok   emulator-status consumer: managed integrity rejection => warn
+  ok   PARTIAL/4 keeps the expected degraded warning and the envelope's remediation
+  ok   adb row refuses a blank PICO_ADB ("") with the adapter's set-but-empty reason
+  ok   a blank PICO_ADB ("") probes no PATH or bundled candidate
+  ok   no adb devices runs behind a refused blank PICO_ADB ("")
+  ok   the emulator row ("") stays unknown: cannot check without adb
+  ok   adb row refuses a blank PICO_ADB ("   ") with the adapter's set-but-empty reason
+  ok   a blank PICO_ADB ("   ") probes no PATH or bundled candidate
+  ok   no adb devices runs behind a refused blank PICO_ADB ("   ")
+  ok   the emulator row ("   ") stays unknown: cannot check without adb
+  ok   adb row refuses a blank PICO_ADB ("\t") with the adapter's set-but-empty reason
+  ok   a blank PICO_ADB ("\t") probes no PATH or bundled candidate
+  ok   no adb devices runs behind a refused blank PICO_ADB ("\t")
+  ok   the emulator row ("\t") stays unknown: cannot check without adb
+
+Preflight test done. Failures: 0
+# exit=0

@@ -53,6 +53,35 @@ export interface AdbOverrideRejection {
   reason: string;
 }
 
+/**
+ * THE reading of `$PICO_ADB` every consumer shares — exported so the doctor's adb row
+ * (src/preflight.ts) classifies the variable exactly as this adapter does instead of carrying a
+ * second copy of the rule:
+ *   unset    — walk PATH, then the SELECTED toolchain's bundled adb;
+ *   blank    — set to an empty or whitespace value: an override that is REFUSED, never read as
+ *              unset, because a fixture gate or a shell that pinned it blank must not find a real
+ *              adb underneath;
+ *   declared — the trimmed path, the ONLY candidate.
+ */
+export type AdbOverrideDeclaration =
+  | { kind: "unset" }
+  | { kind: "blank"; rejection: AdbOverrideRejection }
+  | { kind: "declared"; path: string };
+
+export function classifyAdbOverride(raw: string | null | undefined): AdbOverrideDeclaration {
+  if (raw === undefined || raw === null) return { kind: "unset" };
+  const declared = raw.trim();
+  if (declared === "") {
+    return { kind: "blank", rejection: { path: "", reason: "is set but empty — unset PICO_ADB to use the PATH/bundled chain, or name an absolute executable" } };
+  }
+  return { kind: "declared", path: declared };
+}
+
+/** `$PICO_ADB=<path> <reason>` for messages; an empty path prints as `""` so it still reads as a SET variable. */
+export function describeAdbOverrideRejection(rejection: AdbOverrideRejection): string {
+  return `$PICO_ADB=${rejection.path === "" ? '""' : rejection.path} ${rejection.reason}`;
+}
+
 export type AdbResolution =
   | { status: "ok"; path: string; source: AdbSource; identity: FileIdentity; overrideRejected: AdbOverrideRejection | null; probed: readonly string[] }
   | { status: "unavailable"; code: string; detail: string; overrideRejected: AdbOverrideRejection | null; probed: readonly string[] };
@@ -115,8 +144,7 @@ export function resolveAdbExecutable(io: AdbIO = hostAdbIO()): AdbResolution {
     status: "unavailable",
     code: "unavailable/adb-override-unusable",
     detail:
-      // an empty path must still read as a set variable: `$PICO_ADB="" is set but empty`
-      `$PICO_ADB=${rejection.path === "" ? '""' : rejection.path} ${rejection.reason}. An explicitly configured adb is never ` +
+      `${describeAdbOverrideRejection(rejection)}. An explicitly configured adb is never ` +
       "replaced by a PATH or bundled candidate, so no fallback was attempted — correct $PICO_ADB, " +
       "or unset it to use PATH and the selected toolchain's bundled platform-tools.",
     overrideRejected: rejection,
@@ -129,15 +157,13 @@ export function resolveAdbExecutable(io: AdbIO = hostAdbIO()): AdbResolution {
     | { kind: "winner"; source: AdbSource; path: string }
     | { kind: "override-rejected"; rejection: AdbOverrideRejection }
     | { kind: "none" } => {
-    const raw = io.env.PICO_ADB;
-    if (raw !== undefined) {
-      const declared = raw.trim();
-      // Set-but-blank is still SET. An operator who exported an empty PICO_ADB did not ask for
-      // the PATH/bundled chain, and a harness that pinned it blank must not find a real adb
-      // underneath; it is refused like a nonexistent file, and nothing is probed.
-      if (declared === "") {
-        return { kind: "override-rejected", rejection: { path: "", reason: "is set but empty — unset PICO_ADB to use the PATH/bundled chain, or name an absolute executable" } };
-      }
+    const declaration = classifyAdbOverride(io.env.PICO_ADB);
+    // Set-but-blank is still SET. An operator who exported an empty PICO_ADB did not ask for the
+    // PATH/bundled chain, and a harness that pinned it blank must not find a real adb underneath;
+    // it is refused like a nonexistent file, and nothing is probed.
+    if (declaration.kind === "blank") return { kind: "override-rejected", rejection: declaration.rejection };
+    if (declaration.kind === "declared") {
+      const declared = declaration.path;
       probed.push(declared);
       // An explicit configuration fails CLOSED, like every other explicit root and pin on this
       // track. Falling through to PATH would run a different binary than the operator named, and

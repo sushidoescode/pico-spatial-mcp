@@ -598,6 +598,37 @@ test("successful producer binds installed bytes and brackets one exact capture",
     && event.args.slice(2).join(" ") === "shell cat /proc/sys/kernel/random/boot_id").length, 4);
 });
 
+test("producer resolves adb through the shared adapter: a blank or unusable PICO_ADB fails closed before Gradle, spawning nothing", async (t) => {
+  // The producer used to read `process.env.PICO_ADB ?? "adb"` by string: a blank export became the
+  // command "" and a real one was trusted by filename, bypassing the identity check every other
+  // consumer gets from src/adb.ts. Without an injected adbPath the adapter must decide, and its
+  // refusal must arrive as this producer's own structured failure — before Gradle, adb or any
+  // capture command runs.
+  const prior = process.env.PICO_ADB;
+  t.after(() => { if (prior === undefined) delete process.env.PICO_ADB; else process.env.PICO_ADB = prior; });
+  const cases = [
+    { value: "", reason: /\$PICO_ADB="" is set but empty/ },
+    { value: "   ", reason: /\$PICO_ADB="" is set but empty/ },
+    { value: "/fixture/no/such/adb", reason: /\$PICO_ADB=\/fixture\/no\/such\/adb names no existing file/ },
+  ];
+  for (const { value, reason } of cases) {
+    const fixture = await createProducerFixture(t);
+    const { adbPath: _injected, ...depsWithoutAdb } = fixture.deps;
+    process.env.PICO_ADB = value;
+    const out = await produceNativeFleetReceipt(fixture.input, depsWithoutAdb);
+    const label = JSON.stringify(value);
+    assert.equal(out.status, "failed", label);
+    assert.equal(out.stage, "adb-resolution", label);
+    assert.equal(out.built, false, label);
+    assert.equal(out.installed, false, label);
+    assert.match(out.reason, reason, label);
+    assert.match(out.reason, /no fallback was attempted/i, label);
+    assert.deepEqual(out.completedStages, [], label);
+    assert.deepEqual(fixture.events, [], `${label}: no Gradle, adb or capture command may run`);
+    assert.deepEqual(receiptFiles(fixture.receiptRoot), [], label);
+  }
+});
+
 test("producer rejects an oversized effective AppSpec before Gradle or live runners", async (t) => {
   const fixture = await createProducerFixture(t, { kind: "oversized-effective-spec" });
   const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);

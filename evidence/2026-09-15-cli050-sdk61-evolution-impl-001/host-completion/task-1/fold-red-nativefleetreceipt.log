@@ -1,0 +1,112 @@
+# RED — Task 1 fold (receipt adb through the adapter) — 2026-09-16T10:00:09Z — HEAD 313c03a + uncommitted test/nativefleetreceipt.mjs; dist/nativefleetreceipt.js built from the UNCHANGED src
+# cmd: PICO_ADB=/fixture/no/such/adb node --test test/nativefleetreceipt.mjs
+✔ pure Android parsers reject ambiguity and preserve exact identities (0.885916ms)
+✔ foreground parser deduplicates one component repeated across resumed summaries (0.082792ms)
+✔ successful producer binds installed bytes and brackets one exact capture (67.207875ms)
+✖ producer resolves adb through the shared adapter: a blank or unusable PICO_ADB fails closed before Gradle, spawning nothing (34.774875ms)
+✔ producer rejects an oversized effective AppSpec before Gradle or live runners (7.85ms)
+✔ producer discards a late setup callback and records only a freshly guarded second build (74.396417ms)
+▶ producer binds one unchanged Gradle input generation across the awaited build
+  ✔ persistent selected-file content change (27.599625ms)
+  ✔ selected file changed and restored to identical bytes (24.687292ms)
+  ✔ persistent selected membership addition (26.032583ms)
+  ✔ selected source added and removed (25.680084ms)
+  ✔ root-selected file atomically replaced and restored (29.849209ms)
+  ✔ initially absent selected root created and removed (59.532125ms)
+  ✔ excluded build outputs and documentation do not invalidate the generation (110.58975ms)
+  ✔ buildSrc build and nested metadata outputs do not invalidate or enter the generation (90.005167ms)
+  ✔ excluded buildSrc output cannot mask a simultaneous selected transient member (290.543042ms)
+  ✔ restored buildSrc documentation file cannot hide a transient same-named selected directory (289.676084ms)
+✔ producer binds one unchanged Gradle input generation across the awaited build (975.165167ms)
+✔ producer settles a spaced excluded-only watcher backlog without invalidating continuity (129.114333ms)
+✔ producer discards one inconclusive excluded-output build and records only a freshly guarded second build (328.462875ms)
+✔ producer discards mixed coalesced callbacks and records only a freshly guarded second build (87.453459ms)
+✔ an excluded callback cannot mask a dropped selected transient on the discarded first build (85.832416ms)
+✔ producer fails closed when an uncorroborated selected-looking callback repeats on both guarded builds (59.03175ms)
+✔ producer converts a watcher error into one bounded continuity failure and closes cleanly (31.510875ms)
+✔ producer converts a watcher close error into a bounded failure without retry or hang (31.652625ms)
+✔ producer fails closed on a dropped event for an initially absent selected root (528.026542ms)
+✔ producer preserves an exact empty ro.boot.qemu observation (70.308292ms)
+✔ OS 6 co-resumed shell does not defeat the exact fleet foreground component (69.162542ms)
+✔ a same-package alternate resumed component remains a hard foreground failure (41.265417ms)
+✔ an OS 6 shell cannot be force-stopped when the fleet target is absent (39.310292ms)
+✔ multiple foreign OS 6 activities keep polling until the fleet target appears (68.309875ms)
+✔ one foreign foreground blocker can be stopped and relaunched once with disclosure (75.969292ms)
+✔ a recovered run discloses the one blocker recovery if a later stage fails (39.811542ms)
+✔ PID polling caps child calls and sleeps to one monotonic 24000ms deadline (37.033292ms)
+✔ PID and foreground polling share one monotonic 24000ms deadline per launch attempt (38.11625ms)
+▶ default SDK inspection records available facts and explicit tool absence
+  ✔ available aapt2 and apksigner (60.348833ms)
+  ✔ missing build tools (71.277875ms)
+  ✔ apksigner inspection is unavailable when the resolved JDK is absent (71.97275ms)
+✔ default SDK inspection records available facts and explicit tool absence (204.087375ms)
+▶ producer fails closed at every mandatory stage and never publishes a receipt
+  ✔ invalid settle (4.126666ms)
+  ✔ effective package mismatch (2.604875ms)
+  ✔ Gradle nonzero (12.602125ms)
+  ✔ Gradle timeout (11.696667ms)
+  ✔ missing metadata APK (25.200958ms)
+  ✔ ambiguous metadata APK (27.736459ms)
+  ✔ APK CAS corruption (30.225792ms)
+  ✔ inspected package mismatch (33.556625ms)
+  ✔ install nonzero (31.05025ms)
+  ✔ install lacks Success (36.915042ms)
+  ✔ pm path missing (40.053708ms)
+  ✔ pm path multiple (39.107875ms)
+  ✔ remote digest mismatch (39.682834ms)
+  ✔ installed path replacement before capture (40.070292ms)
+  ✔ installed path replacement after capture (36.976292ms)
+  ✔ installed digest replacement before capture (39.361458ms)
+  ✔ installed digest replacement after capture (36.125ms)
+  ✔ after-install hook (37.923041ms)
+  ✔ missing fingerprint (39.519209ms)
+  ✔ missing boot ID (41.907ms)
+  ✔ boot ID changed before launch (40.426042ms)
+  ✔ boot ID changed before capture (39.435ms)
+  ✔ boot ID changed after capture (38.566333ms)
+  ✔ launch negative acknowledgement (39.302542ms)
+  ✔ missing PID (39.219208ms)
+  ✔ multiple PID (41.0305ms)
+  ✔ malformed PID stat (40.059292ms)
+  ✔ PID restarted before capture (36.970125ms)
+  ✔ foreground package prefix collision (37.893917ms)
+  ✔ wrong foreground activity (41.177958ms)
+  ✔ wrong foreground before capture (38.341583ms)
+  ✔ wrong foreground after capture (39.9395ms)
+  ✔ binary capture command (41.942667ms)
+  ✔ invalid PNG (44.943584ms)
+  ✔ capture CAS corruption (48.889541ms)
+  ✔ receipt publication (57.125375ms)
+✔ producer fails closed at every mandatory stage and never publishes a receipt (1275.214917ms)
+✔ command failures report bounded factual exit and timeout state (27.366042ms)
+✔ the local.properties sdk.dir reader uses real java.util.Properties escaping (2.911458ms)
+ℹ tests 77
+ℹ suites 0
+ℹ pass 76
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4482.172167
+
+✖ failing tests:
+
+test at test/nativefleetreceipt.mjs:601:1
+✖ producer resolves adb through the shared adapter: a blank or unusable PICO_ADB fails closed before Gradle, spawning nothing (34.774875ms)
+  AssertionError [ERR_ASSERTION]: ""
+  + actual - expected
+  
+  + 'receipt-publication'
+  - 'adb-resolution'
+  
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/nativefleetreceipt.mjs:621:12)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'receipt-publication',
+    expected: 'adb-resolution',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+# exit=1
