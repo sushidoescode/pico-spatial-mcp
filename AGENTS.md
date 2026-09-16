@@ -63,10 +63,10 @@ naming an absolute executable fake, and anything else in that variable refuses t
 before a child exists — a real adb included: an override whose realpath is an adb found in a
 directory on the caller's PATH or up to three levels under `$PICO_HOME` or `~/Library/PICO` is
 refused the same way, by filesystem reads alone. `src/adb.ts` refuses an explicit adb that names no
-file — a blank `PICO_ADB` included — and probes nothing else, so a suite that still reaches adb fails
-loudly instead of touching a device. `gates.yml` keeps the same value at workflow level; it is the
-barrier only for the one raw `node --test` step (run-gate replaces it for every gate child). A direct
-`node --test test/<file>.mjs` gets neither, so export it yourself.
+file — a blank `PICO_ADB` included — and probes nothing else, so a suite that still reaches adb
+fails loudly instead of touching a device. `gates.yml` keeps the same value at workflow level; it
+is the barrier only for the one raw `node --test` step (run-gate replaces it for every gate child).
+A direct `node --test test/<file>.mjs` gets neither, so export it yourself.
 `validateGateInventory` is what `test:lint` and `test:distribution-adoption` check, and the
 published counts are derived from it — so a gate that no lane runs (`test:runrevision` was exactly
 that, four revision suites regressing invisibly) now fails a gate instead of a doc. Adding one is
