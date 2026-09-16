@@ -645,7 +645,9 @@ try {
       });
       ok(`wrote the publication receipt to ${receipt.path}`);
     } catch (error) {
-      // A refusal is the designed outcome when the destination or its receipt is already taken.
+      // A refusal is the designed outcome when the destination or its receipt is already taken, and
+      // also when the destination filesystem cannot hard-link — publication has no replacing
+      // fallback, so an unlandable artifact is reported here rather than landed unsafely.
       fail(`publication refused: ${error.message}`);
     }
   } else if (publishTarget) {

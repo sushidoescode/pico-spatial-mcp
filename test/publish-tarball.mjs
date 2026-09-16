@@ -180,53 +180,65 @@ test("re-reads the staged bytes and refuses to publish a copy that does not hash
   assert.deepEqual(fs.readdirSync(archiveDir).sort(), priorNames);
 });
 
-test("falls back to an exclusive probe and a rename when the filesystem cannot hard-link", (t) => {
-  const archiveDir = tempDir(t, "archive");
-  const priors = seedPriorArchives(archiveDir);
-  const { source, payload, expectedSha256 } = seedSource(t);
-  const destination = path.join(archiveDir, "pico-spatial-mcp-37.0.0.tgz");
-  const renames = [];
-  const unsupported = () => { const error = new Error("cross-device link not permitted"); error.code = "EXDEV"; throw error; };
-
-  const result = publishVerifiedTarball({
-    source,
-    destination,
-    expectedSha256,
-    io: { link: unsupported, rename: (from, to) => { renames.push([from, to]); fs.renameSync(from, to); } },
-  });
-
-  assert.equal(renames.length, 1, "the fallback runs exactly one rename");
-  assert.equal(renames[0][1], destination);
-  assert.deepEqual(result, { path: destination, sha256: expectedSha256, bytes: payload.length });
-  assert.deepEqual(fs.readFileSync(destination), payload);
-  assertPriorsIntact(archiveDir, priors);
-  assert.deepEqual(
-    fs.readdirSync(archiveDir).sort(),
-    [...priors.map((prior) => prior.name), "pico-spatial-mcp-37.0.0.tgz"].sort(),
-  );
-});
-
-test("the rename fallback still refuses an occupied destination instead of overwriting it", (t) => {
+test("refuses to publish where hard links are unavailable instead of falling back to rename", (t) => {
+  // The fallback this replaces claimed a destination name with an exclusive create, removed the
+  // probe, and renamed onto it. Between the unlink and the rename the name was free, so a racing
+  // publisher's artifact could be silently replaced by a rename that has no non-replacing mode.
+  // There is no atomic non-replacing rename, so the only honest answer on such a filesystem is to
+  // refuse: an unpublished release is recoverable, a replaced one is not.
   const archiveDir = tempDir(t, "archive");
   const priors = seedPriorArchives(archiveDir);
   const priorNames = fs.readdirSync(archiveDir).sort();
   const { source, expectedSha256 } = seedSource(t);
-  const existing = path.join(archiveDir, priors[0].name);
+  const destination = path.join(archiveDir, "pico-spatial-mcp-37.0.0.tgz");
   const renames = [];
-  const unsupported = () => { const error = new Error("operation not permitted"); error.code = "EPERM"; throw error; };
+  const unsupported = () => { const error = new Error("cross-device link not permitted"); error.code = "EXDEV"; throw error; };
 
   assert.throws(
     () => publishVerifiedTarball({
       source,
-      destination: existing,
+      destination,
       expectedSha256,
       io: { link: unsupported, rename: (from, to) => { renames.push([from, to]); fs.renameSync(from, to); } },
     }),
-    /exists/,
+    (error) => error.code === "PUBLISH_NO_ATOMIC_PUBLICATION" && /hard link/i.test(error.message),
   );
-  assert.deepEqual(renames, [], "an occupied destination must be refused before any rename");
-  assert.deepEqual(fs.readFileSync(existing), priors[0].bytes);
-  assert.deepEqual(fs.readdirSync(archiveDir).sort(), priorNames);
+  assert.deepEqual(renames, [], "no rename ever runs");
+  assert.equal(fs.existsSync(destination), false, "nothing lands at the destination");
+  assert.deepEqual(
+    fs.readdirSync(path.dirname(destination)).filter((name) => name.includes(".publish-")),
+    [],
+    "the staged copy is removed",
+  );
+  assertPriorsIntact(archiveDir, priors);
+  assert.deepEqual(fs.readdirSync(archiveDir).sort(), priorNames, "a refusal leaves the directory exactly as it was");
+});
+
+// Every code in LINK_UNSUPPORTED refuses the same way — a filesystem that cannot link is refused
+// whichever errno it reports, not just the EXDEV one a single test would pin.
+test("every link-unsupported errno refuses publication, and the refusal names the cause", (t) => {
+  for (const code of ["EXDEV", "EPERM", "ENOSYS", "EOPNOTSUPP", "ENOTSUP", "EMLINK"]) {
+    const archiveDir = tempDir(t, `archive-${code}`);
+    const priorNames = fs.readdirSync(archiveDir).sort();
+    const { source, expectedSha256 } = seedSource(t);
+    const destination = path.join(archiveDir, "pico-spatial-mcp-37.0.0.tgz");
+    assert.throws(
+      () => publishVerifiedTarball({
+        source,
+        destination,
+        expectedSha256,
+        io: { link: () => { const error = new Error(`simulated ${code}`); error.code = code; throw error; } },
+      }),
+      (error) => {
+        assert.equal(error.code, "PUBLISH_NO_ATOMIC_PUBLICATION", `${code}: wrong refusal code`);
+        assert.match(error.message, /hard link/i, `${code}: the refusal must say why`);
+        assert.equal(error.cause?.code, code, `${code}: the underlying errno must survive`);
+        return true;
+      },
+    );
+    assert.equal(fs.existsSync(destination), false, `${code}: nothing lands at the destination`);
+    assert.deepEqual(fs.readdirSync(archiveDir).sort(), priorNames, `${code}: no temporary left behind`);
+  }
 });
 
 test("creates a missing destination directory, and refuses malformed arguments before touching disk", (t) => {
