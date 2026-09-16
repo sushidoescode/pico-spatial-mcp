@@ -1,0 +1,161 @@
+# RED — item 4 (Minor 4): hatch-hardening cases against the unchanged gateChildEnv (node --test test/gate-inventory.mjs) (2026-09-16T12:37:55Z)
+
+[run-gate] node test/eye.mjs failed: ENOENT
+[run-gate] node test/eye.mjs was terminated by SIGTERM
+[run-gate] node missing.mjs failed: spawn failed
+✔ GATES declares a host, a scope, and at least one argv array for every gate (0.516125ms)
+✔ the repository's package.json and gates.yml agree with the inventory (0.950042ms)
+✔ every public gate script is routed through run-gate, and nothing else is (0.152959ms)
+✔ the native Windows lane keeps its exact three constituent suites (0.075333ms)
+✔ macOS keeps both native CMIO contracts, and only those (0.071375ms)
+✔ test:runrevision is a Linux gate, not an orphan script (0.037709ms)
+✔ the build-freshness and plugin-bootstrap-freshness suites are named Linux fixture gates (0.060791ms)
+✔ multi-command gates keep every && tail as its own sequential argv array (0.053708ms)
+✔ every argv target file that the inventory names exists in the checkout (0.390667ms)
+✔ a gate the workflow stops invoking is reported as missing (0.25575ms)
+✔ a gate invoked twice is reported as a duplicate (0.256583ms)
+✔ a workflow step invoking an unknown gate is reported (0.418084ms)
+✔ a gate run by a lane whose runner OS disagrees with its host is reported (0.270125ms)
+✔ a package script with no host assignment is reported (0.16275ms)
+✔ an inventory entry with no package script is reported (0.169917ms)
+✔ a lane whose runner OS cannot be recognized is reported rather than silently trusted (0.147542ms)
+✔ workflow lanes carry their job name, runner, host family, and gate invocations (0.136875ms)
+✔ runner labels map to host families, and an unknown label maps to null (0.026083ms)
+✔ published counts are derived from the inventory, never typed (0.0715ms)
+✔ the shape checks survive a synthetic inventory, so no repository total is baked in (0.095292ms)
+✔ a stale build fails the gate before any child is spawned (0.23025ms)
+✔ an installed-artifact gate is freshness-checked too (0.071167ms)
+✔ a native-contract gate skips the freshness check, because it never loads dist/ (0.207625ms)
+✔ commands run sequentially, with no shell, inheriting stdio, in the given root (0.084959ms)
+✔ FIXTURE_NO_ADB is the exact literal the checkpoint's runs exported, and names no file (0.032208ms)
+✔ a fixture gate child gets PICO_ADB=FIXTURE_NO_ADB when the caller set none (0.049292ms)
+✔ an installed-artifact gate child gets the same default (0.051417ms)
+✔ an inherited PICO_ADB is replaced by the pin, whatever it holds: a real adb, empty, or whitespace (0.143916ms)
+✔ a native-contract gate child gets no PICO_ADB default (0.034917ms)
+✔ the default is built into the child env, never written to process.env (0.053917ms)
+✔ an inherited real PICO_ADB is replaced by the fixture pin in fixture gates (0.02925ms)
+✔ an empty or whitespace PICO_ADB is replaced, never passed through (0.024541ms)
+✔ installed-artifact gates are pinned exactly like fixture gates (0.021042ms)
+✔ native-contract gates get the identical env object and no pin (0.016458ms)
+✔ the harness override passes an explicit fake executable through as PICO_ADB (0.770125ms)
+✔ an invalid harness override refuses to spawn the gate instead of falling back (0.119709ms)
+✔ a fake adb in a directory on no lookup path passes the hatch (1.188208ms)
+✖ the same fake placed first on the caller's PATH is refused as a real adb (0.85375ms)
+✖ a symlink to a PATH adb is refused by realpath, not by spelling (0.76125ms)
+✖ an adb up to three levels under $PICO_HOME or ~/Library/PICO is refused; deeper is not searched (0.877625ms)
+✔ native-contract gates are untouched by the hatch hardening (0.296208ms)
+✖ run-gate refuses a harness override that is an adb on the caller's PATH: exit 2, the fix says never a real adb, nothing spawned (0.617958ms)
+✔ run-gate hands a valid harness override to the child as PICO_ADB, replacing the inherited value (0.336542ms)
+✖ run-gate refuses a gate whose harness override is invalid: exit 2, the fix printed, nothing spawned (0.17525ms)
+✔ gates.yml carries the same literal at workflow level, covering the one raw node --test step (0.187084ms)
+✔ the first nonzero exit propagates and stops the remaining commands (0.028792ms)
+✔ a spawn error and a killed child are both nonzero, and stop the gate (0.248416ms)
+✔ an unknown gate name is refused by name (0.040583ms)
+✔ runArgv resolves nonzero without throwing when the child cannot start (0.039166ms)
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-h4yGub/ignores-sigterm.mjs exceeded 0s; sending SIGTERM
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-h4yGub/ignores-sigterm.mjs ignored SIGTERM for 1s; sending SIGKILL
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-h4yGub/ignores-sigterm.mjs was terminated by SIGKILL after exceeding 0s
+✔ a real child that ignores SIGTERM is still bounded: SIGKILL lands after the grace (1008.241417ms)
+[run-gate] node test/eye.mjs exceeded 0s; sending SIGTERM
+[run-gate] node test/eye.mjs ignored SIGTERM for 0s; sending SIGKILL
+[run-gate] node test/eye.mjs was terminated by SIGKILL after exceeding 0s
+✔ a timed-out gate stops before its remaining commands (23.313041ms)
+✔ only npm goes through the Windows launch shim; node and sh are spawned directly (0.590041ms)
+ℹ tests 52
+ℹ suites 0
+ℹ pass 47
+ℹ fail 5
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1085.107541
+
+✖ failing tests:
+
+test at test/gate-inventory.mjs:524:1
+✖ the same fake placed first on the caller's PATH is refused as a real adb (0.85375ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/gate-inventory.mjs:528:10)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at test/gate-inventory.mjs:535:1
+✖ a symlink to a PATH adb is refused by realpath, not by spelling (0.76125ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/gate-inventory.mjs:540:10)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at test/gate-inventory.mjs:546:1
+✖ an adb up to three levels under $PICO_HOME or ~/Library/PICO is refused; deeper is not searched (0.877625ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/gate-inventory.mjs:551:10)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at test/gate-inventory.mjs:572:1
+✖ run-gate refuses a harness override that is an adb on the caller's PATH: exit 2, the fix says never a real adb, nothing spawned (0.617958ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 2
+  
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/gate-inventory.mjs:590:10)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 2,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/gate-inventory.mjs:613:1
+✖ run-gate refuses a gate whose harness override is invalid: exit 2, the fix printed, nothing spawned (0.17525ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /unset PICO_GATE_FIXTURE_ADB or point it at an executable fake — never a real adb/. Input:
+  
+  '[run-gate] PICO_GATE_FIXTURE_ADB="/no/such/fake-adb" must be an absolute path to an existing executable fake adb; refusing to spawn fixture gate children\n' +
+    '[run-gate] fix: unset PICO_GATE_FIXTURE_ADB or point it at an executable fake\n'
+  
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/gate-inventory.mjs:633:10)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '[run-gate] PICO_GATE_FIXTURE_ADB="/no/such/fake-adb" must be an absolute path to an existing executable fake adb; refusing to spawn fixture gate children\n[run-gate] fix: unset PICO_GATE_FIXTURE_ADB or point it at an executable fake\n',
+    expected: /unset PICO_GATE_FIXTURE_ADB or point it at an executable fake — never a real adb/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+exit=1

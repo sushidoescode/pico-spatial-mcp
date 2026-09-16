@@ -1,0 +1,73 @@
+# final battery: node --test test/gate-inventory.mjs (2026-09-16T12:43:31Z)
+
+[run-gate] node test/eye.mjs failed: ENOENT
+[run-gate] node test/eye.mjs was terminated by SIGTERM
+[run-gate] node missing.mjs failed: spawn failed
+✔ GATES declares a host, a scope, and at least one argv array for every gate (0.506583ms)
+✔ the repository's package.json and gates.yml agree with the inventory (0.774125ms)
+✔ every public gate script is routed through run-gate, and nothing else is (0.137583ms)
+✔ the native Windows lane keeps its exact three constituent suites (0.076541ms)
+✔ macOS keeps both native CMIO contracts, and only those (0.077417ms)
+✔ test:runrevision is a Linux gate, not an orphan script (0.050333ms)
+✔ the build-freshness and plugin-bootstrap-freshness suites are named Linux fixture gates (0.05275ms)
+✔ multi-command gates keep every && tail as its own sequential argv array (0.050834ms)
+✔ every argv target file that the inventory names exists in the checkout (0.392833ms)
+✔ a gate the workflow stops invoking is reported as missing (0.245542ms)
+✔ a gate invoked twice is reported as a duplicate (0.246125ms)
+✔ a workflow step invoking an unknown gate is reported (0.426875ms)
+✔ a gate run by a lane whose runner OS disagrees with its host is reported (0.307125ms)
+✔ a package script with no host assignment is reported (0.164583ms)
+✔ an inventory entry with no package script is reported (0.169792ms)
+✔ a lane whose runner OS cannot be recognized is reported rather than silently trusted (0.167875ms)
+✔ workflow lanes carry their job name, runner, host family, and gate invocations (0.139584ms)
+✔ runner labels map to host families, and an unknown label maps to null (0.031542ms)
+✔ published counts are derived from the inventory, never typed (0.059584ms)
+✔ the shape checks survive a synthetic inventory, so no repository total is baked in (0.116792ms)
+✔ a stale build fails the gate before any child is spawned (0.244792ms)
+✔ an installed-artifact gate is freshness-checked too (0.067417ms)
+✔ a native-contract gate skips the freshness check, because it never loads dist/ (0.221667ms)
+✔ commands run sequentially, with no shell, inheriting stdio, in the given root (0.08225ms)
+✔ FIXTURE_NO_ADB is the exact literal the checkpoint's runs exported, and names no file (0.021917ms)
+✔ a fixture gate child gets PICO_ADB=FIXTURE_NO_ADB when the caller set none (0.048209ms)
+✔ an installed-artifact gate child gets the same default (0.057083ms)
+✔ an inherited PICO_ADB is replaced by the pin, whatever it holds: a real adb, empty, or whitespace (0.136542ms)
+✔ a native-contract gate child gets no PICO_ADB default (0.036458ms)
+✔ the default is built into the child env, never written to process.env (0.055166ms)
+✔ an inherited real PICO_ADB is replaced by the fixture pin in fixture gates (0.022375ms)
+✔ an empty or whitespace PICO_ADB is replaced, never passed through (0.024708ms)
+✔ installed-artifact gates are pinned exactly like fixture gates (0.015875ms)
+✔ native-contract gates get the identical env object and no pin (0.0155ms)
+✔ the harness override passes an explicit fake executable through as PICO_ADB (1.191334ms)
+✔ an invalid harness override refuses to spawn the gate instead of falling back (0.098916ms)
+✔ a fake adb in a directory on no lookup path passes the hatch (1.045083ms)
+✔ the same fake placed first on the caller's PATH is refused as a real adb (1.475625ms)
+✔ a symlink to a PATH adb is refused by realpath, not by spelling (0.8505ms)
+✔ an adb up to three levels under $PICO_HOME or ~/Library/PICO is refused; deeper is not searched (2.135208ms)
+✔ native-contract gates are untouched by the hatch hardening (0.322ms)
+✔ run-gate refuses a harness override that is an adb on the caller's PATH: exit 2, the fix says never a real adb, nothing spawned (0.4995ms)
+✔ run-gate hands a valid harness override to the child as PICO_ADB, replacing the inherited value (0.60375ms)
+✔ run-gate refuses a gate whose harness override is invalid: exit 2, the fix printed, nothing spawned (0.071417ms)
+✔ gates.yml carries the same literal at workflow level, covering the one raw node --test step (0.192958ms)
+✔ the first nonzero exit propagates and stops the remaining commands (0.040959ms)
+✔ a spawn error and a killed child are both nonzero, and stop the gate (0.279ms)
+✔ an unknown gate name is refused by name (0.041541ms)
+✔ runArgv resolves nonzero without throwing when the child cannot start (0.049417ms)
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-jclmgq/ignores-sigterm.mjs exceeded 0s; sending SIGTERM
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-jclmgq/ignores-sigterm.mjs ignored SIGTERM for 1s; sending SIGKILL
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-jclmgq/ignores-sigterm.mjs was terminated by SIGKILL after exceeding 0s
+✔ a real child that ignores SIGTERM is still bounded: SIGKILL lands after the grace (1007.216292ms)
+[run-gate] node test/eye.mjs exceeded 0s; sending SIGTERM
+[run-gate] node test/eye.mjs ignored SIGTERM for 0s; sending SIGKILL
+[run-gate] node test/eye.mjs was terminated by SIGKILL after exceeding 0s
+✔ a timed-out gate stops before its remaining commands (23.622584ms)
+✔ only npm goes through the Windows launch shim; node and sh are spawned directly (0.394208ms)
+ℹ tests 52
+ℹ suites 0
+ℹ pass 52
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1085.70925
+
+exit=0

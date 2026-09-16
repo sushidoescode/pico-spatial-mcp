@@ -1,0 +1,140 @@
+# RED — item 2 (Minor 1): every-dump-failed cases at the four polling sites plus the mixed case, against the item-1 dist (2026-09-16T12:31:41Z)
+
+✔ sliceAfterMarker returns only lines after the marker line (0.616917ms)
+✔ a missing marker is reported, never silently treated as an empty window (0.048917ms)
+✔ openLogWindow writes exactly one `log -t pico-mcp <marker>` and never a clear (0.90525ms)
+✔ readLogWindow always includes the marker tag in its filter and bounds the dump (0.118875ms)
+✔ assert_scene opens a window before its broadcast and matches only the dump inside it (3363.502458ms)
+✔ assert_scene reports an evicted marker as an inconclusive error, never as a dump (1606.9155ms)
+✔ assert_scene refuses when the window cannot be opened and reads no dump at all (65.498625ms)
+✔ probe_planes opens a window before its broadcast and parses only the inventory inside it (1619.382042ms)
+✔ probe_planes reports an evicted marker as inconclusive instead of reading the stale inventory (3143.761875ms)
+✔ live_scene_snapshot opens a window before its dump_scene broadcast and returns only the fresh scene (115.568042ms)
+✔ live_scene_snapshot reports an evicted marker as inconclusive rather than parsing the stale dump (8257.641833ms)
+✔ assert_logcat sinceMarker adopts a caller-written marker and matches only lines after it (1231.033917ms)
+✔ assert_logcat clearFirst opens a marker window instead of clearing, and an evicted marker is inconclusive (1294.2665ms)
+✔ the logcat tool's clear:true is the one destructive clear and requires an explicit serial (82.334167ms)
+✔ wait_for_log's default opens a marker window instead of clearing and reports the window it matched in (2241.233167ms)
+✔ assert_logcat reads with the long-poll bound (-t 20000) by default and sends an explicit maxLines verbatim (106.320209ms)
+✔ wait_for_log reads with the long-poll bound (-t 20000) by default and sends an explicit maxLines verbatim (132.122834ms)
+✔ the long-poll bounds are named constants of the module, and build_and_run's settle-long read uses one (0.238458ms)
+✖ unseenMarkerCause blames eviction only when a dump actually succeeded (0.122375ms)
+✖ assert_logcat names the dump failure when every poll's dump failed, instead of blaming eviction (1200.493042ms)
+✖ assert_logcat keeps the eviction finding, with the last failure appended, when a dump did succeed (2114.831542ms)
+✖ wait_for_log names the dump failure when every poll's dump failed, instead of blaming eviction (1089.4225ms)
+✖ probe_planes names the dump failure when every poll's dump failed, instead of blaming eviction (3134.230125ms)
+✖ live_scene_snapshot names the dump failure when every poll's dump failed, instead of blaming eviction (8232.994917ms)
+✔ pico_loop writes a marker through adb_shell before the build and scopes every assert_logcat to it (18.022542ms)
+✔ pico_loop treats an inconclusive (evicted-window) assert_logcat as unmeasurable, never as a fail to replan (2.020291ms)
+✔ the boundary prepare step opens a -b all window, writes its sidecar, and stops on an evicted marker (37.7085ms)
+✔ no src file clears logcat implicitly; the explicit logcat tool is the only clear (19.58425ms)
+ℹ tests 28
+ℹ suites 0
+ℹ pass 22
+ℹ fail 6
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 39184.194417
+
+✖ failing tests:
+
+test at test/logwindow.mjs:566:1
+✖ unseenMarkerCause blames eviction only when a dump actually succeeded (0.122375ms)
+  TypeError: unseenMarkerCause is not a function
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:568:21)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+
+test at test/logwindow.mjs:578:1
+✖ assert_logcat names the dump failure when every poll's dump failed, instead of blaming eviction (1200.493042ms)
+  AssertionError [ERR_ASSERTION]: The log window marker was never seen in the bounded dump (-t 20000; evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer. Re-open the window (clearFirst:true or a fresh sinceMarker), raise maxLines if the device is chatty, and re-run.
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:587:14
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:195:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:581:5
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:579:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'The log window marker was never seen in the bounded dump (-t 20000; evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer. Re-open the window (clearFirst:true or a fresh sinceMarker), raise maxLines if the device is chatty, and re-run.',
+    expected: /every dump failed: .*fixture dump failure/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:596:1
+✖ assert_logcat keeps the eviction finding, with the last failure appended, when a dump did succeed (2114.831542ms)
+  AssertionError [ERR_ASSERTION]: The log window marker was never seen in the bounded dump (-t 20000; evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer. Re-open the window (clearFirst:true or a fresh sinceMarker), raise maxLines if the device is chatty, and re-run.
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:607:14
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:195:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:599:5
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:597:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'The log window marker was never seen in the bounded dump (-t 20000; evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer. Re-open the window (clearFirst:true or a fresh sinceMarker), raise maxLines if the device is chatty, and re-run.',
+    expected: /last dump also failed: .*fixture dump failure \(\d+ dump\(s\) succeeded without the marker\)/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:613:1
+✖ wait_for_log names the dump failure when every poll's dump failed, instead of blaming eviction (1089.4225ms)
+  AssertionError [ERR_ASSERTION]: Inconclusive: the log window marker pico-mcp-window-b4d2c7b1-2075-4d6d-ba25-1a22ee888f42 was never seen on fixture-logwindow-serial within 1s in the bounded dump (-t 20000; evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer — raise maxLines if the device is chatty and re-run. status=inconclusive
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:621:14
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:195:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:616:5
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:614:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Inconclusive: the log window marker pico-mcp-window-b4d2c7b1-2075-4d6d-ba25-1a22ee888f42 was never seen on fixture-logwindow-serial within 1s in the bounded dump (-t 20000; evicted by log volume, or never written); the device log was NOT cleared and nothing was matched against the unscoped buffer — raise maxLines if the device is chatty and re-run. status=inconclusive',
+    expected: /every dump failed: .*fixture dump failure/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:629:1
+✖ probe_planes names the dump failure when every poll's dump failed, instead of blaming eviction (3134.230125ms)
+  AssertionError [ERR_ASSERTION]: the log window marker pico-mcp-window-63ed90c1-5cad-4ce6-bcc8-54525f3749a3 was not seen in the bounded dump within 3s on fixture-logwindow-serial (evicted or never written); the buffer was not cleared — re-run
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:639:14
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:195:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:632:5
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:630:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'the log window marker pico-mcp-window-63ed90c1-5cad-4ce6-bcc8-54525f3749a3 was not seen in the bounded dump within 3s on fixture-logwindow-serial (evicted or never written); the buffer was not cleared — re-run',
+    expected: /every dump failed: .*fixture dump failure/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at test/logwindow.mjs:646:1
+✖ live_scene_snapshot names the dump failure when every poll's dump failed, instead of blaming eviction (8232.994917ms)
+  AssertionError [ERR_ASSERTION]: the log window marker pico-mcp-window-86f919ad-8828-40a9-817c-fab35d4fcd0c was not seen in the bounded dump within 8s on fixture-logwindow-serial (evicted or never written); the buffer was not cleared — re-run
+      at file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:655:14
+      at async withTools (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:195:12)
+      at async file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:649:5
+      at async withFakeAdb (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:136:12)
+      at async TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/logwindow.mjs:647:3)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'the log window marker pico-mcp-window-86f919ad-8828-40a9-817c-fab35d4fcd0c was not seen in the bounded dump within 8s on fixture-logwindow-serial (evicted or never written); the buffer was not cleared — re-run',
+    expected: /every dump failed: .*fixture dump failure/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+exit=1

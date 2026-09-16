@@ -1,0 +1,12 @@
+# final battery (extra, copilot.ts changed): npm run --silent test:copilot (2026-09-16T12:44:12Z)
+
+  ok   ack line parses (event + tag + fields)
+  ok   entity dump line parses
+  ok   non-bridge lines are ignored
+  ok   diff reports the added entity
+  ok   diff reports the removed entity
+  ok   diff reports the move with delta 0.4m; 0.1mm jitter ignored
+
+Copilot test done. Failures: 0
+
+exit=0

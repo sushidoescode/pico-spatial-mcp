@@ -1,0 +1,9 @@
+# build after the pico_look description sentence (item 5) (2026-09-16T12:40:39Z)
+
+
+> pico-spatial-mcp@38.0.0 build
+> node scripts/build-source.mjs
+
+build-source: published 192 file(s) for source ba4ba80cf319
+
+exit=0

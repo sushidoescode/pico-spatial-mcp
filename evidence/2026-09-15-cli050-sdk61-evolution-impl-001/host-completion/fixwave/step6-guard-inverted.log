@@ -1,0 +1,14 @@
+# item 3 (Minor 3): the inverted source guard on the real src/ plus its synthetic negatives (node --test --test-name-pattern guard) (2026-09-16T12:37:52Z)
+
+✔ no src file clears logcat implicitly; the explicit logcat tool is the only clear (56.8885ms)
+✔ the inverted guard rejects a second clear, a clear outside adb.ts, and a clear without the explicit-serial refusal (70.947583ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 236.3885
+
+exit=0

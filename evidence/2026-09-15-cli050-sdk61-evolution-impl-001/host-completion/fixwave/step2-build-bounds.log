@@ -1,0 +1,9 @@
+# build after the item-1 source changes (logwindow constants, assert_logcat/wait_for_log maxLines, build_and_run + pico_loop bounds) (2026-09-16T12:28:39Z)
+
+
+> pico-spatial-mcp@38.0.0 build
+> node scripts/build-source.mjs
+
+build-source: published 192 file(s) for source d2a153f1c61f
+
+exit=0
