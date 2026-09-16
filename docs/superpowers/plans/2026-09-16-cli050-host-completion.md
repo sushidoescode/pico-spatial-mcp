@@ -40,7 +40,7 @@
 
 ---
 
-### Task T1: Fixture isolation — pinned adb in every fixture gate, explicit harness override, every door through its seam
+### Task 1: Fixture isolation — pinned adb in every fixture gate, explicit harness override, every door through its seam
 
 **Files:**
 - Modify: `scripts/gate-inventory.mjs:36-51` (`FIXTURE_NO_ADB`, `gateChildEnv`)
@@ -245,7 +245,7 @@ git commit -am "fix: every door reaches the inner server only through its depend
 
 ---
 
-### Task T2: Deterministic gates — a fixture ledger for test:claims and a controlled clock for the revision-lock capacity test
+### Task 2: Deterministic gates — a fixture ledger for test:claims and a controlled clock for the revision-lock capacity test
 
 **Files:**
 - Create: `test/fixtures/claims/expected-manifest.json`
@@ -331,7 +331,7 @@ git commit -am "test: control the revision-lock capacity children's clock instea
 
 ---
 
-### Task T3: Artifact preservation — no replacing rename, unique retained LOOK captures
+### Task 3: Artifact preservation — no replacing rename, unique retained LOOK captures
 
 **Files:**
 - Modify: `scripts/publish-tarball.mjs:153-180` (`land`)
@@ -401,7 +401,7 @@ git commit -am "fix: canonical and emulator LOOK captures get run-unique retaine
 
 ---
 
-### Task T4: Bounded, correlated log observation — no implicit global logcat clear anywhere
+### Task 4: Bounded, correlated log observation — no implicit global logcat clear anywhere
 
 **Files:**
 - Create: `src/logwindow.ts`, `test/logwindow.mjs`
@@ -509,7 +509,7 @@ git commit -am "fix: observation paths open marker windows instead of clearing t
 
 ---
 
-### Task T5: Host-side correctness — receipt provenance and Node major, selected-tool toolchain watch, explicit perf device
+### Task 5: Host-side correctness — receipt provenance and Node major, selected-tool toolchain watch, explicit perf device
 
 **Files:**
 - Modify: `scripts/build-identity.mjs:127-150` (`dependencyReceipt`, `writeDependencyReceipt`), `:240-292` (`receiptVerdict`, `verifyDependencies`)
@@ -588,7 +588,7 @@ git commit -am "fix: pico_perf carries an explicit device through to perf_diagno
 
 ---
 
-### Task T6: Rebuild, regressions, independent review, final battery, fresh artifact and checkpoint
+### Task 6: Rebuild, regressions, independent review, final battery, fresh artifact and checkpoint
 
 **Files:**
 - Create: `docs/findings/CLI050_HOST_COMPLETION_CHECKPOINT.md`, `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/host-completion/pico-spatial-mcp-38.0.0.tgz` (untracked) + `.receipt.json` (tracked), `evidence/…/host-completion/*.log`
