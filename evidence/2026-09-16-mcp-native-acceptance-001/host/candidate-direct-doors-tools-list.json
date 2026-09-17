@@ -1,0 +1,1100 @@
+{
+  "probe": "direct-stdio-transport",
+  "startedAt": "2026-09-16T21:40:15.983Z",
+  "entry": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/dist/index.js",
+  "cwd": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16",
+  "surface": "doors",
+  "childPid": 60817,
+  "serverInfo": {
+    "name": "pico-spatial-mcp",
+    "version": "38.0.0"
+  },
+  "toolCount": 18,
+  "tools": [
+    {
+      "name": "validate_toolchain",
+      "inputKeys": [
+        "projectDir",
+        "toolsVersion"
+      ],
+      "required": []
+    },
+    {
+      "name": "ensure_pico_cli",
+      "inputKeys": [
+        "update"
+      ],
+      "required": []
+    },
+    {
+      "name": "pico_build_app",
+      "inputKeys": [
+        "brief",
+        "draftSpec"
+      ],
+      "required": [
+        "brief"
+      ]
+    },
+    {
+      "name": "pico_scan_world",
+      "inputKeys": [
+        "splatPath",
+        "labelQueries"
+      ],
+      "required": [
+        "splatPath"
+      ]
+    },
+    {
+      "name": "pico_place",
+      "inputKeys": [
+        "semanticScenePath",
+        "label",
+        "relation",
+        "childSize"
+      ],
+      "required": [
+        "semanticScenePath",
+        "label"
+      ]
+    },
+    {
+      "name": "pico_look",
+      "inputKeys": [],
+      "required": []
+    },
+    {
+      "name": "pico_verify_app",
+      "inputKeys": [
+        "apkPath",
+        "packageName",
+        "serial",
+        "activity",
+        "settleSec"
+      ],
+      "required": [
+        "apkPath",
+        "packageName",
+        "serial"
+      ]
+    },
+    {
+      "name": "pico_measure",
+      "inputKeys": [
+        "capturePath",
+        "targets"
+      ],
+      "required": [
+        "capturePath",
+        "targets"
+      ]
+    },
+    {
+      "name": "pico_perf",
+      "inputKeys": [
+        "packageName",
+        "durationSec",
+        "device"
+      ],
+      "required": [
+        "packageName"
+      ]
+    },
+    {
+      "name": "pico_sdk",
+      "inputKeys": [
+        "symbol",
+        "projectRoot",
+        "vaultRoot",
+        "sdkVersion",
+        "recordPaths"
+      ],
+      "required": [
+        "symbol"
+      ]
+    },
+    {
+      "name": "pico_doctor",
+      "inputKeys": [
+        "calibrate"
+      ],
+      "required": []
+    },
+    {
+      "name": "pico_ship",
+      "inputKeys": [
+        "app",
+        "lane",
+        "projectDir"
+      ],
+      "required": [
+        "app"
+      ]
+    },
+    {
+      "name": "pico_capabilities",
+      "inputKeys": [],
+      "required": []
+    },
+    {
+      "name": "pico_fix",
+      "inputKeys": [
+        "error",
+        "kotlin",
+        "recordLesson"
+      ],
+      "required": [
+        "error"
+      ]
+    },
+    {
+      "name": "pico_record",
+      "inputKeys": [
+        "app",
+        "action",
+        "claim",
+        "evidenceType",
+        "artifactPath",
+        "attestation",
+        "cClass",
+        "runReceiptId",
+        "runReceiptPromotionId",
+        "deviceSerial",
+        "deviceModel",
+        "deviceFingerprint",
+        "deviceBootQemu",
+        "deviceFeature",
+        "deviceOutcome",
+        "targetSeq",
+        "retractionReason",
+        "retractionNote",
+        "sourceReceiptId",
+        "sourceReceiptRoot",
+        "sourceLedgerRoot",
+        "targetReceiptRoot",
+        "targetLedgerRoot",
+        "report"
+      ],
+      "required": [
+        "app"
+      ]
+    },
+    {
+      "name": "pico_emulator",
+      "inputKeys": [
+        "action"
+      ],
+      "required": [
+        "action"
+      ]
+    },
+    {
+      "name": "pico_next",
+      "inputKeys": [],
+      "required": []
+    },
+    {
+      "name": "pico_loop",
+      "inputKeys": [
+        "goal",
+        "draftSpec",
+        "acceptance",
+        "budget",
+        "onFail"
+      ],
+      "required": [
+        "goal",
+        "acceptance"
+      ]
+    }
+  ],
+  "toolsFull": [
+    {
+      "name": "validate_toolchain",
+      "description": "Preflight the locally installed PICO spatial toolchain: resolves the tools root (local.properties spatial.tools.dir -> $PICO_HOME -> ~/Library/PICO/sdk), checks spatialbundle/emulator binaries, adb, AVDs, license acceptance, and gRPC proto availability. Run this first.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectDir": {
+            "type": "string",
+            "description": "Android project dir whose local.properties should be honored"
+          },
+          "toolsVersion": {
+            "type": "string",
+            "description": "Pin a specific toolchain version, e.g. '0.13'"
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "toolsRoot": {
+            "type": "string",
+            "description": "Resolved PICO tools root directory."
+          },
+          "toolsRootSource": {
+            "type": "string",
+            "description": "How the root was resolved (local.properties / $PICO_HOME / default)."
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": "string"
+                },
+                "hasEditor": {
+                  "type": "boolean"
+                },
+                "hasEmulator": {
+                  "type": "boolean"
+                },
+                "spatialbundle": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "emulatorBin": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "version",
+                "hasEditor",
+                "hasEmulator",
+                "spatialbundle",
+                "emulatorBin"
+              ],
+              "additionalProperties": true
+            },
+            "description": "Toolchain versions found under the root."
+          },
+          "selected": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Version selected for this report."
+          },
+          "spatialbundleVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`spatialbundle --version` output, or null if the probe failed."
+          },
+          "emulatorVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "adb": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Resolved adb path, or null if none found."
+          },
+          "javaHome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "avdHome": {
+            "type": "string"
+          },
+          "avds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "licenseAccepted": {
+            "type": "boolean"
+          },
+          "protosAvailable": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Empty array = toolchain fully operational; each entry is a concrete gap."
+          }
+        },
+        "required": [
+          "toolsRoot",
+          "toolsRootSource",
+          "versions",
+          "selected",
+          "spatialbundleVersion",
+          "emulatorVersion",
+          "adb",
+          "javaHome",
+          "avdHome",
+          "avds",
+          "licenseAccepted",
+          "protosAvailable",
+          "problems"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "ensure_pico_cli",
+      "description": "Force-refresh the registry-latest MCP-owned @picoxr/pico-cli and return its exact absolute path, version, freshness, and policy. Provisioning is bounded (default 120s), immutable, non-global, and never changes PATH or runs pico-cli setup/update --check. It also runs bounded per-operation capability discovery on the refreshed package: at most 8 `<route> --help` probes, each time- and output-capped, whose raw bytes and classified report are retained under the managed store and returned as capabilities. The deprecated update input is accepted through 37.x but is inert: this explicit tool always force-refreshes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "update": {
+            "type": "boolean",
+            "description": "Deprecated compatibility input; accepted but inert. The tool always force-refreshes managed-latest."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_build_app",
+      "description": "DOOR 1 — Build an evidence-scoped spatial app from a brief. TWO-STEP by design: call with just {brief} to receive a scaffold AppSpec (the planner never guesses your intent — YOU author); adapt the scaffold to the brief, then call again with {brief, draftSpec} to compile through the full pipeline (scaffold → codegen → a fail-closed native run receipt). Apps default to the Mixed stage (stageStyle '1' — the passthrough home environment is the backdrop and content seats ON the room, mrtable-style); a fully-virtual app remains a first-class opt-in via meta.stageStyle '3' (Full). A recorded receipt is structural provenance for one exact build/install/session/capture, not visual proof. Returns its receiptId, receiptPath, and exact immutable capture; LOOK at that capture before claiming how it renders. Even a recorded calibrated-eye PASS returns 'auto-judged-needs-look', never 'verified': only the later human/agent LOOK can earn vision_verified.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "brief": {
+            "type": "string",
+            "description": "What to build, e.g. 'a primitive table standing on my real floor with bodies dropping onto it from a clickable menu' (Mixed-stage MR, the default; a fully-virtual brief opts into stage style 3)."
+          },
+          "draftSpec": {
+            "description": "Your AppSpec, adapted from the scaffold a brief-only call returns. Omit on the first call."
+          }
+        },
+        "required": [
+          "brief"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_scan_world",
+      "description": "DOOR 2 — Scan a Gaussian-splat world (.ply/.spz, e.g. a World Labs Marble export) into a LABELED semantic scene: geometric clusters + headless renders + OWL-v2 zero-shot labels + a relationship graph. Returns the semantic scene JSON path to feed pico_place / anchorTo briefs, plus the annotated views to spot-check (labels are detector opinions until you LOOK).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "splatPath": {
+            "type": "string",
+            "description": "Absolute path to the .ply/.spz splat."
+          },
+          "labelQueries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Scene-specific vocabulary ('bar counter', 'neon sign') — sharper labels than the generic default."
+          }
+        },
+        "required": [
+          "splatPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_place",
+      "description": "DOOR 3 — Resolve a natural-language anchor against a scanned world: 'in front of the neon sign' → a concrete world position, with fuzzy matching and honest ambiguity/not-found reporting. Feed the result into an AppSpec object transform, or use anchorTo:{label} in a brief for the compiler to do this automatically.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "semanticScenePath": {
+            "type": "string",
+            "description": "The JSON from pico_scan_world."
+          },
+          "label": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "on-top-of",
+              "next-to",
+              "in-front-of"
+            ]
+          },
+          "childSize": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3
+          }
+        },
+        "required": [
+          "semanticScenePath",
+          "label"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_look",
+      "description": "DOOR 4 — Capture the emulator's current display through the device shell and return the image path. Default target emulator-5554 (retained this checkpoint); this door has no serial input. ROUTE: `screencap` composites the display the shell presents, not what an XR runtime submits to the headset — for an immersive layer it can read black while the app renders correctly, and can read black when nothing is drawn, so black is inconclusive about the route rather than a rendering verdict; the bytes are structurally inspected before they are saved. READ the image; that look is what turns a claim into vision_verified (record it with pico_record). NO pose control exists on this path: deterministic = the fixed forward screencap; the multi-angle alternatives are Accessibility-gated GUI drags whose free-cam drifts — so bring content into the forward FOV instead of moving the camera. OCCLUSION: a docked HUD/menu panel can cover the scene; when the app's generated wiring routes the panel DEBUG_CMDs, drive 'panel:hide' before a scene capture and 'panel:show' after (adb shell am broadcast -a <pkg>.DEBUG_CMD --es cmd panel:hide). Apps without that route ignore the broadcast — confirm with the capture itself, never by assumption.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_verify_app",
+      "description": "DOOR 5 — OBSERVE any external PICO APK on an EXPLICITLY NAMED device: install → installed-digest check → launch → settle → identity (boot id, PID + process start, foreground) → bounded PID-scoped log → one structurally inspected capture, published immutably into a unique run directory. Works for apps this server never built (including official PICO samples). The result is a STRUCTURAL OBSERVATION, never a run receipt, a release claim or a hardware claim, and no verdict is machine-assigned: it returns identity plus the capture, and YOU look. It never clears the device's global log and never stops an app it was not given — a foreign foreground comes back as a conflict with the evidence.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "apkPath": {
+            "type": "string"
+          },
+          "packageName": {
+            "type": "string",
+            "description": "The APK's applicationId."
+          },
+          "serial": {
+            "type": "string",
+            "description": "REQUIRED adb serial of the device to observe. There is no default: an observation names the device it observed."
+          },
+          "activity": {
+            "type": "string",
+            "description": "Fully-qualified launch activity; omitted means a monkey LAUNCHER intent."
+          },
+          "settleSec": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "apkPath",
+          "packageName",
+          "serial"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_measure",
+      "description": "DOOR 6 — MEASURE a placement in a capture (v20 metric layer): color-keyed detection + calibrated-camera projection → error in px and meters, box IoU. Requires a one-time camera calibration — pico_doctor reports calibration state, and pico_doctor {calibrate:true} performs it end-to-end through the full-surface inner server. Refuses occluded/absent targets instead of guessing.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "capturePath": {
+            "type": "string"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "colorKey": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "expectedPosition": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "expectedSize": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              },
+              "required": [
+                "name",
+                "colorKey",
+                "expectedPosition"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "capturePath",
+          "targets"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_perf",
+      "description": "DOOR 7 — Profile a running app with PICO's OFFICIAL profiler (pico-cli perf): FPS percentiles, CPU/GPU, jank windows, and PICO's own diagnosis engine. Structural evidence — numbers, not looks. The target is the explicit `device` you pass or the wrapper's documented default; either way the result names it as requestedDevice.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "packageName": {
+            "type": "string"
+          },
+          "durationSec": {
+            "type": "number"
+          },
+          "device": {
+            "type": "string",
+            "description": "adb serial to profile; forwarded verbatim. Omitted: the wrapper's documented default target."
+          }
+        },
+        "required": [
+          "packageName"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_sdk",
+      "description": "DOOR 8 — Look up the EXACT PICO Spatial SDK declaration (constructors with parameter order and unit docs, properties, enum values) from the locally materialized agent-vault before writing SDK code — by default the HISTORICAL 0.13.3 declarations, labeled with the package revision their package.xml declares. The app skeleton builds on SDK 6.0.0; docs/SDK_6_0_0_DRIFT.md records the measured near-zero public-API drift as historical evidence, not target authority. Pass projectRoot (optionally vaultRoot / sdkVersion / recordPaths) and the answer reports declarationIdentity, target and declarationContext — target-compatible only when a reviewed compatibility record verifies against the local vault bytes and that project's exact resolved SDK; otherwise unknown/historical, and it says so. Hints select what is read; nothing here accepts an identity, a fingerprint or a compatibility verdict from the caller. All-Float signatures compile silently with swapped args — check first.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string"
+          },
+          "projectRoot": {
+            "type": "string",
+            "description": "Android project root hint: its declared BOM/identity are read statically (never Gradle) and reviewed compatibility evidence is verified against it. Omit for a plain historical lookup."
+          },
+          "vaultRoot": {
+            "type": "string",
+            "description": "Explicit agent-vault root — an explicitly identified source, not proof of target compatibility."
+          },
+          "sdkVersion": {
+            "type": "string",
+            "description": "Numeric vault workspace label under the tools root (e.g. '0.13'); never a path."
+          },
+          "recordPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Reviewed compatibility record paths to consider; only records in the packaged reviewed index can be accepted."
+          }
+        },
+        "required": [
+          "symbol"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_doctor",
+      "description": "DOOR 9 — Health-check the local PICO environment: the read-only preflight (node/adb/emulator/gRPC/Accessibility/calibration/disk — every failure carries the exact fix), toolchain payloads, emulator state, and the v20 camera calibration. Run this FIRST on a new machine, and whenever anything smells off. Pass {calibrate:true} to also RUN the one-time camera calibration end-to-end (fleet_build(['calib']) → calibrate_capture_camera): the inner child server already runs the FULL surface, so no surface switch or client restart is needed — it does need a running emulator and takes a few minutes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "calibrate": {
+            "type": "boolean",
+            "description": "Build+launch the calib brief and solve the capture camera through the full-surface inner server. Requires a running emulator; takes minutes."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_ship",
+      "description": "DOOR 10 — Transparently run the honest ship checklist for an app/lane/project. Native debug provenance clears only when current bytes match a digest-bound v1 run receipt and its exact capture has an effective receipt-linked LOOK. The debug receipt never clears release APK, release signing, store, web-deploy, Swan-hardware, or Windows boundaries.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,199}$",
+            "description": "Canonical native applicationId or web app ledger key."
+          },
+          "lane": {
+            "type": "string",
+            "enum": [
+              "native",
+              "web",
+              "hybrid"
+            ],
+            "description": "Checklist lane (default native)."
+          },
+          "projectDir": {
+            "type": "string",
+            "description": "Current project directory whose bytes the checklist must validate (uses ship_checklist's lane default when omitted)."
+          }
+        },
+        "required": [
+          "app"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_capabilities",
+      "description": "DOOR 11 — What can this toolchain actually do, and how is each capability PROVEN? Generated from the trust ledger: every row's best evidence class, with vision_verified meaning a human/agent looked at a rendered frame.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_fix",
+      "description": "DOOR 12 — Paste a build/runtime error (or describe a wrong render) and get the matched retained-lesson: the known root cause and the exact fix, from a corpus of verified past failures. Free text is fine — it is mapped to the diagnosis knowledge base by keyword, and always run through the retained-lessons rulebook. Also lints provided Kotlin against the gotcha rulebook + the official SDK vault. Once you SOLVE a novel gotcha, re-call with {recordLesson:{...}} to persist it as a new lint rule (passed through to record_lesson on the full-surface inner server).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "The error text, logcat excerpt, or symptom description."
+          },
+          "kotlin": {
+            "type": "string",
+            "description": "The suspect emitted Kotlin, if available."
+          },
+          "recordLesson": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique kebab-case rule id, e.g. 'my-new-gotcha'."
+              },
+              "pattern": {
+                "type": "string",
+                "description": "A JS regex source string that detects the anti-pattern."
+              },
+              "message": {
+                "type": "string",
+                "description": "What's wrong (the verified failure)."
+              },
+              "fix": {
+                "type": "string",
+                "description": "The concrete fix."
+              },
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "error",
+                  "warn"
+                ],
+                "description": "Default 'error'."
+              },
+              "kinds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "kotlin",
+                    "command",
+                    "gradle",
+                    "usd",
+                    "any"
+                  ]
+                },
+                "description": "Which content kinds this applies to (default ['any'])."
+              },
+              "designRule": {
+                "type": "string",
+                "description": "The DESIGN.md rule / diagnose symptom it maps to."
+              },
+              "positiveFixture": {
+                "type": "string",
+                "description": "A sample that MUST trigger the rule."
+              },
+              "negativeFixture": {
+                "type": "string",
+                "description": "A sample that MUST NOT trigger the rule."
+              }
+            },
+            "required": [
+              "id",
+              "pattern",
+              "message",
+              "fix"
+            ],
+            "additionalProperties": false,
+            "description": "After you SOLVE a novel gotcha: persist it as a retained-lessons lint rule. Passed through unchanged to record_lesson, which validates the regex + fixtures before persisting."
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_record",
+      "description": "DOOR 13 — RECORD a caller-attested verification claim AFTER you LOOKED, append an honest RETRACTION, or explicitly PROMOTE a native receipt into portable one-hop provenance without creating evidence. The three actions are mutually exclusive. Portable record binding requires both runReceiptId and runReceiptPromotionId; native binding omits the promotion ID. Image evidence needs a real PNG/JPEG plus attestation. device_verified additionally requires live hardware/capture binding plus structured deviceFeature and explicit pass/fail outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,199}$",
+            "description": "Canonical lowercase app/package ledger key: ASCII lowercase letters, digits, dot, underscore, or hyphen; no paths, spaces, or case aliases."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "record",
+              "retract",
+              "promote"
+            ],
+            "description": "Default record; retract appends a correction; promote publishes portable one-hop receipt objects without evidence."
+          },
+          "claim": {
+            "type": "string",
+            "description": "Record action: the claim, e.g. '6 shelf cards render in the forward FOV'."
+          },
+          "evidenceType": {
+            "type": "string",
+            "enum": [
+              "device_verified",
+              "vision_verified",
+              "logcat",
+              "structural",
+              "compiles",
+              "built_for_headset"
+            ],
+            "description": "Record action: a caller-recordable evidence tier. vision_verified needs a linked capture + attestation; device_verified additionally uses live device/capture provenance. auto_judged and usd_host_render are producer-only and must come from visual_judge or render_usd_offscreen."
+          },
+          "artifactPath": {
+            "type": "string",
+            "description": "Path to the capture you LOOKED at (REQUIRED for vision_verified)."
+          },
+          "attestation": {
+            "type": "string",
+            "description": "What you saw in the capture (REQUIRED for vision_verified)."
+          },
+          "cClass": {
+            "type": "string",
+            "enum": [
+              "C0_emulator",
+              "C1",
+              "C2",
+              "C3",
+              "C4_headset_only"
+            ],
+            "description": "The claim's capability class."
+          },
+          "runReceiptId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "Record action only: receiptId returned by pico_build_app. Pass it after LOOKING at that receipt's exact capture; it binds provenance without promoting the evidence class."
+          },
+          "runReceiptPromotionId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "Record action only: promotionId returned with a portable receipt. Omit it for native receipt binding."
+          },
+          "deviceSerial": {
+            "type": "string",
+            "description": "Attached adb serial (REQUIRED for device_verified; probed live)."
+          },
+          "deviceModel": {
+            "type": "string",
+            "description": "Optional expected model; mismatch with live probe rejects."
+          },
+          "deviceFingerprint": {
+            "type": "string",
+            "description": "Optional expected fingerprint; mismatch with live probe rejects."
+          },
+          "deviceBootQemu": {
+            "type": "string",
+            "description": "Optional expected ro.boot.qemu; mismatch rejects and live '1' is never hardware."
+          },
+          "deviceFeature": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$",
+            "description": "device_verified only: exact lowercase feature slug measured on-device (for example controller_ray); required with deviceOutcome."
+          },
+          "deviceOutcome": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "fail"
+            ],
+            "description": "device_verified only: explicit observed outcome. Swan parity closes only an exact deviceFeature with pass; claim prose is never interpreted."
+          },
+          "targetSeq": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Retract action: sequence number of the claim being corrected."
+          },
+          "retractionReason": {
+            "type": "string",
+            "description": "Retract action: why the earlier claim is withdrawn."
+          },
+          "retractionNote": {
+            "type": "string",
+            "description": "Retract action: optional nuance retained with the correction."
+          },
+          "sourceReceiptId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "Promote action only: exact native source receipt identity."
+          },
+          "sourceReceiptRoot": {
+            "type": "string",
+            "description": "Promote action only: explicit canonical source receipt-store root."
+          },
+          "sourceLedgerRoot": {
+            "type": "string",
+            "description": "Promote action only: explicit canonical source ledger-store root."
+          },
+          "targetReceiptRoot": {
+            "type": "string",
+            "description": "Promote action only: explicit canonical target receipt-store root."
+          },
+          "targetLedgerRoot": {
+            "type": "string",
+            "description": "Promote action only: explicit canonical target ledger-store root."
+          },
+          "report": {
+            "type": "boolean",
+            "description": "Also return ledger_report's generated capability report for the app."
+          }
+        },
+        "required": [
+          "app"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_emulator",
+      "description": "DOOR 14 — Emulator lifecycle without leaving the doors surface. {action:'status'} reports adb/boot/gRPC state; {action:'boot'} boots the PICO OS6 emulator headless and waits for Android (fails honestly if one is already online); {action:'restart'} returns the documented COLD-restart command instead of running it — the cold restart kills the qemu process by PID and relaunches with explicit -sysdir/-kernel (adb reboot is insufficient for a wedged ContainerManager), which touches the host process table, so a human runs it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "status",
+              "boot",
+              "restart"
+            ],
+            "description": "status = report state; boot = boot + wait for Android; restart = get the exact cold-restart command (NOT executed)."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_next",
+      "description": "DOOR 15 — What should I do NOW? Reads the ACTUAL local state — preflight checks, emulator, camera calibration, your generated briefs with their build/capture/trust-ledger progress — and returns {situation, nextAction:{door,argsExample,why}, alternatives}. Every recommendation names a real door on this surface; nothing is executed for you, and a LOOK step still means YOU read the capture.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "pico_loop",
+      "description": "DOOR 16 — Declarative build→verify→repair loop (2026-08 Loop Engineering lane): state a goal, acceptance criteria (structural / visual / logcat / perf), and a budget; the loop plans, builds through the fleet pipeline, machine-checks every criterion, and when a failure matches a retained lesson with a concrete AppSpec mutation, applies replan_spec and iterates. Failures without a safe automatic mutation exit manual-repair-required with their measured detail; the loop never relabels them build_failed or pretends an unattended fix occurred. Each iteration opens a marker window (adb_shell `log -t pico-mcp <marker>`) before its build and scopes every logcat criterion to it through assert_logcat's sinceMarker — the device log is never cleared, and a window whose marker is never seen makes that criterion unmeasurable, not failed. Logcat criteria are evaluated before structural asserts (a stable order kept from when assert_scene cleared logcat). HONESTY CEILING BY EVIDENCE: a calibrated-eye PASS earns `auto_judged` only when the matching ledger write succeeds; a measured PASS with a rejected/missing write remains `structural`. An iteration whose requested structural/logcat/perf criteria pass while the eye FAILs, ESCALATEs, or is unscored remains `structural` — it never inherits a visual tier from the word accepted. The loop returns a remainingLookObligation naming the artifacts a person or vision-capable agent must still LOOK at before any vision_verified claim. A no-progress detector stops after two consecutive iterations failing with the identical signature; an unmeasurable criterion (missing perf utilities, no Agent Bridge) stops the loop honestly instead of silently passing; an eye ESCALATE (a frame class the machine cannot judge, e.g. high-coverage passthrough) exits built-needs-look once everything measurable passes — escalation is a look obligation, never a defect to repair. An absent or unknown eye score uses the same terminal status but is labeled unscored, never misreported as an escalation. PERF LOOP LANE: a perf criterion measures with pico-cli and carries its diagnosis into the failure detail. It re-measures only when another applicable retained lesson actually mutates the AppSpec; a generic low-FPS result has no safe automatic quality tradeoff and exits for manual repair. Every measured iteration's pico-cli appFps numbers are ledgered and returned as perfTrend (before→after, structural evidence), and a perf failure carries pico-cli's own diagnosis engine verdict, never a guess. Every iteration writes a structural trust-ledger entry. Each native run also returns a structural receiptId/receiptPath and its exact immutable capture; the receipt proves identity and continuity, never what the pixels look like, so the returned capture still requires a LOOK. Budget uses meta.budget semantics (iterations, timeMin). Builds take minutes each — configure your host's MCP timeout accordingly (≥ 10 minutes, more for multi-iteration budgets). Prefer authoring a draftSpec first (pico_build_app's two-step); goal-only runs start from the planner's archetype scaffold, declared in the result.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "goal": {
+            "type": "string",
+            "description": "What to build/achieve, e.g. 'a knockdown game with three stacked crates on my real table'. Used as the brief; also keys the fleet project + ledger."
+          },
+          "draftSpec": {
+            "description": "An authored AppSpec to iterate from (recommended — the planner never guesses intent as well as you author it). Omitted: the loop starts from the planner's archetype scaffold and says so."
+          },
+          "acceptance": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "structural",
+                    "visual",
+                    "logcat",
+                    "perf"
+                  ],
+                  "description": "structural = Agent Bridge scene asserts; visual = the calibrated eye's PASS on the canonical capture (auto_judged; ESCALATE becomes built-needs-look, while a missing/unknown result is explicitly unscored); logcat = assert_logcat pattern; perf = pico-cli appFps p5 floor."
+                },
+                "entitiesPresent": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "structural: entity names that must exist."
+                },
+                "minEntities": {
+                  "type": "integer",
+                  "description": "structural: minimum entity count."
+                },
+                "componentsPresent": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "structural: component class names that must exist."
+                },
+                "pattern": {
+                  "type": "string",
+                  "description": "logcat: case-insensitive regex that must appear (REQUIRED for kind:'logcat')."
+                },
+                "tag": {
+                  "type": "string",
+                  "description": "logcat: restrict to this tag."
+                },
+                "timeoutSec": {
+                  "type": "integer",
+                  "description": "logcat: wait window (default 20)."
+                },
+                "minAppFpsP5": {
+                  "type": "number",
+                  "description": "perf: required appFps p5 floor (default 60)."
+                },
+                "durationSec": {
+                  "type": "integer",
+                  "description": "perf: profiling window (default perf_diagnose's)."
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "description": "The exit bar. Every criterion must pass in the SAME iteration for the loop to accept."
+          },
+          "budget": {
+            "type": "object",
+            "properties": {
+              "iterations": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6,
+                "description": "Max build+verify iterations (default 3)."
+              },
+              "timeMin": {
+                "type": "number",
+                "description": "Soft wall-clock budget in minutes (default 20; checked between iterations)."
+              },
+              "toolCalls": {
+                "type": "integer",
+                "description": "Accepted for meta.budget parity; iterations is the effective cap here."
+              }
+            },
+            "additionalProperties": false,
+            "description": "meta.budget semantics (same shape as an AppSpec's meta.budget)."
+          },
+          "onFail": {
+            "type": "string",
+            "enum": [
+              "replan",
+              "stop"
+            ],
+            "description": "replan (default): apply the retained-lesson repair and iterate. stop: return after the first failing iteration."
+          }
+        },
+        "required": [
+          "goal",
+          "acceptance"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    }
+  ],
+  "finishedAt": "2026-09-16T21:40:16.157Z",
+  "serverStderr": "pico-spatial-mcp ready (stdio)\n"
+}

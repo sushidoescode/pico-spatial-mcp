@@ -1,0 +1,554 @@
+{
+  "tool": "input_capture_v1",
+  "startedAtUtc": "2026-09-17T00:19:24.844748+00:00",
+  "argv": [
+    "polishlab-hover-001",
+    "--package",
+    "dev.local.picouipolish.lab",
+    "--device",
+    "emulator-5554",
+    "--expected-sha256",
+    "5e0871e4cf613073ca73edce544f09c88e4cb61b3de58098ebeb204c1f213b12",
+    "--move",
+    "501.7",
+    "452.2",
+    "--seconds",
+    "8"
+  ],
+  "commands": [
+    {
+      "argv": [
+        "adb",
+        "-s",
+        "emulator-5554",
+        "shell",
+        "pm",
+        "path",
+        "dev.local.picouipolish.lab"
+      ],
+      "exitCode": 0,
+      "stdout": "package:/data/app/~~fZYOKvH18odRC2L4BrEFjQ==/dev.local.picouipolish.lab-4QRO9ONqzDlj6UlgSliMWw==/base.apk\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:24.865864+00:00"
+    },
+    {
+      "argv": [
+        "adb",
+        "-s",
+        "emulator-5554",
+        "shell",
+        "sha256sum",
+        "/data/app/~~fZYOKvH18odRC2L4BrEFjQ==/dev.local.picouipolish.lab-4QRO9ONqzDlj6UlgSliMWw==/base.apk"
+      ],
+      "exitCode": 0,
+      "stdout": "5e0871e4cf613073ca73edce544f09c88e4cb61b3de58098ebeb204c1f213b12  /data/app/~~fZYOKvH18odRC2L4BrEFjQ==/dev.local.picouipolish.lab-4QRO9ONqzDlj6UlgSliMWw==/base.apk\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:24.897726+00:00"
+    },
+    {
+      "argv": [
+        "adb",
+        "-s",
+        "emulator-5554",
+        "shell",
+        "pidof",
+        "dev.local.picouipolish.lab"
+      ],
+      "exitCode": 0,
+      "stdout": "10540\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:24.915460+00:00"
+    },
+    {
+      "argv": [
+        "adb",
+        "-s",
+        "emulator-5554",
+        "shell",
+        "getprop",
+        "ro.build.fingerprint"
+      ],
+      "exitCode": 0,
+      "stdout": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:24.932100+00:00"
+    },
+    {
+      "argv": [
+        "adb",
+        "-s",
+        "emulator-5554",
+        "shell",
+        "getprop",
+        "ro.boot.qemu"
+      ],
+      "exitCode": 0,
+      "stdout": "1\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:24.948204+00:00"
+    },
+    {
+      "argv": [
+        "swift",
+        "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/tooling/render-liveness-1.0.0/window-state.swift"
+      ],
+      "exitCode": 0,
+      "stdout": "{\n  \"capturedAt\" : \"2026-09-17T00:19:25Z\",\n  \"dockPolicy\" : \"Display-sized Dock surface bounds do not establish opaque coverage. This structural app-window check must be paired with the required compositor sample.\",\n  \"dockSystemSurfaces\" : [\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 1117,\n        \"Width\" : 1728,\n        \"X\" : 0,\n        \"Y\" : 0\n      },\n      \"id\" : 52,\n      \"layer\" : 20,\n      \"owner\" : \"Dock\",\n      \"pid\" : 3027,\n      \"title\" : \"Dock\"\n    }\n  ],\n  \"frontmost\" : false,\n  \"frontmostName\" : \"Google Chrome\",\n  \"frontmostPid\" : 3019,\n  \"method\" : \"Read-only CGWindowList front-to-back intersection and NSWorkspace frontmost PID. Does not move, resize or activate any window.\",\n  \"occludingWindows\" : [\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 1010,\n        \"Width\" : 1744,\n        \"X\" : 0,\n        \"Y\" : 33\n      },\n      \"id\" : 88,\n      \"layer\" : 0,\n      \"owner\" : \"Google Chrome\",\n      \"pid\" : 3019,\n      \"title\" : \"WhatsApp \ud83d\udd0a\"\n    },\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 1010,\n        \"Width\" : 1728,\n        \"X\" : 0,\n        \"Y\" : 33\n      },\n      \"id\" : 82,\n      \"layer\" : 0,\n      \"owner\" : \"Google Chrome\",\n      \"pid\" : 3019,\n      \"title\" : \"ChatGPT\"\n    },\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 1010,\n        \"Width\" : 1728,\n        \"X\" : 0,\n        \"Y\" : 33\n      },\n      \"id\" : 970,\n      \"layer\" : 0,\n      \"owner\" : \"Code\",\n      \"pid\" : 29662,\n      \"title\" : \"PICO-MCP\"\n    },\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 1009,\n        \"Width\" : 1728,\n        \"X\" : 0,\n        \"Y\" : 33\n      },\n      \"id\" : 963,\n      \"layer\" : 0,\n      \"owner\" : \"Code\",\n      \"pid\" : 29662,\n      \"title\" : \"GNOMIN-AROUND\"\n    },\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 1009,\n        \"Width\" : 1728,\n        \"X\" : 0,\n        \"Y\" : 33\n      },\n      \"id\" : 971,\n      \"layer\" : 0,\n      \"owner\" : \"Code\",\n      \"pid\" : 29662,\n      \"t",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:25.360102+00:00"
+    },
+    {
+      "argv": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/tooling/render-liveness-1.0.0/runtime_gate.py",
+        "raise",
+        "polishlab-hover-001-raise-001"
+      ],
+      "exitCode": 0,
+      "stdout": "{\n  \"argv\": [\n    \"osascript\",\n    \"-e\",\n    \"tell application \\\"System Events\\\" to tell process \\\"qemu-system-aarch64\\\" to perform action \\\"AXRaise\\\" of window \\\"PICO Emulator - 6.1.0\\\"\",\n    \"-e\",\n    \"tell application \\\"System Events\\\" to set frontmost of process \\\"qemu-system-aarch64\\\" to true\"\n  ],\n  \"startedAt\": \"2026-09-17T00:19:25.386393+00:00\",\n  \"endedAt\": \"2026-09-17T00:19:25.502381+00:00\",\n  \"exit\": 0,\n  \"stdout\": \"\",\n  \"stderr\": \"\"\n}\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:35.512873+00:00"
+    },
+    {
+      "argv": [
+        "swift",
+        "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/tooling/render-liveness-1.0.0/window-state.swift"
+      ],
+      "exitCode": 0,
+      "stdout": "{\n  \"capturedAt\" : \"2026-09-17T00:19:35Z\",\n  \"dockPolicy\" : \"Display-sized Dock surface bounds do not establish opaque coverage. This structural app-window check must be paired with the required compositor sample.\",\n  \"dockSystemSurfaces\" : [\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 1117,\n        \"Width\" : 1728,\n        \"X\" : 0,\n        \"Y\" : 0\n      },\n      \"id\" : 52,\n      \"layer\" : 20,\n      \"owner\" : \"Dock\",\n      \"pid\" : 3027,\n      \"title\" : \"Dock\"\n    }\n  ],\n  \"frontmost\" : false,\n  \"frontmostName\" : \"Google Chrome\",\n  \"frontmostPid\" : 3019,\n  \"method\" : \"Read-only CGWindowList front-to-back intersection and NSWorkspace frontmost PID. Does not move, resize or activate any window.\",\n  \"occludingWindows\" : [\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 296,\n        \"Width\" : 1346,\n        \"X\" : 100,\n        \"Y\" : 59\n      },\n      \"id\" : 90,\n      \"layer\" : 0,\n      \"owner\" : \"Google Chrome\",\n      \"pid\" : 3019,\n      \"title\" : \"\"\n    },\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 1010,\n        \"Width\" : 1744,\n        \"X\" : 0,\n        \"Y\" : 33\n      },\n      \"id\" : 88,\n      \"layer\" : 0,\n      \"owner\" : \"Google Chrome\",\n      \"pid\" : 3019,\n      \"title\" : \"stanfordnlp\\/dspy: DSPy: The fr\u2026 prompting\u2014language models \ud83d\udd0a\"\n    }\n  ],\n  \"ownedOverlayPolicy\" : \"The emulator's own child toolbar windows are retained separately; foreign overlapping windows fail this gate.\",\n  \"ownedOverlays\" : [\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 44,\n        \"Width\" : 266,\n        \"X\" : 709,\n        \"Y\" : 992\n      },\n      \"id\" : 450,\n      \"layer\" : 0,\n      \"owner\" : \"qemu-system-aarch64\",\n      \"pid\" : 40430,\n      \"title\" : \"Form\"\n    },\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 345,\n        \"Width\" : 44,\n        \"X\" : 6,\n        \"Y\" : 67\n      },\n      \"id\" : 449,\n      \"layer\" : 0,\n      \"owner\" : \"qemu-system-aarch64\",\n      \"pid\" : 40430,\n      \"title\" : \"Form\"\n    }\n  ],\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:35.988093+00:00"
+    },
+    {
+      "argv": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/tooling/render-liveness-1.0.0/runtime_gate.py",
+        "raise",
+        "polishlab-hover-001-raise-002"
+      ],
+      "exitCode": 0,
+      "stdout": "{\n  \"argv\": [\n    \"osascript\",\n    \"-e\",\n    \"tell application \\\"System Events\\\" to tell process \\\"qemu-system-aarch64\\\" to perform action \\\"AXRaise\\\" of window \\\"PICO Emulator - 6.1.0\\\"\",\n    \"-e\",\n    \"tell application \\\"System Events\\\" to set frontmost of process \\\"qemu-system-aarch64\\\" to true\"\n  ],\n  \"startedAt\": \"2026-09-17T00:19:36.027439+00:00\",\n  \"endedAt\": \"2026-09-17T00:19:36.148164+00:00\",\n  \"exit\": 0,\n  \"stdout\": \"\",\n  \"stderr\": \"\"\n}\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:46.157084+00:00"
+    },
+    {
+      "argv": [
+        "swift",
+        "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/tooling/render-liveness-1.0.0/window-state.swift"
+      ],
+      "exitCode": 0,
+      "stdout": "{\n  \"capturedAt\" : \"2026-09-17T00:19:46Z\",\n  \"dockPolicy\" : \"Display-sized Dock surface bounds do not establish opaque coverage. This structural app-window check must be paired with the required compositor sample.\",\n  \"dockSystemSurfaces\" : [\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 1117,\n        \"Width\" : 1728,\n        \"X\" : 0,\n        \"Y\" : 0\n      },\n      \"id\" : 52,\n      \"layer\" : 20,\n      \"owner\" : \"Dock\",\n      \"pid\" : 3027,\n      \"title\" : \"Dock\"\n    }\n  ],\n  \"frontmost\" : false,\n  \"frontmostName\" : \"Google Chrome\",\n  \"frontmostPid\" : 3019,\n  \"method\" : \"Read-only CGWindowList front-to-back intersection and NSWorkspace frontmost PID. Does not move, resize or activate any window.\",\n  \"occludingWindows\" : [\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 1010,\n        \"Width\" : 1744,\n        \"X\" : 0,\n        \"Y\" : 33\n      },\n      \"id\" : 88,\n      \"layer\" : 0,\n      \"owner\" : \"Google Chrome\",\n      \"pid\" : 3019,\n      \"title\" : \"stanfordnlp\\/dspy: DSPy: The fr\u2026 prompting\u2014language models \ud83d\udd0a\"\n    }\n  ],\n  \"ownedOverlayPolicy\" : \"The emulator's own child toolbar windows are retained separately; foreign overlapping windows fail this gate.\",\n  \"ownedOverlays\" : [\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 44,\n        \"Width\" : 266,\n        \"X\" : 709,\n        \"Y\" : 992\n      },\n      \"id\" : 450,\n      \"layer\" : 0,\n      \"owner\" : \"qemu-system-aarch64\",\n      \"pid\" : 40430,\n      \"title\" : \"Form\"\n    },\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 345,\n        \"Width\" : 44,\n        \"X\" : 6,\n        \"Y\" : 67\n      },\n      \"id\" : 449,\n      \"layer\" : 0,\n      \"owner\" : \"qemu-system-aarch64\",\n      \"pid\" : 40430,\n      \"title\" : \"Form\"\n    }\n  ],\n  \"pass\" : false,\n  \"systemCursorPolicy\" : \"Only a Window Server surface titled Cursor at the native cursor level with positive bounds no larger than 64x64 is classified as the pointer. It remains retained here. Other foreign windows and unknown system",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:46.605513+00:00"
+    },
+    {
+      "argv": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/tooling/render-liveness-1.0.0/runtime_gate.py",
+        "raise",
+        "polishlab-hover-001-raise-003"
+      ],
+      "exitCode": 0,
+      "stdout": "{\n  \"argv\": [\n    \"osascript\",\n    \"-e\",\n    \"tell application \\\"System Events\\\" to tell process \\\"qemu-system-aarch64\\\" to perform action \\\"AXRaise\\\" of window \\\"PICO Emulator - 6.1.0\\\"\",\n    \"-e\",\n    \"tell application \\\"System Events\\\" to set frontmost of process \\\"qemu-system-aarch64\\\" to true\"\n  ],\n  \"startedAt\": \"2026-09-17T00:19:46.637486+00:00\",\n  \"endedAt\": \"2026-09-17T00:19:46.757473+00:00\",\n  \"exit\": 0,\n  \"stdout\": \"\",\n  \"stderr\": \"\"\n}\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:56.765355+00:00"
+    },
+    {
+      "argv": [
+        "swift",
+        "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/tooling/render-liveness-1.0.0/window-state.swift"
+      ],
+      "exitCode": 0,
+      "stdout": "{\n  \"capturedAt\" : \"2026-09-17T00:19:57Z\",\n  \"dockPolicy\" : \"Display-sized Dock surface bounds do not establish opaque coverage. This structural app-window check must be paired with the required compositor sample.\",\n  \"dockSystemSurfaces\" : [\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 1117,\n        \"Width\" : 1728,\n        \"X\" : 0,\n        \"Y\" : 0\n      },\n      \"id\" : 52,\n      \"layer\" : 20,\n      \"owner\" : \"Dock\",\n      \"pid\" : 3027,\n      \"title\" : \"Dock\"\n    }\n  ],\n  \"frontmost\" : true,\n  \"frontmostName\" : \"qemu-system-aarch64\",\n  \"frontmostPid\" : 40430,\n  \"method\" : \"Read-only CGWindowList front-to-back intersection and NSWorkspace frontmost PID. Does not move, resize or activate any window.\",\n  \"occludingWindows\" : [\n\n  ],\n  \"ownedOverlayPolicy\" : \"The emulator's own child toolbar windows are retained separately; foreign overlapping windows fail this gate.\",\n  \"ownedOverlays\" : [\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 44,\n        \"Width\" : 266,\n        \"X\" : 709,\n        \"Y\" : 992\n      },\n      \"id\" : 450,\n      \"layer\" : 0,\n      \"owner\" : \"qemu-system-aarch64\",\n      \"pid\" : 40430,\n      \"title\" : \"Form\"\n    },\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 345,\n        \"Width\" : 44,\n        \"X\" : 6,\n        \"Y\" : 67\n      },\n      \"id\" : 449,\n      \"layer\" : 0,\n      \"owner\" : \"qemu-system-aarch64\",\n      \"pid\" : 40430,\n      \"title\" : \"Form\"\n    }\n  ],\n  \"pass\" : true,\n  \"systemCursorPolicy\" : \"Only a Window Server surface titled Cursor at the native cursor level with positive bounds no larger than 64x64 is classified as the pointer. It remains retained here. Other foreign windows and unknown system surfaces still fail.\",\n  \"systemCursorSurfaces\" : [\n\n  ],\n  \"target\" : {\n    \"alpha\" : 1,\n    \"bounds\" : {\n      \"Height\" : 1009,\n      \"Width\" : 981,\n      \"X\" : 0,\n      \"Y\" : 33\n    },\n    \"id\" : 448,\n    \"layer\" : 0,\n    \"owner\" : \"qemu-system-aarch64\",\n    \"pid\" : 40430,\n    \"title\" : \"PICO Emulat",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:57.185184+00:00"
+    },
+    {
+      "argv": [
+        "adb",
+        "-s",
+        "emulator-5554",
+        "shell",
+        "date",
+        "+%s.%N"
+      ],
+      "exitCode": 0,
+      "stdout": "1789604396.199321141\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:57.214582+00:00"
+    },
+    {
+      "argv": [
+        "swift",
+        "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/tooling/render-liveness-1.0.0/host-move.swift",
+        "501.7",
+        "452.2"
+      ],
+      "exitCode": 0,
+      "stdout": "{\"x\":501.7,\"y\":452.2,\"targetPid\":40430,\"input\":\"move only\",\"effectVerified\":false}\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:19:58.737645+00:00"
+    },
+    {
+      "argv": [
+        "swift",
+        "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/tooling/render-liveness-1.0.0/window-state.swift"
+      ],
+      "exitCode": 0,
+      "stdout": "{\n  \"capturedAt\" : \"2026-09-17T00:20:06Z\",\n  \"dockPolicy\" : \"Display-sized Dock surface bounds do not establish opaque coverage. This structural app-window check must be paired with the required compositor sample.\",\n  \"dockSystemSurfaces\" : [\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 1117,\n        \"Width\" : 1728,\n        \"X\" : 0,\n        \"Y\" : 0\n      },\n      \"id\" : 52,\n      \"layer\" : 20,\n      \"owner\" : \"Dock\",\n      \"pid\" : 3027,\n      \"title\" : \"Dock\"\n    }\n  ],\n  \"frontmost\" : true,\n  \"frontmostName\" : \"qemu-system-aarch64\",\n  \"frontmostPid\" : 40430,\n  \"method\" : \"Read-only CGWindowList front-to-back intersection and NSWorkspace frontmost PID. Does not move, resize or activate any window.\",\n  \"occludingWindows\" : [\n\n  ],\n  \"ownedOverlayPolicy\" : \"The emulator's own child toolbar windows are retained separately; foreign overlapping windows fail this gate.\",\n  \"ownedOverlays\" : [\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 44,\n        \"Width\" : 266,\n        \"X\" : 709,\n        \"Y\" : 992\n      },\n      \"id\" : 450,\n      \"layer\" : 0,\n      \"owner\" : \"qemu-system-aarch64\",\n      \"pid\" : 40430,\n      \"title\" : \"Form\"\n    },\n    {\n      \"alpha\" : 1,\n      \"bounds\" : {\n        \"Height\" : 345,\n        \"Width\" : 44,\n        \"X\" : 6,\n        \"Y\" : 67\n      },\n      \"id\" : 449,\n      \"layer\" : 0,\n      \"owner\" : \"qemu-system-aarch64\",\n      \"pid\" : 40430,\n      \"title\" : \"Form\"\n    }\n  ],\n  \"pass\" : true,\n  \"systemCursorPolicy\" : \"Only a Window Server surface titled Cursor at the native cursor level with positive bounds no larger than 64x64 is classified as the pointer. It remains retained here. Other foreign windows and unknown system surfaces still fail.\",\n  \"systemCursorSurfaces\" : [\n\n  ],\n  \"target\" : {\n    \"alpha\" : 1,\n    \"bounds\" : {\n      \"Height\" : 1009,\n      \"Width\" : 981,\n      \"X\" : 0,\n      \"Y\" : 33\n    },\n    \"id\" : 448,\n    \"layer\" : 0,\n    \"owner\" : \"qemu-system-aarch64\",\n    \"pid\" : 40430,\n    \"title\" : \"PICO Emulat",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:20:06.205489+00:00"
+    },
+    {
+      "argv": [
+        "adb",
+        "-s",
+        "emulator-5554",
+        "shell",
+        "pm",
+        "path",
+        "dev.local.picouipolish.lab"
+      ],
+      "exitCode": 0,
+      "stdout": "package:/data/app/~~fZYOKvH18odRC2L4BrEFjQ==/dev.local.picouipolish.lab-4QRO9ONqzDlj6UlgSliMWw==/base.apk\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:20:06.239320+00:00"
+    },
+    {
+      "argv": [
+        "adb",
+        "-s",
+        "emulator-5554",
+        "shell",
+        "sha256sum",
+        "/data/app/~~fZYOKvH18odRC2L4BrEFjQ==/dev.local.picouipolish.lab-4QRO9ONqzDlj6UlgSliMWw==/base.apk"
+      ],
+      "exitCode": 0,
+      "stdout": "5e0871e4cf613073ca73edce544f09c88e4cb61b3de58098ebeb204c1f213b12  /data/app/~~fZYOKvH18odRC2L4BrEFjQ==/dev.local.picouipolish.lab-4QRO9ONqzDlj6UlgSliMWw==/base.apk\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:20:06.278972+00:00"
+    },
+    {
+      "argv": [
+        "adb",
+        "-s",
+        "emulator-5554",
+        "shell",
+        "pidof",
+        "dev.local.picouipolish.lab"
+      ],
+      "exitCode": 0,
+      "stdout": "10540\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:20:06.305301+00:00"
+    },
+    {
+      "argv": [
+        "adb",
+        "-s",
+        "emulator-5554",
+        "shell",
+        "getprop",
+        "ro.build.fingerprint"
+      ],
+      "exitCode": 0,
+      "stdout": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:20:06.329699+00:00"
+    },
+    {
+      "argv": [
+        "adb",
+        "-s",
+        "emulator-5554",
+        "shell",
+        "getprop",
+        "ro.boot.qemu"
+      ],
+      "exitCode": 0,
+      "stdout": "1\n",
+      "stderr": "",
+      "atUtc": "2026-09-17T00:20:06.351253+00:00"
+    }
+  ],
+  "isGate": false,
+  "isAcceptance": false,
+  "scope": "Identity-verified app input with its raw log window. A delivered input is not a gate pass and not native acceptance.",
+  "targetBefore": {
+    "package": "dev.local.picouipolish.lab",
+    "device": "emulator-5554",
+    "remoteApk": "/data/app/~~fZYOKvH18odRC2L4BrEFjQ==/dev.local.picouipolish.lab-4QRO9ONqzDlj6UlgSliMWw==/base.apk",
+    "installedSha256": "5e0871e4cf613073ca73edce544f09c88e4cb61b3de58098ebeb204c1f213b12",
+    "expectedSha256": "5e0871e4cf613073ca73edce544f09c88e4cb61b3de58098ebeb204c1f213b12",
+    "identityVerified": true,
+    "running": true,
+    "pid": "10540",
+    "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+    "bootQemu": "1",
+    "debugAction": "dev.local.picouipolish.lab.DEBUG_CMD",
+    "agentAction": "dev.local.picouipolish.lab.AGENT_CMD",
+    "verifiedAtUtc": "2026-09-17T00:19:24.948259+00:00",
+    "method": "pm path + device-side sha256sum of the installed base.apk"
+  },
+  "hostBefore": {
+    "capturedAt": "2026-09-17T00:19:57Z",
+    "dockPolicy": "Display-sized Dock surface bounds do not establish opaque coverage. This structural app-window check must be paired with the required compositor sample.",
+    "dockSystemSurfaces": [
+      {
+        "alpha": 1,
+        "bounds": {
+          "Height": 1117,
+          "Width": 1728,
+          "X": 0,
+          "Y": 0
+        },
+        "id": 52,
+        "layer": 20,
+        "owner": "Dock",
+        "pid": 3027,
+        "title": "Dock"
+      }
+    ],
+    "frontmost": true,
+    "frontmostName": "qemu-system-aarch64",
+    "frontmostPid": 40430,
+    "method": "Read-only CGWindowList front-to-back intersection and NSWorkspace frontmost PID. Does not move, resize or activate any window.",
+    "occludingWindows": [],
+    "ownedOverlayPolicy": "The emulator's own child toolbar windows are retained separately; foreign overlapping windows fail this gate.",
+    "ownedOverlays": [
+      {
+        "alpha": 1,
+        "bounds": {
+          "Height": 44,
+          "Width": 266,
+          "X": 709,
+          "Y": 992
+        },
+        "id": 450,
+        "layer": 0,
+        "owner": "qemu-system-aarch64",
+        "pid": 40430,
+        "title": "Form"
+      },
+      {
+        "alpha": 1,
+        "bounds": {
+          "Height": 345,
+          "Width": 44,
+          "X": 6,
+          "Y": 67
+        },
+        "id": 449,
+        "layer": 0,
+        "owner": "qemu-system-aarch64",
+        "pid": 40430,
+        "title": "Form"
+      }
+    ],
+    "pass": true,
+    "systemCursorPolicy": "Only a Window Server surface titled Cursor at the native cursor level with positive bounds no larger than 64x64 is classified as the pointer. It remains retained here. Other foreign windows and unknown system surfaces still fail.",
+    "systemCursorSurfaces": [],
+    "target": {
+      "alpha": 1,
+      "bounds": {
+        "Height": 1009,
+        "Width": 981,
+        "X": 0,
+        "Y": 33
+      },
+      "id": 448,
+      "layer": 0,
+      "owner": "qemu-system-aarch64",
+      "pid": 40430,
+      "title": "PICO Emulator - 6.1.0"
+    },
+    "targetFound": true,
+    "targetZIndex": 7,
+    "unoccluded": true
+  },
+  "visibilityAttempts": [
+    {
+      "attempt": 1,
+      "hostPass": false,
+      "frontmostName": "Google Chrome"
+    },
+    {
+      "attempt": 2,
+      "hostPass": false,
+      "frontmostName": "Google Chrome"
+    },
+    {
+      "attempt": 3,
+      "hostPass": false,
+      "frontmostName": "Google Chrome"
+    },
+    {
+      "attempt": 4,
+      "hostPass": true,
+      "frontmostName": "qemu-system-aarch64"
+    }
+  ],
+  "inputArgv": [
+    "swift",
+    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/tooling/render-liveness-1.0.0/host-move.swift",
+    "501.7",
+    "452.2"
+  ],
+  "inputExit": 0,
+  "rawExit": -2,
+  "hostAfter": {
+    "capturedAt": "2026-09-17T00:20:06Z",
+    "dockPolicy": "Display-sized Dock surface bounds do not establish opaque coverage. This structural app-window check must be paired with the required compositor sample.",
+    "dockSystemSurfaces": [
+      {
+        "alpha": 1,
+        "bounds": {
+          "Height": 1117,
+          "Width": 1728,
+          "X": 0,
+          "Y": 0
+        },
+        "id": 52,
+        "layer": 20,
+        "owner": "Dock",
+        "pid": 3027,
+        "title": "Dock"
+      }
+    ],
+    "frontmost": true,
+    "frontmostName": "qemu-system-aarch64",
+    "frontmostPid": 40430,
+    "method": "Read-only CGWindowList front-to-back intersection and NSWorkspace frontmost PID. Does not move, resize or activate any window.",
+    "occludingWindows": [],
+    "ownedOverlayPolicy": "The emulator's own child toolbar windows are retained separately; foreign overlapping windows fail this gate.",
+    "ownedOverlays": [
+      {
+        "alpha": 1,
+        "bounds": {
+          "Height": 44,
+          "Width": 266,
+          "X": 709,
+          "Y": 992
+        },
+        "id": 450,
+        "layer": 0,
+        "owner": "qemu-system-aarch64",
+        "pid": 40430,
+        "title": "Form"
+      },
+      {
+        "alpha": 1,
+        "bounds": {
+          "Height": 345,
+          "Width": 44,
+          "X": 6,
+          "Y": 67
+        },
+        "id": 449,
+        "layer": 0,
+        "owner": "qemu-system-aarch64",
+        "pid": 40430,
+        "title": "Form"
+      }
+    ],
+    "pass": true,
+    "systemCursorPolicy": "Only a Window Server surface titled Cursor at the native cursor level with positive bounds no larger than 64x64 is classified as the pointer. It remains retained here. Other foreign windows and unknown system surfaces still fail.",
+    "systemCursorSurfaces": [],
+    "target": {
+      "alpha": 1,
+      "bounds": {
+        "Height": 1009,
+        "Width": 981,
+        "X": 0,
+        "Y": 33
+      },
+      "id": 448,
+      "layer": 0,
+      "owner": "qemu-system-aarch64",
+      "pid": 40430,
+      "title": "PICO Emulator - 6.1.0"
+    },
+    "targetFound": true,
+    "targetZIndex": 7,
+    "unoccluded": true
+  },
+  "raw": {
+    "path": "polishlab-hover-001.log",
+    "bytes": 579380,
+    "sha256": "c3d07f145f68a8ad514bd647250cfcaaae14f99ac2fbf9c9d8bd56779fe3c280"
+  },
+  "measured": {
+    "seconds": 8,
+    "watchdogSamples": 8,
+    "watchdogSamplesOnTarget": 8,
+    "focusPackagesSeen": [
+      "dev.local.picouipolish.lab"
+    ],
+    "focusedThroughout": true,
+    "lastRenderTimeFirst": 143166241,
+    "lastRenderTimeLast": 143173258,
+    "lastRenderAdvanceMs": 7017,
+    "lastRenderMonotonic": true,
+    "lastRenderStalledSamples": 0,
+    "frameAgesMs": [
+      15,
+      16,
+      0,
+      1,
+      13,
+      2,
+      3,
+      3
+    ],
+    "minFrameAgeMs": 0,
+    "maxFrameAgeMs": 16,
+    "negativeFrameAges": 0,
+    "overAgedFrames": 0,
+    "checkCountAdvance": 7,
+    "earlyVsyncWarnings": 0,
+    "seethroughBufferManagerLines": 183,
+    "pxrMetricSamples": 8,
+    "pxrMetricAverageFps": 64.25,
+    "integrity": {
+      "malformedWatchdogLines": 0,
+      "malformedSamples": [],
+      "emitters": [
+        {
+          "tag": "SpatialRuntimeService",
+          "pid": 1738
+        }
+      ],
+      "singleEmitter": true,
+      "emitterTag": "SpatialRuntimeService",
+      "emitterPid": 1738,
+      "timestampsNonDecreasing": true,
+      "checkCountStrictlyIncreasing": true,
+      "duplicateCheckCounts": 0,
+      "runtimeClockNonDecreasing": true,
+      "linesInWindow": 4022,
+      "noClockReset": true,
+      "noDuplicateSamples": true,
+      "wellFormed": true
+    }
+  },
+  "observedReplaySessions": [],
+  "targetAfter": {
+    "package": "dev.local.picouipolish.lab",
+    "device": "emulator-5554",
+    "remoteApk": "/data/app/~~fZYOKvH18odRC2L4BrEFjQ==/dev.local.picouipolish.lab-4QRO9ONqzDlj6UlgSliMWw==/base.apk",
+    "installedSha256": "5e0871e4cf613073ca73edce544f09c88e4cb61b3de58098ebeb204c1f213b12",
+    "expectedSha256": "5e0871e4cf613073ca73edce544f09c88e4cb61b3de58098ebeb204c1f213b12",
+    "identityVerified": true,
+    "running": true,
+    "pid": "10540",
+    "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+    "bootQemu": "1",
+    "debugAction": "dev.local.picouipolish.lab.DEBUG_CMD",
+    "agentAction": "dev.local.picouipolish.lab.AGENT_CMD",
+    "verifiedAtUtc": "2026-09-17T00:20:06.351305+00:00",
+    "method": "pm path + device-side sha256sum of the installed base.apk"
+  },
+  "identityStable": true,
+  "pass": true,
+  "endedAtUtc": "2026-09-17T00:20:06.351328+00:00"
+}

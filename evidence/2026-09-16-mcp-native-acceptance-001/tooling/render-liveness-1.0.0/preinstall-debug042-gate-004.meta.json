@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "adb",
+    "-s",
+    "emulator-5554",
+    "logcat",
+    "-b",
+    "main",
+    "-v",
+    "epoch",
+    "-T",
+    "1789108397.030317165",
+    "*:V"
+  ],
+  "startedAt": "2026-09-11T06:33:18.368651+00:00",
+  "endedAt": "2026-09-11T06:33:38.373585+00:00",
+  "deviceStartEpoch": 1789108397.030317,
+  "requestedSeconds": 20,
+  "elapsedSeconds": 20.004713292000815,
+  "runningAtEnd": true,
+  "exit": -2,
+  "envRemoved": [
+    "ANDROID_LOG_TAGS"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "probe": "direct-stdio-transport",
+  "startedAt": "2026-09-17T00:22:04.675Z",
+  "entry": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/dist/index.js",
+  "cwd": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16",
+  "surface": "full",
+  "childPid": 95525,
+  "serverInfo": {
+    "name": "pico-spatial-mcp",
+    "version": "38.0.0"
+  },
+  "tool": "record_verification",
+  "arguments": {
+    "app": "dev.local.picouipolish.lab",
+    "action": "record",
+    "claim": "SDK 6.1.9 DefaultWindowContainer demo: one hover-verified host click on the SpatialUI Button advanced the rendered state from 'tapped 21 times' to 'tapped 22 times' on emulator-5554",
+    "evidenceType": "vision_verified",
+    "artifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/emulator/postclick-001-admitted.png",
+    "attestation": "LOOKED at postclick-001-admitted.png (sha256 124ccab5087f2e45bdc4a9fef25c8aab671bdeccb3d42e9b36ab8993a4fcaf38), taken inside an admitted render-liveness/1.0.0 gate (all 17 checks pass, PxrMetric>=50, zero early-vsync, R1-R4 pass, installed sha + PID 10540 unchanged). The panel reads 'PICO UI Polish Lab', the subtitle line, 'State: tapped 22 times' and a pill button 'Tap again (22)'. The preceding admitted frame gate-003-admitted.png read 'tapped 21 times' / 'Tap again (21)'. Between them: one host-move hover (button interior +12.9 gray, two same-panel control regions 0.00 delta) and exactly one host click, whose own 12s log window contains exactly one line 'PolishLab: button tapped taps=22' from PID 10540. Emulator, not hardware: ro.boot.qemu=1, model swan_arm64.",
+    "cClass": "C0_emulator"
+  },
+  "elapsedMs": 77,
+  "isError": false,
+  "content": [
+    {
+      "type": "text",
+      "text": "{\n  \"status\": \"recorded\",\n  \"entry\": {\n    \"seq\": 0,\n    \"claim\": \"SDK 6.1.9 DefaultWindowContainer demo: one hover-verified host click on the SpatialUI Button advanced the rendered state from 'tapped 21 times' to 'tapped 22 times' on emulator-5554\",\n    \"evidenceType\": \"vision_verified\",\n    \"artifactPath\": \"/Users/sushantsrikrish/.pico-mcp/ledgers/artifacts/124ccab5087f2e45bdc4a9fef25c8aab671bdeccb3d42e9b36ab8993a4fcaf38.png\",\n    \"sourceArtifactPath\": \"/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/emulator/postclick-001-admitted.png\",\n    \"attestation\": \"LOOKED at postclick-001-admitted.png (sha256 124ccab5087f2e45bdc4a9fef25c8aab671bdeccb3d42e9b36ab8993a4fcaf38), taken inside an admitted render-liveness/1.0.0 gate (all 17 checks pass, PxrMetric>=50, zero early-vsync, R1-R4 pass, installed sha + PID 10540 unchanged). The panel reads 'PICO UI Polish Lab', the subtitle line, 'State: tapped 22 times' and a pill button 'Tap again (22)'. The preceding admitted frame gate-003-admitted.png read 'tapped 21 times' / 'Tap again (21)'. Between them: one host-move hover (button interior +12.9 gray, two same-panel control regions 0.00 delta) and exactly one host click, whose own 12s log window contains exactly one line 'PolishLab: button tapped taps=22' from PID 10540. Emulator, not hardware: ro.boot.qemu=1, model swan_arm64.\",\n    \"cClass\": \"C0_emulator\",\n    \"capture\": {\n      \"sha256\": \"124ccab5087f2e45bdc4a9fef25c8aab671bdeccb3d42e9b36ab8993a4fcaf38\",\n      \"width\": 1962,\n      \"height\": 2018,\n      \"bytes\": 2161325,\n      \"format\": \"png\"\n    },\n    \"reproHash\": null\n  },\n  \"totalEntries\": 1,\n  \"app\": \"dev.local.picouipolish.lab\"\n}"
+    }
+  ],
+  "finishedAt": "2026-09-17T00:22:04.981Z",
+  "serverStderr": "pico-spatial-mcp ready (stdio)\n"
+}
