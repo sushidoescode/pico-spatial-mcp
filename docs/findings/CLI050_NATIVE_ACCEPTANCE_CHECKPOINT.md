@@ -413,9 +413,22 @@ developer mode and USB debugging on it, and accept the "Allow USB debugging" pro
 headset**. Then `python3 evidence/2026-09-16-mcp-native-acceptance-001/tooling/headset_identify.py`
 prints the real identity and refuses to guess if more than one physical device is attached.
 
-**b. The profiler payload is not provisioned**, so `pico_perf` / `perf_diagnose` / `perf_trace`
-cannot run — the CLI itself exits 3 with *"Perf utilities 0.2.0 are not installed."* The MCP does
-not install it. The exact command, to be run by the user in their own terminal:
+**b. The profiler payload is not provisioned for 0.5.0**, so `pico_perf` / `perf_diagnose` /
+`perf_trace` cannot run — the CLI itself exits 3 with *"Perf utilities 0.2.0 are not installed."*
+
+This is **not** a repeat of a setup that was already done, and it is worth being precise about why.
+The ambient global `pico-cli 0.4.4` on this machine **does** have working profiler utilities:
+`pico-cli perf monitor run --help` exits 0 and prints "PICO Spatial Profiler CLI". A setup was run
+for that line on 2026-09-07 and it worked. **0.5.0 asks for a different, newer payload — utilities
+`0.2.0` — and that one is absent.** So the payload is version-scoped, and the existing install does
+not carry over.
+
+Nor is pinning back to 0.4.4 a way to get perf through this server: 0.4.x has no `perf live run`
+route at all, and the wrapper refuses rather than substituting a different command, so 0.4.4 gives
+you a provisioned profiler the MCP cannot dispatch to.
+
+The MCP never installs it. The exact command, to be run by the user in their own terminal — note it
+is the **0.5.0** binary, not the ambient one:
 
 ```
 /Users/sushantsrikrish/.pico-mcp/cli/versions/0.5.0/node_modules/.bin/pico-cli setup
