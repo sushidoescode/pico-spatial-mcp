@@ -530,7 +530,7 @@ prerequisite for `measure_placement`, not for anything claimed above.
 | Full 55-gate battery on the released 38.1.0 tree — **55/55, 0 failed** | `evidence/.../integration/battery-38.1.0-final.summary.txt`, and the **raw 6,198-line log** at `battery-38.1.0-final.log`, sha256 `b3d7e2cd772d9671729c4c6245f34ca391bb69b045847506477be2d1d9d2d834` |
 | The earlier battery run, superseded and retained in full | `evidence/.../integration/battery-38.1.0.log`, sha256 `3a6448b7819b8c8ae38a167e7cc9a4eb3b1a8e73072773f53f6faedbcc40bed5` — 54/55; its one failure was `test:docsmeta` telling the truth about a hand-edited `package.json` whose `package-lock.json` still read 38.0.0, which is why the release commit used `npm version` instead |
 | Host configuration backups (7 files, outside the repo) | `~/.pico-mcp/backups/2026-09-16-native-acceptance/` |
-| **Retained 38.1.0 distributable** — `npm pack` output verified and published by `scripts/verify-tarball.mjs --publish`, 0 failures | `evidence/.../release/pico-spatial-mcp-38.1.0.tgz`, sha256 `5ae03e648690e16dabca3cf34ba40167442b0af95a2ed87269e8bf0bf9c143f8`, 2,180,753 bytes |
+| **Retained 38.1.0 distributable** — `npm pack` output verified and published by `scripts/verify-tarball.mjs --publish`, 48 checks, 0 failures | `evidence/.../release/pico-spatial-mcp-38.1.0.tgz`, sha256 `5ae03e648690e16dabca3cf34ba40167442b0af95a2ed87269e8bf0bf9c143f8`, 2,180,753 bytes. Two byte-identical copies: one in the acceptance worktree, one in the `main` checkout |
 | Its publication receipt — artifact hash and bytes, package name/version, the full build input/output digests, TypeScript and Node versions, the exact argv, and every check the verification ran | `evidence/.../release/pico-spatial-mcp-38.1.0.tgz.receipt.json` |
 | Reversal recipe (supersedes the earlier `reset --hard` wording) | `evidence/.../host/ROLLBACK.md` |
 | The three retained 38.0.0 archives | untouched under `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/` |
@@ -541,6 +541,20 @@ It edited **no** host configuration file: all six registrations already name the
 `node /Users/sushantsrikrish/PICO-MCP/dist/index.js`, so activation is what that path contains. The
 accepted branch, the continuation branch and every worktree are untouched, and `f349eaf` is still
 reachable from both branches that contain it.
+**How the distributable is retained, precisely.** `.gitignore` excludes `*.tgz`, so the artifact is
+retained *on disk* while its publication receipt is *committed* — which is exactly how all three
+38.0.0 archives are held, and the receipt is what makes the artifact verifiable: it carries the
+sha256, the byte count, the package name and version, the full build input/output digests, the
+TypeScript and Node versions, the exact argv, and all 48 checks the verification ran. Because a
+worktree can be removed, a second byte-identical copy was placed in the long-lived `main` checkout;
+both hash to `5ae03e64…c143f8`.
+
+This is a **retained release artifact**, not the battery's tarball check. `test:tarball` packs into
+a sandbox, verifies it and discards it, which proves the packing works but leaves nothing behind.
+The artifact above is the one `--publish` landed, and `publish-tarball.mjs` is non-replacing by
+construction: it adds one file and can overwrite none, so none of the 38.0.0 archives could have
+been touched by producing it. Re-hashed after the fact, all three are unchanged.
+
 Both raw battery logs are **committed**, not just present on disk: the repository's `.gitignore`
 excludes `*.log`, so they were added with `git add -f`, which is the same treatment the retained
 38.0.0 battery log already has. A clean checkout of this branch therefore carries the raw evidence,
