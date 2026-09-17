@@ -1,0 +1,1 @@
+{"toolCalled":"pico_doctor","preflightStatus":"problems","selectedToolchain":"6.1","spatialbundleVersion":"6.1.0.0-rls.25","picoCliVersion":"0.5.0","emulatorSerial":"emulator-5554","picoPerfInputNames":["device","durationSec","packageName"]}

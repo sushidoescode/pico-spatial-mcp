@@ -1,0 +1,1 @@
+{"toolCalled":"pico_doctor","preflightStatus":null,"selectedToolchain":null,"spatialbundleVersion":null,"picoCliVersion":null,"picoPerfInputNames":["device","durationSec","packageName"],"error":"MCP tool call requires approval, but approval policy is never"}

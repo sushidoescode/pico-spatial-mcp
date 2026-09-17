@@ -53,8 +53,19 @@ so the row is honest.
 | Continuation branch | `cli050-native-acceptance-2026-09-16`, worktree `.worktrees/cli050-native-acceptance-2026-09-16` |
 | Main at session start | `4478238a8d7aac266b12c2b8dc61c08482337286` — the exact merge-base of `f349eaf`; 110 commits behind, 0 ahead, so a fast-forward |
 | Build receipt at base | input `bafeb2712c5b…`, output `f4978b711f57…` — identical to the accepted 38.0.0 receipt, reproduced from a clean `npm ci` |
-| Released here | **38.1.0**, receipt input `2c2b42c2177c…`, output `05420e230d44…`; 8 manifest sites stamped by `npm run sync:meta` |
+| Released here | **38.1.0**. Final build receipt: input `d625cee8f425dd2c249364385fa68fb9035fdac3e7314b460f4c7b234f108557`, output `7f0a0b5300f9a10435867bae1466acbb55eb15bbf20efb0d99f2adfd3283fb7b`. 8 manifest sites stamped by `npm run sync:meta` |
+| Retained distributable | `evidence/2026-09-16-mcp-native-acceptance-001/release/pico-spatial-mcp-38.1.0.tgz`, sha256 `5ae03e648690e16dabca3cf34ba40167442b0af95a2ed87269e8bf0bf9c143f8`, 2,180,753 bytes, with its publication receipt beside it |
 | Surface | doors 18 tools, full 255 tools (direct-transport `tools/list`, both measured) |
+
+**Correction, 2026-09-17.** An earlier revision of this table gave the release receipt as input
+`2c2b42c2177c…` / output `05420e230d44…`. That pair was real but **intermediate**: it was the build
+taken immediately after the version bump, before two further changes landed — the `package-lock.json`
+version that `test:docsmeta` caught, and the `wait_for_log` fix in §2.4. The row above now carries the
+receipt of the tree that was actually released, tested and activated. It is corroborated three ways:
+`dist/build-receipt.json` in both the worktree and `main`, the packed copy inside the retained
+distributable (`verify-tarball` reports *"packed dist/build-receipt.json binds the payload to source
+d625cee8f425 / output 7f0a0b5300f9"*), and the 55/55 battery, which `run-gate` would have refused to
+start against a stale `dist/`.
 
 The three retained 38.0.0 archives were not touched. 38.1.0 is a new version because source bytes
 changed, per the repository's release rule.
@@ -279,7 +290,7 @@ reported separately.
 | Claude Code (account-a) | 2.1.273 | `~/.claude-account-a/.claude.json`, user scope, `pico-spatial`, `PICO_MCP_SURFACE=doors` | absolute `node …/PICO-MCP/dist/index.js` | **live tool round-trip**: a nested non-interactive `claude -p` restricted to `mcp__pico-spatial__pico_doctor` called it and returned the real result (`selectedToolchain 6.1`, `spatialbundleVersion 6.1.0.0-rls.25`, `picoCliVersion 0.5.0`). `claude mcp get pico-spatial` reports `✔ Connected`. |
 | Claude Code (account-b) | 2.1.273 | `~/.claude-account-b/.claude.json`, same shape | same | registration read; not exercised (one session owns the device lane) |
 | Claude Code (default config dir) | 2.1.273 | `~/.claude.json`, `pico-spatial-mcp`, no env → doors | same | registration read |
-| Codex CLI | 0.154.0 | `~/.codex/config.toml` (two entries: `pico-spatial` doors, `pico-spatial-mcp` no env), plus `~/.codex-account-a` and `~/.codex-account-b` | same | `codex mcp list` shows `pico-spatial` **enabled**, transport stdio. Listing, not a tool round-trip. |
+| Codex CLI | 0.154.0 | `~/.codex/config.toml` has two entries, `pico-spatial` on doors and `pico-spatial-mcp` with no env; `~/.codex-account-a` and `~/.codex-account-b` have one each | same | **live tool round-trip** — see below. `codex mcp list` also shows `pico-spatial` enabled, transport stdio, but a listing on its own establishes registration, not execution. |
 | Cursor | — | `~/.cursor` holds only a `plugins/` directory from 2026-07-12 | — | **host not installed** (`which cursor` finds nothing, no `Cursor.app`). Unavailable, not failed. |
 | Candidate itself | 38.1.0 | direct stdio transport via `evidence/.../tooling/mcpcall.mjs` | child process | `serverInfo 38.1.0`; doors 18 tools; full 255 tools; every tool call in this pass went through it |
 
@@ -304,6 +315,39 @@ than inventing a measurement. Receipt:
 a host is serving. The identity is `dist/build-receipt.json`, which binds the output to the exact
 source that produced it. Main's receipt (`input d625cee8f425dd2c`, `output 7f0a0b5300f9a104`) is
 identical to the branch's.
+
+**Codex round-trip, 2026-09-17, and what the first attempt taught.** Two `codex exec` runs, both
+`--ephemeral` so neither persists a session, and neither touching any running Codex session.
+
+The first used `-s read-only`. Codex **discovered** the server and started the child —
+`mcp: pico-spatial/pico_doctor started` — and its tool list already carried the activated build's
+schema, reporting `pico_perf` inputs as `["device","durationSec","packageName"]`. But the call
+itself was refused: *"MCP tool call requires approval, but approval policy is never."* That is a
+property of Codex's non-interactive mode, not of this server: `codex exec` runs with approval
+policy `never`, and an MCP tool call is an approval-gated action there.
+
+The second run added `--approve-for-me`, which routes that approval automatically, and confined the
+working directory to a scratch path so nothing could be written near the repository. It completed:
+
+```
+approval: on-request
+mcp: pico-spatial/pico_doctor started
+mcp: pico-spatial/pico_doctor (completed)
+{"toolCalled":"pico_doctor","preflightStatus":"problems","selectedToolchain":"6.1",
+ "spatialbundleVersion":"6.1.0.0-rls.25","picoCliVersion":"0.5.0","emulatorSerial":"emulator-5554",
+ "picoPerfInputNames":["device","durationSec","packageName"]}
+```
+
+Those are live values from this host, and `pico_perf` carrying a `device` input is the same 38.x
+discriminator the Claude receipt used — 37.0.0's `pico_perf` has none. The scratch directory was
+empty afterwards. So **Codex discovery and execution are both established**, and the one thing a
+`-s read-only` Codex run cannot do is call an MCP tool at all. Receipts:
+`evidence/.../host/codex-exec-roundtrip-001.*` (the refusal, retained) and
+`evidence/.../host/codex-exec-roundtrip-002.*` (the completed call).
+
+Not established for Codex, and not claimed: nothing was exercised inside a *long-running interactive*
+Codex session. Those sessions keep serving the `dist/` they loaded at startup, so an interactive
+Codex that was already open before activation still needs a restart to pick up 38.1.0.
 
 **Door schema deltas the candidate brings over the 37.0.0 server that was connected:**
 `pico_verify_app` gains `serial` (now **required**) and `activity`; `pico_perf` gains `device`;
@@ -394,11 +438,31 @@ All four frames were opened and judged. Recorded through `record_verification` a
 
 This is interaction acceptance on an emulator. It is **not** a hardware claim: `ro.boot.qemu=1`.
 
+### The four frames are not of equal standing — three are admitted, one is not
+
+| Frame | Route | Gate |
+|---|---|---|
+| `emulator-launch-001.png` | `verify_pico_apk` → `adb exec-out screencap`, 2160×2158 **guest display** | **none** |
+| `gate-003-admitted.png` | `run_gate_v1.py --capture` → `screencapture -l<windowId>`, 1962×2018 **host window** | render-liveness/1.0.0, **17/17** |
+| `hovergate-001-admitted.png` | same | render-liveness/1.0.0, **17/17** |
+| `postclick-001-admitted.png` | same | render-liveness/1.0.0, **17/17** |
+
+**The launch frame rode inside no gate, and it could not have.** The gate requires its target to be
+installed *and running*, so the earliest moment it can run is after the launch that produces this
+frame. It is also a different route from the other three: the guest display through the device
+shell, rather than the host emulator window. It is retained, it was looked at, and what it shows —
+the window renders, the state line reads "untouched (0 taps)" — is independently corroborated by the
+three admitted frames that follow. **No claim in this checkpoint rests on it alone**, and the
+`record_verification` entry is bound to `postclick-001-admitted.png`, an admitted frame.
+
+Every derived view in that directory names the full-resolution capture it came from, and each
+capture names its gate, in `evidence/.../emulator/CAPTURES.md` with hashes in `CAPTURES.sha256`.
+
 ## 8. Per-target acceptance
 
 | Target | Build | Install | Launch | Render (LOOK) | Interaction | Perf |
 |---|---|---|---|---|---|---|
-| `emulator-5554` | yes | yes, explicit serial | yes, PID observed | **yes — 4 frames** | **yes — +1 tap, counted** | no (profiler payload absent) |
+| `emulator-5554` | yes | yes, explicit serial | yes, PID observed | **yes — 3 gate-admitted frames, plus 1 pre-admission launch frame** | **yes — +1 tap, counted** | no; profiler payload absent |
 | physical headset | APK is `arm64-v8a`, so it is a plausible target | **not attempted — none attached** | — | — | — | — |
 | Linux host | — | — | — | — | — | no host available; nothing run |
 | Windows host | — | — | — | — | — | no host available; nothing run |
@@ -443,6 +507,11 @@ are at `~/.pico-mcp/backups/2026-09-16-native-acceptance/` if anything needs res
 **c. Cursor is not installed on this machine**, so its plugin declaration stays structural. Not a
 failure; there is no host to load it.
 
+**c2. Interactive host sessions opened before activation still serve the old build.** Both hosts
+were proved by *fresh* processes (§5). The remaining requirement is a plain one and needs no work
+here: restart an already-open Claude Code or Codex session, or open a new one, and it picks up
+38.1.0. No running session was interrupted to demonstrate this.
+
 **d. No Linux or Windows host exists here.** The published 252-tool figure for those platforms
 remains source-derived, exactly as the accepted checkpoint states.
 
@@ -458,10 +527,12 @@ prerequisite for `measure_placement`, not for anything claimed above.
 | Evidence root (ledger, identities, host/cli/sdk/device/emulator receipts, tooling) | `evidence/2026-09-16-mcp-native-acceptance-001/` |
 | Four looked-at frames + their 3× crops | `evidence/.../emulator/` |
 | Failed gate receipts (attempts 001, 002) | `evidence/.../tooling/render-liveness-1.0.0/package-targeted-tooling-001/` |
-| Full 55-gate battery on the released 38.1.0 tree — **55/55, 0 failed** | `evidence/.../integration/battery-38.1.0-final.log` and `.summary.txt` |
-| The earlier battery run, superseded and retained | `evidence/.../integration/battery-38.1.0.log` — 54/55; its one failure was `test:docsmeta` telling the truth about a hand-edited `package.json` whose `package-lock.json` still read 38.0.0, which is why the release commit used `npm version` instead |
+| Full 55-gate battery on the released 38.1.0 tree — **55/55, 0 failed** | `evidence/.../integration/battery-38.1.0-final.summary.txt`, and the **raw 6,198-line log** at `battery-38.1.0-final.log`, sha256 `b3d7e2cd772d9671729c4c6245f34ca391bb69b045847506477be2d1d9d2d834` |
+| The earlier battery run, superseded and retained in full | `evidence/.../integration/battery-38.1.0.log`, sha256 `3a6448b7819b8c8ae38a167e7cc9a4eb3b1a8e73072773f53f6faedbcc40bed5` — 54/55; its one failure was `test:docsmeta` telling the truth about a hand-edited `package.json` whose `package-lock.json` still read 38.0.0, which is why the release commit used `npm version` instead |
 | Host configuration backups (7 files, outside the repo) | `~/.pico-mcp/backups/2026-09-16-native-acceptance/` |
-| Rollback recipe | `evidence/.../host/ROLLBACK.md` |
+| **Retained 38.1.0 distributable** — `npm pack` output verified and published by `scripts/verify-tarball.mjs --publish`, 0 failures | `evidence/.../release/pico-spatial-mcp-38.1.0.tgz`, sha256 `5ae03e648690e16dabca3cf34ba40167442b0af95a2ed87269e8bf0bf9c143f8`, 2,180,753 bytes |
+| Its publication receipt — artifact hash and bytes, package name/version, the full build input/output digests, TypeScript and Node versions, the exact argv, and every check the verification ran | `evidence/.../release/pico-spatial-mcp-38.1.0.tgz.receipt.json` |
+| Reversal recipe (supersedes the earlier `reset --hard` wording) | `evidence/.../host/ROLLBACK.md` |
 | The three retained 38.0.0 archives | untouched under `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/` |
 
 **Activation, exactly as performed.** `main` was fast-forwarded from `4478238` to `487560c` — 114
@@ -470,16 +541,53 @@ It edited **no** host configuration file: all six registrations already name the
 `node /Users/sushantsrikrish/PICO-MCP/dist/index.js`, so activation is what that path contains. The
 accepted branch, the continuation branch and every worktree are untouched, and `f349eaf` is still
 reachable from both branches that contain it.
-Rollback is `git reset --hard 4478238…` plus `npm run build` in the main checkout, then a host
-restart. A running MCP server keeps serving the `dist/` it loaded at startup, so **neither
-activation nor rollback reaches a process that is already running** — every host must be restarted
-or opened fresh to pick either up.
+Both raw battery logs are **committed**, not just present on disk: the repository's `.gitignore`
+excludes `*.log`, so they were added with `git add -f`, which is the same treatment the retained
+38.0.0 battery log already has. A clean checkout of this branch therefore carries the raw evidence,
+not only the summaries. `evidence/` is not in `package.json`'s `files`, so tracking them does not
+enter the distributable.
+
+**Reversal does not move `main`.** An earlier revision of this section, and of `ROLLBACK.md`, said
+to run `git reset --hard 4478238…`. **That instruction is withdrawn, and it was never executed.**
+Moving `main`'s pointer backwards discards 114 commits from that branch and destroys anything
+committed on `main` after activation; a reversal that costs history is not a reversal.
+
+The procedure that replaces it is the mirror image of activation. Activation changed what one path
+contains and needed no configuration edit; reversal leaves every path's contents intact and changes
+which path the hosts name. Build `4478238` into a detached side-by-side worktree
+(`git worktree add .worktrees/pre-activation-4478238 --detach 4478238…`), verify it really answers
+`serverInfo 37.0.0`, repoint the registrations you want reversed at that entry, and restart. Undoing
+the reversal is repointing them back. `main`, every branch, every worktree and every archive survive
+both directions. `ROLLBACK.md` carries the exact commands, per host, including the smaller option of
+simply removing a registration if the goal is only to stop using the server.
+
+One property holds in both directions: a running MCP server keeps serving the `dist/` it loaded at
+startup, so **neither activation nor reversal reaches a process that is already running.** Every
+host must be restarted, or a new session opened, to pick either up.
 
 ## 11. Handoff to the spatial-polish chat
 
-**The emulator is released.** This session finished its device work; `emulator-5554` is free, and
-the demo app is installed on it and running (PID 10540 at the time of writing). Nothing was
-restarted, moved or resized, and the emulator's input mode was left exactly as found.
+### Transfer of native-operation ownership
+
+**This session hands native-operation ownership to the spatial-polish session, and holds none
+itself.** Stated explicitly because only one session may own the device lane at a time:
+
+- **The emulator is released.** `emulator-5554` is free. This session will not reacquire it, and
+  performed no device operation after the handover. The emulator was never restarted, moved or
+  resized; its boot id `c57ce474-…` and its qemu process are the ones from before this pass, and its
+  input mode was left exactly as found.
+- **What is left running, deliberately:** the demo app is installed on `emulator-5554` and was alive
+  at PID 10540 at handover, with the window showing "tapped 22 times". The polish session may
+  force-stop, reinstall or relaunch `dev.local.picouipolish.lab` freely; it is a dedicated test
+  package and nothing in this checkpoint depends on that process staying up. Its captures are
+  already retained and hash-bound.
+- **What ownership does NOT include.** No physical headset has ever been attached, so no hardware
+  ownership is being transferred — that lane is unopened, not handed over. If a headset is connected
+  later, whichever session takes it must re-read §4 first, because `resolveSerial` prefers the
+  emulator the moment two devices are online.
+- **Boundaries that travel with the lane:** Mission Replay stays paused and untouched; no push, no
+  history rewrite; no emulator restart, move or resize; occlusion is not a numeric failure, so
+  re-raise and collect a complete fresh gate as often as it recurs.
 
 The demo project `/Users/sushantsrikrish/AndroidStudioProjects/pico-ui-polish-lab`
 (`dev.local.picouipolish.lab`) is the safe, isolated place for that work to continue. It is on BOM
@@ -519,3 +627,9 @@ Three things that chat should inherit rather than rediscover:
 - **Emulator numbers are the emulator's.** The render-liveness thresholds establish bounded app
   liveness on this guest; they are not application FPS, not compositor health, and not evidence
   about a physical device's refresh rate.
+- **No claim about host sessions that were already open.** Discovery and execution were proved by
+  fresh nested Claude Code and Codex processes. A long-running interactive session that started
+  before activation is still serving the `dist/` it loaded then, and needs a restart. Nothing here
+  reaches into one, and no running session was interrupted to test this.
+- **One capture is not gate-admitted.** The launch frame preceded any possible admission, by
+  construction; §7 says which frame and why, and no claim rests on it alone.
