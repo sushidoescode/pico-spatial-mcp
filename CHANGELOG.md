@@ -29,6 +29,35 @@ Versions here key the plugin manifests (`/plugin update` uses them as its cache 
   declarations are rejected as non-convergent. The `0.02 m` translation threshold remains
   experimental, and quaternion telemetry still has no invented gate.
 
+## 38.1.0 — 2026-09-16
+
+Three defects the 38.0.0 host-only pass could not have found, because each needed the candidate to
+be RUN against the real 0.5.0 CLI, the real 6.1 toolchain and a real emulator. Found during the
+native-acceptance pass; record: [docs/findings/CLI050_NATIVE_ACCEPTANCE_CHECKPOINT.md](docs/findings/CLI050_NATIVE_ACCEPTANCE_CHECKPOINT.md).
+
+- **`assert_logcat` no longer reports a lost observation as a measured miss.** The poll counted
+  successful dumps but never asked whether the LAST dump before the deadline succeeded. A window
+  whose marker was seen once and whose adb then died returned `matched:false` with no `status` —
+  a miss nothing had measured, which automated replanning would then chase. It now returns
+  `status:"inconclusive"` with `dumps:{succeeded,failed,lastError}` whenever the final dump failed,
+  windowed or unwindowed, and the unwindowed branch counts a nonzero adb exit as a failed dump
+  instead of ignoring it. `pico_loop` forwards the tool's own hint on that branch.
+- **`check_toolchain_updates` compares before it calls anything newer.** It previously called any
+  6.x-looking public artifact "a newer 6.x runtime"; on a host already carrying editor 6.1.9 and
+  emulator 6.1.0, with only 6.0.0 payloads public, that advertised an upgrade the host was past.
+  New pure exports `compareVersions`, `parseArtifactVersion` (which refuses to read a date or a
+  two-part `v.12.3` as a version) and `toolchainUpdateVerdict`; the result now carries
+  `comparisons`, `publicUpgradeAvailable` (`null` when a 6.x-looking payload cannot be compared)
+  and `advertisedLines`.
+- **Capability discovery reads help through ANSI styling, and stops provoking it.** pico-cli 0.5.0
+  styles its help with SGR escapes when `FORCE_COLOR` is set — and Claude Code exports
+  `FORCE_COLOR=1` to every child it spawns — so the styled `Usage:` heading defeated the
+  usage-section match and the styled `$ pico-cli ...` line defeated the route match. Three
+  genuinely supported 0.5.0 routes (`knowledge server`, `app watch-crash`, `capture record`)
+  classified as `malformed-help`. Fixed at both ends: `stripAnsi` in the classifier, and
+  `cliChildEnvironment` drops `FORCE_COLOR` and sets `NO_COLOR` for CLI children unless the caller
+  overrides, so retained evidence bytes are plain in the first place.
+
 ## 38.0.0 — 2026-09-15
 
 The Unreleased entries above accumulated on main after 37.0.0 and ship with 38.0.0 as they stand.
