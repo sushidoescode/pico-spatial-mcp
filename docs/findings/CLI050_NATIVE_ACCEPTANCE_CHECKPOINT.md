@@ -283,6 +283,28 @@ reported separately.
 | Cursor | — | `~/.cursor` holds only a `plugins/` directory from 2026-07-12 | — | **host not installed** (`which cursor` finds nothing, no `Cursor.app`). Unavailable, not failed. |
 | Candidate itself | 38.1.0 | direct stdio transport via `evidence/.../tooling/mcpcall.mjs` | child process | `serverInfo 38.1.0`; doors 18 tools; full 255 tools; every tool call in this pass went through it |
 
+**After activation (§10), the candidate was discovered and exercised by a real host.** A second
+nested `claude -p`, restricted to `mcp__pico-spatial__pico_perf` and using the ordinary user-scope
+registration, called it and returned:
+
+```json
+{"status":"failed","requestedDevice":"emulator-5554",
+ "reasonFirst120":"The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, t"}
+```
+
+That is the receipt this pass needed, and it proves three separate things at once: the host really
+discovered the server (not a stdio probe); the server it loaded is **38.x, not the 37.0.0 that was
+connected at session start**, because `requestedDevice` echoes a `device` input that 37.0.0's
+`pico_perf` does not have; and the perf lane refuses correctly and names the profiler payload rather
+than inventing a measurement. Receipt:
+`evidence/.../host/claude-p-host-discovery-activated-candidate-001.json`.
+
+**A caution for anyone verifying this later:** `dist/index.js` is a thin entry shim and is
+**byte-identical across 37.0.0, 38.0.0 and 38.1.0** — hashing it proves nothing about which version
+a host is serving. The identity is `dist/build-receipt.json`, which binds the output to the exact
+source that produced it. Main's receipt (`input d625cee8f425dd2c`, `output 7f0a0b5300f9a104`) is
+identical to the branch's.
+
 **Door schema deltas the candidate brings over the 37.0.0 server that was connected:**
 `pico_verify_app` gains `serial` (now **required**) and `activity`; `pico_perf` gains `device`;
 `pico_sdk` gains `projectRoot`, `vaultRoot`, `sdkVersion`, `recordPaths`.
@@ -429,14 +451,22 @@ prerequisite for `measure_placement`, not for anything claimed above.
 | Rollback recipe | `evidence/.../host/ROLLBACK.md` |
 | The three retained 38.0.0 archives | untouched under `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/` |
 
-Activation edited **no** host configuration file: all six registrations already name the absolute
-path `node /Users/sushantsrikrish/PICO-MCP/dist/index.js`, so activation is what that path contains.
+**Activation, exactly as performed.** `main` was fast-forwarded from `4478238` to `487560c` — 114
+commits, no merge commit, nothing reset or forced — and then rebuilt with `npm ci && npm run build`.
+It edited **no** host configuration file: all six registrations already name the absolute path
+`node /Users/sushantsrikrish/PICO-MCP/dist/index.js`, so activation is what that path contains. The
+accepted branch, the continuation branch and every worktree are untouched, and `f349eaf` is still
+reachable from both branches that contain it.
 Rollback is `git reset --hard 4478238…` plus `npm run build` in the main checkout, then a host
 restart. A running MCP server keeps serving the `dist/` it loaded at startup, so **neither
 activation nor rollback reaches a process that is already running** — every host must be restarted
 or opened fresh to pick either up.
 
 ## 11. Handoff to the spatial-polish chat
+
+**The emulator is released.** This session finished its device work; `emulator-5554` is free, and
+the demo app is installed on it and running (PID 10540 at the time of writing). Nothing was
+restarted, moved or resized, and the emulator's input mode was left exactly as found.
 
 The demo project `/Users/sushantsrikrish/AndroidStudioProjects/pico-ui-polish-lab`
 (`dev.local.picouipolish.lab`) is the safe, isolated place for that work to continue. It is on BOM
