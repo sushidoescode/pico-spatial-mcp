@@ -147,7 +147,7 @@ test("multi-command gates keep every && tail as its own sequential argv array", 
   ]);
   assert.deepEqual(GATES["test:picocli"].commands, [
     ["node", "test/picocli.mjs"],
-    ["node", "--test", "test/picocli-autoinstall.mjs", "test/picocli-sweep.mjs"],
+    ["node", "--test", "test/picocli-autoinstall.mjs", "test/picocli-sweep.mjs", "test/picocli-childenv.mjs"],
     ["node", "--test", "test/cliobservations.mjs"],
   ]);
   assert.deepEqual(GATES["test:bridge"].commands, [

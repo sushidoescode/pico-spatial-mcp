@@ -88,12 +88,124 @@ export function installedVersions(io: ToolchainIO = hostToolchainIO()): Installe
   };
 }
 
+/** Numeric dotted-version comparison; a missing component counts as zero ("6.1" == "6.1.0"). */
+export function compareVersions(a: string, b: string): number {
+  const pa = a.trim().split(".").map((n) => Number(n) || 0);
+  const pb = b.trim().split(".").map((n) => Number(n) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i += 1) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+/**
+ * The three-part dotted version an artifact name carries, or null. A date (`20260910`) is not a
+ * version, `v.12.3` is not three parts, and nothing is guessed from a bare build number.
+ */
+export function parseArtifactVersion(name: string): string | null {
+  const match = /(?:^|[_-])v?(\d+\.\d+\.\d+)(?=[_.-]|$)/.exec(name);
+  return match ? match[1] : null;
+}
+
+export type ArtifactComparison = {
+  name: string;
+  source: "public" | "internal";
+  component: "editor" | "emulator" | "other";
+  version: string | null;
+  installed: string | null;
+  relation: "newer-than-installed" | "same-as-installed" | "older-than-installed" | "uncomparable";
+};
+
+export type ToolchainUpdateVerdict = {
+  verdict: string;
+  /** true: a public payload is newer than its installed component; false: none is; null: a 6.x-looking public payload could not be compared. */
+  publicUpgradeAvailable: boolean | null;
+  comparisons: ArtifactComparison[];
+  /** Channel lines (osVersion/spatialSDK) above the installed major.minor line. */
+  advertisedLines: Array<{ osVersion: string; spatialSDK: string }>;
+};
+
+/** The 38.0.0 heuristic for "this artifact belongs to the 6.x runtime line", kept only to decide what is worth comparing. */
+const SIX_X_ARTIFACT = /swan_spaceos|(?:^|[_-])v?6\.\d/i;
+
+/**
+ * The verdict, derived by COMPARING each advertised editor/emulator payload's version with the
+ * installed component it would replace. Until the 2026-09-16 native-acceptance pass the tool called
+ * any 6.x-looking public artifact "a newer 6.x runtime" — on a host already on 6.1 with only 6.0.0
+ * public payloads that advertised an upgrade the host was already past. Pure: no I/O.
+ */
+export function toolchainUpdateVerdict(input: {
+  installed: Pick<InstalledToolchainVersions, "emulator" | "editor" | "sdkMaven">;
+  publicNow: Array<{ name: string }>;
+  stagedInternal: Array<{ name: string }>;
+  sdkMap: Array<{ osVersion: string; spatialSDK: string }>;
+  mavenLatest: string | null;
+}): ToolchainUpdateVerdict {
+  const { installed, publicNow, stagedInternal, sdkMap, mavenLatest } = input;
+  const known = (version: string | undefined): string | null => (version && /^\d+(?:\.\d+)*$/.test(version.trim()) ? version.trim() : null);
+  const componentOf = (name: string): ArtifactComparison["component"] =>
+    /editor/i.test(name) ? "editor" : /emulator/i.test(name) ? "emulator" : "other";
+  const installedFor = (component: ArtifactComparison["component"]): string | null =>
+    component === "editor" ? known(installed.editor) : component === "emulator" ? known(installed.emulator) : null;
+  const compare = (name: string, source: ArtifactComparison["source"]): ArtifactComparison => {
+    const component = componentOf(name);
+    const version = parseArtifactVersion(name);
+    const installedVersion = installedFor(component);
+    let relation: ArtifactComparison["relation"] = "uncomparable";
+    if (component !== "other" && version !== null && installedVersion !== null) {
+      const d = compareVersions(version, installedVersion);
+      relation = d > 0 ? "newer-than-installed" : d < 0 ? "older-than-installed" : "same-as-installed";
+    }
+    return { name, source, component, version, installed: installedVersion, relation };
+  };
+  const comparisons = [
+    ...publicNow.map((p) => compare(p.name, "public")),
+    ...stagedInternal.map((p) => compare(p.name, "internal")),
+  ];
+  const publicRuntime = comparisons.filter((c) => c.source === "public" && c.component !== "other");
+  const newerPublic = publicRuntime.filter((c) => c.relation === "newer-than-installed");
+  const uncomparablePublic = publicRuntime.filter((c) => c.relation === "uncomparable" && SIX_X_ARTIFACT.test(c.name));
+  const newerInternal = comparisons.filter((c) => c.source === "internal" && c.component !== "other" && c.relation === "newer-than-installed");
+  const installedTop = [known(installed.editor), known(installed.emulator)].filter((v): v is string => v !== null).sort(compareVersions).pop() ?? null;
+  const installedLine = installedTop ? installedTop.split(".").slice(0, 2).join(".") : null;
+  const advertisedLines = sdkMap.filter((line) =>
+    installedLine !== null && /^\d+\.\d+/.test(line.osVersion) && compareVersions(line.osVersion, installedLine) > 0);
+
+  const installedText = `installed editor ${installed.editor}, emulator ${installed.emulator}`;
+  const maven = `Public Maven SDK: ${mavenLatest ?? "unknown"} (scaffold pin ${installed.sdkMaven}).`;
+  let verdict: string;
+  let publicUpgradeAvailable: boolean | null;
+  if (newerPublic.length) {
+    publicUpgradeAvailable = true;
+    verdict = `A newer PICO toolchain payload is publicly downloadable: ${newerPublic.map((c) => `${c.component} ${c.version} (installed ${c.installed})`).join(", ")} — install it, then re-run your verification matrix against it. ${maven}`;
+  } else if (uncomparablePublic.length) {
+    publicUpgradeAvailable = null;
+    verdict = `A publicly downloadable payload looks like a 6.x runtime but its version could not be compared with the installed toolchain (${uncomparablePublic.map((c) => c.name).join(", ")}; ${installedText}). Inspect it before installing anything. ${maven}`;
+  } else {
+    publicUpgradeAvailable = false;
+    const publicSix = publicRuntime.filter((c) => c.version !== null && SIX_X_ARTIFACT.test(c.name));
+    const internalNote = advertisedLines.length || newerInternal.length
+      ? ` The channel also advertises ${advertisedLines.length ? `the ${advertisedLines.map((l) => `${l.osVersion} line (spatialSDK ${l.spatialSDK})`).join(" and ")}` : "a newer payload"}${newerInternal.length ? ` with internal-only artifacts (${newerInternal.map((c) => `${c.name} = ${c.component} ${c.version}`).join(", ")})` : ""}, newer than the installed line but not downloadable from here.`
+      : "";
+    if (publicSix.length) {
+      verdict = `Publicly downloadable 6.x payloads (${publicSix.map((c) => `${c.component} ${c.version}`).join(", ")}) are not newer than the installed toolchain (editor ${installed.editor}, emulator ${installed.emulator}); nothing public to install.${internalNote} ${maven}`;
+    } else if (internalNote) {
+      verdict = `Nothing newer is publicly downloadable (${installedText}).${internalNote} ${maven}`;
+    } else {
+      verdict = `Nothing newer advertised. ${maven.replace(/\.$/, "")}; ${installedText}.`;
+    }
+  }
+  return { verdict, publicUpgradeAvailable, comparisons, advertisedLines };
+}
+
 export function registerToolchainWatchTools(server: McpServer) {
   server.registerTool(
     "check_toolchain_updates",
     {
       description:
-        "Check whether your installed PICO toolchain is current. Polls the update channel the PICO Android Studio plugin reads plus public Maven metadata, then diffs both against your local install. Reports the advertised versions per (osVersion, package), which artifacts are publicly downloadable, and the installed-vs-available delta — so you can take an upgrade as soon as one is available to you. 'installed' is the emulator and editor of the SELECTED toolchain ($PICO_HOME / spatial.tools.dir / the newest usable version), never a hardcoded location. Each component is selected on its own, so `installed.selection.emulator` and `installed.selection.editor` each disclose the installation THAT version was read from (or the structured unavailable/* reason none could be) — on a host that upgraded one payload and not the other they legitimately differ. Read-only: fetches metadata, downloads nothing.",
+        "Check whether your installed PICO toolchain is current. Polls the update channel the PICO Android Studio plugin reads plus public Maven metadata, then diffs both against your local install. Reports the advertised versions per (osVersion, package), which artifacts are publicly downloadable, and the installed-vs-available delta as explicit per-artifact comparisons (`comparisons`, `publicUpgradeAvailable`, `advertisedLines`) — a payload is called newer only when its parsed version is above the installed component it would replace. 'installed' is the emulator and editor of the SELECTED toolchain ($PICO_HOME / spatial.tools.dir / the newest usable version), never a hardcoded location. Each component is selected on its own, so `installed.selection.emulator` and `installed.selection.editor` each disclose the installation THAT version was read from (or the structured unavailable/* reason none could be) — on a host that upgraded one payload and not the other they legitimately differ. Read-only: fetches metadata, downloads nothing.",
       inputSchema: {
         includeRaw: z.boolean().optional().describe("Include the raw channel package list (default false)."),
       },
@@ -159,16 +271,19 @@ export function registerToolchainWatchTools(server: McpServer) {
       } catch (e: any) {
         result.maven = { error: String(e?.message ?? e).slice(0, 200) };
       }
-      // 3. verdict — derive from the sdkMap + artifact names (not the schema-dependent revision scan)
-      const sdk61 = (result.channel?.sdkMap ?? []).find((m: any) => m.osVersion?.startsWith("6"));
-      const staged6 = result.stagedInternal.filter((p: any) => /swan_spaceos|_6\.\d/i.test(p.name));
-      const mavenLatest = result.maven?.latest ?? "6.0.0";
-      const public61 = result.publicNow.some((p: any) => /swan_spaceos|_6\.\d/i.test(p.name));
-      result.verdict = public61
-        ? `A newer 6.x runtime is publicly downloadable — install it, then re-run your verification matrix against it.`
-        : sdk61 || staged6.length
-          ? `A newer 6.x line is advertised on the channel but is not publicly downloadable from here, so there is nothing to install yet. Public Maven SDK: ${mavenLatest} (installed pin ${installed.sdkMaven}). Re-run this check periodically.`
-          : `Nothing newer advertised. Public Maven SDK: ${mavenLatest}; installed editor ${installed.editor}, emulator ${installed.emulator}.`;
+      // 3. verdict — every advertised editor/emulator payload is COMPARED with the installed
+      // component before anything is called newer; the comparisons are returned beside the prose.
+      const outcome = toolchainUpdateVerdict({
+        installed,
+        publicNow: result.publicNow,
+        stagedInternal: result.stagedInternal,
+        sdkMap: result.channel?.sdkMap ?? [],
+        mavenLatest: result.maven?.latest ?? null,
+      });
+      result.verdict = outcome.verdict;
+      result.publicUpgradeAvailable = outcome.publicUpgradeAvailable;
+      result.comparisons = outcome.comparisons;
+      result.advertisedLines = outcome.advertisedLines;
       return okJson(result);
     },
   );

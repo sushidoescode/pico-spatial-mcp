@@ -85,6 +85,14 @@ if (op[0] === "shell" && op[1] === "log") {
 }
 if (op[0] === "logcat") {
   if (scenario.dumpFails) { process.stderr.write("logcat: fixture dump failure\\n"); process.exit(1); }
+  if (typeof scenario.failDumpsAfter === "number") {
+    // The transition this models: dumps succeed N times (so a window's marker IS seen), then every
+    // later dump fails — adb died, the device dropped, a reader got stuck. Counted across processes.
+    const counter = env.PICO_LOGWINDOW_FAKE_DUMPS;
+    const seen = fs.existsSync(counter) ? Number(fs.readFileSync(counter, "utf8").trim() || 0) : 0;
+    fs.writeFileSync(counter, String(seen + 1));
+    if (seen >= scenario.failDumpsAfter) { process.stderr.write("logcat: fixture dump failure after " + seen + " dumps\\n"); process.exit(1); }
+  }
   const out = [...(scenario.before ?? [])];
   if (!scenario.evict) for (const m of markers) out.push("09-16 00:00:00.500     1     1 I pico-mcp: " + m);
   out.push(...(scenario.after ?? []));
@@ -109,6 +117,7 @@ async function withFakeAdb(scenario, operation) {
     markers: path.join(dir, "markers.txt"),
     scenario: path.join(dir, "scenario.json"),
     violations: path.join(dir, "violations.jsonl"),
+    dumps: path.join(dir, "dumps.count"),
   };
   fs.writeFileSync(files.scenario, JSON.stringify(scenario));
   const previous = {
@@ -117,12 +126,14 @@ async function withFakeAdb(scenario, operation) {
     PICO_LOGWINDOW_FAKE_MARKERS: process.env.PICO_LOGWINDOW_FAKE_MARKERS,
     PICO_LOGWINDOW_FAKE_SCENARIO: process.env.PICO_LOGWINDOW_FAKE_SCENARIO,
     PICO_LOGWINDOW_FAKE_VIOLATIONS: process.env.PICO_LOGWINDOW_FAKE_VIOLATIONS,
+    PICO_LOGWINDOW_FAKE_DUMPS: process.env.PICO_LOGWINDOW_FAKE_DUMPS,
   };
   process.env.PICO_ADB = fake;
   process.env.PICO_LOGWINDOW_FAKE_ARGV = files.argv;
   process.env.PICO_LOGWINDOW_FAKE_MARKERS = files.markers;
   process.env.PICO_LOGWINDOW_FAKE_SCENARIO = files.scenario;
   process.env.PICO_LOGWINDOW_FAKE_VIOLATIONS = files.violations;
+  process.env.PICO_LOGWINDOW_FAKE_DUMPS = files.dumps;
   const readLines = (file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean) : []);
   const handle = {
     readArgv: () => readLines(files.argv).map((line) => JSON.parse(line)),
@@ -130,7 +141,7 @@ async function withFakeAdb(scenario, operation) {
     violations: () => readLines(files.violations),
     seedMarker: (marker) => fs.appendFileSync(files.markers, `${marker}\n`),
     setScenario: (next) => fs.writeFileSync(files.scenario, JSON.stringify(next)),
-    reset: () => { for (const file of [files.argv, files.markers, files.violations]) fs.rmSync(file, { force: true }); },
+    reset: () => { for (const file of [files.argv, files.markers, files.violations, files.dumps]) fs.rmSync(file, { force: true }); },
   };
   try {
     return await operation(handle);
@@ -398,6 +409,51 @@ test("assert_logcat clearFirst opens a marker window instead of clearing, and an
       assert.equal(unscoped.matched, true, "without a window the whole buffer is still the (compatible) scope");
       assert.equal(unscoped.serial, FIX);
       assert.equal(unscoped.logWindow, null);
+      assertNoClear(fake);
+    });
+  });
+});
+
+test("assert_logcat reports a LOST observation as inconclusive: the window's marker was seen once, then every later dump failed", async () => {
+  // The transition the 2026-09-16 handoff named: one good dump proves the marker (so markerSeen is
+  // true), then adb dies for the rest of the poll. Before this fixture the deadline path reported
+  // an ordinary "no match" — a measured miss that nothing measured. A miss is only conclusive when
+  // the LAST dump before the deadline succeeded; otherwise the observation was lost.
+  await withFakeAdb({ before: STALE_LOG, after: [], failDumpsAfter: 1 }, async (fake) => {
+    const marker = "pico-mcp-window-lost-observation";
+    fake.seedMarker(marker);
+    const { registerAdbTools } = await import("../dist/adb.js");
+    await withTools(registerAdbTools, async (client) => {
+      const lost = jsonOf(await client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "NEVER_LOGGED", sinceMarker: marker, timeoutSec: 2, pollMs: 200 } }));
+      assert.equal(lost.matched, false, JSON.stringify(lost));
+      assert.equal(lost.status, "inconclusive", `a miss whose final dump failed must be inconclusive, got ${JSON.stringify(lost)}`);
+      assert.deepEqual(lost.logWindow, { marker, markerSeen: true }, "the marker WAS seen — the window is not the problem");
+      assert.equal(lost.dumps?.succeeded, 1);
+      assert.ok((lost.dumps?.failed ?? 0) >= 1, `at least one failed dump must be counted: ${JSON.stringify(lost.dumps)}`);
+      assert.match(String(lost.dumps?.lastError ?? ""), /fixture dump failure/);
+      assert.match(String(lost.hint ?? ""), /observation/i);
+      assertNoClear(fake);
+    });
+  });
+});
+
+test("assert_logcat without a window is also inconclusive when the final dump failed, and stays a conclusive miss when dumps kept succeeding", async () => {
+  await withFakeAdb({ before: STALE_LOG, after: [], failDumpsAfter: 1 }, async (fake) => {
+    const { registerAdbTools } = await import("../dist/adb.js");
+    await withTools(registerAdbTools, async (client) => {
+      const lost = jsonOf(await client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "NEVER_LOGGED", timeoutSec: 2, pollMs: 200 } }));
+      assert.equal(lost.matched, false, JSON.stringify(lost));
+      assert.equal(lost.status, "inconclusive", JSON.stringify(lost));
+      assert.equal(lost.logWindow, null);
+      assert.equal(lost.dumps?.succeeded, 1);
+      assert.ok((lost.dumps?.failed ?? 0) >= 1);
+
+      fake.reset();
+      fake.setScenario({ before: STALE_LOG, after: [] });
+      const miss = jsonOf(await client.callTool({ name: "assert_logcat", arguments: { serial: FIX, pattern: "NEVER_LOGGED", timeoutSec: 1, pollMs: 200 } }));
+      assert.equal(miss.matched, false);
+      assert.notEqual(miss.status, "inconclusive", "dumps that kept succeeding make the miss a real observation");
+      assert.ok((miss.dumps?.failed ?? 0) === 0 || miss.dumps === undefined);
       assertNoClear(fake);
     });
   });

@@ -1112,7 +1112,10 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
                 if (l.status === "inconclusive" || l.logWindow?.markerSeen === false) {
                   // The window's marker was never seen in the bounded dump: the read is inconclusive,
                   // not a measured miss — a replan would chase a failure nothing measured.
-                  outcomes.push({ kind: "logcat", status: "unmeasurable", detail: `log window inconclusive for '${c.pattern}': marker ${l.logWindow?.marker ?? logMarker} not seen in the bounded dump (evicted or never written; the device log was not cleared) — re-run` });
+                  // Two inconclusive shapes share this branch: the marker was never seen (evicted or
+                  // never written), or it WAS seen and the observation was lost afterwards (the final
+                  // dump before the deadline failed). assert_logcat's own hint names which.
+                  outcomes.push({ kind: "logcat", status: "unmeasurable", detail: `log window inconclusive for '${c.pattern}': ${typeof l.hint === "string" && l.hint ? l.hint.slice(0, 300) : `marker ${l.logWindow?.marker ?? logMarker} not seen in the bounded dump (evicted or never written; the device log was not cleared) — re-run`}` });
                 } else {
                   outcomes.push(l.matched
                     ? { kind: "logcat", status: "pass", detail: l.line }

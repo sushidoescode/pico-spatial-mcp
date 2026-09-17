@@ -443,7 +443,7 @@ export function registerAdbTools(server: McpServer) {
     "assert_logcat",
     {
       description:
-        "VERIFICATION PRIMITIVE — wait up to timeoutSec for a logcat line matching `pattern` (optionally scoped to `tag`) to appear, polling a bounded dump. Turns an app's Log.* markers into a machine-checkable pass/fail signal so an agent can PROVE behavior instead of eyeballing it (e.g. assert 'rayCast HIT' after attaching a collider, or 'placed pin #' after a commit). Returns {matched, line, elapsedSec, serial, logWindow} — matched:false is a normal (non-error) result so callers can branch and escalate; status:'inconclusive' means the window's marker was never seen in the bounded dump (nothing was matched against the unscoped buffer — re-run). Nothing here clears the device log. Typical loop: open a window (clearFirst:true, or write your own marker with adb_shell `log -t pico-mcp <marker>` and pass sinceMarker) → trigger the action (launch / drive input) → assert_logcat.",
+        "VERIFICATION PRIMITIVE — wait up to timeoutSec for a logcat line matching `pattern` (optionally scoped to `tag`) to appear, polling a bounded dump. Turns an app's Log.* markers into a machine-checkable pass/fail signal so an agent can PROVE behavior instead of eyeballing it (e.g. assert 'rayCast HIT' after attaching a collider, or 'placed pin #' after a commit). Returns {matched, line, elapsedSec, serial, logWindow} — matched:false is a normal (non-error) result so callers can branch and escalate; status:'inconclusive' means either the window's marker was never seen in the bounded dump, or the observation was LOST because the final dump before the deadline failed (dumps.succeeded/failed/lastError say which) — in both cases nothing was measured, re-run. Nothing here clears the device log. Typical loop: open a window (clearFirst:true, or write your own marker with adb_shell `log -t pico-mcp <marker>` and pass sinceMarker) → trigger the action (launch / drive input) → assert_logcat.",
       inputSchema: {
         serial: serialParam,
         pattern: z.string().describe("Case-insensitive regex matched against each logcat line, e.g. 'rayCast HIT' or 'placed pin #\\\\d+'"),
@@ -492,6 +492,11 @@ export function registerAdbTools(server: McpServer) {
       let lastTail = "";
       let markerSeen = false;
       let successfulDumps = 0;
+      let failedDumps = 0;
+      // Whether the MOST RECENT dump succeeded. A miss is conclusive only when the final dump before
+      // the deadline succeeded: an earlier good dump cannot vouch for lines logged after it, so a
+      // poll whose last dumps failed has LOST its observation (2026-09-16 native-acceptance fixture).
+      let lastDumpSucceeded: boolean | null = null;
       let lastReadError: string | null = null;
       const dumpArgs = ["-s", s, "logcat", "-d", ...(tag ? [`${tag}:V`, "*:S"] : [])];
       while (Date.now() < deadline) {
@@ -500,17 +505,28 @@ export function registerAdbTools(server: McpServer) {
           try {
             const read = await readLogWindow(runner, window, { tags: tag ? [tag] : undefined, maxLines: bound, timeoutMs: 30_000 });
             successfulDumps += 1;
+            lastDumpSucceeded = true;
             markerSeen = read.markerSeen;
             lines = read.markerSeen ? read.lines : null; // no marker: nothing here is provably post-window
           } catch (e) {
             // a failed dump is retried until the deadline — and remembered, so a dead adb is reported
             // below as the dump failure it is, never as log eviction (unseenMarkerCause)
+            failedDumps += 1;
+            lastDumpSucceeded = false;
             lastReadError = e instanceof Error ? e.message : String(e);
             lines = null;
           }
         } else {
           const r = await adb(dumpArgs, 30_000);
-          if (r.code === 0) lines = r.stdout.split("\n");
+          if (r.code === 0) {
+            successfulDumps += 1;
+            lastDumpSucceeded = true;
+            lines = r.stdout.split("\n");
+          } else {
+            failedDumps += 1;
+            lastDumpSucceeded = false;
+            lastReadError = (r.stderr || r.stdout || `exit ${r.code}`).trim().slice(0, 300);
+          }
         }
         if (lines) {
           const hit = lines.find((l) => re.test(l));
@@ -529,6 +545,7 @@ export function registerAdbTools(server: McpServer) {
         }
         await sleep(pollMs);
       }
+      const dumps = { succeeded: successfulDumps, failed: failedDumps, lastError: lastReadError };
       if (window && !markerSeen) {
         return okJson({
           matched: false,
@@ -539,8 +556,25 @@ export function registerAdbTools(server: McpServer) {
           serial: s,
           logWindow: { marker: window.marker, markerSeen: false },
           maxLines: bound,
-          dumps: { succeeded: successfulDumps, lastError: lastReadError },
+          dumps,
           hint: `The log window marker was never seen (${unseenMarkerCause({ successfulDumps, lastReadError })}; bound -t ${bound}). The device log was NOT cleared and nothing was matched against the unscoped buffer. ${successfulDumps === 0 && lastReadError !== null ? `Check the adb connection to ${s}` : "Re-open the window (clearFirst:true or a fresh sinceMarker), raise maxLines if the device is chatty"}, and re-run.`,
+        });
+      }
+      if (lastDumpSucceeded !== true) {
+        // The observation was LOST: the last dump before the deadline failed (or no dump ever ran),
+        // so "no match" is not something this poll observed for the tail of the window. Report it as
+        // inconclusive — a replan or retry that chased it would chase a miss nothing measured.
+        return okJson({
+          matched: false,
+          status: "inconclusive",
+          timedOutAfterSec: timeoutSec,
+          tag: tag ?? null,
+          pattern,
+          serial: s,
+          logWindow: window ? { marker: window.marker, markerSeen: true } : null,
+          dumps,
+          hint: `The observation was lost: the last logcat dump before the deadline failed (${dumps.succeeded} succeeded, ${dumps.failed} failed; last error: ${lastReadError ?? "none recorded"}). ${window ? "The window's marker WAS seen, so the window is not the problem; " : ""}nothing was matched for the tail of the poll, so this is NOT a measured miss. Check the adb connection to ${s} and re-run.`,
+          lastLines: lastTail || (window ? "(no lines after the window marker for this tag)" : "(buffer empty for this tag)"),
         });
       }
       return okJson({
@@ -550,6 +584,7 @@ export function registerAdbTools(server: McpServer) {
         pattern,
         serial: s,
         logWindow: window ? { marker: window.marker, markerSeen: true } : null,
+        dumps,
         hint: "No matching line within the timeout. Confirm the app emitted the log (it may need an action to trigger it), the tag is right, and the serial is correct.",
         lastLines: lastTail || (window ? "(no lines after the window marker for this tag)" : "(buffer empty for this tag)"),
       });

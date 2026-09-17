@@ -288,6 +288,17 @@ const emptyFixture = { entry: { code: 0, timedOut: false, outputTruncated: false
 expectState("empty exit-zero output", classify("knowledge-server", ["knowledge", "server"], emptyFixture), "unknown", /^malformed-help:/);
 const fakeHelp = { ...emptyFixture, stdout: Buffer.from("fixture help: knowledge server --help\n") };
 expectState("exit-zero text without a usage section", classify("knowledge-server", ["knowledge", "server"], fakeHelp), "unknown", /^malformed-help:/);
+// 0.5.0 styles its help with ANSI SGR bold whenever FORCE_COLOR is set — Claude Code sets
+// FORCE_COLOR=1 for every child — so the live managed-0.5.0 discovery on 2026-09-16 saw exactly these
+// bytes (retained under ~/.pico-mcp/cli/capabilities/0.5.0/…/01-knowledge-server.stdout.txt) and
+// classified three supported routes as malformed-help. Styling must not hide a usage section.
+const ansiKnowledge = { ...emptyFixture, stdout: Buffer.from("\u001b[1mDescription\u001b[22m:\nStart the PICO development knowledge MCP server\n\n\u001b[1mUsage\u001b[22m:\n  $ \u001b[1mpico-cli knowledge server\u001b[22m\n\n\u001b[1mOptions\u001b[22m:\n  \u001b[1m-h, --help\u001b[22m  Display this message\n") };
+expectState("0.5.0 ANSI-styled knowledge server help (FORCE_COLOR)", classify("knowledge-server", ["knowledge", "server"], ansiKnowledge), "supported", /^help-names-operation:/);
+const ansiWatch = { ...emptyFixture, stdout: Buffer.from("\u001b[1mUsage\u001b[22m:\n  $ \u001b[1mpico-cli app watch-crash <package>\u001b[22m\n\n\u001b[1mOptions\u001b[22m:\n  \u001b[1m-d, --device <device>\u001b[22m  Target device id\n") };
+expectState("0.5.0 ANSI-styled app watch-crash help (FORCE_COLOR)", classify("watch-crash", ["app", "watch-crash"], ansiWatch), "supported", /^help-names-operation:/);
+const ansiParent = { ...emptyFixture, stdout: Buffer.from("\u001b[1mUsage\u001b[22m:\n  $ \u001b[1mpico-cli knowledge <command>\u001b[22m\n") };
+expectState("ANSI-styled parent help is still generic-parent-help", classify("knowledge-server", ["knowledge", "server"], ansiParent), "unavailable", /^generic-parent-help:/);
+
 expectState("timed-out probe", classify("knowledge-server", ["knowledge", "server"], fixture("0.5.0", "136"), { timedOut: true, exitCode: null }, { timeoutMs: 2000 }), "unknown", /^timed-out:/);
 expectState("truncated probe", classify("knowledge-server", ["knowledge", "server"], fixture("0.5.0", "136"), { outputTruncated: true }, { maxOutputBytes: 64 }), "unknown", /^output-truncated:/);
 expectState("probe without an exit code", classify("knowledge-server", ["knowledge", "server"], emptyFixture, { exitCode: null }, { spawnError: "pre-spawn validation failed: fixture" }), "unknown", /^incomplete:/);

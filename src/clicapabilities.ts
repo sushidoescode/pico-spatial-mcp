@@ -311,6 +311,19 @@ function firstLine(text: string): string {
 }
 
 /**
+ * pico-cli 0.5.0 renders help with ANSI SGR styling whenever FORCE_COLOR is set — and Claude Code
+ * sets FORCE_COLOR=1 for every child it spawns, the MCP server included. `\u001b[1mUsage\u001b[22m:`
+ * hides the usage section from a word-boundary match ("mUsage") and the styled `$ pico-cli …` line
+ * from the route match, so the 2026-09-16 managed 0.5.0 discovery classified knowledge-server,
+ * watch-crash and capture-record as malformed-help. Classification reads through the styling; the
+ * retained bytes stay exactly as the CLI wrote them.
+ */
+const ANSI_SGR = /\u001b\[[0-9;]*m/g;
+export function stripAnsi(text: string): string {
+  return text.replace(ANSI_SGR, "");
+}
+
+/**
  * What the help's `pico-cli …` usage/invocation lines say about the route. Every retained child
  * help (0.4.4 062/025/026, 0.5.0 136/096/097) carries a usage line that starts with the route's
  * full argv (`$ pico-cli knowledge server`), and every retained parent help (0.4.4 002/011,
@@ -365,10 +378,10 @@ export function classifyHelpOutput(
   if (observation.exitCode === null) {
     return { state: "unknown", reason: `incomplete: ${probe} ended without an exit code; ${operation} is not classified` };
   }
-  const text = `${stdout}\n${stderr}`;
+  const text = `${stripAnsi(stdout)}\n${stripAnsi(stderr)}`;
   if (observation.exitCode !== 0) {
     const kind = classifyHelpFailureText(text);
-    const detail = firstLine(stderr) || firstLine(stdout);
+    const detail = firstLine(stripAnsi(stderr)) || firstLine(stripAnsi(stdout));
     const suffix = detail ? `: ${detail}` : "";
     switch (kind) {
       case "utilities-not-installed":

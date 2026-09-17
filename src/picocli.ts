@@ -321,6 +321,21 @@ type PicoCliTreeKiller = {
   unref(): unknown;
 };
 
+
+/**
+ * The environment a pico-cli child runs in. FORCE_COLOR is dropped and NO_COLOR is set unless the
+ * caller overrides them: Claude Code exports FORCE_COLOR=1 to every child it spawns, which makes
+ * pico-cli 0.5.0 style its help with ANSI SGR — and those styled bytes are what capability
+ * discovery retains as evidence (2026-09-16: three supported routes classified as malformed-help).
+ * The classifier now reads through styling too; this keeps the retained bytes plain in the first
+ * place. An explicit value in `overrides` still wins.
+ */
+export function cliChildEnvironment(base: NodeJS.ProcessEnv, overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base };
+  delete env.FORCE_COLOR;
+  if (env.NO_COLOR === undefined) env.NO_COLOR = "1";
+  return { ...env, ...overrides };
+}
 export type PicoCliProcessTreeRuntime = {
   platform: NodeJS.Platform;
   spawnTreeKiller: (
@@ -362,7 +377,7 @@ function runPicoCliCommandWithRuntime(
   const timeoutMs = opts.timeoutMs ?? PICO_CLI_INSTALL_TIMEOUT_MS;
   const killGraceMs = opts.killGraceMs ?? PICO_CLI_KILL_GRACE_MS;
   const maxOutputBytes = opts.maxOutputBytes ?? PICO_CLI_OUTPUT_CAP_BYTES;
-  const childEnv = { ...(opts.baseEnv ?? process.env), ...opts.env };
+  const childEnv = cliChildEnvironment(opts.baseEnv ?? process.env, opts.env);
   const platform = processTreeRuntime.platform;
   const commandDeadlineMs = Date.now() + Math.max(0, timeoutMs);
   const requestedCompletionValidationTimeoutMs = opts.completionValidationTimeoutMs
