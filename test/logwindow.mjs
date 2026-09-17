@@ -524,6 +524,47 @@ test("wait_for_log's default opens a marker window instead of clearing and repor
   });
 });
 
+test("wait_for_log reports a lost observation as inconclusive on its DEFAULT windowed path", async () => {
+  // The transition: the window's marker is seen on the first dump, then adb dies for every later
+  // poll. `markerSeen` is only ever assigned on a SUCCESSFUL read and never reset, so the
+  // `window && !markerSeen` branch is skipped and the tool fell through to a flat `Timeout:` —
+  // a conclusive miss for a stretch of the wait nothing observed. This is the default input shape
+  // (clearFirst defaults to true), which is what makes it the reachable half of the defect.
+  await withFakeAdb({ before: STALE_LOG, after: [], failDumpsAfter: 1 }, async (fake) => {
+    const { registerAgentLoopTools } = await import("../dist/agentloop.js");
+    await withTools(registerAgentLoopTools, async (client) => {
+      const lost = await client.callTool({ name: "wait_for_log", arguments: { serial: FIX, pattern: "NEVER_LOGGED", timeoutSec: 3 } });
+      assert.equal(lost.isError, true, textOf(lost));
+      assert.match(textOf(lost), /inconclusive/i, `a wait whose final dump failed must be inconclusive: ${textOf(lost)}`);
+      assert.match(textOf(lost), /observation was lost/i);
+      assert.match(textOf(lost), /fixture dump failure/);
+      assert.doesNotMatch(textOf(lost), /^Timeout:/m);
+      assertNoClear(fake);
+    });
+  });
+});
+
+test("wait_for_log reports a lost observation as inconclusive on the unwindowed path too, and still calls a real miss a miss", async () => {
+  await withFakeAdb({ before: STALE_LOG, after: [], failDumpsAfter: 1 }, async (fake) => {
+    const { registerAgentLoopTools } = await import("../dist/agentloop.js");
+    await withTools(registerAgentLoopTools, async (client) => {
+      const lost = await client.callTool({ name: "wait_for_log", arguments: { serial: FIX, pattern: "NEVER_LOGGED", timeoutSec: 3, clearFirst: false } });
+      assert.equal(lost.isError, true, textOf(lost));
+      assert.match(textOf(lost), /inconclusive/i, `an unwindowed wait whose final dump failed must be inconclusive: ${textOf(lost)}`);
+      assert.match(textOf(lost), /observation was lost/i);
+
+      // A wait whose dumps all succeeded is still an ordinary, conclusive timeout.
+      fake.reset();
+      fake.setScenario({ before: STALE_LOG, after: [] });
+      const miss = await client.callTool({ name: "wait_for_log", arguments: { serial: FIX, pattern: "NEVER_LOGGED", timeoutSec: 1, clearFirst: false } });
+      assert.equal(miss.isError, true, textOf(miss));
+      assert.match(textOf(miss), /^Timeout:/m, textOf(miss));
+      assert.doesNotMatch(textOf(miss), /inconclusive/i);
+      assertNoClear(fake);
+    });
+  });
+});
+
 // ── the bound a LONG poller reads with (fix wave FW1, Important 1) ───────────────────────────────
 // logd applies `-t <count>` to the raw selected buffers BEFORE the client-side tag filter, so the
 // count bounds the device's raw output, not the lines a caller sees: a chatty XR runtime pushes the

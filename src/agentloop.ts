@@ -137,7 +137,7 @@ export function registerAgentLoopTools(server: McpServer) {
     "wait_for_log",
     {
       description:
-        "Block until a regex appears in logcat (or timeout). Essential for an agent loop: wait for 'scene loaded', an app-ready marker, or an error, instead of sleeping a fixed time. By default it opens a marker window first, so only lines logged after the call can match; the device log is never cleared. Returns {matched, elapsedSec, serial, logWindow, lines}; a window whose marker is never seen is an inconclusive error, never a match against the unscoped buffer.",
+        "Block until a regex appears in logcat (or timeout). Essential for an agent loop: wait for 'scene loaded', an app-ready marker, or an error, instead of sleeping a fixed time. By default it opens a marker window first, so only lines logged after the call can match; the device log is never cleared. Returns {matched, elapsedSec, serial, logWindow, lines}; a window whose marker is never seen is an inconclusive error, never a match against the unscoped buffer, and so is a wait whose final dump before the deadline failed — a lost observation is never reported as a timeout.",
       inputSchema: {
         pattern: z.string().describe("Regex to match against new logcat lines"),
         serial: z.string().optional(),
@@ -167,6 +167,13 @@ export function registerAgentLoopTools(server: McpServer) {
       const filter = tag ? [`${tag}:V`, "*:S"] : [];
       let markerSeen = false;
       let successfulDumps = 0;
+      let failedDumps = 0;
+      // Whether the MOST RECENT dump succeeded. `markerSeen` cannot stand in for this: it is only
+      // ever assigned on a successful read and is never reset, so a wait that reads the marker once
+      // and then loses adb for every remaining poll would otherwise fall through to a flat
+      // `Timeout:` — a conclusive miss for a stretch of the wait nothing observed. Same rule as
+      // assert_logcat (src/adb.ts): a miss is conclusive only when the final dump succeeded.
+      let lastDumpSucceeded: boolean | null = null;
       let lastReadError: string | null = null;
       while (Date.now() < deadline) {
         let lines: string[] | null = null;
@@ -174,17 +181,31 @@ export function registerAgentLoopTools(server: McpServer) {
           try {
             const read = await readLogWindow(runner, window, { tags: tag ? [tag] : undefined, maxLines: bound, timeoutMs: 20_000 });
             successfulDumps += 1;
+            lastDumpSucceeded = true;
             markerSeen = read.markerSeen;
             lines = read.markerSeen ? read.lines : null; // no marker: nothing here is provably post-window
           } catch (e) {
             // a failed dump is retried until the deadline — and remembered, so a dead adb is reported
             // below as the dump failure it is, never as log eviction (unseenMarkerCause)
+            failedDumps += 1;
+            lastDumpSucceeded = false;
             lastReadError = e instanceof Error ? e.message : String(e);
             lines = null;
           }
         } else {
           const r = await adb(["-s", s, "logcat", "-d", ...filter], 20_000);
-          lines = r.stdout.split("\n");
+          if (r.code === 0) {
+            successfulDumps += 1;
+            lastDumpSucceeded = true;
+            lines = r.stdout.split("\n");
+          } else {
+            // `run` resolves on a nonzero exit, so an unchecked dump handed back [""] and read as
+            // "no match". A failed dump is not an observation.
+            failedDumps += 1;
+            lastDumpSucceeded = false;
+            lastReadError = (r.stderr || r.stdout || `exit ${r.code}`).trim().slice(0, 300);
+            lines = null;
+          }
         }
         const hit = lines ? lines.filter((l) => re.test(l)) : [];
         if (hit.length) {
@@ -201,6 +222,15 @@ export function registerAgentLoopTools(server: McpServer) {
       if (window && !markerSeen) {
         const deadAdb = successfulDumps === 0 && lastReadError !== null;
         return fail(`Inconclusive: the log window marker ${window.marker} was never seen on ${s} within ${timeoutSec}s (${unseenMarkerCause({ successfulDumps, lastReadError })}; bound -t ${bound}); the device log was NOT cleared and nothing was matched against the unscoped buffer — ${deadAdb ? "check the adb connection" : "raise maxLines if the device is chatty"} and re-run. status=inconclusive`);
+      }
+      if (lastDumpSucceeded !== true) {
+        return fail(
+          `Inconclusive: the observation was lost on ${s} — the last logcat dump before the ${timeoutSec}s deadline failed `
+          + `(${successfulDumps} succeeded, ${failedDumps} failed; last error: ${lastReadError ?? "none recorded"}). `
+          + `${window ? `The window's marker ${window.marker} WAS seen, so the window is not the problem; ` : ""}`
+          + `/${pattern}/ was not matched for the tail of the wait, so this is NOT a measured miss. `
+          + `Check the adb connection to ${s} and re-run. status=inconclusive`,
+        );
       }
       return fail(`Timeout: /${pattern}/ not seen in ${timeoutSec}s on ${s}${window ? ` (log window ${window.marker}, markerSeen=true)` : ""}`);
     },
