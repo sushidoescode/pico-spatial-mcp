@@ -1,0 +1,13 @@
+[1mDescription[22m:
+Capture a screen recording from the preferred current device
+
+[1mUsage[22m:
+  $ [1mpico-cli capture record[22m
+
+[1mOptions[22m:
+  [1m-d, --device <device>[22m  Target device id
+  [1m-o, --out <path>[22m       Local output path
+  [1m--replace[22m              Replace an existing output file
+  [1m-t, --time <seconds>[22m   Recording duration seconds (1-1800; longer requests are clamped to 1800)
+                         (default: 15)
+  [1m-h, --help[22m             Display this message

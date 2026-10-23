@@ -132,9 +132,9 @@ test("the native duration flag is a per-version route fact, not a version compar
   for (const operation of ["capture-record", "knowledge-server", "perf-live", "trace-record"]) {
     assert.equal(cliOperationNativeDurationFlag("0.5.0", operation), null, operation);
   }
-  // A newer line inherits the newest table's flag; an unparseable version claims nothing.
-  assert.equal(cliOperationNativeDurationFlag("0.6.0", "watch-crash")?.flag, "--monitor-timeout");
-  for (const version of ["", "   ", "unknown", "nightly"]) {
+  // Only the exact retained 0.6.1 declaration extends the historical observed lines.
+  assert.equal(cliOperationNativeDurationFlag("0.6.1", "watch-crash")?.flag, "--monitor-timeout");
+  for (const version of ["0.6.0", "0.6.2", "99.0.0", "", "   ", "unknown", "nightly"]) {
     assert.equal(cliOperationNativeDurationFlag(version, "watch-crash"), null, JSON.stringify(version));
   }
 });

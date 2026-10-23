@@ -1,0 +1,13 @@
+[1mDescription[22m:
+List registered built-in and optional Workflows
+
+[1mUsage[22m:
+  $ [1mpico-cli workflow list[22m [--format plain|json]
+
+[1mOptions[22m:
+  [1m--format <format>[22m  Output format (plain | json) (default: plain)
+  [1m-h, --help[22m         Display this message
+
+[1mExamples[22m:
+  $ pico-cli workflow list
+  $ pico-cli workflow list --format json

@@ -1,0 +1,16 @@
+[1mDescription[22m:
+Monitor a package for crashes and surface key exception logs
+
+[1mUsage[22m:
+  $ [1mpico-cli app watch-crash[22m <package>
+
+[1mOptions[22m:
+  [1m-d, --device <device>[22m        Target device id (overrides PICO_CLI_DEVICE)
+  [1m--start[22m                      Start the app before watching (am start)
+  [1m--activity <activity>[22m        Optional activity (e.g. .MainActivity)
+  [1m--interval <seconds>[22m         Polling interval seconds for PID changes (default: 2)
+  [1m--launch-timeout <seconds>[22m   Seconds to wait for the app process to appear before giving up
+                               (default: 30)
+  [1m--monitor-timeout <seconds>[22m  Total wall-clock seconds to wait for the process and crash signals
+                               (default: 30)
+  [1m-h, --help[22m                   Display this message

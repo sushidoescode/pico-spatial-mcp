@@ -1,0 +1,63 @@
+[96m   ⢀⣤⣶⣾⣿⣿⣿⣷⣶⣤⡀[39m
+[96m ⢀⣴⣿⣿⣋⡉   ⠉⠙⢿⣿⣦⡀ [39m     [1m⣤⣤⣤⣤⣤⣤⣀⡀   ⣤⣤    ⢀⣠⣤⣤⣀⡀   ⣀⣠⣤⣤⣀[22m
+[96m ⣾⣿⡿⠿⠿⠿⣿⣦⣄   ⠙⣿⣷ [39m     [1m⣿⣿⠛⠛⠛⠛⠿⣿⣦  ⣿⣿  ⢠⣾⣿⠟⠛⠛⠿⠟ ⣠⣾⡿⠟⠛⠻⢿⣷⣆[22m
+[96m⢸⣿⡏ ⢀⣤  ⠙⣿⣧⡀  ⢹⣿⡇[39m     [1m⣿⣿     ⣹⣿⠆ ⣿⣿  ⣿⣿⠁     ⢠⣿⡟     ⢻⣿⡆[22m
+[96m⢸⣿⣇ ⠈⠛   ⠈⠻⣿⣄ ⣸⣿⡇[39m     [1m⣿⣿⣶⣶⣶⣶⣾⣿⠟  ⣿⣿  ⣿⣿⡀     ⠘⣿⣧     ⣼⣿⠇[22m
+[96m ⢿⣿⣄       ⠙⢿⣷⣿⡿ [39m     [1m⣿⣿⠉⠉⠉⠉⠉    ⣿⣿  ⠘⢿⣿⣦⣤⣤⣶⣦ ⠙⢿⣷⣦⣤⣴⣾⡿⠋[22m
+[96m ⠈⠻⣿⣷⣄⣀   ⣀⣠⣾⣿⠟⠁ [39m     [1m⠛⠛         ⠛⠛    ⠈⠙⠛⠛⠉⠁   ⠉⠙⠛⠛⠉[22m
+[96m   ⠈⠛⠿⢿⣿⣿⣿⡿⠿⠛⠁[39m
+
+[96m[1mPICO CLI · Spatial development toolkit[22m[39m
+[1mBuild, run, and troubleshoot PICO Spatial apps with confidence[22m
+[2mOne command line for project setup, app workflows, and environment diagnostics.[22m
+
+[1mUsage[22m:
+  $ [1mpico-cli[22m [command] [options]
+
+[1mQuick start[22m:
+  [1mpico-cli setup[22m           Required once for every new project
+  [1mpico-cli doctor [--fix][22m  Run live checks; --fix repairs supported issues
+
+[1mCore workflows[22m:
+  [1mCreate[22m  project templates · editor 3D assets
+  [1mRun[22m     emulator start → app install → app launch
+  [1mDebug[22m   app logcat · capture screenshot · perf trace
+
+[1mCommands[22m:
+  [1msetup[22m      Required once per new project to initialize PICO tooling
+  [1mdoctor[22m     Diagnose modules and project readiness; fix supported issues
+  [1mproject[22m    Create PICO projects and inspect project context
+  [1mworkflow[22m   Discover, start, resume, and inspect installed Workflow Packages
+  [1meditor[22m     Manage Spatial Editor and package 3D assets
+  [1memulator[22m   Manage the PICO Emulator lifecycle, setup, and diagnostics
+  [1mdevice[22m     Connect to and inspect PICO devices
+  [1mapp[22m        Install, launch, and inspect apps
+  [1mfiles[22m      Push, pull, and manage device files
+  [1mcapture[22m    Capture screenshots and recordings
+  [1mlog[22m        Read logcat output from the current target
+  [1mshell[22m      Run a one-off shell command on the current target
+  [1mperf[22m       Record, query, and inspect performance traces
+  [1mplugin[22m     Diagnose and update agent plugins
+  [1mknowledge[22m  Install or update PICO development knowledge
+  [1murl[22m        Launch URLs and PICO Web apps
+  [1mspatialml[22m  SpatialML setup, pipeline, and model workflows
+  [1mupdate[22m     Check for and install pico-cli updates
+  [1mcleanup[22m    Remove recorded agent plugins and downloaded toolchain
+  [1mtelemetry[22m  View and manage telemetry
+
+[1mOptions[22m:
+  [1m-h, --help[22m     Show this message and exit.
+  [1m-v, --version[22m  Print version information and exit.
+
+[1mTelemetry[22m:
+When telemetry is enabled:
+We collect certain non‑personal information in aggregated form, primarily
+  including product‑related access events, session duration, feature crash
+  events and other similar metrics. This information is collected to enhance
+  the services we deliver to you. We will use non‑personal information
+  separately from personal information to the extent practicable. Should we
+  combine the foregoing data with personal information for processing, we will
+  obtain your consent in compliance with applicable personal information
+  collection requirements.
+Run `pico-cli telemetry status` for details, or opt out with
+`pico-cli telemetry disable` (or PICO_CLI_NO_TELEMETRY=1).

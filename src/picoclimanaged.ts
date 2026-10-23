@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   capabilityCoverage,
@@ -67,6 +68,8 @@ export type ManagedPicoCliIO = {
   env: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
   homeDir: string;
+  /** Working directory used by the child (configuration selection is cwd-sensitive). */
+  cwd?: string;
   /** Opaque identity of the executable that this IO will run for the `npm` command. */
   npmCommandIdentity: string;
   now: () => number;
@@ -1756,26 +1759,123 @@ function packageJsonPath(versionRoot: string): string {
   return path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json");
 }
 
+export type CliSelectionContext = {
+  env: NodeJS.ProcessEnv;
+  platform: NodeJS.Platform;
+  homeDir: string;
+  cwd?: string;
+};
+
+/** The bounded inputs that can select a utility independently of the pico-cli package. Values
+ * are digested, not copied into reports: arbitrary inherited variables and secrets are excluded.
+ * Configuration is read, never repaired. Missing files are identities too. */
+export function cliSelectionIdentity(context: CliSelectionContext = {
+  env: process.env, platform: process.platform, homeDir: os.homedir(), cwd: process.cwd(),
+}): { schemaVersion: 1; sha256: string } | null {
+  const { env, platform } = context;
+  const homeDir = (platform === "win32" ? env.USERPROFILE : env.HOME) || context.homeDir;
+  const cwd = path.resolve(context.cwd ?? process.cwd());
+  const get = (name: string): string | null => {
+    const key = platform === "win32" ? Object.keys(env).find(item => item.toUpperCase() === name) : name;
+    return key && env[key] !== undefined ? env[key]! : null;
+  };
+  const keys = ["PICO_HOME", "PICO_CLI_PROFILER_ENTRY_PATH", "SPATIAL_AGENTIC_TOOLS_PROFILER_CLI_PREFIX",
+    "PATH", "PATHEXT", "ANDROID_HOME", "ANDROID_SDK_ROOT", "ADB_PATH", "PROFILER_ADB", "PICO_ADB",
+    "PICO_DEVICE", "ADB_SERIAL", "CLAUDE_PLUGIN_ROOT", "LOCALAPPDATA"];
+  const inputs: Array<Record<string, unknown>> = [];
+  let remainingBytes = 128 * 1024 * 1024;
+  const fingerprint = (candidate: string, directory = false): void => {
+    const file = path.resolve(cwd, candidate);
+    let stat: fs.Stats;
+    try { stat = fs.lstatSync(file); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      inputs.push({ path: file, missing: true }); return;
+    }
+    const realPath = fs.realpathSync(file);
+    const real = fs.statSync(realPath);
+    if (directory) {
+      if (!real.isDirectory()) throw new Error("selected utility root is not a directory");
+      // This reuses the bounded content traversal used for package publication. The two excluded
+      // root receipt names are bound separately so no selected-utility file is omitted.
+      const tree = managedContentIdentityForFixture(realPath, { maxEntries: 10_000, maxDepth: 32,
+        maxFileBytes: 64 * 1024 * 1024, maxTotalBytes: remainingBytes }, Date.now() + 5_000);
+      remainingBytes -= tree.totalBytes;
+      inputs.push({ path: file, realPath, tree: tree.digest });
+      fingerprint(path.join(realPath, "install.json")); fingerprint(path.join(realPath, "publication.json"));
+      return;
+    }
+    if (!real.isFile() || real.size > remainingBytes) throw new Error("selected utility identity exceeds its byte bound");
+    const bytes = fs.readFileSync(realPath);
+    const after = fs.statSync(realPath);
+    if (!sameObservedStat(real, after) || bytes.length !== real.size) throw new Error("selection changed while reading");
+    remainingBytes -= bytes.length;
+    inputs.push({ path: file, realPath, sha256: sha256Hex(bytes), mode: stat.mode & 0o7777 });
+  };
+  try {
+    fingerprint(path.join(homeDir, ".pico", "config.json"));
+    let directory = cwd;
+    for (let depth = 0; ; depth += 1) {
+      if (depth > 128) return null;
+      const file = path.join(directory, ".pico-env.json");
+      if (fs.existsSync(file)) { fingerprint(file); break; }
+      const parent = path.dirname(directory);
+      if (parent === directory) { fingerprint(path.join(homeDir, ".pico", ".pico-env.json")); break; }
+      directory = parent;
+    }
+    const override = get("PICO_CLI_PROFILER_ENTRY_PATH")?.trim();
+    if (override) fingerprint(override);
+    // 0.4.4's prefix and 0.5.0's PICO_HOME/profiler-cli selection are measured source facts.
+    // 0.6.1 bundles its profiler, already covered by executionTreeSha256. Watching the older
+    // roots conservatively also invalidates a report if the host changes a utility selection.
+    const prefix = get("SPATIAL_AGENTIC_TOOLS_PROFILER_CLI_PREFIX") || path.join(homeDir, ".local");
+    fingerprint(platform === "win32" ? path.join(prefix, "profiler-cli") : path.join(prefix, "lib", "profiler-cli"), true);
+    const picoHome = get("PICO_HOME")?.trim();
+    if (picoHome && path.isAbsolute(picoHome)) fingerprint(path.join(picoHome, "profiler-cli"), true);
+    // The knowledge backend selects ~/.local/bin/graphify first, then PATH. Bind the selected
+    // executable's actual bytes too; unchanged PATH strings must not hide an overwritten utility.
+    const graphify = platform === "win32" ? "graphify.exe" : "graphify";
+    const utilityCandidates = [path.join(homeDir, ".local", "bin", graphify),
+      ...(get("PATH") ?? "").split(platform === "win32" ? ";" : path.delimiter).filter(Boolean).map(item => path.join(item, graphify))];
+    for (const candidate of utilityCandidates) {
+      if (!fs.existsSync(candidate)) continue;
+      fingerprint(candidate); break;
+    }
+    // Different working directories with the same selected configuration and utilities are
+    // equivalent. Relative utility overrides are already resolved against cwd by fingerprint.
+    return { schemaVersion: 1, sha256: sha256Hex(JSON.stringify({ platform, homeDir,
+      environment: keys.map(key => [key, get(key)]), inputs })) };
+  } catch {
+    // Unreadable, raced, or over-budget selection is not silently represented as "missing".
+    return null;
+  }
+}
+
+function withCliSelectionIdentity(identity: CliCapabilityIdentity, context?: CliSelectionContext): CliCapabilityIdentity | null {
+  const selection = cliSelectionIdentity(context);
+  return selection ? { ...identity, selectionSchemaVersion: 1, selectionSha256: selection.sha256 } : null;
+}
+
 /** Managed identity: the canonical shim path, the package manifest bytes and the content-bound
  * execution tree digest recorded in install.json and revalidated before every spawn. */
-function managedCliCapabilityIdentityForBinding(binding: ManagedPicoCliExecutionBinding): CliCapabilityIdentity | null {
+function managedCliCapabilityIdentityForBinding(binding: ManagedPicoCliExecutionBinding, context?: CliSelectionContext): CliCapabilityIdentity | null {
   const packageJson = readBoundedRegularFile(packageJsonPath(binding.versionRoot));
   if (!packageJson) return null;
-  return {
+  return withCliSelectionIdentity({
     version: binding.version,
     executablePath: binding.cliPath,
     packageJsonSha256: sha256Hex(packageJson),
     executionTreeSha256: binding.contentIdentity.digest,
-  };
+    executionScope: "package-tree",
+  }, context);
 }
 
 /** Identity of the validated managed package behind an opaque execution handle. */
-export function managedPicoCliCapabilityIdentity(handle: ManagedPicoCliExecutionHandle): CliCapabilityIdentity | null {
+export function managedPicoCliCapabilityIdentity(handle: ManagedPicoCliExecutionHandle, context?: CliSelectionContext): CliCapabilityIdentity | null {
   const binding = managedExecutionBindings.get(handle);
-  return binding ? managedCliCapabilityIdentityForBinding(binding) : null;
+  return binding ? managedCliCapabilityIdentityForBinding(binding, context) : null;
 }
 
-function adjacentPackageJson(realPath: string): Buffer | null {
+function adjacentPackageJson(realPath: string): { path: string; bytes: Buffer } | null {
   const candidates: string[] = [];
   let directory = path.dirname(realPath);
   candidates.push(path.join(directory, "node_modules", "@picoxr", "pico-cli", "package.json"));
@@ -1790,7 +1890,7 @@ function adjacentPackageJson(realPath: string): Buffer | null {
     if (!bytes) continue;
     try {
       const parsed: unknown = JSON.parse(bytes.toString("utf8"));
-      if (parsed && typeof parsed === "object" && (parsed as { name?: unknown }).name === PICO_CLI_PACKAGE) return bytes;
+      if (parsed && typeof parsed === "object" && (parsed as { name?: unknown }).name === PICO_CLI_PACKAGE) return { path: candidate, bytes };
     } catch {
       // Not the package manifest; keep walking.
     }
@@ -1799,21 +1899,40 @@ function adjacentPackageJson(realPath: string): Buffer | null {
 }
 
 /**
- * External identity: the executable's realpath, size and content digest, plus the adjacent
- * @picoxr/pico-cli package.json when one can be located (sha256 of the empty string otherwise).
- * External executables are intentionally unguarded, so consumers recompute this before dispatch.
+ * External identity includes the containing package tree (and containing node_modules when
+ * present), not just index.js: a helper or bundled profiler change must invalidate its help.
+ * Oversized/unreadable/dependency symlink escape trees refuse evidence reuse. A standalone
+ * executable with no discoverable package retains the explicitly narrower executable identity.
  */
-export function externalCliCapabilityIdentity(cliPath: string, version: string): CliCapabilityIdentity | null {
+export function externalCliCapabilityIdentity(cliPath: string, version: string, context?: CliSelectionContext): CliCapabilityIdentity | null {
   try {
     const realPath = fs.realpathSync(cliPath);
     const file = executableFileIdentity(realPath, Number.POSITIVE_INFINITY);
     const packageJson = adjacentPackageJson(realPath);
-    return {
+    let packageTree: { root: string; digest: string; excludedReceipts: Array<string | null> } | null = null;
+    if (packageJson) {
+      const packageRoot = path.dirname(packageJson.path);
+      let root = packageRoot;
+      for (let ancestor = packageRoot; path.dirname(ancestor) !== ancestor; ancestor = path.dirname(ancestor)) {
+        if (path.basename(ancestor) === "node_modules") { root = ancestor; break; }
+      }
+      const content = managedContentIdentityForFixture(root, { maxEntries: 20_000, maxDepth: 64,
+        maxFileBytes: 64 * 1024 * 1024, maxTotalBytes: 256 * 1024 * 1024 }, Date.now() + 5_000);
+      packageTree = { root, digest: content.digest, excludedReceipts: ["install.json", "publication.json"].map(name => {
+        const candidate = path.join(root, name);
+        if (!fs.existsSync(candidate)) return null;
+        const bytes = readBoundedRegularFile(candidate);
+        if (!bytes) throw new Error("external package receipt exceeds its bounds");
+        return sha256Hex(bytes);
+      }) };
+    }
+    return withCliSelectionIdentity({
       version,
       executablePath: realPath,
-      packageJsonSha256: sha256Hex(packageJson ?? Buffer.alloc(0)),
-      executionTreeSha256: sha256Hex(Buffer.from(JSON.stringify({ realPath, size: file.size, contentSha256: file.contentSha256 }), "utf8")),
-    };
+      packageJsonSha256: sha256Hex(packageJson?.bytes ?? Buffer.alloc(0)),
+      executionTreeSha256: sha256Hex(Buffer.from(JSON.stringify({ realPath, size: file.size, contentSha256: file.contentSha256, packageTree }), "utf8")),
+      executionScope: packageTree ? "package-tree" : "standalone-entry",
+    }, context);
   } catch {
     return null;
   }
@@ -1966,7 +2085,8 @@ async function discoverCliCapabilities(
       const after = target.verifyIdentity();
       if (!after || !sameCliCapabilityIdentity(after, target.identity)) return null;
     }
-    const set: CliCapabilitySet = { schemaVersion: 1, identity: { ...target.identity }, checkedAt, operations };
+    const set: CliCapabilitySet = { schemaVersion: 2, identity: { ...target.identity }, checkedAt, operations,
+      evidenceScope: "help-only", runtimeTested: false, visuallyReviewed: false };
     const coverage = capabilityCoverage(set);
     const reportPath = path.join(runDirectory, CAPABILITY_REPORT_FILE);
     writeFsyncedJson(reportPath, { ...set, coverage, limits });
@@ -1995,10 +2115,10 @@ async function attachCliCapabilities(
   const binding = handle ? managedExecutionBindings.get(handle) : undefined;
   if (managed && !binding) return;
   const deriveIdentity = (): CliCapabilityIdentity | null => (binding
-    ? managedCliCapabilityIdentityForBinding(binding)
-    : externalCliCapabilityIdentity(result.path, result.version));
+    ? managedCliCapabilityIdentityForBinding(binding, io)
+    : externalCliCapabilityIdentity(result.path, result.version, io));
   const identity = deriveIdentity();
-  if (!identity) return;
+  if (!identity) { delete result.capabilities; return; }
   const refresh = mode === "discover" && options.forceRefresh === true;
   if (!refresh) {
     if (result.capabilities && sameCliCapabilityIdentity(result.capabilities.identity, identity)) return;
@@ -2008,12 +2128,13 @@ async function attachCliCapabilities(
       return;
     }
   }
+  delete result.capabilities;
   if (mode !== "discover") return;
   const report = await discoverCliCapabilities({
     cliPath: result.path,
     identity,
     ...(handle ? { guard: (deadlineMs: number) => validateManagedPicoCliExecution(handle, deadlineMs) } : {}),
-    ...(managed ? {} : { verifyIdentity: deriveIdentity }),
+    verifyIdentity: deriveIdentity,
   }, managedRoot, options, io);
   if (report) result.capabilities = report;
 }

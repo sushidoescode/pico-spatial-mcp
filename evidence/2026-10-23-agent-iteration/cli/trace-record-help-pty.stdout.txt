@@ -1,0 +1,17 @@
+[1mDescription[22m:
+Record performance trace on device
+
+[1mUsage[22m:
+  $ [1mpico-cli perf trace record[22m [options]
+
+[1mOptions[22m:
+  [1m-p, --pbtx <name|path>[22m    PBTX preset name (default) or path to custom .pbtx file (default: "default")
+  [1m--adb <path>[22m              Path to adb executable (optional, overrides ADB_PATH/PROFILER_ADB/PATH)
+  [1m-d, --device <id>[22m         Target device ID
+  [1m-a, --package <package>[22m   Target application package name
+  [1m--app <package>[22m           Deprecated alias for --package
+  [1m-t, --duration <seconds>[22m  Recording duration in seconds (default: "60")
+  [1m--detach[22m                  Start daemon-managed detached recording and return immediately
+  [1m--port <port>[22m             Daemon port for --detach mode (default: "9500")
+  [1m-o, --output <path>[22m       Output trace file path (default: "./trace.perfetto-trace")
+  [1m-h, --help[22m                display help for command

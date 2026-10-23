@@ -294,7 +294,7 @@ expectState("exit-zero text without a usage section", classify("knowledge-server
 // classified three supported routes as malformed-help. Styling must not hide a usage section.
 const ansiKnowledge = { ...emptyFixture, stdout: Buffer.from("\u001b[1mDescription\u001b[22m:\nStart the PICO development knowledge MCP server\n\n\u001b[1mUsage\u001b[22m:\n  $ \u001b[1mpico-cli knowledge server\u001b[22m\n\n\u001b[1mOptions\u001b[22m:\n  \u001b[1m-h, --help\u001b[22m  Display this message\n") };
 expectState("0.5.0 ANSI-styled knowledge server help (FORCE_COLOR)", classify("knowledge-server", ["knowledge", "server"], ansiKnowledge), "supported", /^help-names-operation:/);
-const ansiWatch = { ...emptyFixture, stdout: Buffer.from("\u001b[1mUsage\u001b[22m:\n  $ \u001b[1mpico-cli app watch-crash <package>\u001b[22m\n\n\u001b[1mOptions\u001b[22m:\n  \u001b[1m-d, --device <device>\u001b[22m  Target device id\n") };
+const ansiWatch = { ...emptyFixture, stdout: Buffer.from("\u001b[1mUsage\u001b[22m:\n  $ \u001b[1mpico-cli app watch-crash <package>\u001b[22m\n\n\u001b[1mOptions\u001b[22m:\n  \u001b[1m-d, --device <device>\u001b[22m  Target device id\n  -h, --help  Display this message\n") };
 expectState("0.5.0 ANSI-styled app watch-crash help (FORCE_COLOR)", classify("watch-crash", ["app", "watch-crash"], ansiWatch), "supported", /^help-names-operation:/);
 const ansiParent = { ...emptyFixture, stdout: Buffer.from("\u001b[1mUsage\u001b[22m:\n  $ \u001b[1mpico-cli knowledge <command>\u001b[22m\n") };
 expectState("ANSI-styled parent help is still generic-parent-help", classify("knowledge-server", ["knowledge", "server"], ansiParent), "unavailable", /^generic-parent-help:/);
@@ -323,8 +323,8 @@ ksRecord.state === "supported" && ksRecord.evidence.length === 1 && ksRecord.evi
   : fail(`knowledge-server record wrong: ${JSON.stringify(ksRecord)}`);
 
 // Aggregate coverage.
-const identity = { version: "0.5.0", executablePath: "/x/pico-cli", packageJsonSha256: sha256("pkg"), executionTreeSha256: sha256("tree") };
-const terminalSet = { schemaVersion: 1, identity, checkedAt: "2026-09-15T00:00:00.000Z", operations: [ksRecord, noRoute] };
+const identity = { version: "0.5.0", executablePath: "/x/pico-cli", packageJsonSha256: sha256("pkg"), executionTreeSha256: sha256("tree"), selectionSchemaVersion: 1, selectionSha256: sha256("fixture-selection") };
+const terminalSet = { schemaVersion: 2, identity, checkedAt: "2026-09-15T00:00:00.000Z", operations: [ksRecord, noRoute] };
 capabilityCoverage(terminalSet) === "complete" && capabilityCoverage({ operations: [ksRecord, unknownCapability("trace-load", "timed-out: fixture")] }) === "partial"
   ? ok("coverage is complete only when every operation is terminal")
   : fail("coverage aggregation wrong");
@@ -355,9 +355,9 @@ const tamperedSet = { ...terminalSet, operations: [{ ...ksRecord, evidence: [obs
 expectState("stored supported state contradicted by its bytes", resolveOperationCapability({ set: tamperedSet, target: identity, operation: "knowledge-server", readEvidence: readReal }), "unknown", /^report-inconsistent:/);
 expectState("operation absent from the set", resolveOperationCapability({ set: terminalSet, target: identity, operation: "trace-load", readEvidence: readReal }), "unknown", /^no-discovery:/);
 parseCliCapabilitySet(JSON.parse(JSON.stringify(terminalSet))) !== null
-  && parseCliCapabilitySet({ ...terminalSet, schemaVersion: 2 }) === null
+  && parseCliCapabilitySet({ ...terminalSet, schemaVersion: 3 }) === null
   && parseCliCapabilitySet({ ...terminalSet, operations: [{ ...ksRecord, state: "maybe" }] }) === null
-  ? ok("parseCliCapabilitySet accepts schema 1 and rejects unknown schema/state values")
+  ? ok("parseCliCapabilitySet accepts schema 2 and rejects unknown schema/state values")
   : fail("parseCliCapabilitySet validation wrong");
 
 // --- Fix round 1: an exit-0 help that fails the phrase rule is terminal only when the retained
@@ -373,7 +373,7 @@ expectState("perf parent help (082) for trace-query via the route flag", classif
 // Synthetic provisioned-profiler help. Source-derived shape only (the 0.5.0 CLI re-renders
 // profiler help under `pico-cli perf` per PERF_ROUTER050; option names from TRACE_RECORD_ARGS);
 // never observed on this host, which is exactly why the no-phrase branch must not be terminal.
-const provisionedTrace = { ...emptyFixture, stdout: Buffer.from("Description:\nRecord a Perfetto trace from the target device\n\nUsage:\n  $ pico-cli perf trace record [options]\n\nOptions:\n  -a, --package <package>   Target application package name\n  -t, --duration <seconds>  Recording duration in seconds (default: 60)\n  -o, --output <path>       Output trace file path\n") };
+const provisionedTrace = { ...emptyFixture, stdout: Buffer.from("Description:\nRecord a Perfetto trace from the target device\n\nUsage:\n  $ pico-cli perf trace record [options]\n\nOptions:\n  -a, --package <package>   Target application package name\n  -t, --duration <seconds>  Recording duration in seconds (default: 60)\n  -o, --output <path>       Output trace file path\n  -h, --help  Display this message\n") };
 expectState("synthetic provisioned profiler help naming the route", classify("trace-record", ["perf", "trace", "record"], provisionedTrace), "supported", /^help-names-operation:/);
 const unrenderedTrace = { ...emptyFixture, stdout: Buffer.from("Usage: pspp-profiler-cli trace record [options]\n\nOptions:\n  -t, --duration <seconds>  Recording duration in seconds\n") };
 expectState("synthetic profiler help without the phrase stays unknown for an unproven route", classify("trace-record", ["perf", "trace", "record"], unrenderedTrace, {}, { exitZeroHelpObserved: false }), "unknown", /^generic-parent-help:.*unknown/);

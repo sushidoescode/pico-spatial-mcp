@@ -1,0 +1,42 @@
+(node:37715) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:37775) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: managed knowledge transport spawns only the capability-proven route for each CLI identity
+ok 1 - managed knowledge transport spawns only the capability-proven route for each CLI identity
+  ---
+  duration_ms: 5198.79825
+  ...
+# Subtest: managed knowledge checks the actual child environment and selected project config before spawn
+not ok 2 - managed knowledge checks the actual child environment and selected project config before spawn
+  ---
+  duration_ms: 1043.249041
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/knowledge-lifecycle.mjs:1470:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    {"status":"unavailable","action":"graph_stats","error":"pre-spawn managed pico-cli validation failed: pico-cli selected utility/environment identity changed: selectionSha256 changed (recorded 9511dbac4fed…65b4a4a1, current 1e78efaf6fa9…377dc389)","failureClass":"runtime","picoCli":{"source":"managed","policy":"managed-latest","path":"/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico managed runtime 19LmQG/home/.pico-mcp/cli/versions/0.5.0/node_modules/.bin/pico-cli","version":"0.5.0","latestVersion":"0.5.0","checkedAt":"2026-10-23T21:10:13.657Z","freshness":"latest","action":"installed"},"lifecycleWarning":"spatial-knowledge generation 1 retirement was not fully observed: generation root birth identity was not captured; the exact generation root PID was unavailable after requesting EOF; the generation is quarantined and replacement is blocked"}
+    [32mactual[39m [31mexpected[39m
+    
+    [39m'[39m[32mu[39m[32mn[39m[32ma[39m[32mv[39m[32ma[39m[32mi[39m[32ml[39m[32ma[39m[32mb[39m[32ml[39m[32me[39m[31mo[39m[31mk[39m[39m'[39m
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'ok'
+  actual: 'unavailable'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/knowledge-lifecycle.mjs:1490:16)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 1
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6311.108458

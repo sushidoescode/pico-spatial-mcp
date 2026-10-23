@@ -1,0 +1,13 @@
+[1mDescription[22m:
+Run SQL query via trace session (sessionId required)
+
+[1mUsage[22m:
+  $ [1mpico-cli perf trace query[22m [options]
+
+[1mOptions[22m:
+  [1m--session <id>[22m     Target session id
+  [1m--sql <sql>[22m        SQL to execute
+  [1m--sql-file <path>[22m  Path to SQL file to execute
+  [1m--execute[22m          Use /execute instead of /query
+  [1m-p, --port <port>[22m  Daemon port (default: "9500")
+  [1m-h, --help[22m         display help for command

@@ -1,0 +1,8 @@
+[1mDescription[22m:
+Start the PICO development knowledge MCP server
+
+[1mUsage[22m:
+  $ [1mpico-cli knowledge server[22m
+
+[1mOptions[22m:
+  [1m-h, --help[22m  Display this message

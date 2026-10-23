@@ -1,0 +1,23 @@
+[1mDescription[22m:
+Resume a suspended code Workflow with an Agent Task response
+
+[1mUsage[22m:
+  $ [1mpico-cli workflow resume[22m <run-id> --task <task-id> --revision <revision> --input <path>
+    [--agent-tool <host> --agent-model <model>] [--format plain|json]
+
+[1mOptions[22m:
+  [1m--task <task-id>[22m       [required] Pending Agent Task ID
+  [1m--revision <revision>[22m  [required] Observed Workflow Run revision
+  [1m--input <path>[22m         [required] Workflow Resume input JSON file
+  [1m--agent-tool <host>[22m    Override the persisted Host for future managed Agent tasks; requires
+                         --agent-model
+  [1m--agent-model <model>[22m  Override the persisted model for future managed Agent tasks; requires
+                         --agent-tool
+  [1m--format <format>[22m      Output format (plain | json) (default: plain)
+  [1m-h, --help[22m             Display this message
+
+[1mExamples[22m:
+  $ pico-cli workflow resume run-123e4567-e89b-42d3-a456-426614174000 --task task-review-001
+    --revision 3 --input resume-input.json
+  $ pico-cli workflow resume run-123e4567-e89b-42d3-a456-426614174000 --task task-review-001
+    --revision 3 --input resume-input.json --format json

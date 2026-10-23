@@ -1,0 +1,17 @@
+[1mDescription[22m:
+Run foreground live performance collection (Ctrl+C to stop)
+
+[1mUsage[22m:
+  $ [1mpico-cli perf live run[22m [options]
+
+[1mOptions[22m:
+  [1m--package <package_name>[22m  Target app package name (e.g. com.picoxr.example), or "none" to skip app metrics
+  [1m--app <package_name>[22m      Deprecated alias for --package
+  [1m--adb <path>[22m              Path to adb executable (optional, overrides ADB_PATH/PROFILER_ADB/PATH)
+  [1m--device <device_id>[22m      Device ID to connect (if multiple connected)
+  [1m-o, --output <path>[22m       Explicit report file path (requires --save or --report-mode)
+  [1m-t, --duration <seconds>[22m  Run for a fixed duration, then stop automatically
+  [1m--debug-app-fps[22m           Print APP FPS parser/aggregator diagnostics
+  [1m--report-mode[22m             Print PASS/FAIL verdict per sample instead of metric columns (implies --save)
+  [1m--save[22m                    Save the JSON report to the default path (reports/live-report-<ISO>.json)
+  [1m-h, --help[22m                display help for command

@@ -1,0 +1,13 @@
+[1mDescription[22m:
+Read the committed terminal WorkflowResult v1
+
+[1mUsage[22m:
+  $ [1mpico-cli workflow result read[22m <run-id> [--format plain|json]
+
+[1mOptions[22m:
+  [1m--format <format>[22m  Output format (plain | json) (default: plain)
+  [1m-h, --help[22m         Display this message
+
+[1mExamples[22m:
+  $ pico-cli workflow result read run-123e4567-e89b-42d3-a456-426614174000
+  $ pico-cli workflow result read run-123e4567-e89b-42d3-a456-426614174000 --format json

@@ -39,9 +39,18 @@ export type CliCapabilityIdentity = {
   executablePath: string;
   packageJsonSha256: string;
   executionTreeSha256: string;
+  /** standalone-entry explicitly does not claim the closure of an arbitrary external script. */
+  executionScope?: "package-tree" | "standalone-entry";
+  /** Absent only on legacy reports, which cannot authorize dispatch. */
+  selectionSchemaVersion?: 1;
+  selectionSha256?: string;
 };
 export type CliCapabilitySet = {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
+  /** Help establishes a declaration only; runtime and rendered evidence are separate records. */
+  evidenceScope?: "help-only";
+  runtimeTested?: false;
+  visuallyReviewed?: false;
   identity: CliCapabilityIdentity;
   checkedAt: string;
   operations: OperationCapability[];
@@ -97,7 +106,7 @@ export type CliRouteDurationFlag = { flag: string; provenance: string };
  */
 export type CliRouteOptions = { names: Readonly<Record<string, string>>; provenance: string };
 
-export type CliVersionLine = "0.4.x" | "0.5.x";
+export type CliVersionLine = "0.4.x" | "0.5.x" | "0.6.1";
 
 /** The 0.4.x utilities gate. Measured 2026-08-12 on 0.4.2, retained 2026-09-15 as invocation 012
  * (0.4.4, exit 1) and invocations 137-141 (0.5.0, exit 3). Source: PERF_ENV044 / PERF_ENV050. */
@@ -235,9 +244,23 @@ const ROUTES_0_5: RouteTable = {
   "trace-query": { argv: ["perf", "trace", "query"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate", exitZeroHelpObserved: false, options: TRACE_QUERY_OPTIONS },
 };
 
+// Exact 0.6.1 is retained separately. CLI version selection chooses candidate argv only;
+// current bounded help still decides support. Four profiler pipe helps are incomplete on the
+// observed host, although the separate PTY observations show their declarations. There is no
+// automatic PTY fallback and no inference that a later version retains these options.
+const ROUTES_0_6_1 = Object.fromEntries(CLI_OPERATIONS.map(operation => {
+  const older = ROUTES_0_5[operation];
+  const provenance = `0.6.1 test/fixtures/picocli/help/0.6.1/index.json; exact package and separate pipe/PTY observations; profiler 0.2.1 is bundled in the CLI`;
+  return [operation, { ...older, provenance, exitZeroHelpObserved: true,
+    ...(older.nativeDurationFlag ? { nativeDurationFlag: { ...older.nativeDurationFlag, provenance: `${provenance}; watch-crash-help-pipe.stdout.txt` } } : {}),
+    ...(older.options ? { options: { names: { ...older.options.names }, provenance: `${provenance}; profiler command options and global --envelope declaration` } } : {}),
+  }];
+})) as RouteTable;
+
 /** 0.4.x and older lines use the 0.4.4 table; 0.5.x and every newer line is probed with the newest
  * retained table. The table only supplies candidate argv: the help evidence decides the state. */
 export function cliVersionLine(version: string): CliVersionLine {
+  if (/^v?0\.6\.1$/.test(version.trim())) return "0.6.1";
   const match = /^v?(\d+)\.(\d+)(?:\.|$)/.exec(version.trim());
   if (match && Number(match[1]) === 0 && Number(match[2]) <= 4) return "0.4.x";
   return "0.5.x";
@@ -245,7 +268,7 @@ export function cliVersionLine(version: string): CliVersionLine {
 
 export function cliOperationRoutes(version: string): CliOperationRoute[] {
   const line = cliVersionLine(version);
-  const table = line === "0.4.x" ? ROUTES_0_4 : ROUTES_0_5;
+  const table = line === "0.4.x" ? ROUTES_0_4 : line === "0.6.1" ? ROUTES_0_6_1 : ROUTES_0_5;
   return CLI_OPERATIONS.map((operation) => ({
     operation,
     argvPrefix: table[operation].argv ? [...table[operation].argv] : null,
@@ -269,7 +292,7 @@ function cloneRouteOptions(options: CliRouteOptions | null): CliRouteOptions | n
  * must still hold a `supported` capability for the same target before dispatching.
  */
 export function cliOperationOptions(version: string, operation: CliOperation): CliRouteOptions | null {
-  if (!/^v?\d+\.\d+(?:\.|$)/.test(version.trim())) return null;
+  if (!/^v?0\.[0-5]\.\d+$/.test(version.trim()) && !/^v?0\.6\.1$/.test(version.trim())) return null;
   return cliOperationRoutes(version).find((route) => route.operation === operation)?.options ?? null;
 }
 
@@ -282,7 +305,7 @@ export function cliOperationNativeDurationFlag(version: string, operation: CliOp
   // A duration flag is a POSITIVE claim about the installed CLI. cliOperationRoutes deliberately
   // probes an unrecognizable line with the newest table (candidate argv the evidence then judges),
   // but an unparseable version must never inherit that table's flag: nothing would judge it.
-  if (!/^v?\d+\.\d+(?:\.|$)/.test(version.trim())) return null;
+  if (!/^v?0\.[0-5]\.\d+$/.test(version.trim()) && !/^v?0\.6\.1$/.test(version.trim())) return null;
   return cliOperationRoutes(version).find((route) => route.operation === operation)?.nativeDurationFlag ?? null;
 }
 
@@ -355,7 +378,7 @@ function usageRouteMatch(argvPrefix: string[], text: string): "route" | "parent"
  * without a usage section is malformed (`unknown`).
  */
 export function classifyHelpOutput(
-  operation: CliOperation,
+  operation: string,
   argvPrefix: string[],
   observation: Pick<HelpObservation, "exitCode" | "timedOut" | "outputTruncated">,
   stdout: string,
@@ -400,6 +423,10 @@ export function classifyHelpOutput(
   if (!USAGE_SECTION_PATTERN.test(text)) {
     return { state: "unknown", reason: `malformed-help: ${probe} exited 0 but printed no usage section (${firstLine(text).slice(0, 80)})` };
   }
+  const helpStream = /\busage\b/i.test(stripAnsi(stdout)) ? stripAnsi(stdout) : stripAnsi(stderr);
+  if (!/\r?\n$/.test(helpStream)) {
+    return { state: "unknown", reason: `incomplete-help: ${probe} exited 0 but its help stream ends mid-line; a stderr warning cannot complete stdout` };
+  }
   const routeMatch = usageRouteMatch(argvPrefix, text);
   if (routeMatch !== "route") {
     const usage = text.split(/\r?\n/).map((line) => line.trim()).find((line) => /pico-cli|usage/i.test(line) && !/^usage:?$/i.test(line)) ?? firstLine(text);
@@ -411,6 +438,14 @@ export function classifyHelpOutput(
       return { state: "unavailable", reason: `generic-parent-help: ${detail}; the usage rule is validated by retained exit-0 help for this route` };
     }
     return { state: "unknown", reason: `generic-parent-help: ${detail}; no retained exit-0 help validates this route's usage shape, so it stays unknown` };
+  }
+  // 0.6.1 on macOS can exit 0 after writing just 512 pipe bytes. The runner's capture cap was
+  // not hit: this is incomplete producer output. Judge each stream separately so a newline in
+  // a stderr warning cannot make an interrupted stdout line look complete. No PTY fallback is
+  // implied: terminal output is a different observed transport, not a portable repair.
+  if (!/^\s*Options:\s*$/m.test(helpStream)
+    || !/^\s*(?:-h,?\s+)?--help\b[^\r\n]+/m.test(helpStream)) {
+    return { state: "unknown", reason: `incomplete-help: ${probe} exited 0 but its help stream lacks a complete options/help declaration or final newline; usage alone cannot establish support` };
   }
   return { state: "supported", reason: `help-names-operation: ${probe} exited 0 and a pico-cli usage line names \`${phrase}\`` };
 }
@@ -470,7 +505,7 @@ export function capabilityCoverage(set: Pick<CliCapabilitySet, "operations">): "
   return set.operations.every((operation) => operation.state !== "unknown") ? "complete" : "partial";
 }
 
-const IDENTITY_FIELDS: readonly (keyof CliCapabilityIdentity)[] = ["version", "executablePath", "packageJsonSha256", "executionTreeSha256"];
+const IDENTITY_FIELDS: readonly (keyof CliCapabilityIdentity)[] = ["version", "executablePath", "packageJsonSha256", "executionTreeSha256", "executionScope", "selectionSchemaVersion", "selectionSha256"];
 
 export function sameCliCapabilityIdentity(left: CliCapabilityIdentity, right: CliCapabilityIdentity): boolean {
   return IDENTITY_FIELDS.every((field) => left[field] === right[field]);
@@ -483,8 +518,9 @@ export function describeIdentityDrift(recorded: CliCapabilityIdentity, current: 
   return drifted.map((field) => `${field} changed (recorded ${abbreviate(recorded[field])}, current ${abbreviate(current[field])})`).join("; ");
 }
 
-function abbreviate(value: string): string {
-  return value.length > 24 ? `${value.slice(0, 12)}…${value.slice(-8)}` : value;
+function abbreviate(value: string | number | undefined): string {
+  const text = value === undefined ? "missing" : String(value);
+  return text.length > 24 ? `${text.slice(0, 12)}…${text.slice(-8)}` : text;
 }
 
 /** Content-addressed key for the whole identity (used for the immutable report directory). */
@@ -576,6 +612,9 @@ export function resolveOperationCapability(args: {
   if (!set) {
     return unknownCapability(operation, "no-discovery: no bounded discovery evidence is bound to this execution target; call ensure_pico_cli for fresh bounded discovery");
   }
+  if (set.schemaVersion !== 2 || set.identity.selectionSchemaVersion !== 1 || !set.identity.selectionSha256) {
+    return unknownCapability(operation, "selection-identity-required: schema-1 capability evidence is retained for inspection only; fresh bounded discovery must bind the selected environment and utilities before dispatch");
+  }
   const drift = describeIdentityDrift(set.identity, target);
   if (drift) {
     return unknownCapability(operation, `stale-identity: the recorded capability identity does not match the resolved execution target (${drift}); request fresh bounded discovery (ensure_pico_cli)`);
@@ -594,7 +633,7 @@ export function resolveOperationCapability(args: {
  * from a consumer that is already performing a real CLI-backed operation; a classified `unknown`
  * (a timed-out probe, malformed help, an exhausted probe budget) *is* the evidence, and re-probing
  * it on every call would turn one bounded discovery into an unbounded retry loop. */
-const FRESH_DISCOVERY_REASON_PATTERN = /^(?:no-discovery|stale-identity|evidence-missing|evidence-mismatch|report-inconsistent):/;
+const FRESH_DISCOVERY_REASON_PATTERN = /^(?:no-discovery|stale-identity|selection-identity-required|evidence-missing|evidence-mismatch|report-inconsistent):/;
 
 export function capabilityNeedsFreshDiscovery(reason: string): boolean {
   return FRESH_DISCOVERY_REASON_PATTERN.test(reason);
@@ -673,21 +712,27 @@ export function parseCliCapabilityIdentity(value: unknown): CliCapabilityIdentit
   if (typeof record.executablePath !== "string" || record.executablePath.length === 0) return null;
   if (typeof record.packageJsonSha256 !== "string" || !SHA256_HEX.test(record.packageJsonSha256)) return null;
   if (typeof record.executionTreeSha256 !== "string" || !SHA256_HEX.test(record.executionTreeSha256)) return null;
+  if (record.executionScope !== undefined && record.executionScope !== "package-tree" && record.executionScope !== "standalone-entry") return null;
+  if ((record.selectionSchemaVersion !== undefined || record.selectionSha256 !== undefined)
+    && (record.selectionSchemaVersion !== 1 || typeof record.selectionSha256 !== "string" || !SHA256_HEX.test(record.selectionSha256))) return null;
   return {
     version: record.version,
     executablePath: record.executablePath,
     packageJsonSha256: record.packageJsonSha256,
     executionTreeSha256: record.executionTreeSha256,
+    ...(record.executionScope ? { executionScope: record.executionScope as "package-tree" | "standalone-entry" } : {}),
+    ...(record.selectionSchemaVersion === 1 ? { selectionSchemaVersion: 1 as const, selectionSha256: record.selectionSha256 as string } : {}),
   };
 }
 
-/** Versioned reader for schema 1. Returns a fresh, structurally validated copy or null. */
+/** Schema 1 is readable but inspection-only. Schema 2 requires utility/environment identity. */
 export function parseCliCapabilitySet(value: unknown): CliCapabilitySet | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  if (record.schemaVersion !== 1) return null;
+  if (record.schemaVersion !== 1 && record.schemaVersion !== 2) return null;
   const identity = parseCliCapabilityIdentity(record.identity);
   if (!identity) return null;
+  if (record.schemaVersion === 2 && identity.selectionSchemaVersion !== 1) return null;
   const checkedAtMs = typeof record.checkedAt === "string" ? Date.parse(record.checkedAt) : Number.NaN;
   if (!Number.isFinite(checkedAtMs) || new Date(checkedAtMs).toISOString() !== record.checkedAt) return null;
   if (!Array.isArray(record.operations)) return null;
@@ -699,7 +744,9 @@ export function parseCliCapabilitySet(value: unknown): CliCapabilitySet | null {
     seen.add(capability.operation);
     operations.push(capability);
   }
-  return { schemaVersion: 1, identity, checkedAt: record.checkedAt as string, operations };
+  return { schemaVersion: record.schemaVersion, identity, checkedAt: record.checkedAt as string, operations,
+    ...(record.schemaVersion === 2 ? { evidenceScope: "help-only" as const, runtimeTested: false as const, visuallyReviewed: false as const } : {}),
+  };
 }
 
 export function sha256Hex(bytes: Buffer | string): string {

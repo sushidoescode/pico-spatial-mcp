@@ -1,0 +1,6 @@
+[
+  "spatial-3d-generation",
+  "spatial-codegen-workflow",
+  "spatial-design-to-app",
+  "spatial-editor-workflow"
+]

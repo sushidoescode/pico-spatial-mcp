@@ -95,7 +95,7 @@ if (role === "managed-cli") {
     // Fixture help (never real CLI bytes) shaped like a real child help: a usage line that names
     // the probed route, so bounded capability discovery has something to classify. Tests that need
     // a different classification supply FAKE_PICO_HELP_MAP with retained or inline bytes.
-    process.stdout.write("Usage:\\n  $ pico-cli " + cliArgs.slice(0, -1).join(" ") + " [options]\\n\\nfixture help: " + cliArgs.join(" ") + "\\n");
+    process.stdout.write("Usage:\\n  $ pico-cli " + cliArgs.slice(0, -1).join(" ") + " [options]\\n\\nOptions:\\n  -h, --help  Display this message\\n\\nfixture help: " + cliArgs.join(" ") + "\\n");
     process.exit(0);
   }
   if (cliArgs.join(" ") === "mcp dev-knowledge" || cliArgs.join(" ") === "knowledge server") {
@@ -494,7 +494,7 @@ export function createManagedIO(harness, {
   let uuid = 0;
   const commands = [];
   return {
-    env,
+    get env() { return { ...process.env, ...env }; },
     platform: process.platform,
     homeDir: path.join(harness.root, "unused-home"),
     npmCommandIdentity,
@@ -503,7 +503,7 @@ export function createManagedIO(harness, {
     commands,
     run: (command, args, options = {}) => {
       commands.push({ command, args, options });
-      return runPicoCliCommand(command, args, options);
+      return runPicoCliCommand(command, args, { ...options, baseEnv: { ...process.env, ...env } });
     },
   };
 }

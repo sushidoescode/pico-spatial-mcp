@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "method": "read local installed package; anchored byte identities; no runtime mutation",
+  "members": [
+    {
+      "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/chunk-3M44DZ5I.js",
+      "bytes": 13487,
+      "sha256": "81d7463024aff91949b2718cbe4486a9ec582b733cbb9a114da743ac031b2c7e",
+      "anchors": [
+        {
+          "literal": "pico-workflow-run/v1",
+          "byteOffset": 3376
+        },
+        {
+          "literal": "revision:t.number().int().nonnegative().safe()",
+          "byteOffset": 4468
+        }
+      ]
+    },
+    {
+      "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/chunk-F5GUOLNO.js",
+      "bytes": 2012,
+      "sha256": "c65d995131edc817a8df8886010e05937c053e2e6e7d060f9b71e6cfa396834c",
+      "anchors": [
+        {
+          "literal": "profiler-worker.js",
+          "byteOffset": 1472
+        },
+        {
+          "literal": "Profiler bundle missing",
+          "byteOffset": 1186
+        }
+      ]
+    },
+    {
+      "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/index.js",
+      "bytes": 944008,
+      "sha256": "6daf24579469fd00e69d7e389f241fc6efec6ffde526dea0e4949fe7a38e4542",
+      "anchors": [
+        {
+          "literal": "async function _y(",
+          "byteOffset": 915294
+        },
+        {
+          "literal": "workflow.run.read",
+          "byteOffset": 924504
+        },
+        {
+          "literal": "workflow result read",
+          "byteOffset": 924735
+        }
+      ]
+    },
+    {
+      "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/src-XVOBJWY2.js",
+      "bytes": 167206,
+      "sha256": "363455e0ffac202950dff904da10ba16392de2ff9b256c42de9ea5a7c0bf0ca0",
+      "anchors": [
+        {
+          "literal": "--envelope",
+          "byteOffset": 147290
+        },
+        {
+          "literal": "Output a machine-readable JSON envelope",
+          "byteOffset": 163117
+        }
+      ]
+    }
+  ]
+}

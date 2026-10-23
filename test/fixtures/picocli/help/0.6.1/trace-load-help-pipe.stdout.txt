@@ -1,0 +1,14 @@
+[1mDescription[22m:
+Load trace file into a session (start trace_processor_shell) and return
+sessionId
+
+[1mUsage[22m:
+  $ [1mpico-cli perf trace load[22m [options] <trace-file>
+
+[1mArguments[22m:
+  [1mtrace-file[22m                    Path to trace file (.perfetto-trace)
+
+[1mOptions[22m:
+  [1m--shell <path>[22m                Path to trace_processor_shell binary (default:
+                                "trace_processor_shell")
+  [1m-p, --port <port>[22m             Daemon port (default: "950

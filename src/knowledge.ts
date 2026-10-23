@@ -4,6 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import {
@@ -1078,11 +1079,13 @@ export class KnowledgeBridge {
     }
 
     const ownershipToken = `${process.pid}-${randomBytes(24).toString("hex")}`;
-    const executionGuards = executionTarget ? picoCliExecutionGuards(executionTarget) : {};
     const childEnv = {
       ...(this.env ?? productionKnowledgeEnvironment()),
       [KNOWLEDGE_GENERATION_TOKEN_ENV]: ownershipToken,
     };
+    const executionGuards = executionTarget ? picoCliExecutionGuards(executionTarget, {
+      env: childEnv, platform: process.platform, homeDir: os.homedir(), cwd: this.cwd ?? process.cwd(),
+    }) : {};
     const transport = new KnowledgeStdioClientTransport({
       command: commandPath,
       args: commandArgs,

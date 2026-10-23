@@ -1,0 +1,18 @@
+[1mDescription[22m:
+Convert perfetto-trace file to json/systrace using traceconv
+
+[1mUsage[22m:
+  $ [1mpico-cli perf trace decode[22m [options] [trace-file]
+
+[1mArguments[22m:
+  [1mtrace-file[22m           Path to trace file (.perfetto-trace)
+
+[1mOptions[22m:
+  [1m--session <id>[22m       Session id (use traceFile associated with the session)
+  [1m-p, --port <port>[22m    Daemon port (required when using --session) (default: "9500")
+  [1m-f, --format <type>[22m  Output format: json | systrace | ctrace (default: "json")
+  [1m-o, --output <path>[22m  Output file path (default: <input>.<ext>)
+  [1m--traceconv <path>[22m   Path to traceconv binary (optional; auto-download by default)
+  [1m--truncate <keep>[22m    Truncate trace: start | end
+  [1m--full-sort[22m          Force full trace sorting
+  [1m-h, --help[22m           display help for command

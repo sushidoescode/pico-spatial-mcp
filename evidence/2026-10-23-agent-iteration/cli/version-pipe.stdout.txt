@@ -1,0 +1,1 @@
+pico-cli/0.6.1 (public) darwin-arm64 node-v22.14.0

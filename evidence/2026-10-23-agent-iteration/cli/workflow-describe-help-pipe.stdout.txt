@@ -1,0 +1,13 @@
+[1mDescription[22m:
+Describe a registered Workflow
+
+[1mUsage[22m:
+  $ [1mpico-cli workflow describe[22m <workflow-name> [--format plain|json]
+
+[1mOptions[22m:
+  [1m--format <format>[22m  Output format (plain | json) (default: plain)
+  [1m-h, --help[22m         Display this message
+
+[1mExamples[22m:
+  $ pico-cli workflow describe <workflow-name>
+  $ pico-cli workflow describe <workflow-name> --format json

@@ -14,6 +14,7 @@ import {
   resolveManagedPicoCli,
   validateManagedPicoCliExecution,
   type CliCapabilityReport,
+  type CliSelectionContext,
   type ManagedPicoCliExecutionHandle,
   type ManagedPicoCliIO,
   type ManagedPicoCliOptions,
@@ -24,6 +25,7 @@ import {
   PICO_CLI_USAGE_DRIFT_PATTERN,
   PICO_CLI_UTILITIES_GATE_PATTERN,
   resolveOperationCapability,
+  describeIdentityDrift,
   unknownCapability,
   type CliOperation,
   type OperationCapability,
@@ -250,6 +252,7 @@ export const cliWrapperContractShape = {
 } as const;
 
 export type PicoCliCommandResult = {
+  cancelled?: boolean;
   code: number | null;
   signal: NodeJS.Signals | null;
   stdout: string;
@@ -291,6 +294,8 @@ export function inspectPicoCliArtifact(artifactPath: string): PicoCliArtifactIns
 }
 
 export type PicoCliRunOptions = {
+  /** Cancel only this invocation's owned process tree, then wait for cleanup. */
+  signal?: AbortSignal;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   /** Internal exact environment baseline; `env` remains the per-command override layer. */
@@ -434,6 +439,8 @@ function runPicoCliCommandWithRuntime(
     let treeKiller: PicoCliTreeKiller | undefined;
     let spawnValidationFailure: string | null = null;
     let completionValidationRan = false;
+    let cancelled = false;
+    let abortHandler: (() => void) | undefined;
 
     const finish = (code: number | null, signal: NodeJS.Signals | null, spawnError?: string) => {
       if (settled) return;
@@ -441,7 +448,8 @@ function runPicoCliCommandWithRuntime(
       if (timeout) clearTimeout(timeout);
       if (killTimer) clearTimeout(killTimer);
       if (hardTimer) clearTimeout(hardTimer);
-      resolve({ code, signal, stdout, stderr, timedOut, ...(spawnError ? { spawnError } : {}), outputTruncated });
+      if (abortHandler) opts.signal?.removeEventListener("abort", abortHandler);
+      resolve({ code, signal, stdout, stderr, timedOut, ...(cancelled ? {cancelled:true} : {}), ...(spawnError ? { spawnError } : {}), outputTruncated });
     };
 
     const kill = (signal: NodeJS.Signals) => {
@@ -532,6 +540,7 @@ function runPicoCliCommandWithRuntime(
       }, killGraceMs);
     };
 
+    if (opts.signal?.aborted) { cancelled = true; finish(null, null, "cancelled before process creation"); return; }
     const beforeSpawn = synchronousSpawnCheck(opts.beforeSpawn, "pre-spawn");
     spawnValidationFailure = beforeSpawn.failure;
     timedOut ||= beforeSpawn.exhausted;
@@ -539,6 +548,7 @@ function runPicoCliCommandWithRuntime(
       finish(null, null, spawnValidationFailure);
       return;
     }
+    if (opts.signal?.aborted) { cancelled = true; finish(null, null, "cancelled during pre-spawn validation"); return; }
 
     try {
       child = crossSpawn(command, args, {
@@ -596,6 +606,9 @@ function runPicoCliCommandWithRuntime(
       finish(code, signal);
     });
 
+    abortHandler = () => { cancelled = true; beginTreeCleanup("cancelled; owned process tree drained"); };
+    opts.signal?.addEventListener("abort", abortHandler, {once:true});
+    if (opts.signal?.aborted) { abortHandler(); return; }
     const afterSpawn = synchronousSpawnCheck(opts.afterSpawn, "post-spawn");
     spawnValidationFailure = afterSpawn.failure;
     timedOut ||= afterSpawn.exhausted;
@@ -660,13 +673,29 @@ export async function probePicoCliBounded(force = false): Promise<PicoCliProbe> 
   return probeMemo;
 }
 
-export function picoCliExecutionGuards(cli: PicoCliExecutionTarget): PicoCliExecutionGuards {
-  if (cli.source === "external") return {};
+export function picoCliExecutionGuards(cli: PicoCliExecutionTarget, context?: CliSelectionContext): PicoCliExecutionGuards {
   const handle = executionTargetHandles.get(cli);
-  const validate = handle
+  const publication = cli.source === "external" ? undefined : handle
     ? (deadlineMs: number) => validateManagedPicoCliExecution(handle, deadlineMs)
     : () => "managed pico-cli execution target lost its opaque publication identity";
+  const report = executionTargetCapabilities.get(cli);
+  const selection = report ? (): string | null => {
+    const current = cli.source === "managed"
+      ? (handle ? managedPicoCliCapabilityIdentity(handle, context) : null)
+      : externalCliCapabilityIdentity(cli.path, cli.version ?? "", context);
+    if (!current) return "pico-cli selected utility/environment identity could not be read within its bounds";
+    const drift = describeIdentityDrift(report.identity, current);
+    return drift ? `pico-cli selected utility/environment identity changed: ${drift}` : null;
+  } : undefined;
+  const validate = chainExecutionGuards(publication, selection);
   return { beforeSpawn: validate, afterSpawn: validate, afterCompletion: validate };
+}
+
+/** Exact fresh selection identity for companion evidence; this grants no lifecycle authority. */
+export function picoCliExecutionIdentity(cli: PicoCliExecutionTarget, context?: CliSelectionContext) {
+  const handle=executionTargetHandles.get(cli);
+  return cli.source==="managed" ? (handle?managedPicoCliCapabilityIdentity(handle,context):null)
+    : externalCliCapabilityIdentity(cli.path,cli.version??"",context);
 }
 
 function chainExecutionGuards(
@@ -683,7 +712,10 @@ export function runPicoCli(
   args: string[],
   opts: PicoCliRunOptions = {},
 ): Promise<PicoCliCommandResult> {
-  const guards = picoCliExecutionGuards(cli);
+  const guards = picoCliExecutionGuards(cli, {
+    env: cliChildEnvironment(opts.baseEnv ?? process.env, opts.env),
+    platform: process.platform, homeDir: os.homedir(), cwd: opts.cwd ?? process.cwd(),
+  });
   return runPicoCliCommand(cli.path, args, {
     ...opts,
     beforeSpawn: chainExecutionGuards(guards.beforeSpawn, opts.beforeSpawn),

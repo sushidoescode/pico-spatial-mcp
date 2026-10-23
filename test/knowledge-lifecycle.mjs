@@ -1109,13 +1109,13 @@ function knowledgeSpawns(harness) {
     .filter((call) => call.args.at(-1) !== "--help" && call.args[0] !== "-v");
 }
 
-function runBridgeScript(harness, body, { env = {}, timeout = 25_000 } = {}) {
+function runBridgeScript(harness, body, { env = {}, timeout = 25_000, cwd = repoRoot } = {}) {
   const script = `
 const { KnowledgeBridge } = await import(${JSON.stringify(knowledgeUrl)});
 ${body}
 `;
   const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
-    cwd: repoRoot,
+    cwd,
     env: { ...harness.env, ...env },
     encoding: "utf8",
     timeout,
@@ -1465,4 +1465,35 @@ test("the exported legacy knowledge default is the 0.4.x route-table entry, not 
   assert.deepEqual([...DEFAULT_KNOWLEDGE_ARGS], ["mcp", "dev-knowledge"]);
   const source = fs.readFileSync(path.join(repoRoot, "src", "knowledge.ts"), "utf8");
   assert.equal(/\[\s*"mcp"\s*,\s*"dev-knowledge"\s*\]/.test(source), false, "the route literal belongs to the capability route table only");
+});
+
+test("managed knowledge checks the actual child environment and selected project config before spawn", {
+  concurrency: false,
+  timeout: 90_000,
+}, async () => {
+  const harnesses=[];
+  try {
+    for(const variant of ["same-selection", "different-project-config", "different-environment"]) {
+      const harness=createManagedRuntimeHarness({latestVersion:"0.5.0",helpMap:HELP_MAPS["0.5.0"]});
+      harnesses.push(harness);
+      const cwd=path.join(harness.root,"knowledge-project"); fs.mkdirSync(cwd);
+      if(variant==="different-project-config") fs.writeFileSync(path.join(cwd,".pico-env.json"),JSON.stringify({version:"0.99",platform:"spatial"}));
+      const options={cwd,startupTimeoutMs:5000,callTimeoutMs:2000,retirementTimeoutMs:2000,
+        ...(variant==="different-environment"?{env:{PICO_HOME:path.join(harness.root,"other-sdk")}}:{})};
+      const result=runBridgeScript(harness, `
+const bridge=new KnowledgeBridge(${JSON.stringify(options)});
+let result;
+try { result=await bridge.call("graph_stats",{}); } finally { await bridge.close().catch(()=>undefined); }
+process.stdout.write(JSON.stringify(result));
+`, { cwd: harness.root });
+      if(variant==="same-selection") {
+        assert.equal(result.status,"ok",JSON.stringify(result));
+        assert.equal(knowledgeSpawns(harness).length,1);
+      } else {
+        assert.notEqual(result.status,"ok",JSON.stringify(result));
+        assert.match(JSON.stringify(result),/selected utility\/environment identity changed/);
+        assert.equal(knowledgeSpawns(harness).length,0,"a mismatched actual child selection cannot spawn");
+      }
+    }
+  } finally { for(const harness of harnesses) cleanupManagedHarness(harness); }
 });

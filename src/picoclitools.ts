@@ -216,6 +216,9 @@ function retainedLogFields(retained: PicoCliRetainedObservation): Record<string,
 function capabilityDisclosure(capability: OperationCapability): Record<string, unknown> {
   return {
     capability: {
+      evidenceScope: "help-only",
+      runtimeTested: false,
+      visuallyReviewed: false,
       operation: capability.operation,
       state: capability.state,
       reason: capability.reason,

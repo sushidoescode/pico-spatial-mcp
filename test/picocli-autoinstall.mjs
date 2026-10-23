@@ -39,6 +39,7 @@ import {
   PICO_CLI_PATH_ENV,
   PICO_CLI_POLICY_ENV,
   managedContentIdentityForFixture,
+  cliSelectionIdentity,
 } from "../dist/picoclimanaged.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -438,7 +439,7 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
     };
     const baseIo = createManagedIO(harness);
     const io = (env = {}) => ({
-      env,
+      get env() { return { ...baseIo.env, ...env }; },
       platform: process.platform,
       homeDir: path.join(root, "unused-home"),
       now: () => 0,
@@ -2324,7 +2325,7 @@ test("per-operation capability discovery bound to package identity", { concurren
       assert.equal(result.compatibility, undefined, "new installs never write the legacy canary report");
       const report = result.capabilities;
       assert.ok(report, "capabilities missing");
-      assert.equal(report.schemaVersion, 1);
+      assert.equal(report.schemaVersion, 2);
       assert.equal(report.coverage, "complete");
       assert.match(report.checkedAt, /^\d{4}-\d{2}-\d{2}T/);
       const versionRoot = path.join(managedRoot, "versions", "0.4.4");
@@ -2334,6 +2335,9 @@ test("per-operation capability discovery bound to package identity", { concurren
         executablePath: result.path,
         packageJsonSha256: sha256File(path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json")),
         executionTreeSha256: install.contentManifestSha256,
+        executionScope: "package-tree",
+        selectionSchemaVersion: 1,
+        selectionSha256: cliSelectionIdentity(io).sha256,
       });
       const ops = byOperation(report);
       assert.deepEqual(Object.keys(ops).sort(), [
@@ -2641,7 +2645,7 @@ test("per-operation capability discovery bound to package identity", { concurren
       assert.equal(resolved.status, "ok", JSON.stringify(resolved));
       const target044 = picoCliFromEnsure(resolved);
       assert.deepEqual(picoCliOperationCapability(target044, "knowledge-server").argvPrefix, ["mcp", "dev-knowledge"]);
-      assert.deepEqual(picoCliOperationCapability(target050, "knowledge-server").argvPrefix, ["knowledge", "server"]);
+      assert.equal(picoCliOperationCapability(target050, "knowledge-server").state, "unknown", "a different harness PATH invalidates the earlier selection");
 
       // The report is bound to its own target, so pointing a 0.4.4 report at a 0.5.0 identity is
       // a stale identity, not a usable route.

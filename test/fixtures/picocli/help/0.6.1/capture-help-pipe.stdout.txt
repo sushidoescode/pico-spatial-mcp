@@ -1,0 +1,12 @@
+[1mDescription[22m:
+Capture screenshots and recordings
+
+[1mUsage[22m:
+  $ [1mpico-cli capture[22m <command> [options]
+
+[1mCommands[22m:
+  [1mrecord[22m      Capture a screen recording from the preferred current device
+  [1mscreenshot[22m  Capture a screenshot from the preferred current device
+
+[1mOptions[22m:
+  [1m-h, --help[22m  Show this message and exit.

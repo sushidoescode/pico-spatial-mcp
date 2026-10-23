@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "binary": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+  "realpath": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/index.js",
+  "cwd": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23",
+  "timeoutSeconds": 20,
+  "maxBytes": 1048576,
+  "nativeOperations": 0,
+  "observations": [
+    {
+      "stem": "app-install-help-pipe",
+      "argv": [
+        "app",
+        "install",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 287,
+      "stdout": {
+        "path": "app-install-help-pipe.stdout.txt",
+        "bytes": 640,
+        "sha256": "2db41a03aae3efb3f24b4200e86368d6b23ba29501de0b92586b272713e14403",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "app-install-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "8ab4e93bc894d7eb0127f7db6abc6c61ce8e7f21ff3c15b8cbf36acfc4cc7c01",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "app-stop-help-pipe",
+      "argv": [
+        "app",
+        "stop",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 243,
+      "stdout": {
+        "path": "app-stop-help-pipe.stdout.txt",
+        "bytes": 281,
+        "sha256": "6ca53d18c57b90123861fd4bcd7bad1ce4760de214539ee4fdcf450d7a12aada",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "app-stop-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "2c7bf4095700452fe43a6300d306ae15b04438b0b5c7e50a11691e27d46a1b63",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "app-launch-help-pipe",
+      "argv": [
+        "app",
+        "launch",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 256,
+      "stdout": {
+        "path": "app-launch-help-pipe.stdout.txt",
+        "bytes": 510,
+        "sha256": "38a81ff34d2c1745aaa1ba7e8b2c48544cb1bd9a7686dc15de78a285678449eb",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "app-launch-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "d5a49f1df337fd8ada2fe9038531139565215b504cddb069d54651459bf41b45",
+        "newlineTerminated": true
+      }
+    }
+  ]
+}

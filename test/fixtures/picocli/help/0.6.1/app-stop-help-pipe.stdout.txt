@@ -1,0 +1,9 @@
+[1mDescription[22m:
+Stop an app on the preferred current device
+
+[1mUsage[22m:
+  $ [1mpico-cli app stop[22m <package>
+
+[1mOptions[22m:
+  [1m-d, --device <device>[22m  Target device id (overrides automatic selection)
+  [1m-h, --help[22m             Display this message

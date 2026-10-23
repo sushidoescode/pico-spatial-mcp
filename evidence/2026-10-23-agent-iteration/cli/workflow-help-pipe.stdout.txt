@@ -1,0 +1,11 @@
+[1mDescription[22m:
+Discover, start, resume, and inspect installed Workflow Packages
+
+[1mUsage[22m:
+  $ [1mpico-cli workflow[22m <command> [options]
+
+[1mCommands[22m:
+  [1mcancel <run-id>[22m           Request cancellation and observe execution drain
+  [1mdescribe <workflow-name>[22m  Describe a registered Workflow
+  [1mdoctor[22m                    Check Workflow Agent Host transports without running an Agent task
+  [1mevents[22m                    Read or follow the public event timeline o

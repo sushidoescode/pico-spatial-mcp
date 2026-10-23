@@ -1,0 +1,7 @@
+# Retain the isolated baseline extraction locally; commit its identities and measured output.
+baseline-sweep/*
+!baseline-sweep/SOURCE_IDENTITIES.json
+baseline-knowledge/*
+!baseline-knowledge/SOURCE_IDENTITIES.json
+baseline-lifecycle/*
+!baseline-lifecycle/SOURCE_IDENTITIES.json

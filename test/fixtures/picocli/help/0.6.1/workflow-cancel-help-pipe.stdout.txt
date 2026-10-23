@@ -1,0 +1,13 @@
+[1mDescription[22m:
+Request cancellation and observe execution drain
+
+[1mUsage[22m:
+  $ [1mpico-cli workflow cancel[22m <run-id> [--wait-ms <ms>] [--format plain|json]
+
+[1mOptions[22m:
+  [1m--wait-ms <ms>[22m     Bounded wait for cancellation completion (0–30000 ms) (default: 5000)
+  [1m--format <format>[22m  Output format (plain | json) (default: plain)
+  [1m-h, --help[22m         Display this message
+
+[1mExamples[22m:
+  $ pico-cli workflow cancel run-123e4567-e89b-42d3-a456-426614174000 --format json

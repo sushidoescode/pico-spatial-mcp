@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "observations": [
+    {
+      "stem": "perf-live-help-pty",
+      "argv": [
+        "perf",
+        "live",
+        "run",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 546,
+      "stdout": {
+        "path": "perf-live-help-pty.stdout.txt",
+        "bytes": 1112,
+        "sha256": "c3419182deb224de6c7067f90bedb9e3472700a3d5ead4634ac09b4bb8456ccf",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "perf-live-help-pty.stderr.txt",
+        "bytes": 164,
+        "sha256": "06fa9dd344e0c948dc8ed3be5b00788d8634ad5ce719f95ab9a3115f4b3a0aa3",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "trace-record-help-pty",
+      "argv": [
+        "perf",
+        "trace",
+        "record",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 369,
+      "stdout": {
+        "path": "trace-record-help-pty.stdout.txt",
+        "bytes": 1000,
+        "sha256": "a3ea527a69e90fb27cf83b0868854b7cf71b3a64999faea850cfcfbf7ca7150d",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "trace-record-help-pty.stderr.txt",
+        "bytes": 164,
+        "sha256": "0397d267cbd6d093b403b4b98ee1c815fa078bcb3b868e5fc25da401d16c34a9",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "trace-decode-help-pty",
+      "argv": [
+        "perf",
+        "trace",
+        "decode",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 389,
+      "stdout": {
+        "path": "trace-decode-help-pty.stdout.txt",
+        "bytes": 903,
+        "sha256": "41c7c61b5e45aed1c95b1f0bd3ccd7d1cabe197a00bcc1a6a88772a010a107c8",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "trace-decode-help-pty.stderr.txt",
+        "bytes": 164,
+        "sha256": "c164cbb69f1b2f7f9b75e172ed47ede5fc0d88ab2d1890910bd9097e4518b975",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "trace-load-help-pty",
+      "argv": [
+        "perf",
+        "trace",
+        "load",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 583,
+      "stdout": {
+        "path": "trace-load-help-pty.stdout.txt",
+        "bytes": 861,
+        "sha256": "80e4c3e968848b24c54a5d5ae9979ee85ada6feab7b571df85ab323e7e6cbf0f",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "trace-load-help-pty.stderr.txt",
+        "bytes": 164,
+        "sha256": "d662615a2babbb0bd7d02a7778fe4b5dab281baa989319c38ff753d686cfb8b0",
+        "newlineTerminated": true
+      }
+    }
+  ],
+  "note": "stdout PTY / separate stderr pipe; bounded 20 seconds and 1 MiB; read-only help only"
+}
