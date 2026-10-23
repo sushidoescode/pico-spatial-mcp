@@ -1,0 +1,4 @@
+# Retained locally; ARTIFACTS.json pins these bytes without putting compiled APKs or
+# the machine's full resolved toolchain file inventory into source control.
+build-*/*.apk
+build-*/resolved-inputs*.json

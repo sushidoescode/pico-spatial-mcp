@@ -1,0 +1,1046 @@
+
+> pico-spatial-mcp@38.1.0 test:picocli
+> node scripts/run-gate.mjs test:picocli
+
+  ok   legacy picoCliPath remains an inert compatibility export
+  ok   drift classified: "error: unknown option '--nope'\nUsage: pe"
+  ok   drift classified: "Usage: perf trace record [options]"
+  ok   drift classified: "error: missing required argument 'packag"
+  ok   runtime failure classified as runtime
+  ok   empty output defaults to runtime (never claims drift without evidence)
+  ok   0.4.x utilities gate classified as setup-required
+  ok   utilities gate on stdout with a future bundle version classifies as setup-required
+  ok   appFps avg 0 (the measured emulator no_3d_frame case) scores null, not 0
+  ok   appFps p5=62 vs 60fps floor scores 1
+  ok   appFps p5=20 vs 60fps floor scores 0
+  ok   failed diagnose scores null (not counted), never 0
+  ok   absent appFps block scores null
+  ok   budget-to-fps-floor conversion honors a 30fps-class budget
+  ok   preflight pico-cli row warns that first CLI use provisions the managed store
+  ok   preflight pico-cli row passes with the parsed version when present
+  ok   preflight pico-cli row admits an unparsed version instead of inventing one
+  ok   preflight uses exact structured emulator-status argv and never pico-cli doctor
+  ok   preflight PARTIAL structured status degrades honestly
+  ok   preflight FAILED structured status degrades honestly
+  ok   preflight garbage structured status degrades honestly
+  ok   total pico-cli envelope parser is exported for fixture callers
+  ok   sessionId parsed from a JSON body
+  ok   sessionId parsed from a JSON line amid log noise
+  ok   sessionId parsed from a labeled token
+  ok   garbage yields null, not an invented sessionId
+  ok   crash markers detected: fatal-exception, process-died
+  ok   benign watch output yields zero indicators
+  ok   native crash marker detected
+  ok   registerPerfTraceTools exported
+  ok   registerPicoCliTools exported
+  ok   registerPerfCliTools exported
+  ok   capture_record description names adb screenrecord
+  ok   capture_record description names pico-cli capture record
+  ok   capture_record description names empty/invalid
+  ok   capture_record description names this emulator display
+  ok   capture_record description names screencapture -V -l<windowId>
+  ok   24 help fixtures hash to their retained evidence bytes
+  ok   all six nonzero retained results are present as failure fixtures
+  ok   knowledge-server routes follow the retained 0.4.4 (062) and 0.5.0 (136) help evidence
+  ok   perf-live is routed only on the 0.5.x line
+  ok   trace-* routes are perf trace <op> on both lines
+  ok   no route uses the rejected perf monitor alias, colon aliases, flags, or the removed 0.5.x mcp group
+  ok   every CliOperation has exactly one route entry per version line
+  ok   0.5.0 knowledge server help: supported (help-names-operation)
+  ok   0.4.4 mcp dev-knowledge help: supported (help-names-operation)
+  ok   0.5.0 app watch-crash help: supported (help-names-operation)
+  ok   0.4.4 capture record help: supported (help-names-operation)
+  ok   root help for knowledge-server: unavailable (generic-parent-help)
+  ok   perf parent help for perf-live: unavailable (generic-parent-help)
+  ok   0.4.4 root help for the removed 0.5.x alias: unavailable (generic-parent-help)
+  ok   0.5.0 perf live gate (139): unavailable (utilities-not-installed)
+  ok   0.5.0 perf trace gate (141): unavailable (utilities-not-installed)
+  ok   0.4.4 perf gate (012): unavailable (utilities-not-installed)
+  ok   empty exit-zero output: unknown (malformed-help)
+  ok   exit-zero text without a usage section: unknown (malformed-help)
+  ok   0.5.0 ANSI-styled knowledge server help (FORCE_COLOR): supported (help-names-operation)
+  ok   0.5.0 ANSI-styled app watch-crash help (FORCE_COLOR): supported (help-names-operation)
+  ok   ANSI-styled parent help is still generic-parent-help: unavailable (generic-parent-help)
+  ok   timed-out probe: unknown (timed-out)
+  ok   truncated probe: unknown (output-truncated)
+  ok   probe without an exit code: unknown (incomplete)
+  ok   unknown perf subcommand: unavailable (unknown-command)
+  ok   PICO_HOME unset: unavailable (environment)
+  ok   other nonzero exit: unavailable (nonzero-exit)
+  ok   perf-live on 0.4.x is unavailable with a no-route reason and no evidence
+  ok   classifyOperation binds the supported record to its help observation
+  ok   coverage is complete only when every operation is terminal
+  ok   capability identity comparison covers every field and explains drift
+  ok   a verified record with matching identity and evidence bytes resolves as supported
+  ok   no discovery evidence: unknown (no-discovery)
+  ok   stale identity: unknown (stale-identity)
+  ok   missing evidence bytes: unknown (evidence-missing)
+  ok   mismatched evidence bytes: unknown (evidence-mismatch)
+  ok   stored supported state contradicted by its bytes: unknown (report-inconsistent)
+  ok   operation absent from the set: unknown (no-discovery)
+  ok   parseCliCapabilitySet accepts schema 2 and rejects unknown schema/state values
+  ok   0.4.4 mcp parent help for mcp dev-knowledge: unavailable (generic-parent-help)
+  ok   0.5.0 knowledge parent help for knowledge server: unavailable (generic-parent-help)
+  ok   0.4.4 root help for mcp dev-knowledge: unavailable (generic-parent-help)
+  ok   perf parent help (082) for trace-record: unavailable (generic-parent-help)
+  ok   perf parent help (082) for trace-query via the route flag: unavailable (generic-parent-help)
+  ok   synthetic provisioned profiler help naming the route: supported (help-names-operation)
+  ok   synthetic profiler help without the phrase stays unknown for an unproven route: unknown (generic-parent-help)
+  ok   the unproven branch is the conservative default: unknown (generic-parent-help)
+  ok   synthetic re-rendered help naming a different perf path stays unknown: unknown (generic-parent-help)
+  ok   synthetic live help without the phrase stays unknown: unknown (generic-parent-help)
+  ok   validated route: exit-0 help naming another child is unavailable: unavailable (generic-parent-help)
+  ok   route tables record which routes have a retained exit-0 help example
+  ok   an unproven exit-0 classification leaves the operation unknown and the coverage partial
+  ok   classifyOperation keeps the proven parent-help answer terminal
+  ok   a stored terminal answer for an unproven byte shape is rejected on re-verification: unknown (report-inconsistent)
+  ok   retained 0.4.4/0.5.0 utilities gates classify as setup-required
+  ok   0.5.0 router rejection (source-derived PERF_ENV050 text) classifies as flag-or-version-drift
+  ok   PICO_HOME problems classify as environment, not setup-required
+  ok   environment guidance names PICO_HOME exactly and never prescribes running setup
+  ok   retained watch-crash help: 0.4.4 has no --monitor-timeout; 0.5.0 documents it as shared wall-clock budget
+  ok   the native watch duration flag is a per-version route fact citing the retained 096 help
+  ok   no other operation claims a native duration flag on either line
+  ok   watchArgv passes --monitor-timeout only when the route facts say the flag exists
+  ok   capabilityFailureClass maps the stable reason prefixes for every capability consumer
+  ok   environment guidance names the profiler payload only for perf operations
+  ok   watch_crash description states the observed-window contract instead of the retired claim
+(node:48155) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok   perf-live option names are the canonical 0.2.0 long options (--package/--duration/--save/--output)
+  ok   perf-live has no option facts on the 0.4.x line (it has no route there)
+  ok   trace-record's package option follows each line's bundled profiler (0.1.0 --app, 0.2.0 --package)
+  ok   trace-load declares the global --envelope flag on both lines
+  ok   no route option fact mentions the rejected `monitor` resource
+  ok   collectPerfLive dispatches the source-derived perf live run argv verbatim
+  ok   a saved 0.2.0 report adapts to status ok / measurement complete with a bounded view
+  ok   no dispatched perf argv contains `monitor`
+  ok   a graded perf result names the device it was asked to profile
+  ok   the whole raw report and both raw streams are retained immutably beside the run record
+  ok   the retained run record names the CLI's own output path as the artifact's source
+  ok   perfLiveArgv keeps --output paired with --save (LIVE050 refuses an unpaired --output)
+  ok   the fake CLI rejects `perf monitor run` exactly as the 0.5.0 router does, and we classify it as drift
+  ok   an unprovisioned profiler refuses without spawning and returns the neutral setup sentence plus its evidence paths
+  ok   a perf REFUSAL names the device it was asked to profile too
+  ok   an evidence-backed perf-live gate needs no family answer and claims no remediation limit
+  ok   an environment refusal returns the PICO_HOME remedy for perf-live and never prescribes setup
+  ok   the perf environment remedy names the explicit profiler-entry alternative and keeps it separate from the SDK tools root
+  ok   a line with no live route adopts the perf family's own utilities-gate answer (one gate per family: PERF_ENV044/PERF_ENV050)
+  ok   the adopted family gate is disclosed beside — never instead of — the probed perf-live capability, with the remediation limit stated
+  ok   without perf-family evidence a missing live route is reported as version drift, never as setup-required
+  ok   an unknown capability triggers exactly one bounded rediscovery and then refuses
+  ok   a live route with no declared option spellings refuses instead of dispatching a half-built argv
+  ok   a trace route with no declared option spellings refuses without spawning
+  ok   a report path that already existed before the run is refused, and nothing is spawned
+  ok   exit 0 with no report file is a failed measurement (a nonempty file is not assumed)
+  ok   report adapter: missing file -> failed/missing
+  ok   report adapter: empty JSON object -> failed/missing
+  ok   report adapter: malformed JSON -> failed/missing
+  ok   report adapter: truncated JSON -> failed/missing
+  ok   report adapter: unknown report version -> failed/missing
+  ok   report adapter: mismatched package -> failed/missing
+  ok   report adapter: 0.2.0 complete -> ok/complete
+  ok   report adapter: 0.1.0 complete -> ok/complete
+  ok   report adapter: 0.2.0 SKIP / INSUFFICIENT_DATA -> ok/missing
+  ok   report adapter: 0.2.0 runtime FPS without app frames -> ok/missing
+  ok   report adapter refuses a report file that predates the run even when its contents parse
+  ok   Spatial Runtime FPS is reported but never counted as an app-FPS measurement
+  ok   all-zero GPU counters are reported as missing counters, never as an idle GPU
+  ok   the returned view is bounded and excludes the unbounded rawData array
+  ok   a device serial the 0.2.0 schema never records is not treated as a mismatch
+  ok   a device field that IS present and disagrees with the requested serial fails the identity check
+  ok   scorePicoCliPerfAxis keeps its documented null boundaries
+  ok   an explicit missing measurement scores null even when an appFps block is present
+  ok   a SKIP / INSUFFICIENT_DATA report is never a passing budget
+  ok   a partial measurement still scores its measured app FPS
+  ok   trace query unwraps data.rows and never returns the envelope as rows
+  ok   a successful query envelope validates success/resource/action/session before unwrapping
+  ok   an empty successful rows array is a measurement, distinct from unavailable rows
+  ok   trace query rejects success:false with exit/error metadata without inventing rows
+  ok   trace query rejects wrong session without inventing rows
+  ok   trace query rejects wrong resource without inventing rows
+  ok   trace query rejects wrong action without inventing rows
+  ok   trace query rejects rows absent without inventing rows
+  ok   trace query rejects empty output without inventing rows
+  ok   trace query rejects malformed output without inventing rows
+  ok   trace query rejects truncated JSON without inventing rows
+  ok   trace load validates its envelope's success/resource/action before trusting data.sessionId
+  ok   trace load refuses a failure envelope instead of extracting an id
+  ok   trace load refuses a wrong-action envelope instead of extracting an id
+  ok   trace load refuses a missing sessionId instead of extracting an id
+  ok   trace load refuses empty output instead of extracting an id
+  ok   trace load refuses truncated JSON instead of extracting an id
+  ok   the legacy human-label parser reads the exact [TraceLoad] Session: line and nothing else
+  ok   the default human load output is not accepted as a JSON session result
+  ok   the envelope parser finds the envelope line amid the CLI's own prose
+  ok   trace record uses the 0.2.0 canonical long options
+  ok   trace record on the 0.4.x line uses --app (profiler 0.1.0 declares no --package)
+  ok   trace decode keeps its positional file with explicit --format/--output
+  ok   trace load requests the machine envelope, and the global flag precedes the resource
+  ok   trace query requests the envelope and passes --session/--sql
+  ok   runPerfTrace load returns the validated envelope session id and names its source
+  ok   runPerfTrace refuses an unprovisioned trace route without spawning, with the neutral setup sentence
+  ok   runPerfTrace query returns data.rows, not the profiler envelope
+  ok   a truncated query stream fails with the raw output preserved and no invented rows
+
+pico-cli lane test done. Failures: 0
+(node:48206) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:48209) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: bounded runner compatibility helpers remain covered without ambient CLI access
+ok 1 - bounded runner compatibility helpers remain covered without ambient CLI access
+  ---
+  duration_ms: 1.043458
+  ...
+# Subtest: the bounded runner rejects a failed synchronous pre-spawn identity check before execution
+ok 2 - the bounded runner rejects a failed synchronous pre-spawn identity check before execution
+  ---
+  duration_ms: 2.1225
+  ...
+# Subtest: post-spawn detection kills a child before delayed work but is not a prevention claim
+ok 3 - post-spawn detection kills a child before delayed work but is not a prevention claim
+  ---
+  duration_ms: 1807.756625
+  ...
+# Subtest: post-spawn detection reports an immediate child side effect instead of claiming prevention
+ok 4 - post-spawn detection reports an immediate child side effect instead of claiming prevention
+  ---
+  duration_ms: 1277.416875
+  ...
+# Subtest: a synchronous pre-spawn check that exhausts the command budget refuses to spawn
+ok 5 - a synchronous pre-spawn check that exhausts the command budget refuses to spawn
+  ---
+  duration_ms: 150.3605
+  ...
+# Subtest: a post-spawn check that exhausts the budget reports that process creation already happened
+ok 6 - a post-spawn check that exhausts the budget reports that process creation already happened
+  ---
+  duration_ms: 1330.366334
+  ...
+# Subtest: post-spawn rejection uses the bounded Windows process-tree cleanup seam
+ok 7 - post-spawn rejection uses the bounded Windows process-tree cleanup seam
+  ---
+  duration_ms: 755.0465
+  ...
+# Subtest: post-completion rejection owns one Windows process-tree cleanup through settlement
+ok 8 - post-completion rejection owns one Windows process-tree cleanup through settlement
+  ---
+  duration_ms: 228.203875
+  ...
+# Subtest: a managed command timeout gets a fresh bounded post-completion validation deadline
+ok 9 - a managed command timeout gets a fresh bounded post-completion validation deadline
+  ---
+  duration_ms: 1226.678584
+  ...
+# Subtest: the separate post-completion validation deadline remains cooperatively bounded
+ok 10 - the separate post-completion validation deadline remains cooperatively bounded
+  ---
+  duration_ms: 1303.518583
+  ...
+# Subtest: default managed calls snapshot one call-time environment and home after import
+ok 11 - default managed calls snapshot one call-time environment and home after import
+  ---
+  duration_ms: 1526.543416
+  ...
+# Subtest: managed pico-cli policy and immutable-store inspection
+    # Subtest: policy parsing rejects contradictory configuration
+    ok 1 - policy parsing rejects contradictory configuration
+      ---
+      duration_ms: 0.256375
+      ...
+    # Subtest: cached policy picks the newest wholly validated immutable version without npm or writes
+    ok 2 - cached policy picks the newest wholly validated immutable version without npm or writes
+      ---
+      duration_ms: 1529.948375
+      ...
+    # Subtest: a relative managedRoot resolves the published immutable version
+    ok 3 - a relative managedRoot resolves the published immutable version
+      ---
+      duration_ms: 847.386125
+      ...
+    # Subtest: corrupt records and version disagreements are rejected before a cached version is selected
+    ok 4 - corrupt records and version disagreements are rejected before a cached version is selected
+      ---
+      duration_ms: 6555.225875
+      ...
+    # Subtest: disabled, external, and missing-cache policies expose their read-only outcomes
+    ok 5 - disabled, external, and missing-cache policies expose their read-only outcomes
+      ---
+      duration_ms: 3.694292
+      ...
+    1..5
+ok 12 - managed pico-cli policy and immutable-store inspection
+  ---
+  duration_ms: 8937.087875
+  ...
+# Subtest: cold managed and stale managed exact provisioning
+    # Subtest: cold managed install publishes the exact registry version without global mutation
+    ok 1 - cold managed install publishes the exact registry version without global mutation
+      ---
+      duration_ms: 818.323333
+      ...
+    # Subtest: stale managed version provisions and executes the exact newer shim
+    ok 2 - stale managed version provisions and executes the exact newer shim
+      ---
+      duration_ms: 1590.109875
+      ...
+    # Subtest: cold managed install writes no legacy canary report and classifies non-help replies honestly
+    ok 3 - cold managed install writes no legacy canary report and classifies non-help replies honestly
+      ---
+      duration_ms: 780.028667
+      ...
+    1..3
+ok 13 - cold managed and stale managed exact provisioning
+  ---
+  duration_ms: 3189.011541
+  ...
+# Subtest: managed publication no-clobber fix round
+    # Subtest: a dangling exact-version target fails before install with complete recovery guidance
+    ok 1 - a dangling exact-version target fails before install with complete recovery guidance
+      ---
+      duration_ms: 137.570667
+      ...
+    # Subtest: a pre-existing empty target created at publication claim survives unchanged
+    ok 2 - a pre-existing empty target created at publication claim survives unchanged
+      ---
+      duration_ms: 339.76825
+      ...
+    1..2
+ok 14 - managed publication no-clobber fix round
+  ---
+  duration_ms: 477.689084
+  ...
+# Subtest: managed publication content identity rejects post-publication byte and path drift
+    # Subtest: an unchanged finalized publication remains accepted
+    ok 1 - an unchanged finalized publication remains accepted
+      ---
+      duration_ms: 837.224917
+      ...
+    # Subtest: schema-1 install records fail closed with exact manual recovery
+    ok 2 - schema-1 install records fail closed with exact manual recovery
+      ---
+      duration_ms: 762.702334
+      ...
+    # Subtest: schema-2 missing content identity install records fail closed with exact manual recovery
+    ok 3 - schema-2 missing content identity install records fail closed with exact manual recovery
+      ---
+      duration_ms: 772.444375
+      ...
+    # Subtest: same-version shim byte replacement is rejected before execution
+    ok 4 - same-version shim byte replacement is rejected before execution
+      ---
+      duration_ms: 799.212958
+      ...
+    # Subtest: an in-root shim symlink retargeted outside the version root is rejected before execution
+    ok 5 - an in-root shim symlink retargeted outside the version root is rejected before execution
+      ---
+      duration_ms: 810.566666
+      ...
+    # Subtest: a cached shim swapped to an out-of-root same-version executable inside io.run is rejected before spawn
+    ok 6 - a cached shim swapped to an out-of-root same-version executable inside io.run is rejected before spawn
+      ---
+      duration_ms: 812.065584
+      ...
+    # Subtest: a staged shim swapped to an out-of-root same-version executable inside io.run is rejected before spawn
+    ok 7 - a staged shim swapped to an out-of-root same-version executable inside io.run is rejected before spawn
+      ---
+      duration_ms: 187.734834
+      ...
+    # Subtest: queued relative paths are charged before traversal
+    ok 8 - queued relative paths are charged before traversal
+      ---
+      duration_ms: 0.591542
+      ...
+    # Subtest: registry failure still reports exact recovery for a legacy managed target
+    ok 9 - registry failure still reports exact recovery for a legacy managed target
+      ---
+      duration_ms: 138.699541
+      ...
+    # Subtest: the hard-linked publication claim rejects changed bytes even when install.json is rewritten with their digest
+    ok 10 - the hard-linked publication claim rejects changed bytes even when install.json is rewritten with their digest
+      ---
+      duration_ms: 796.621125
+      ...
+    # Subtest: a changed hard-linked publication manifest binding is rejected before execution
+    ok 11 - a changed hard-linked publication manifest binding is rejected before execution
+      ---
+      duration_ms: 771.853958
+      ...
+    # Subtest: same-version package metadata bytes are rejected even though pico-cli -v is unchanged
+    ok 12 - same-version package metadata bytes are rejected even though pico-cli -v is unchanged
+      ---
+      duration_ms: 756.179833
+      ...
+    # Subtest: installed dependency bytes are rejected even though pico-cli -v is unchanged
+    ok 13 - installed dependency bytes are rejected even though pico-cli -v is unchanged
+      ---
+      duration_ms: 750.85975
+      ...
+    1..13
+ok 15 - managed publication content identity rejects post-publication byte and path drift
+  ---
+  duration_ms: 8198.293958
+  ...
+# Subtest: managed wrapper execution retains publication identity
+    # Subtest: a provisioned shim rewritten before runPicoCli never executes the replacement payload
+    ok 1 - a provisioned shim rewritten before runPicoCli never executes the replacement payload
+      ---
+      duration_ms: 783.123125
+      ...
+    # Subtest: a managed tree changed by the child is rejected after command completion
+    ok 2 - a managed tree changed by the child is rejected after command completion
+      ---
+      duration_ms: 1077.729791
+      ...
+    1..2
+ok 16 - managed wrapper execution retains publication identity
+  ---
+  duration_ms: 1861.143084
+  ...
+# Subtest: managed winner completeness fix round
+    # Subtest: a complete collision winner is validated and reused
+    ok 1 - a complete collision winner is validated and reused
+      ---
+      duration_ms: 3240.950792
+      ...
+    # Subtest: a legacy compatibility report injected into a collision winner is rejected by content binding
+    ok 2 - a legacy compatibility report injected into a collision winner is rejected by content binding
+      ---
+      duration_ms: 2983.114875
+      ...
+    # Subtest: a collision winner with mismatched registry integrity is rejected and preserved
+    ok 3 - a collision winner with mismatched registry integrity is rejected and preserved
+      ---
+      duration_ms: 2887.648291
+      ...
+    1..3
+ok 17 - managed winner completeness fix round
+  ---
+  duration_ms: 9112.109541
+  ...
+# Subtest: managed fallback, corruption, and concurrent managed convergence
+    # Subtest: registry failure falls back to a validated cache with latest-unknown freshness
+    ok 1 - registry failure falls back to a validated cache with latest-unknown freshness
+      ---
+      duration_ms: 612.766791
+      ...
+    # Subtest: registry failure without a validated cache is unavailable as latest-unknown
+    ok 2 - registry failure without a validated cache is unavailable as latest-unknown
+      ---
+      duration_ms: 139.171042
+      ...
+    # Subtest: npm timeout fallback preserves the validated cache and failure output
+    ok 3 - npm timeout fallback preserves the validated cache and failure output
+      ---
+      duration_ms: 466.676875
+      ...
+    # Subtest: npm unavailable fallback preserves the validated cache and failure output
+    ok 4 - npm unavailable fallback preserves the validated cache and failure output
+      ---
+      duration_ms: 477.384333
+      ...
+    # Subtest: malformed registry JSON falls back without caching or publishing it
+    ok 5 - malformed registry JSON falls back without caching or publishing it
+      ---
+      duration_ms: 599.187334
+      ...
+    # Subtest: npm timeout fallback retains the validated old version as outdated
+    ok 6 - npm timeout fallback retains the validated old version as outdated
+      ---
+      duration_ms: 1249.120958
+      ...
+    # Subtest: successful npm exit without a shim fallback retains the validated old version as outdated
+    ok 7 - successful npm exit without a shim fallback retains the validated old version as outdated
+      ---
+      duration_ms: 678.28725
+      ...
+    # Subtest: mismatched staged -v fallback retains the validated old version as outdated
+    ok 8 - mismatched staged -v fallback retains the validated old version as outdated
+      ---
+      duration_ms: 802.397167
+      ...
+    # Subtest: package version mismatch fallback retains the validated old version as outdated
+    ok 9 - package version mismatch fallback retains the validated old version as outdated
+      ---
+      duration_ms: 714.024
+      ...
+    # Subtest: fallback is revalidated after a failing install mutates the previously valid shim
+    ok 10 - fallback is revalidated after a failing install mutates the previously valid shim
+      ---
+      duration_ms: 318.768292
+      ...
+    # Subtest: known-latest install failure without fallback preserves attempted provenance
+    ok 11 - known-latest install failure without fallback preserves attempted provenance
+      ---
+      duration_ms: 168.5855
+      ...
+    # Subtest: corrupt install record is skipped without erasing it or the valid fallback
+    ok 12 - corrupt install record is skipped without erasing it or the valid fallback
+      ---
+      duration_ms: 622.4145
+      ...
+    # Subtest: corrupt package version mismatch is skipped without erasing it or the valid fallback
+    ok 13 - corrupt package version mismatch is skipped without erasing it or the valid fallback
+      ---
+      duration_ms: 633.0525
+      ...
+    # Subtest: corrupt shim mutation is skipped without erasing it or the valid fallback
+    ok 14 - corrupt shim mutation is skipped without erasing it or the valid fallback
+      ---
+      duration_ms: 639.1385
+      ...
+    # Subtest: abandoned staging cleanup isolates only a valid dead-owner record older than seven days
+    ok 15 - abandoned staging cleanup isolates only a valid dead-owner record older than seven days
+      ---
+      duration_ms: 845.058875
+      ...
+    # Subtest: cleanup preserves active, unowned, malformed, and symlink staging entries
+    ok 16 - cleanup preserves active, unowned, malformed, and symlink staging entries
+      ---
+      duration_ms: 142.353125
+      ...
+    # Subtest: cleanup detects a quarantine replacement and leaves it isolated without deletion
+    ok 17 - cleanup detects a quarantine replacement and leaves it isolated without deletion
+      ---
+      duration_ms: 175.374
+      ...
+    # Subtest: cleanup never recursively deletes a replacement swapped in after quarantine verification
+    ok 18 - cleanup never recursively deletes a replacement swapped in after quarantine verification
+      ---
+      duration_ms: 130.6915
+      ...
+    # Subtest: a stale publication claim fails closed with manual recovery guidance and is preserved
+    ok 19 - a stale publication claim fails closed with manual recovery guidance and is preserved
+      ---
+      duration_ms: 2957.050959
+      ...
+    # Subtest: publication finalization preserves a claim replacement instead of unlinking it
+    ok 20 - publication finalization preserves a claim replacement instead of unlinking it
+      ---
+      duration_ms: 855.957792
+      ...
+    # Subtest: publication finalization never overwrites a destination created at the atomic boundary
+    ok 21 - publication finalization never overwrites a destination created at the atomic boundary
+      ---
+      duration_ms: 853.10075
+      ...
+    # Subtest: a target missing both publication control records fails closed with exact manual recovery
+    ok 22 - a target missing both publication control records fails closed with exact manual recovery
+      ---
+      duration_ms: 737.681708
+      ...
+    # Subtest: a target left before failed link finalization remains incomplete on the next resolver
+    ok 23 - a target left before failed link finalization remains incomplete on the next resolver
+      ---
+      duration_ms: 1301.780417
+      ...
+    # Subtest: finalization rejects a source claim swapped after the real hard link is created
+    ok 24 - finalization rejects a source claim swapped after the real hard link is created
+      ---
+      duration_ms: 1291.520083
+      ...
+    # Subtest: finalization binds source record bytes to the opened claim inode
+    ok 25 - finalization binds source record bytes to the opened claim inode
+      ---
+      duration_ms: 922.053042
+      ...
+    # Subtest: 12 concurrent managed workers converge on one complete immutable version
+    ok 26 - 12 concurrent managed workers converge on one complete immutable version
+      ---
+      duration_ms: 3134.504708
+      ...
+    1..26
+ok 18 - managed fallback, corruption, and concurrent managed convergence
+  ---
+  duration_ms: 21471.051333
+  ...
+# Subtest: managed registry cache fix round
+    # Subtest: sequential registry environments sharing one npm identity never share latest metadata
+    ok 1 - sequential registry environments sharing one npm identity never share latest metadata
+      ---
+      duration_ms: 1434.564125
+      ...
+    # Subtest: sequential npm identities sharing one registry environment never share latest metadata
+    ok 2 - sequential npm identities sharing one registry environment never share latest metadata
+      ---
+      duration_ms: 1485.620959
+      ...
+    # Subtest: a successful registry result is reused only within one hour
+    ok 3 - a successful registry result is reused only within one hour
+      ---
+      duration_ms: 889.252292
+      ...
+    # Subtest: forceRefresh bypasses a successful unexpired registry cache
+    ok 4 - forceRefresh bypasses a successful unexpired registry cache
+      ---
+      duration_ms: 1196.742625
+      ...
+    # Subtest: failure registry responses do not populate the successful cache
+    ok 5 - failure registry responses do not populate the successful cache
+      ---
+      duration_ms: 804.974708
+      ...
+    # Subtest: malformed registry responses do not populate the successful cache
+    ok 6 - malformed registry responses do not populate the successful cache
+      ---
+      duration_ms: 753.371875
+      ...
+    1..6
+ok 19 - managed registry cache fix round
+  ---
+  duration_ms: 6565.147708
+  ...
+# Subtest: Task 4 production adapters use the managed absolute CLI without eager provisioning
+    # Subtest: startup and tools/list neither contact npm nor create the managed root
+    ok 1 - startup and tools/list neither contact npm nor create the managed root
+      ---
+      duration_ms: 439.575084
+      ...
+    # Subtest: a default wrapper provisions the managed absolute path and always returns provenance
+    ok 2 - a default wrapper provisions the managed absolute path and always returns provenance
+      ---
+      duration_ms: 1069.184416
+      ...
+    # Subtest: exit-zero missing capture and trace artifacts are runtime failures
+    ok 3 - exit-zero missing capture and trace artifacts are runtime failures
+      ---
+      duration_ms: 1233.983708
+      ...
+    # Subtest: exit-zero empty capture and trace artifacts are runtime failures
+    ok 4 - exit-zero empty capture and trace artifacts are runtime failures
+      ---
+      duration_ms: 1262.785041
+      ...
+    # Subtest: exit-zero directory capture and trace outputs are runtime failures
+    ok 5 - exit-zero directory capture and trace outputs are runtime failures
+      ---
+      duration_ms: 1352.387458
+      ...
+    # Subtest: watch_crash accepts a clean duration cap only when no runner or guard error exists
+    ok 6 - watch_crash accepts a clean duration cap only when no runner or guard error exists
+      ---
+      duration_ms: 7209.873667
+      ...
+    # Subtest: watch_crash rejects a post-completion managed guard failure
+    ok 7 - watch_crash rejects a post-completion managed guard failure
+      ---
+      duration_ms: 7217.102417
+      ...
+    # Subtest: managed resolution failures propagate without falling back to PATH or global npm
+    ok 8 - managed resolution failures propagate without falling back to PATH or global npm
+      ---
+      duration_ms: 370.293334
+      ...
+    # Subtest: setup-required failures keep provenance and return an absolute manual command without executing it
+    ok 9 - setup-required failures keep provenance and return an absolute manual command without executing it
+      ---
+      duration_ms: 991.4825
+      ...
+    # Subtest: ensure_pico_cli force-refreshes regardless of inert legacy update input
+    ok 10 - ensure_pico_cli force-refreshes regardless of inert legacy update input
+      ---
+      duration_ms: 1906.725292
+      ...
+    # Subtest: coalescing is option-keyed and force-refresh strength aware
+    ok 11 - coalescing is option-keyed and force-refresh strength aware
+      ---
+      duration_ms: 2590.594709
+      ...
+    1..11
+ok 20 - Task 4 production adapters use the managed absolute CLI without eager provisioning
+  ---
+  duration_ms: 25645.298041
+  ...
+# Subtest: per-operation capability discovery bound to package identity
+    # Subtest: cold managed 0.4.4 install discovers operations from retained help bytes and persists an immutable report
+    ok 1 - cold managed 0.4.4 install discovers operations from retained help bytes and persists an immutable report
+      ---
+      duration_ms: 1202.170208
+      ...
+    # Subtest: the 0.5.0 line routes knowledge server and classifies gated perf routes from the real exit-3 bytes
+    ok 2 - the 0.5.0 line routes knowledge server and classifies gated perf routes from the real exit-3 bytes
+      ---
+      duration_ms: 766.295667
+      ...
+    # Subtest: a timed-out probe leaves that operation unknown and the report partial, without invalidating activation
+    ok 3 - a timed-out probe leaves that operation unknown and the report partial, without invalidating activation
+      ---
+      duration_ms: 1317.035792
+      ...
+    # Subtest: a selected CLI version change never reuses the previous version's capabilities
+    ok 4 - a selected CLI version change never reuses the previous version's capabilities
+      ---
+      duration_ms: 1471.983292
+      ...
+    # Subtest: same-version package byte replacement rejects the package before any capability is applied
+    ok 5 - same-version package byte replacement rejects the package before any capability is applied
+      ---
+      duration_ms: 770.149625
+      ...
+    # Subtest: an external executable replacement produces a new identity and fresh discovery
+    ok 6 - an external executable replacement produces a new identity and fresh discovery
+      ---
+      duration_ms: 936.242667
+      ...
+    # Subtest: missing evidence bytes degrade the record to unknown and trigger fresh discovery
+    ok 7 - missing evidence bytes degrade the record to unknown and trigger fresh discovery
+      ---
+      duration_ms: 1086.2205
+      ...
+    # Subtest: picoCliOperationCapability serves verified records and refuses targets without discovery evidence
+    ok 8 - picoCliOperationCapability serves verified records and refuses targets without discovery evidence
+      ---
+      duration_ms: 817.065625
+      ...
+    # Subtest: the knowledge consumer contract: per-line argv, cross-line refusal, and the fresh-discovery rule
+    ok 9 - the knowledge consumer contract: per-line argv, cross-line refusal, and the fresh-discovery rule
+      ---
+      duration_ms: 1717.377583
+      ...
+    # Subtest: read-only inspection never discovers, and reuses a report only after a real CLI-backed resolution
+    ok 10 - read-only inspection never discovers, and reuses a report only after a real CLI-backed resolution
+      ---
+      duration_ms: 596.356125
+      ...
+    # Subtest: legacy schema-1 compatibility diagnostics remain readable through the versioned reader
+    ok 11 - legacy schema-1 compatibility diagnostics remain readable through the versioned reader
+      ---
+      duration_ms: 310.4225
+      ...
+    1..11
+ok 21 - per-operation capability discovery bound to package identity
+  ---
+  duration_ms: 10992.963042
+  ...
+# (node:48210) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: FORCE_COLOR is dropped and NO_COLOR set for CLI children; everything else passes through
+ok 22 - FORCE_COLOR is dropped and NO_COLOR set for CLI children; everything else passes through
+  ---
+  duration_ms: 0.519375
+  ...
+# Subtest: an explicit override still wins, and a caller's own NO_COLOR is kept
+ok 23 - an explicit override still wins, and a caller's own NO_COLOR is kept
+  ---
+  duration_ms: 0.121583
+  ...
+# Subtest: the base environment object is not mutated
+ok 24 - the base environment object is not mutated
+  ---
+  duration_ms: 0.086375
+  ...
+# (node:48211) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: compares the complete advertised safe help trees and hashes exact stdout plus stderr
+ok 25 - compares the complete advertised safe help trees and hashes exact stdout plus stderr
+  ---
+  duration_ms: 921.336542
+  ...
+# Subtest: resolves latest to an exact install and rejects unsafe arguments and invalid package evidence
+    # Subtest: latest registry response becomes an exact non-global package install
+    ok 1 - latest registry response becomes an exact non-global package install
+      ---
+      duration_ms: 375.59825
+      ...
+    # Subtest: exact scratch installs suppress package lifecycle scripts
+    ok 2 - exact scratch installs suppress package lifecycle scripts
+      ---
+      duration_ms: 354.499708
+      ...
+    # Subtest: latest registry JSON is parsed from stdout despite an npm notice on stderr
+    ok 3 - latest registry JSON is parsed from stdout despite an npm notice on stderr
+      ---
+      duration_ms: 351.878375
+      ...
+    # Subtest: malformed registry stdout is rejected even when stderr is valid text
+    ok 4 - malformed registry stdout is rejected even when stderr is valid text
+      ---
+      duration_ms: 92.836583
+      ...
+    # Subtest: failed registry lookup retains stderr in the surfaced error
+    ok 5 - failed registry lookup retains stderr in the surfaced error
+      ---
+      duration_ms: 104.101833
+      ...
+    # Subtest: unknown flag
+    ok 6 - unknown flag
+      ---
+      duration_ms: 31.791083
+      ...
+    # Subtest: relative output
+    ok 7 - relative output
+      ---
+      duration_ms: 33.725458
+      ...
+    # Subtest: prerelease from
+    ok 8 - prerelease from
+      ---
+      duration_ms: 33.39475
+      ...
+    # Subtest: registry outage
+    ok 9 - registry outage
+      ---
+      duration_ms: 91.008875
+      ...
+    # Subtest: malformed registry
+    ok 10 - malformed registry
+      ---
+      duration_ms: 110.082459
+      ...
+    # Subtest: package version mismatch
+    ok 11 - package version mismatch
+      ---
+      duration_ms: 227.35125
+      ...
+    # Subtest: reported version mismatch
+    ok 12 - reported version mismatch
+      ---
+      duration_ms: 278.911875
+      ...
+    # Subtest: install failure
+    ok 13 - install failure
+      ---
+      duration_ms: 218.741
+      ...
+    1..13
+ok 26 - resolves latest to an exact install and rejects unsafe arguments and invalid package evidence
+  ---
+  duration_ms: 2305.868208
+  ...
+# Subtest: recognizes the advertised root command heading and fails closed when root enumeration is unavailable
+    # Subtest: Available Commands is traversed as a complete root command section
+    ok 1 - Available Commands is traversed as a complete root command section
+      ---
+      duration_ms: 450.701042
+      ...
+    # Subtest: missing heading
+    ok 2 - missing heading
+      ---
+      duration_ms: 195.918709
+      ...
+    # Subtest: unrecognized heading
+    ok 3 - unrecognized heading
+      ---
+      duration_ms: 200.666166
+      ...
+    # Subtest: an unrecognized nested command-like heading fails closed
+    ok 4 - an unrecognized nested command-like heading fails closed
+      ---
+      duration_ms: 246.340667
+      ...
+    # Subtest: an indented recognized nested command heading is traversed
+    ok 5 - an indented recognized nested command heading is traversed
+      ---
+      duration_ms: 445.883041
+      ...
+    # Subtest: a same-indent row under an indented command heading fails closed
+    ok 6 - a same-indent row under an indented command heading fails closed
+      ---
+      duration_ms: 222.017625
+      ...
+    # Subtest: a nested leaf without any command heading remains a valid leaf
+    ok 7 - a nested leaf without any command heading remains a valid leaf
+      ---
+      duration_ms: 346.573166
+      ...
+    1..7
+ok 27 - recognizes the advertised root command heading and fails closed when root enumeration is unavailable
+  ---
+  duration_ms: 2109.130417
+  ...
+# Subtest: fails closed at depth eight and 256 help invocations
+    # Subtest: depth overflow
+    ok 1 - depth overflow
+      ---
+      duration_ms: 382.016166
+      ...
+    # Subtest: command-count overflow
+    ok 2 - command-count overflow
+      ---
+      duration_ms: 189.577917
+      ...
+    1..2
+ok 28 - fails closed at depth eight and 256 help invocations
+  ---
+  duration_ms: 571.849833
+  ...
+# Subtest: fails closed when a minimum-indent advertised command row uses unsupported grammar
+    # Subtest: alias syntax
+    ok 1 - alias syntax
+      ---
+      duration_ms: 216.175709
+      ...
+    # Subtest: unsupported punctuation
+    ok 2 - unsupported punctuation
+      ---
+      duration_ms: 190.839833
+      ...
+    # Subtest: mixed valid and unsupported rows
+    ok 3 - mixed valid and unsupported rows
+      ---
+      duration_ms: 167.48025
+      ...
+    1..3
+ok 29 - fails closed when a minimum-indent advertised command row uses unsupported grammar
+  ---
+  duration_ms: 575.004166
+  ...
+# Subtest: an indented Options heading terminates the Commands section without becoming a command
+ok 30 - an indented Options heading terminates the Commands section without becoming a command
+  ---
+  duration_ms: 423.0095
+  ...
+# Subtest: multi-token advertised commands become separate argv tokens with notation stripped and paths deduplicated
+ok 31 - multi-token advertised commands become separate argv tokens with notation stripped and paths deduplicated
+  ---
+  duration_ms: 455.21525
+  ...
+# Subtest: unsafe grammar anywhere in multi-token syntax fails before partial child traversal
+    # Subtest: alias in first token
+    ok 1 - alias in first token
+      ---
+      duration_ms: 177.015584
+      ...
+    # Subtest: alias in later token
+    ok 2 - alias in later token
+      ---
+      duration_ms: 186.36025
+      ...
+    # Subtest: punctuation in middle token
+    ok 3 - punctuation in middle token
+      ---
+      duration_ms: 178.27025
+      ...
+    # Subtest: more than eight command tokens
+    ok 4 - more than eight command tokens
+      ---
+      duration_ms: 175.707666
+      ...
+    1..4
+ok 32 - unsafe grammar anywhere in multi-token syntax fails before partial child traversal
+  ---
+  duration_ms: 717.66825
+  ...
+# Subtest: timeout, spawn failure, and output truncation are fatal and atomic output is never ambiguous
+    # Subtest: timeout
+    ok 1 - timeout
+      ---
+      duration_ms: 946.94275
+      ...
+    # Subtest: timeout hard-settles and reaps a detached descendant that inherited stdio
+    ok 2 - timeout hard-settles and reaps a detached descendant that inherited stdio
+      ---
+      duration_ms: 2319.110375
+      ...
+    # Subtest: truncation
+    ok 3 - truncation
+      ---
+      duration_ms: 1062.309584
+      ...
+    # Subtest: output cap reaps a detached inherited-stdio descendant after its parent exits
+    not ok 4 - output cap reaps a detached inherited-stdio descendant after its parent exits
+      ---
+      duration_ms: 1649.497875
+      location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/picocli-sweep.mjs:718:11'
+      failureType: 'testCodeFailure'
+      error: |-
+        detached descendant 48858 survived output-cap cleanup
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/picocli-sweep.mjs:735:14)
+        Test.runInAsyncScope (node:async_hooks:211:14)
+        Test.run (node:internal/test_runner/test:979:25)
+        Test.start (node:internal/test_runner/test:877:17)
+        TestContext.test (node:internal/test_runner/test:307:20)
+        TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/picocli-sweep.mjs:718:11)
+        async Test.run (node:internal/test_runner/test:980:9)
+        async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+      ...
+    # Subtest: signal termination
+    ok 5 - signal termination
+      ---
+      duration_ms: 195.570042
+      ...
+    # Subtest: npm spawn error
+    ok 6 - npm spawn error
+      ---
+      duration_ms: 41.45625
+      ...
+    # Subtest: a preexisting output is preserved and no atomic temporary is leaked
+    ok 7 - a preexisting output is preserved and no atomic temporary is leaked
+      ---
+      duration_ms: 36.694833
+      ...
+    1..7
+not ok 33 - timeout, spawn failure, and output truncation are fatal and atomic output is never ambiguous
+  ---
+  duration_ms: 6252.278208
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/picocli-sweep.mjs:667:1'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: retains per-invocation raw streams and exposes error-only subtrees as partial coverage
+ok 34 - retains per-invocation raw streams and exposes error-only subtrees as partial coverage
+  ---
+  duration_ms: 596.096333
+  ...
+# Subtest: retains raw streams and failed completion state when the sweep fails
+    # Subtest: timeout
+    ok 1 - timeout
+      ---
+      duration_ms: 2382.033125
+      ...
+    # Subtest: truncation
+    ok 2 - truncation
+      ---
+      duration_ms: 1066.982208
+      ...
+    # Subtest: registry outage before any CLI call still writes an empty index
+    ok 3 - registry outage before any CLI call still writes an empty index
+      ---
+      duration_ms: 98.173625
+      ...
+    # Subtest: relative retain directory
+    ok 4 - relative retain directory
+      ---
+      duration_ms: 36.523958
+      ...
+    # Subtest: existing retain directory
+    ok 5 - existing retain directory
+      ---
+      duration_ms: 36.59675
+      ...
+    # Subtest: retain parent missing
+    ok 6 - retain parent missing
+      ---
+      duration_ms: 37.210916
+      ...
+    1..6
+ok 35 - retains raw streams and failed completion state when the sweep fails
+  ---
+  duration_ms: 3658.217291
+  ...
+# Subtest: the central CLI safety guard rejects the setup subtree, mutating update, and non-help argv
+ok 36 - the central CLI safety guard rejects the setup subtree, mutating update, and non-help argv
+  ---
+  duration_ms: 0.449417
+  ...
+1..36
+# tests 160
+# suites 0
+# pass 158
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 106411.58325

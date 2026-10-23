@@ -1,0 +1,12 @@
+[
+  {
+    "name": "test:picocli",
+    "startedAt": "2026-10-23T21:31:19.295Z",
+    "finishedAt": "2026-10-23T21:33:06.403Z",
+    "status": 1,
+    "signal": null,
+    "error": null,
+    "log": "evidence/2026-10-23-agent-iteration/tests/build7-picocli.log",
+    "buildSource": "a2085a54b1729b026b5b3b0fb3f7f6818786c9c92b318dfc91268c6a961d3cc7"
+  }
+]

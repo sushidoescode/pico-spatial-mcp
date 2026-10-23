@@ -1,0 +1,437 @@
+
+> pico-spatial-mcp@38.1.0 test:observation
+> node scripts/run-gate.mjs test:observation
+
+(node:48425) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:48429) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: sha256Bytes and sha256File agree with the reference digest of the same fixture
+ok 1 - sha256Bytes and sha256File agree with the reference digest of the same fixture
+  ---
+  duration_ms: 1.033417
+  ...
+# Subtest: sha256File reports a missing file instead of throwing or inventing a digest
+ok 2 - sha256File reports a missing file instead of throwing or inventing a digest
+  ---
+  duration_ms: 0.165584
+  ...
+# Subtest: a valid small PNG inspects as valid with its real dimensions and bit depth
+ok 3 - a valid small PNG inspects as valid with its real dimensions and bit depth
+  ---
+  duration_ms: 2.196958
+  ...
+# Subtest: a truncated PNG larger than 1000 bytes is INVALID — the size floor alone must not accept it
+ok 4 - a truncated PNG larger than 1000 bytes is INVALID — the size floor alone must not accept it
+  ---
+  duration_ms: 0.572125
+  ...
+# Subtest: arbitrary nonempty bytes above the capture floor are not a PNG
+ok 5 - arbitrary nonempty bytes above the capture floor are not a PNG
+  ---
+  duration_ms: 0.42575
+  ...
+# Subtest: a valid PNG below the capture-evidence floor is still a valid PNG, and says it is below the floor
+ok 6 - a valid PNG below the capture-evidence floor is still a valid PNG, and says it is below the floor
+  ---
+  duration_ms: 0.906083
+  ...
+# Subtest: a valid short MP4 reports its MEASURED duration and its declared video track
+ok 7 - a valid short MP4 reports its MEASURED duration and its declared video track
+  ---
+  duration_ms: 1.216417
+  ...
+# Subtest: an MP4 whose only track is audio is a valid container with NO video stream
+ok 8 - an MP4 whose only track is audio is a valid container with NO video stream
+  ---
+  duration_ms: 0.310917
+  ...
+# Subtest: arbitrary nonempty bytes are not an MP4
+ok 9 - arbitrary nonempty bytes are not an MP4
+  ---
+  duration_ms: 0.354083
+  ...
+# Subtest: a truncated MP4 box header fails closed instead of reporting a partial duration
+ok 10 - a truncated MP4 box header fails closed instead of reporting a partial duration
+  ---
+  duration_ms: 0.467334
+  ...
+# Subtest: an MP4 missing mdat is refused — a header with no media payload is not a recording
+ok 11 - an MP4 missing mdat is refused — a header with no media payload is not a recording
+  ---
+  duration_ms: 0.262459
+  ...
+# Subtest: a valid dark frame is INCONCLUSIVE about the capture route, never proof of failed rendering
+ok 12 - a valid dark frame is INCONCLUSIVE about the capture route, never proof of failed rendering
+  ---
+  duration_ms: 1.827166
+  ...
+# Subtest: a valid lit frame classifies as lit with a real mean luma
+ok 13 - a valid lit frame classifies as lit with a real mean luma
+  ---
+  duration_ms: 1.593916
+  ...
+# Subtest: a malformed image is undecodable, not dark
+ok 14 - a malformed image is undecodable, not dark
+  ---
+  duration_ms: 0.151042
+  ...
+# Subtest: with no decoder available the answer is UNVALIDATED, never a successful decode
+ok 15 - with no decoder available the answer is UNVALIDATED, never a successful decode
+  ---
+  duration_ms: 0.171916
+  ...
+# Subtest: an injected decoder is used when present, and its failure stays unvalidated
+ok 16 - an injected decoder is used when present, and its failure stays unvalidated
+  ---
+  duration_ms: 0.09175
+  ...
+# Subtest: the inspection module cannot reach a process, a device, or a decoder on PATH
+ok 17 - the inspection module cannot reach a process, a device, or a decoder on PATH
+  ---
+  duration_ms: 0.188833
+  ...
+# Subtest: a valid short recording is validated, with a MEASURED duration that is not the request
+ok 18 - a valid short recording is validated, with a MEASURED duration that is not the request
+  ---
+  duration_ms: 1.467541
+  ...
+# Subtest: a recording with no video stream is a validated container that declares no video
+ok 19 - a recording with no video stream is a validated container that declares no video
+  ---
+  duration_ms: 0.357458
+  ...
+# Subtest: a nonempty file that is not a container is INVALID media, not a recording
+ok 20 - a nonempty file that is not a container is INVALID media, not a recording
+  ---
+  duration_ms: 0.2855
+  ...
+# Subtest: a recording that cannot be read at all is UNVALIDATED, never a successful decode
+ok 21 - a recording that cannot be read at all is UNVALIDATED, never a successful decode
+  ---
+  duration_ms: 0.129334
+  ...
+# Subtest: capture_record still caps the request at 180 s and defaults short
+ok 22 - capture_record still caps the request at 180 s and defaults short
+  ---
+  duration_ms: 0.273666
+  ...
+# (node:48430) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: sliceAfterMarker returns only lines after the marker line
+ok 23 - sliceAfterMarker returns only lines after the marker line
+  ---
+  duration_ms: 0.733459
+  ...
+# Subtest: a missing marker is reported, never silently treated as an empty window
+ok 24 - a missing marker is reported, never silently treated as an empty window
+  ---
+  duration_ms: 0.079959
+  ...
+# Subtest: openLogWindow writes exactly one `log -t pico-mcp <marker>` and never a clear
+ok 25 - openLogWindow writes exactly one `log -t pico-mcp <marker>` and never a clear
+  ---
+  duration_ms: 1.214833
+  ...
+# Subtest: readLogWindow always includes the marker tag in its filter and bounds the dump
+ok 26 - readLogWindow always includes the marker tag in its filter and bounds the dump
+  ---
+  duration_ms: 0.181083
+  ...
+# Subtest: assert_scene opens a window before its broadcast and matches only the dump inside it
+ok 27 - assert_scene opens a window before its broadcast and matches only the dump inside it
+  ---
+  duration_ms: 3332.035584
+  ...
+# Subtest: assert_scene reports an evicted marker as an inconclusive error, never as a dump
+ok 28 - assert_scene reports an evicted marker as an inconclusive error, never as a dump
+  ---
+  duration_ms: 1626.287625
+  ...
+# Subtest: assert_scene refuses when the window cannot be opened and reads no dump at all
+ok 29 - assert_scene refuses when the window cannot be opened and reads no dump at all
+  ---
+  duration_ms: 72.999834
+  ...
+# Subtest: probe_planes opens a window before its broadcast and parses only the inventory inside it
+ok 30 - probe_planes opens a window before its broadcast and parses only the inventory inside it
+  ---
+  duration_ms: 1646.745416
+  ...
+# Subtest: probe_planes reports an evicted marker as inconclusive instead of reading the stale inventory
+ok 31 - probe_planes reports an evicted marker as inconclusive instead of reading the stale inventory
+  ---
+  duration_ms: 3268.013417
+  ...
+# Subtest: live_scene_snapshot opens a window before its dump_scene broadcast and returns only the fresh scene
+ok 32 - live_scene_snapshot opens a window before its dump_scene broadcast and returns only the fresh scene
+  ---
+  duration_ms: 151.91425
+  ...
+# Subtest: live_scene_snapshot reports an evicted marker as inconclusive rather than parsing the stale dump
+ok 33 - live_scene_snapshot reports an evicted marker as inconclusive rather than parsing the stale dump
+  ---
+  duration_ms: 8420.327541
+  ...
+# Subtest: assert_logcat sinceMarker adopts a caller-written marker and matches only lines after it
+ok 34 - assert_logcat sinceMarker adopts a caller-written marker and matches only lines after it
+  ---
+  duration_ms: 1283.765708
+  ...
+# Subtest: assert_logcat clearFirst opens a marker window instead of clearing, and an evicted marker is inconclusive
+ok 35 - assert_logcat clearFirst opens a marker window instead of clearing, and an evicted marker is inconclusive
+  ---
+  duration_ms: 1366.205458
+  ...
+# Subtest: assert_logcat reports a LOST observation as inconclusive: the window's marker was seen once, then every later dump failed
+ok 36 - assert_logcat reports a LOST observation as inconclusive: the window's marker was seen once, then every later dump failed
+  ---
+  duration_ms: 2187.348333
+  ...
+# Subtest: assert_logcat without a window is also inconclusive when the final dump failed, and stays a conclusive miss when dumps kept succeeding
+ok 37 - assert_logcat without a window is also inconclusive when the final dump failed, and stays a conclusive miss when dumps kept succeeding
+  ---
+  duration_ms: 3328.8125
+  ...
+# Subtest: the logcat tool's clear:true is the one destructive clear and requires an explicit serial
+ok 38 - the logcat tool's clear:true is the one destructive clear and requires an explicit serial
+  ---
+  duration_ms: 80.23025
+  ...
+# Subtest: wait_for_log's default opens a marker window instead of clearing and reports the window it matched in
+ok 39 - wait_for_log's default opens a marker window instead of clearing and reports the window it matched in
+  ---
+  duration_ms: 2285.341792
+  ...
+# Subtest: wait_for_log reports a lost observation as inconclusive on its DEFAULT windowed path
+ok 40 - wait_for_log reports a lost observation as inconclusive on its DEFAULT windowed path
+  ---
+  duration_ms: 3158.78125
+  ...
+# Subtest: wait_for_log reports a lost observation as inconclusive on the unwindowed path too, and still calls a real miss a miss
+ok 41 - wait_for_log reports a lost observation as inconclusive on the unwindowed path too, and still calls a real miss a miss
+  ---
+  duration_ms: 4166.347042
+  ...
+# Subtest: assert_logcat reads with the long-poll bound (-t 20000) by default and sends an explicit maxLines verbatim
+ok 42 - assert_logcat reads with the long-poll bound (-t 20000) by default and sends an explicit maxLines verbatim
+  ---
+  duration_ms: 134.439459
+  ...
+# Subtest: wait_for_log reads with the long-poll bound (-t 20000) by default and sends an explicit maxLines verbatim
+ok 43 - wait_for_log reads with the long-poll bound (-t 20000) by default and sends an explicit maxLines verbatim
+  ---
+  duration_ms: 152.820958
+  ...
+# Subtest: the long-poll bounds are named constants of the module, and build_and_run's settle-long read uses one
+ok 44 - the long-poll bounds are named constants of the module, and build_and_run's settle-long read uses one
+  ---
+  duration_ms: 0.384042
+  ...
+# Subtest: unseenMarkerCause blames eviction only when a dump actually succeeded
+ok 45 - unseenMarkerCause blames eviction only when a dump actually succeeded
+  ---
+  duration_ms: 0.113708
+  ...
+# Subtest: assert_logcat names the dump failure when every poll's dump failed, instead of blaming eviction
+ok 46 - assert_logcat names the dump failure when every poll's dump failed, instead of blaming eviction
+  ---
+  duration_ms: 1231.400167
+  ...
+# Subtest: assert_logcat keeps the eviction finding, with the last failure appended, when a dump did succeed
+ok 47 - assert_logcat keeps the eviction finding, with the last failure appended, when a dump did succeed
+  ---
+  duration_ms: 2159.293375
+  ...
+# Subtest: wait_for_log names the dump failure when every poll's dump failed, instead of blaming eviction
+ok 48 - wait_for_log names the dump failure when every poll's dump failed, instead of blaming eviction
+  ---
+  duration_ms: 1099.815667
+  ...
+# Subtest: probe_planes names the dump failure when every poll's dump failed, instead of blaming eviction
+ok 49 - probe_planes names the dump failure when every poll's dump failed, instead of blaming eviction
+  ---
+  duration_ms: 3163.148583
+  ...
+# Subtest: live_scene_snapshot names the dump failure when every poll's dump failed, instead of blaming eviction
+ok 50 - live_scene_snapshot names the dump failure when every poll's dump failed, instead of blaming eviction
+  ---
+  duration_ms: 8309.707667
+  ...
+# Subtest: pico_loop writes a marker through adb_shell before the build and scopes every assert_logcat to it
+ok 51 - pico_loop writes a marker through adb_shell before the build and scopes every assert_logcat to it
+  ---
+  duration_ms: 25.4075
+  ...
+# Subtest: pico_loop treats an inconclusive (evicted-window) assert_logcat as unmeasurable, never as a fail to replan
+ok 52 - pico_loop treats an inconclusive (evicted-window) assert_logcat as unmeasurable, never as a fail to replan
+  ---
+  duration_ms: 3.119375
+  ...
+# Subtest: the boundary prepare step opens a -b all window, writes its sidecar, and stops on an evicted marker
+ok 53 - the boundary prepare step opens a -b all window, writes its sidecar, and stops on an evicted marker
+  ---
+  duration_ms: 49.419084
+  ...
+# Subtest: no src file clears logcat implicitly; the explicit logcat tool is the only clear
+ok 54 - no src file clears logcat implicitly; the explicit logcat tool is the only clear
+  ---
+  duration_ms: 30.82175
+  ...
+# Subtest: the inverted guard rejects a second clear, a clear outside adb.ts, and a clear without the explicit-serial refusal
+ok 55 - the inverted guard rejects a second clear, a clear outside adb.ts, and a clear without the explicit-serial refusal
+  ---
+  duration_ms: 85.681042
+  ...
+# (node:48431) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: a clean observation records every identity field as OBSERVED and is not a receipt
+ok 56 - a clean observation records every identity field as OBSERVED and is not a receipt
+  ---
+  duration_ms: 23.180125
+  ...
+# Subtest: identity that could not be observed is explicitly MISSING with a reason, never synthesised
+ok 57 - identity that could not be observed is explicitly MISSING with a reason, never synthesised
+  ---
+  duration_ms: 15.288666
+  ...
+# Subtest: installed APK digest ≠ local APK digest → mismatch, and nothing is launched
+ok 58 - installed APK digest ≠ local APK digest → mismatch, and nothing is launched
+  ---
+  duration_ms: 1.275292
+  ...
+# Subtest: a FOREIGN app in the foreground is a conflict with the observed package — and is never stopped
+ok 59 - a FOREIGN app in the foreground is a conflict with the observed package — and is never stopped
+  ---
+  duration_ms: 10.457208
+  ...
+# Subtest: a boot identity that changes across the observation is INCONCLUSIVE
+ok 60 - a boot identity that changes across the observation is INCONCLUSIVE
+  ---
+  duration_ms: 15.00525
+  ...
+# Subtest: a PID that changes across the observation is INCONCLUSIVE
+ok 61 - a PID that changes across the observation is INCONCLUSIVE
+  ---
+  duration_ms: 15.061125
+  ...
+# Subtest: a process START that changes under the SAME PID is INCONCLUSIVE — PID reuse is not continuity
+ok 62 - a process START that changes under the SAME PID is INCONCLUSIVE — PID reuse is not continuity
+  ---
+  duration_ms: 15.945917
+  ...
+# Subtest: capture bytes substituted after the observation → tampered, and the frame is not evidence
+ok 63 - capture bytes substituted after the observation → tampered, and the frame is not evidence
+  ---
+  duration_ms: 15.107
+  ...
+# Subtest: a malformed image larger than 1000 bytes is INVALID MEDIA, not a capture
+ok 64 - a malformed image larger than 1000 bytes is INVALID MEDIA, not a capture
+  ---
+  duration_ms: 11.247
+  ...
+# Subtest: arbitrary nonempty bytes above the size floor are also invalid media
+ok 65 - arbitrary nonempty bytes above the size floor are also invalid media
+  ---
+  duration_ms: 13.730959
+  ...
+# Subtest: a capture that FAILED is capture:'unavailable' and never status ok/observed
+ok 66 - a capture that FAILED is capture:'unavailable' and never status ok/observed
+  ---
+  duration_ms: 10.7565
+  ...
+# Subtest: a valid DARK frame is an inconclusive capture route, not a rendering failure
+ok 67 - a valid DARK frame is an inconclusive capture route, not a rendering failure
+  ---
+  duration_ms: 24.0025
+  ...
+# Subtest: a boot identity that was never observed is INCONCLUSIVE, not a clean observation
+ok 68 - a boot identity that was never observed is INCONCLUSIVE, not a clean observation
+  ---
+  duration_ms: 23.092084
+  ...
+# Subtest: a foreground that was never observed is INCONCLUSIVE — the frame is unattributable
+ok 69 - a foreground that was never observed is INCONCLUSIVE — the frame is unattributable
+  ---
+  duration_ms: 29.175708
+  ...
+# Subtest: an UNKNOWN crash state is INCONCLUSIVE — unknown is not 'no crash'
+ok 70 - an UNKNOWN crash state is INCONCLUSIVE — unknown is not 'no crash'
+  ---
+  duration_ms: 17.591167
+  ...
+# Subtest: logcat is never cleared, is bounded, and is scoped to the observed PID
+ok 71 - logcat is never cleared, is bounded, and is scoped to the observed PID
+  ---
+  duration_ms: 13.867292
+  ...
+# Subtest: a FATAL with no attribution to this package or PID is NOT this app's crash
+ok 72 - a FATAL with no attribution to this package or PID is NOT this app's crash
+  ---
+  duration_ms: 13.888416
+  ...
+# Subtest: a FATAL naming this package IS attributed
+ok 73 - a FATAL naming this package IS attributed
+  ---
+  duration_ms: 13.888334
+  ...
+# Subtest: a log read that fails leaves logs unavailable and never implies 'no crash'
+ok 74 - a log read that fails leaves logs unavailable and never implies 'no crash'
+  ---
+  duration_ms: 13.2215
+  ...
+# Subtest: each observation gets a unique run directory under the observation root, and refuses replacement
+ok 75 - each observation gets a unique run directory under the observation root, and refuses replacement
+  ---
+  duration_ms: 42.138958
+  ...
+# Subtest: no capture is written to the old mutable package-keyed /tmp path
+ok 76 - no capture is written to the old mutable package-keyed /tmp path
+  ---
+  duration_ms: 13.593042
+  ...
+# Subtest: the serial is REQUIRED — there is no emulator-5554 default to leak into
+ok 77 - the serial is REQUIRED — there is no emulator-5554 default to leak into
+  ---
+  duration_ms: 2.058791
+  ...
+# Subtest: the canonical and emulator LOOK captures name no fixed shared output path
+ok 78 - the canonical and emulator LOOK captures name no fixed shared output path
+  ---
+  duration_ms: 0.450333
+  ...
+# Subtest: observationCapturePath roots every kind under the observation store and never repeats a run
+ok 79 - observationCapturePath roots every kind under the observation store and never repeats a run
+  ---
+  duration_ms: 6.693833
+  ...
+# Subtest: an unresolvable adb is refused before any device command runs
+ok 80 - an unresolvable adb is refused before any device command runs
+  ---
+  duration_ms: 1.079708
+  ...
+# Subtest: the loud-runner fixture would actually catch a spawn
+ok 81 - the loud-runner fixture would actually catch a spawn
+  ---
+  duration_ms: 0.687792
+  ...
+# Subtest: capture_frame refuses to capture without an explicit serial, before resolving adb
+ok 82 - capture_frame refuses to capture without an explicit serial, before resolving adb
+  ---
+  duration_ms: 2.073875
+  ...
+# Subtest: capture_record refuses to record without an explicit device, before any CLI work
+ok 83 - capture_record refuses to record without an explicit device, before any CLI work
+  ---
+  duration_ms: 5.194
+  ...
+1..83
+# tests 83
+# suites 0
+# pass 83
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 52963.6265

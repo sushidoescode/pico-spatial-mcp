@@ -1,0 +1,188 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-10-23T21:39:58.799597+00:00",
+  "kind": "host-source-change-and-rebuild",
+  "change": "Title gains (source revision 2); no control/layout change",
+  "sourceChanges": [
+    {
+      "path": "app/src/main/java/com/example/picofixture/iteration/content/HomePage.kt",
+      "before": {
+        "bytes": 1265,
+        "path": "app/src/main/java/com/example/picofixture/iteration/content/HomePage.kt",
+        "sha256": "a456f0392bc428dc94923d25e1d3e048670a2fe9e2fee92ad7108b4c22854850"
+      },
+      "after": {
+        "bytes": 1285,
+        "path": "app/src/main/java/com/example/picofixture/iteration/content/HomePage.kt",
+        "sha256": "2c2b40fc30d291a4e8a1df35ec1b5e25fa92bbf2a9ec8e89b21fab07b1427a6c"
+      }
+    }
+  ],
+  "builds": [
+    {
+      "record": {
+        "path": "evidence/agent-iteration-example/build-16bd1965-d353-4d9d-8512-b59344053f27/build.json",
+        "bytes": 9028,
+        "sha256": "e14443c2113048254c405f3b508071c94261e14d49fb2b42c17ed4c4a13eea28"
+      },
+      "apk": {
+        "path": "evidence/agent-iteration-example/build-16bd1965-d353-4d9d-8512-b59344053f27/app-debug.apk",
+        "bytes": 32813306,
+        "sha256": "05edb1f0d71e7e3f4cfc564bfa34f997cdbeac10291ee69634cdf8cd143c970f"
+      },
+      "inputSha256": "4129f6240ae5084e922380d2655d7bd6e8e995b3cbeee856e3b7f7df47e63b48",
+      "sourceManifestSha256": "34389dfb67b5c971de2a3ceb85288837c7ba39010e963fe159641278958ee7e6",
+      "resolvedInputCount": 12342,
+      "resolvedBefore": {
+        "path": "evidence/agent-iteration-example/build-16bd1965-d353-4d9d-8512-b59344053f27/resolved-inputs-before.json",
+        "bytes": 3364763,
+        "sha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4"
+      },
+      "resolvedAfter": {
+        "path": "evidence/agent-iteration-example/build-16bd1965-d353-4d9d-8512-b59344053f27/resolved-inputs.json",
+        "bytes": 3364763,
+        "sha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4"
+      },
+      "ownership": "released",
+      "package": "com.example.picofixture.iteration.debug",
+      "gradle": {
+        "path": "/Users/sushantsrikrish/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/bin/gradle",
+        "phases": [
+          {
+            "argv": [
+              ":app:writeIterationInputs",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792790728500,
+            "name": "pre-inputs",
+            "startedAt": 1792790714909
+          },
+          {
+            "argv": [
+              ":app:assembleDebug",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792790741256,
+            "name": "assemble",
+            "startedAt": 1792790732670
+          },
+          {
+            "argv": [
+              ":app:writeIterationInputs",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792790752523,
+            "name": "post-inputs",
+            "startedAt": 1792790743035
+          }
+        ],
+        "sha256": "5a7ae6e523747516cc026dea0314023a8e3ee9c89e6c4e975b75b5924b1e7a13"
+      },
+      "serverBuild": "build6 before final boundary hardening",
+      "nativeInstalled": false,
+      "replayed": false,
+      "renderedReview": false
+    },
+    {
+      "record": {
+        "path": "evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/build.json",
+        "bytes": 9028,
+        "sha256": "1d1c2e40e76b40403291518c12a30204add2f8b08201b6b4155b061d065dcc75"
+      },
+      "apk": {
+        "path": "evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/app-debug.apk",
+        "bytes": 32813306,
+        "sha256": "24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04"
+      },
+      "inputSha256": "2d6474e68187119bd8258aba0d67465792c41645888f685ebea4b2d94cd60617",
+      "sourceManifestSha256": "fed8230323f850918c9e68e7bb0c3a758b2dc3da29643ac87c3c97f433b1c1fe",
+      "resolvedInputCount": 12342,
+      "resolvedBefore": {
+        "path": "evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/resolved-inputs-before.json",
+        "bytes": 3364763,
+        "sha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4"
+      },
+      "resolvedAfter": {
+        "path": "evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/resolved-inputs.json",
+        "bytes": 3364763,
+        "sha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4"
+      },
+      "ownership": "released",
+      "package": "com.example.picofixture.iteration.debug",
+      "gradle": {
+        "path": "/Users/sushantsrikrish/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/bin/gradle",
+        "phases": [
+          {
+            "argv": [
+              ":app:writeIterationInputs",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792791088397,
+            "name": "pre-inputs",
+            "startedAt": 1792791078309
+          },
+          {
+            "argv": [
+              ":app:assembleDebug",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792791102692,
+            "name": "assemble",
+            "startedAt": 1792791090927
+          },
+          {
+            "argv": [
+              ":app:writeIterationInputs",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792791111054,
+            "name": "post-inputs",
+            "startedAt": 1792791103752
+          }
+        ],
+        "sha256": "5a7ae6e523747516cc026dea0314023a8e3ee9c89e6c4e975b75b5924b1e7a13"
+      },
+      "serverBuild": "final build7",
+      "nativeInstalled": false,
+      "replayed": false,
+      "renderedReview": false
+    }
+  ],
+  "differentSourceBinding": true,
+  "differentApkBytes": true,
+  "resolvedInputsUnchangedBetweenBuilds": true,
+  "nativeReplay": "not run; actual outgoing-owner release/acquisition and any necessary emulator-start permission pending",
+  "renderedEvidence": null,
+  "evidenceCeiling": "structural",
+  "hermeticBuildClaim": false
+}

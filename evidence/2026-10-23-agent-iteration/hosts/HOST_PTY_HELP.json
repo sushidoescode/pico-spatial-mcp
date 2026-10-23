@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-23T21:19:13Z",
+  "timeoutSeconds": 45,
+  "maxBytes": 131072,
+  "observations": [
+    {
+      "stem": "claude-help-pty",
+      "binary": "/Users/sushantsrikrish/.local/bin/claude",
+      "argv": [
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "elapsedMs": 74,
+      "stdout": {
+        "path": "claude-help-pty.stdout.txt",
+        "bytes": 17168,
+        "sha256": "30ae53f719d33aedfab0ba94b36c61d5f3970d9be7be3bd6c8094f931789cb42"
+      },
+      "stderr": {
+        "path": "claude-help-pty.stderr.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "stem": "claude-mcp-help-pty",
+      "binary": "/Users/sushantsrikrish/.local/bin/claude",
+      "argv": [
+        "mcp",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "elapsedMs": 73,
+      "stdout": {
+        "path": "claude-mcp-help-pty.stdout.txt",
+        "bytes": 2157,
+        "sha256": "0071cf23291823847fab51ed07fed0b3e667446f18a0599db67e8848f101a15b"
+      },
+      "stderr": {
+        "path": "claude-mcp-help-pty.stderr.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "stem": "gemini-help-pty",
+      "binary": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/bin/gemini",
+      "argv": [
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "elapsedMs": 899,
+      "stdout": {
+        "path": "gemini-help-pty.stdout.txt",
+        "bytes": 5848,
+        "sha256": "dc8ce69c9eb63c1884885f00eb0468a7c23df4a65f4b3d4bf9ded324f4f56139"
+      },
+      "stderr": {
+        "path": "gemini-help-pty.stderr.txt",
+        "bytes": 328,
+        "sha256": "f3eda89e9ef916004e9b39bf25a96c65fd28b6644532210a80fa6429c44b6533"
+      }
+    },
+    {
+      "stem": "gemini-mcp-help-pty",
+      "binary": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/bin/gemini",
+      "argv": [
+        "mcp",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "elapsedMs": 848,
+      "stdout": {
+        "path": "gemini-mcp-help-pty.stdout.txt",
+        "bytes": 662,
+        "sha256": "e2236eb070067c132cbccccaca454b08be35d207c15d2c11e5edf6e299fab0e2"
+      },
+      "stderr": {
+        "path": "gemini-mcp-help-pty.stderr.txt",
+        "bytes": 328,
+        "sha256": "605c0f80a1084fffc8bcfb7b0329f385748d48eea860723a0bea71c374df67e8"
+      }
+    },
+    {
+      "stem": "gemini-mcp-add-help-pty",
+      "binary": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/bin/gemini",
+      "argv": [
+        "mcp",
+        "add",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "elapsedMs": 1038,
+      "stdout": {
+        "path": "gemini-mcp-add-help-pty.stdout.txt",
+        "bytes": 1928,
+        "sha256": "dbc5e007bcbfd227f853e1c575867dc94aec3ebc051aca32d766858c21db6ff0"
+      },
+      "stderr": {
+        "path": "gemini-mcp-add-help-pty.stderr.txt",
+        "bytes": 328,
+        "sha256": "2b396b8c731a3a1c0ed6299b6323e470b99f0fb09856ec129d1dd0879de03404"
+      }
+    }
+  ]
+}

@@ -1,0 +1,294 @@
+
+> pico-spatial-mcp@38.1.0 test:distribution-adoption
+> node scripts/run-gate.mjs test:distribution-adoption
+
+(node:39633) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:39635) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: portable core and host overlays use only their documented MCP contracts
+ok 1 - portable core and host overlays use only their documented MCP contracts
+  ---
+  duration_ms: 2.906375
+  ...
+# Subtest: all host marketplaces use their exact source descriptor and synchronized metadata
+ok 2 - all host marketplaces use their exact source descriptor and synchronized metadata
+  ---
+  duration_ms: 51.273667
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39830) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:39884) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: installed tarball keeps default startup, tools/list, and pico_doctor read-only
+ok 3 - installed tarball keeps default startup, tools/list, and pico_doctor read-only
+  ---
+  duration_ms: 4494.663167
+  ...
+# Subtest: installed tarball wrapper lazily uses exact managed latest without touching ambient CLI or PATH
+ok 4 - installed tarball wrapper lazily uses exact managed latest without touching ambient CLI or PATH
+  ---
+  duration_ms: 2495.023458
+  ...
+# Subtest: setup-required wrapper results stay source/freshness-neutral and never execute setup
+ok 5 - setup-required wrapper results stay source/freshness-neutral and never execute setup
+  ---
+  duration_ms: 6315.069667
+  ...
+# Subtest: public schemas and missing-vault results route setup through ensure_pico_cli
+ok 6 - public schemas and missing-vault results route setup through ensure_pico_cli
+  ---
+  duration_ms: 591.380541
+  ...
+# Subtest: KnowledgeBridge classifies setup refusal anywhere in bounded startup stderr
+ok 7 - KnowledgeBridge classifies setup refusal anywhere in bounded startup stderr
+  ---
+  duration_ms: 3002.001541
+  ...
+# Subtest: bootstrap root/platform/prerequisite decisions are independent of the caller cwd
+ok 8 - bootstrap root/platform/prerequisite decisions are independent of the caller cwd
+  ---
+  duration_ms: 3.173833
+  ...
+# Subtest: Windows bootstrap runs fixed npm scripts through ComSpec without shell interpolation
+ok 9 - Windows bootstrap runs fixed npm scripts through ComSpec without shell interpolation
+  ---
+  duration_ms: 8.999
+  ...
+# Subtest: a non-timeout npm failure is nonzero and never launches MCP
+ok 10 - a non-timeout npm failure is nonzero and never launches MCP
+  ---
+  duration_ms: 185.0095
+  ...
+# Subtest: cold bootstrap keeps npm on stderr, uses absolute child argv, and propagates child exit
+ok 11 - cold bootstrap keeps npm on stderr, uses absolute child argv, and propagates child exit
+  ---
+  duration_ms: 451.320292
+  ...
+# Subtest: documented portable and Claude token contracts launch from a hostile cwd
+ok 12 - documented portable and Claude token contracts launch from a hostile cwd
+  ---
+  duration_ms: 1133.417375
+  ...
+# Subtest: bounded bootstrap children are killed after timeout
+ok 13 - bounded bootstrap children are killed after timeout
+  ---
+  duration_ms: 84.597792
+  ...
+# Subtest: bootstrap forwards SIGTERM to the MCP child
+ok 14 - bootstrap forwards SIGTERM to the MCP child
+  ---
+  duration_ms: 82.003875
+  ...
+# Subtest: knowledge_api exposes all eight strict grounded action schemas
+ok 15 - knowledge_api exposes all eight strict grounded action schemas
+  ---
+  duration_ms: 3.955166
+  ...
+# Subtest: KnowledgeBridge calls every action through one persistent serialized stdio MCP client
+ok 16 - KnowledgeBridge calls every action through one persistent serialized stdio MCP client
+  ---
+  duration_ms: 287.529542
+  ...
+# Subtest: KnowledgeBridge returns remote tool errors without retiring switched workspace state
+ok 17 - KnowledgeBridge returns remote tool errors without retiring switched workspace state
+  ---
+  duration_ms: 283.92725
+  ...
+# Subtest: KnowledgeBridge deduplicates concurrent startup and caps returned text
+ok 18 - KnowledgeBridge deduplicates concurrent startup and caps returned text
+  ---
+  duration_ms: 279.852125
+  ...
+# Subtest: KnowledgeBridge production environment forwards the full host environment
+ok 19 - KnowledgeBridge production environment forwards the full host environment
+  ---
+  duration_ms: 276.797666
+  ...
+# Subtest: KnowledgeBridge observes a timed-out generation exit before starting its replacement
+not ok 20 - KnowledgeBridge observes a timed-out generation exit before starting its replacement
+  ---
+  duration_ms: 3107.316333
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/distribution-adoption.mjs:1516:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    {"status":"unavailable","action":"graph_stats","error":"spatial-knowledge replacement is blocked: spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the exact generation root did not exit during the bounded EOF grace period; the generation is quarantined and replacement is blocked","lifecycleWarning":"spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the exact generation root did not exit during the bounded EOF grace period; the generation is quarantined and replacement is blocked"}
+    [32mactual[39m [31mexpected[39m
+    
+    [39m'[39m[32mu[39m[32mn[39m[32ma[39m[32mv[39m[32ma[39m[32mi[39m[32ml[39m[32ma[39m[32mb[39m[32ml[39m[32me[39m[31mo[39m[31mk[39m[39m'[39m
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'ok'
+  actual: 'unavailable'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/distribution-adoption.mjs:1543:10)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: KnowledgeBridge resets after startup timeout, call timeout, and protocol failure, then recovers
+not ok 21 - KnowledgeBridge resets after startup timeout, call timeout, and protocol failure, then recovers
+  ---
+  duration_ms: 806.915458
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/distribution-adoption.mjs:1557:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    startup timeout: {"status":"unavailable","action":"graph_stats","error":"spatial-knowledge replacement is blocked: spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the exact generation root did not exit during the bounded EOF grace period; the generation is quarantined and replacement is blocked","lifecycleWarning":"spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the exact generation root did not exit during the bounded EOF grace period; the generation is quarantined and replacement is blocked"}
+    [32mactual[39m [31mexpected[39m
+    
+    [39m'[39m[32mu[39m[32mn[39m[32ma[39m[32mv[39m[32ma[39m[32mi[39m[32ml[39m[32ma[39m[32mb[39m[32ml[39m[32me[39m[31mo[39m[31mk[39m[39m'[39m
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'ok'
+  actual: 'unavailable'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/distribution-adoption.mjs:1610:12)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: KnowledgeBridge reports a missing pico-cli command as unavailable
+ok 22 - KnowledgeBridge reports a missing pico-cli command as unavailable
+  ---
+  duration_ms: 1.772792
+  ...
+# Subtest: KnowledgeBridge custom injected command bypasses managed resolution
+ok 23 - KnowledgeBridge custom injected command bypasses managed resolution
+  ---
+  duration_ms: 279.971291
+  ...
+# Subtest: KnowledgeBridge production child follows managed path/version changes and retires on disabled
+not ok 24 - KnowledgeBridge production child follows managed path/version changes and retires on disabled
+  ---
+  duration_ms: 2201.859125
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/distribution-adoption.mjs:1654:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    {"status":"unavailable","action":"graph_stats","error":"spatial-knowledge replacement is blocked: spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the generation is quarantined and replacement is blocked","failureClass":"runtime","picoCli":{"source":"managed","policy":"managed-latest","path":"/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico managed runtime WWscdd/home/.pico-mcp/cli/versions/0.4.2/node_modules/.bin/pico-cli","version":"0.4.2","latestVersion":"0.4.2","checkedAt":"2026-10-23T21:25:22.355Z","freshness":"latest","action":"present"},"lifecycleWarning":"spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the generation is quarantined and replacement is blocked"}
+    [32mactual[39m [31mexpected[39m
+    
+    [39m'[39m[32mu[39m[32mn[39m[32ma[39m[32mv[39m[32ma[39m[32mi[39m[32ml[39m[32ma[39m[32mb[39m[32ml[39m[32me[39m[31mo[39m[31mk[39m[39m'[39m
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'ok'
+  actual: 'unavailable'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/distribution-adoption.mjs:1684:10)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+    Test.postRun (node:internal/test_runner/test:1090:19)
+    Test.run (node:internal/test_runner/test:1018:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: registered knowledge_api keeps the flattened union strict
+ok 25 - registered knowledge_api keeps the flattened union strict
+  ---
+  duration_ms: 286.596709
+  ...
+# Subtest: preflight_lint queries only an opt-in advisory graph second opinion without changing clean
+ok 26 - preflight_lint queries only an opt-in advisory graph second opinion without changing clean
+  ---
+  duration_ms: 7.716417
+  ...
+# Subtest: missing pico-cli leaves opt-in preflight_lint clean and labels knowledge unavailable
+ok 27 - missing pico-cli leaves opt-in preflight_lint clean and labels knowledge unavailable
+  ---
+  duration_ms: 4.623
+  ...
+# Subtest: preflight prints the verified emulator-bundle install route but never runs it
+ok 28 - preflight prints the verified emulator-bundle install route but never runs it
+  ---
+  duration_ms: 4.324833
+  ...
+# Subtest: public adoption docs keep bundle installation, AVD creation, and build tooling distinct
+ok 29 - public adoption docs keep bundle installation, AVD creation, and build tooling distinct
+  ---
+  duration_ms: 4.384958
+  ...
+# Subtest: operational docs publish one exact canonical managed CLI policy block
+ok 30 - operational docs publish one exact canonical managed CLI policy block
+  ---
+  duration_ms: 7.482583
+  ...
+# Subtest: managed CLI policy gate rejects alternate modes and automatic mutation claims
+ok 31 - managed CLI policy gate rejects alternate modes and automatic mutation claims
+  ---
+  duration_ms: 14.286625
+  ...
+# Subtest: managed CLI policy gate accepts external and global prose that does not define resolution policy
+ok 32 - managed CLI policy gate accepts external and global prose that does not define resolution policy
+  ---
+  duration_ms: 5.579375
+  ...
+# Subtest: managed-latest finding distinguishes live ledger proof from isolated synthetic battery calls
+ok 33 - managed-latest finding distinguishes live ledger proof from isolated synthetic battery calls
+  ---
+  duration_ms: 2.482208
+  ...
+# Subtest: managed CLI implementation plan no longer teaches a freshness-overclaiming setup note
+ok 34 - managed CLI implementation plan no longer teaches a freshness-overclaiming setup note
+  ---
+  duration_ms: 0.927791
+  ...
+# Subtest: answers-by-measurement publishes exactly seven narrow answers backed by tracked citations
+ok 35 - answers-by-measurement publishes exactly seven narrow answers backed by tracked citations
+  ---
+  duration_ms: 48.130416
+  ...
+# Subtest: public docs do not use ignored .dev files as evidence
+ok 36 - public docs do not use ignored .dev files as evidence
+  ---
+  duration_ms: 99.295375
+  ...
+# Subtest: every named gate invocation is assigned to one workflow lane whose runner OS matches the inventory
+ok 37 - every named gate invocation is assigned to one workflow lane whose runner OS matches the inventory
+  ---
+  duration_ms: 2.492875
+  ...
+# Subtest: pico-cli 0.4.2 docs state the measured scope and corrected deltas
+ok 38 - pico-cli 0.4.2 docs state the measured scope and corrected deltas
+  ---
+  duration_ms: 0.7545
+  ...
+# Subtest: the scene-understanding ceiling does not resurrect the superseded zero-mesh claim
+ok 39 - the scene-understanding ceiling does not resurrect the superseded zero-mesh claim
+  ---
+  duration_ms: 0.327375
+  ...
+# Subtest: public guidance does not resurrect refuted capture, scene-understanding, or mesh-collider absolutes
+ok 40 - public guidance does not resurrect refuted capture, scene-understanding, or mesh-collider absolutes
+  ---
+  duration_ms: 83.826875
+  ...
+# Subtest: published schema-token measurements name the tokenizer and context boundary
+ok 41 - published schema-token measurements name the tokenizer and context boundary
+  ---
+  duration_ms: 0.436542
+  ...
+# Subtest: official-samples guidance retracts the untracked 8/8 runtime claim
+ok 42 - official-samples guidance retracts the untracked 8/8 runtime claim
+  ---
+  duration_ms: 0.524416
+  ...
+# Subtest: distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and an inventory-derived gate battery
+ok 43 - distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and an inventory-derived gate battery
+  ---
+  duration_ms: 5.9745
+  ...
+1..43
+# tests 43
+# suites 0
+# pass 40
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 360237.169083

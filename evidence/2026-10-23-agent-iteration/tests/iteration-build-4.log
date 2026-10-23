@@ -1,0 +1,6 @@
+
+> pico-spatial-mcp@38.1.0 build
+> node scripts/build-source.mjs
+
+src/interactiontools.ts(14,18): error TS2459: Module '"./util.js"' declares 'ToolResult' locally, but it is not exported.
+build-source: the TypeScript compiler exited with code 2

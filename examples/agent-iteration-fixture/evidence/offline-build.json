@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "lane": "original generated scaffold offline host build",
+  "command": [
+    "./gradlew",
+    "--offline",
+    "--no-daemon",
+    "-Dorg.gradle.java.installations.auto-download=false",
+    "-Pandroid.builder.sdkDownload=false",
+    "-Pkotlin.compiler.execution.strategy=in-process",
+    "assembleDebug",
+    "assembleRelease"
+  ],
+  "exitCode": 1,
+  "elapsedGradleSeconds": 14,
+  "failure": "com.android.application Gradle plugin 8.13.2 absent from existing offline cache",
+  "log": "offline-build.txt",
+  "logSha256": "2866b48a19f5a4b7d99a6628dd14af275a51e14dc4f74d7265abec7a0dd4d995",
+  "apkProduced": false,
+  "nativeOperation": false
+}

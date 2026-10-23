@@ -1,0 +1,21 @@
+{
+  "tool": "pico_interaction",
+  "status": "available",
+  "schemaVersion": 1,
+  "inputRoute": "app-semantic-debug-bridge",
+  "actions": [
+    "panel.show"
+  ],
+  "offlineDiscovery": true,
+  "defaultCycles": 1,
+  "maxScenarioSteps": 20,
+  "maxScenarioMs": 90000,
+  "lookPending": true,
+  "humanInputVerified": false,
+  "evidenceCeiling": "structural",
+  "enforcementScope": "interaction-session-only",
+  "cliWorkflowLifecycleOwner": "official-cli",
+  "nativePrerequisite": "Actual native ownership/release and an already-running explicit emulator; this tool grants no ownership and never boots or selects a headset.",
+  "claimLimit": "Implemented adapter; runtime/visual/host-image acceptance requires separately retained evidence. Legacy/manual/CLI writers are not fenced.",
+  "inlineImageDelivered": false
+}

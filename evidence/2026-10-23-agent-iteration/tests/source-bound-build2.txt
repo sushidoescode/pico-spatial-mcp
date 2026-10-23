@@ -1,0 +1,287 @@
+pico-spatial-mcp ready (stdio)
+(node:48030) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+{
+  "tool": "pico_interaction",
+  "status": "built",
+  "apkPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/app-debug.apk",
+  "apkSha256": "24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04",
+  "inputSha256": "2d6474e68187119bd8258aba0d67465792c41645888f685ebea4b2d94cd60617",
+  "inputs": {
+    "scope": "dedicated-fixture-authored-inputs",
+    "policySha256": "7a3355c56835197c92bbc7cb6d36525442cfd6a795dee25c615fa010206eb2b9",
+    "inputs": {
+      "schemaVersion": 1,
+      "projectDir": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/examples/agent-iteration-fixture",
+      "algorithm": "sha256",
+      "sha256": "fed8230323f850918c9e68e7bb0c3a758b2dc3da29643ac87c3c97f433b1c1fe",
+      "entryCount": 38,
+      "totalBytes": 1639164,
+      "entries": [
+        {
+          "path": "app/build.gradle.kts",
+          "bytes": 6399,
+          "sha256": "91cf329c6a33264743f79aef34efb5011b344ff609fc46e60f710a462c9a0a4b"
+        },
+        {
+          "path": "app/proguard-rules.pro",
+          "bytes": 751,
+          "sha256": "1cf8c57e8f79c250b0af9c1a5a4edad71a5c348a79ab70243b6bae086c150ad2"
+        },
+        {
+          "path": "app/src/androidTest/java/com/example/picofixture/iteration/ExampleInstrumentedTest.kt",
+          "bytes": 700,
+          "sha256": "72898fb5b0dc420fca23f4dc8feb4f721874350475186ab8582dfb84c18c2010"
+        },
+        {
+          "path": "app/src/debug/java/com/example/picofixture/iteration/AgentInteractionBridge.kt",
+          "bytes": 7969,
+          "sha256": "01a50fe1cdb4c95fcc284a980c939c950240a04e81d7cb665cd4b75526934931"
+        },
+        {
+          "path": "app/src/debug/java/com/example/picofixture/iteration/FixtureBridge.kt",
+          "bytes": 338,
+          "sha256": "1f763e8ee021f0791a5e7fd943e0681f0140645c667ce5f18030eae5de8ebe54"
+        },
+        {
+          "path": "app/src/main/AndroidManifest.xml",
+          "bytes": 5233,
+          "sha256": "954852ee3cb7a242487cd31ca978198ae4dc9a8551d5829bc7a180f60720b05b"
+        },
+        {
+          "path": "app/src/main/assets/box.usdz",
+          "bytes": 217200,
+          "sha256": "1036270ab9c96b0194233177b3407694dd1a831a8a663873fcb172d88da6df75"
+        },
+        {
+          "path": "app/src/main/java/com/example/picofixture/iteration/FixtureState.kt",
+          "bytes": 445,
+          "sha256": "b64393a8eee800f4f4ae60f0dea1c2d08215e3e655da8614655ebd2ff397f52a"
+        },
+        {
+          "path": "app/src/main/java/com/example/picofixture/iteration/Main.kt",
+          "bytes": 439,
+          "sha256": "9ffddb47364a8046a2b67ac4f73f16b41156a266f856c28e7f975f70bc92285a"
+        },
+        {
+          "path": "app/src/main/java/com/example/picofixture/iteration/content/HomePage.kt",
+          "bytes": 1285,
+          "sha256": "2c2b40fc30d291a4e8a1df35ec1b5e25fa92bbf2a9ec8e89b21fab07b1427a6c"
+        },
+        {
+          "path": "app/src/main/java/com/example/picofixture/iteration/platform/LaunchActivity.kt",
+          "bytes": 163,
+          "sha256": "17d0253e695ee93f607f4797b0a056f58bf490f3b469c555077d9015cec35d3e"
+        },
+        {
+          "path": "app/src/main/java/com/example/picofixture/iteration/platform/SpatialApplication.kt",
+          "bytes": 403,
+          "sha256": "2e5b1c39aa85828f287ca7463cc581ca4d433d90260569332705b7a65665e5d6"
+        },
+        {
+          "path": "app/src/main/res/drawable/ic_launcher_foreground.png",
+          "bytes": 456036,
+          "sha256": "3044d2ef10d9c2551a3956e71db9c56973ffb37a0ce83d001c6f3fa4af4f6cce"
+        },
+        {
+          "path": "app/src/main/res/drawable/icon_3d_layer_0.png",
+          "bytes": 222387,
+          "sha256": "ff273c4671fa12e2652bb8ed974c3462f51dc87e295baa346d0234ea8c4f2496"
+        },
+        {
+          "path": "app/src/main/res/drawable/icon_3d_layer_1.png",
+          "bytes": 55732,
+          "sha256": "9f331b1d67bc8432045a994f557ee4e8ba962707542f4e1d7a5531f56a76bb9d"
+        },
+        {
+          "path": "app/src/main/res/drawable/icon_3d_sdf_0.png",
+          "bytes": 109986,
+          "sha256": "2aa9fe29ffca946a2b19f339b6a993c4e86b6d7787d1040e7c87caf19822b787"
+        },
+        {
+          "path": "app/src/main/res/drawable/icon_3d_sdf_1.png",
+          "bytes": 16082,
+          "sha256": "2b86705cac3addfd0c08ad85f95994c3ab2bb12ae0a0ac6d770ea14d8b4447d0"
+        },
+        {
+          "path": "app/src/main/res/drawable/sci_fi_box.xml",
+          "bytes": 5813,
+          "sha256": "b70cd4a386819eaa8f7822128513b31ef1e680d4c64f73531c3837d84afab9dd"
+        },
+        {
+          "path": "app/src/main/res/mipmap-anydpi/ic_launcher.xml",
+          "bytes": 273,
+          "sha256": "6816d13425eb7e5a1f32d3531eebf146e5be0642c92d40de9281743cb80954a7"
+        },
+        {
+          "path": "app/src/main/res/mipmap-anydpi/ic_launcher_round.xml",
+          "bytes": 273,
+          "sha256": "6816d13425eb7e5a1f32d3531eebf146e5be0642c92d40de9281743cb80954a7"
+        },
+        {
+          "path": "app/src/main/res/mipmap-xxxhdpi/ic_spatial_launcher.png",
+          "bytes": 456036,
+          "sha256": "3044d2ef10d9c2551a3956e71db9c56973ffb37a0ce83d001c6f3fa4af4f6cce"
+        },
+        {
+          "path": "app/src/main/res/values-night/themes.xml",
+          "bytes": 175,
+          "sha256": "d206b13f7b0ab192ea8e5cfefd555e569f5dc8272852890b1abb86e2ebab9fd4"
+        },
+        {
+          "path": "app/src/main/res/values/colors.xml",
+          "bytes": 379,
+          "sha256": "57681038afd005dcd260eabdd6d16619709c4a3fe20324362ea00e093e85b5fd"
+        },
+        {
+          "path": "app/src/main/res/values/drawables_3d.xml",
+          "bytes": 339,
+          "sha256": "b184f12693135aee48fe26d4413cf7c2c311e7abc96ff647290b6abc57cb6d04"
+        },
+        {
+          "path": "app/src/main/res/values/strings.xml",
+          "bytes": 138,
+          "sha256": "0d1ee88d0892350786633e678b92272042f6bcce543131384700308ff3d59d3d"
+        },
+        {
+          "path": "app/src/main/res/values/themes.xml",
+          "bytes": 175,
+          "sha256": "d206b13f7b0ab192ea8e5cfefd555e569f5dc8272852890b1abb86e2ebab9fd4"
+        },
+        {
+          "path": "app/src/main/res/xml/backup_rules.xml",
+          "bytes": 479,
+          "sha256": "602e880ca25c32b557c19cf6d9172e9bf55595cf6440d476d1787652f5889e49"
+        },
+        {
+          "path": "app/src/main/res/xml/data_extraction_rules.xml",
+          "bytes": 488,
+          "sha256": "b2e1daf7a7e6fe1f28d49ab9eae35a77bc74a4f443aeeb44ca2275ad2bf51835"
+        },
+        {
+          "path": "app/src/release/java/com/example/picofixture/iteration/FixtureBridge.kt",
+          "bytes": 272,
+          "sha256": "a18fc806e7861867ee73cbf80e259bd90afdfe0aef54f7efb4052c5c7b025927"
+        },
+        {
+          "path": "app/src/test/java/com/example/picofixture/iteration/ExampleUnitTest.kt",
+          "bytes": 696,
+          "sha256": "681e866552f2420eb8f35d7ab150acd43b0c89242871832174f1a15c61d7ad53"
+        },
+        {
+          "path": "build.gradle.kts",
+          "bytes": 219,
+          "sha256": "47774018405adb4336f34aa05a2fdc6ca8c2175e5efc5b705f1ecb101eae7094"
+        },
+        {
+          "path": "gradle.properties",
+          "bytes": 1347,
+          "sha256": "0c64dc4bd012fbcb1b99318d519ac007261fab30c2ad9d3f04d8ed4282e128e9"
+        },
+        {
+          "path": "gradle/libs.versions.toml",
+          "bytes": 1822,
+          "sha256": "23a5d1e120481dc1397f81a7d77dde3ed21621a2686116d24fff3f9b7eb0f77b"
+        },
+        {
+          "path": "gradle/wrapper/gradle-wrapper.jar",
+          "bytes": 59203,
+          "sha256": "e996d452d2645e70c01c11143ca2d3742734a28da2bf61f25c82bdc288c9e637"
+        },
+        {
+          "path": "gradle/wrapper/gradle-wrapper.properties",
+          "bytes": 251,
+          "sha256": "cdab1ffb439219b1db125e3c99a86cf2424f8762b9b3faa404ed061e3635ecde"
+        },
+        {
+          "path": "gradlew",
+          "bytes": 5766,
+          "sha256": "63135287117a1e6d12c84580f1f49c61d1ba02218ecd28660605e97f976e7d65"
+        },
+        {
+          "path": "gradlew.bat",
+          "bytes": 2674,
+          "sha256": "c46a27c79007746de5922b17abb6230d64ad8b1ba3ad1585ee5c6543c2a9b129"
+        },
+        {
+          "path": "settings.gradle.kts",
+          "bytes": 798,
+          "sha256": "5a8c51072af58b66646b0df4708dd844733ce17624c4d5217c9357ce75101041"
+        }
+      ]
+    },
+    "localProperties": {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/examples/agent-iteration-fixture/local.properties",
+      "sha256": "95e4c4e15424a0a93e01f051bea6234c01e2d21416fd4955a3bf720c3bf132c9"
+    },
+    "sha256": "2d6474e68187119bd8258aba0d67465792c41645888f685ebea4b2d94cd60617",
+    "complete": true
+  },
+  "bindingScope": "dedicated-fixture-source-and-reported-resolved-inputs",
+  "resolvedInputCount": 12342,
+  "resolvedInputPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/resolved-inputs.json",
+  "resolvedInputSha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4",
+  "preResolvedInputPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/resolved-inputs-before.json",
+  "preResolvedInputSha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4",
+  "continuity": "pre-build-hash-and-stat-generation-through-artifact-retention",
+  "gradle": {
+    "path": "/Users/sushantsrikrish/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/bin/gradle",
+    "sha256": "5a7ae6e523747516cc026dea0314023a8e3ee9c89e6c4e975b75b5924b1e7a13",
+    "phases": [
+      {
+        "name": "pre-inputs",
+        "argv": [
+          ":app:writeIterationInputs",
+          "--offline",
+          "--no-daemon",
+          "--console=plain",
+          "-Dorg.gradle.java.installations.auto-download=false",
+          "-Pandroid.builder.sdkDownload=false",
+          "-Pkotlin.compiler.execution.strategy=in-process"
+        ],
+        "startedAt": 1792791078309,
+        "finishedAt": 1792791088397
+      },
+      {
+        "name": "assemble",
+        "argv": [
+          ":app:assembleDebug",
+          "--offline",
+          "--no-daemon",
+          "--console=plain",
+          "-Dorg.gradle.java.installations.auto-download=false",
+          "-Pandroid.builder.sdkDownload=false",
+          "-Pkotlin.compiler.execution.strategy=in-process"
+        ],
+        "startedAt": 1792791090927,
+        "finishedAt": 1792791102692
+      },
+      {
+        "name": "post-inputs",
+        "argv": [
+          ":app:writeIterationInputs",
+          "--offline",
+          "--no-daemon",
+          "--console=plain",
+          "-Dorg.gradle.java.installations.auto-download=false",
+          "-Pandroid.builder.sdkDownload=false",
+          "-Pkotlin.compiler.execution.strategy=in-process"
+        ],
+        "startedAt": 1792791103752,
+        "finishedAt": 1792791111054
+      }
+    ]
+  },
+  "recordPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/build.json",
+  "packageName": "com.example.picofixture.iteration.debug",
+  "hermeticBuildClaim": false,
+  "ownership": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/examples/agent-iteration-fixture/.gradle-user-home/pico-iteration-build.owner.json",
+    "token": "18547e67-1919-4ab4-b084-33b89484a72a",
+    "state": "released",
+    "scope": "interaction-fixture-build-only"
+  },
+  "inlineImageDelivered": false
+}
+(node:48015) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)

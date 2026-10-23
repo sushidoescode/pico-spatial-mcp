@@ -1,0 +1,151 @@
+(node:18111) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:18131) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: semantic interaction transaction is implemented
+ok 1 - semantic interaction transaction is implemented
+  ---
+  duration_ms: 0.473667
+  ...
+# Subtest: acknowledged panel action has independent readback and fresh retained PNG, LOOK remains pending
+ok 2 - acknowledged panel action has independent readback and fresh retained PNG, LOOK remains pending
+  ---
+  duration_ms: 49.950583
+  ...
+# Subtest: invalid action, expired deadline, stale revision and target drift send nothing
+ok 3 - invalid action, expired deadline, stale revision and target drift send nothing
+  ---
+  duration_ms: 57.902334
+  ...
+# Subtest: lost ACK, accepted without completion, transport failure and post-send interference retain uncertainty without retry
+ok 4 - lost ACK, accepted without completion, transport failure and post-send interference retain uncertainty without retry
+  ---
+  duration_ms: 100.3185
+  ...
+# Subtest: completed request ID cannot be replayed, even if expected revision is changed
+ok 5 - completed request ID cannot be replayed, even if expected revision is changed
+  ---
+  duration_ms: 27.313459
+  ...
+# Subtest: capture failure and stale timestamp do not erase completed semantics or manufacture visual proof
+ok 6 - capture failure and stale timestamp do not erase completed semantics or manufacture visual proof
+  ---
+  duration_ms: 39.009291
+  ...
+# Subtest: cancellation before dispatch sends nothing; cancellation after a possible mutation remains held
+ok 7 - cancellation before dispatch sends nothing; cancellation after a possible mutation remains held
+  ---
+  duration_ms: 26.284458
+  ...
+# (node:18132) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: strict schemas allow only named panel action and bounded identities
+ok 8 - strict schemas allow only named panel action and bounded identities
+  ---
+  duration_ms: 3.453625
+  ...
+# Subtest: ACK matching rejects wrong caller, generation, request, action and contradictions
+ok 9 - ACK matching rejects wrong caller, generation, request, action and contradictions
+  ---
+  duration_ms: 2.131042
+  ...
+# Subtest: backend rejects unsafe target before spawning
+ok 10 - backend rejects unsafe target before spawning
+  ---
+  duration_ms: 0.254917
+  ...
+# Subtest: app-private observation uses explicit serial, bounded output and no receiver
+ok 11 - app-private observation uses explicit serial, bounded output and no receiver
+  ---
+  duration_ms: 1.014042
+  ...
+# Subtest: send is once-only even when its transport failed or timed out
+ok 12 - send is once-only even when its transport failed or timed out
+  ---
+  duration_ms: 0.558833
+  ...
+# Subtest: publication is app-generation scoped and atomically refuses duplicate file names
+ok 13 - publication is app-generation scoped and atomically refuses duplicate file names
+  ---
+  duration_ms: 0.324084
+  ...
+# Subtest: missing ACK remains absent and invalid ACK never becomes completion
+ok 14 - missing ACK remains absent and invalid ACK never becomes completion
+  ---
+  duration_ms: 0.744541
+  ...
+# Subtest: ACK read is path-bound; release/foreign UID denial stays a transport failure
+ok 15 - ACK read is path-bound; release/foreign UID denial stays a transport failure
+  ---
+  duration_ms: 0.457167
+  ...
+# Subtest: read rejects malformed framing, oversized payloads and mismatched observed package
+ok 16 - read rejects malformed framing, oversized payloads and mismatched observed package
+  ---
+  duration_ms: 0.8145
+  ...
+# Subtest: debug emitter has app-private IPC and bounded replay/deadline guards
+ok 17 - debug emitter has app-private IPC and bounded replay/deadline guards
+  ---
+  duration_ms: 0.825791
+  ...
+# Subtest: debug source set contains IPC; release source set contains only an inert adapter
+not ok 18 - debug source set contains IPC; release source set contains only an inert adapter
+  ---
+  duration_ms: 0.577333
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactionbridge.mjs:125:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/examples/agent-iteration-fixture/app/src/release/java/com/example/picofixture/iteration/FixtureBridge.kt'"
+  code: 'ENOENT'
+  stack: |-
+    Object.readFileSync (node:fs:442:20)
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactionbridge.mjs:128:22)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+    Test.postRun (node:internal/test_runner/test:1090:19)
+    Test.run (node:internal/test_runner/test:1018:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# (node:18133) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: explicit emulator target binding is implemented
+ok 19 - explicit emulator target binding is implemented
+  ---
+  duration_ms: 0.575875
+  ...
+# Subtest: missing or physical serial refuses before any probe; two devices never choose for caller
+ok 20 - missing or physical serial refuses before any probe; two devices never choose for caller
+  ---
+  duration_ms: 3.473875
+  ...
+# Subtest: offline, wrong family, APK mismatch and incomplete identity fail closed
+ok 21 - offline, wrong family, APK mismatch and incomplete identity fail closed
+  ---
+  duration_ms: 1.464917
+  ...
+# Subtest: boot, APK, process, generation and emulator drift invalidate the same serial
+ok 22 - boot, APK, process, generation and emulator drift invalidate the same serial
+  ---
+  duration_ms: 0.867166
+  ...
+# Subtest: durable target fence excludes competing callers, requires drain and never steals an old owner
+ok 23 - durable target fence excludes competing callers, requires drain and never steals an old owner
+  ---
+  duration_ms: 63.417958
+  ...
+# Subtest: modified fence owner is detected, never treated as prevented external interference
+ok 24 - modified fence owner is detected, never treated as prevented external interference
+  ---
+  duration_ms: 7.4435
+  ...
+1..24
+# tests 24
+# suites 0
+# pass 23
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 399.839959

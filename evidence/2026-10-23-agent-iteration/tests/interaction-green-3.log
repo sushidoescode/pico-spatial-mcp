@@ -1,0 +1,172 @@
+(node:36613) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:36642) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: bounded fixture build identity is implemented
+ok 1 - bounded fixture build identity is implemented
+  ---
+  duration_ms: 0.524959
+  ...
+# Subtest: source changes invalidate fixture identity while generated outputs do not; extra modules refuse
+ok 2 - source changes invalidate fixture identity while generated outputs do not; extra modules refuse
+  ---
+  duration_ms: 66.941042
+  ...
+# Subtest: failed fixture build retains failure and never returns stale APK bytes
+ok 3 - failed fixture build retains failure and never returns stale APK bytes
+  ---
+  duration_ms: 179.312417
+  ...
+# (node:36643) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: semantic interaction transaction is implemented
+ok 4 - semantic interaction transaction is implemented
+  ---
+  duration_ms: 0.594292
+  ...
+# Subtest: acknowledged panel action has independent readback and fresh retained PNG, LOOK remains pending
+ok 5 - acknowledged panel action has independent readback and fresh retained PNG, LOOK remains pending
+  ---
+  duration_ms: 61.08775
+  ...
+# Subtest: invalid action, expired deadline, stale revision and target drift send nothing
+ok 6 - invalid action, expired deadline, stale revision and target drift send nothing
+  ---
+  duration_ms: 68.308209
+  ...
+# Subtest: lost ACK, accepted without completion, transport failure and post-send interference retain uncertainty without retry
+ok 7 - lost ACK, accepted without completion, transport failure and post-send interference retain uncertainty without retry
+  ---
+  duration_ms: 114.432917
+  ...
+# Subtest: completed request ID cannot be replayed, even if expected revision is changed
+ok 8 - completed request ID cannot be replayed, even if expected revision is changed
+  ---
+  duration_ms: 31.932
+  ...
+# Subtest: a distinct request to an already visible panel is idempotent
+ok 9 - a distinct request to an already visible panel is idempotent
+  ---
+  duration_ms: 32.13175
+  ...
+# Subtest: external semantic mutation during capture is detected, not claimed prevented
+ok 10 - external semantic mutation during capture is detected, not claimed prevented
+  ---
+  duration_ms: 14.932083
+  ...
+# Subtest: stale state and stale ACK timestamps cannot authorize or complete a transaction
+ok 11 - stale state and stale ACK timestamps cannot authorize or complete a transaction
+  ---
+  duration_ms: 24.865625
+  ...
+# Subtest: capture failure and stale timestamp do not erase completed semantics or manufacture visual proof
+ok 12 - capture failure and stale timestamp do not erase completed semantics or manufacture visual proof
+  ---
+  duration_ms: 31.34925
+  ...
+# Subtest: cancellation before dispatch sends nothing; cancellation after a possible mutation remains held
+ok 13 - cancellation before dispatch sends nothing; cancellation after a possible mutation remains held
+  ---
+  duration_ms: 17.623833
+  ...
+# (node:36644) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: pre-cancelled rebuild runner spawns no child
+ok 14 - pre-cancelled rebuild runner spawns no child
+  ---
+  duration_ms: 1.199
+  ...
+# Subtest: cancellation drains the owned child group; it is distinct from timeout
+ok 15 - cancellation drains the owned child group; it is distinct from timeout
+  ---
+  duration_ms: 376.828167
+  ...
+# (node:36645) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: finite semantic scenario is implemented
+ok 16 - finite semantic scenario is implemented
+  ---
+  duration_ms: 0.621417
+  ...
+# Subtest: scenario asserts independent state, retains source target action and frame evidence
+ok 17 - scenario asserts independent state, retains source target action and frame evidence
+  ---
+  duration_ms: 79.844667
+  ...
+# Subtest: scenario initial mismatch, invalid bound, or unapproved reset refuses without dispatch
+ok 18 - scenario initial mismatch, invalid bound, or unapproved reset refuses without dispatch
+  ---
+  duration_ms: 45.531417
+  ...
+# Subtest: uncertain action stops scenario before the second action and never retries
+ok 19 - uncertain action stops scenario before the second action and never retries
+  ---
+  duration_ms: 36.729125
+  ...
+# Subtest: assertion and capture failure stop the scenario without erasing completed action
+ok 20 - assertion and capture failure stop the scenario without erasing completed action
+  ---
+  duration_ms: 78.987166
+  ...
+# Subtest: failed build cannot deploy a previously successful artifact; incomplete closure refuses before build
+ok 21 - failed build cannot deploy a previously successful artifact; incomplete closure refuses before build
+  ---
+  duration_ms: 20.340167
+  ...
+# Subtest: source moving during build refuses deploy; cancellation after build leaves no native calls
+ok 22 - source moving during build refuses deploy; cancellation after build leaves no native calls
+  ---
+  duration_ms: 17.937083
+  ...
+# Subtest: cancellation during the final source snapshot cannot cross into deploy
+ok 23 - cancellation during the final source snapshot cannot cross into deploy
+  ---
+  duration_ms: 12.72775
+  ...
+# Subtest: bounded watch coalesces identical source snapshots and ignores generated-output changes
+ok 24 - bounded watch coalesces identical source snapshots and ignores generated-output changes
+  ---
+  duration_ms: 0.54925
+  ...
+# (node:36646) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: explicit emulator target binding is implemented
+ok 25 - explicit emulator target binding is implemented
+  ---
+  duration_ms: 0.406084
+  ...
+# Subtest: missing or physical serial refuses before any probe; two devices never choose for caller
+ok 26 - missing or physical serial refuses before any probe; two devices never choose for caller
+  ---
+  duration_ms: 3.141666
+  ...
+# Subtest: offline, wrong family, APK mismatch and incomplete identity fail closed
+ok 27 - offline, wrong family, APK mismatch and incomplete identity fail closed
+  ---
+  duration_ms: 1.0835
+  ...
+# Subtest: boot, APK, process, generation and emulator drift invalidate the same serial
+ok 28 - boot, APK, process, generation and emulator drift invalidate the same serial
+  ---
+  duration_ms: 0.622
+  ...
+# Subtest: durable target fence excludes competing callers, requires drain and never steals an old owner
+ok 29 - durable target fence excludes competing callers, requires drain and never steals an old owner
+  ---
+  duration_ms: 78.267
+  ...
+# Subtest: modified fence owner is detected, never treated as prevented external interference
+ok 30 - modified fence owner is detected, never treated as prevented external interference
+  ---
+  duration_ms: 10.617125
+  ...
+1..30
+# tests 30
+# suites 0
+# pass 30
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 481.3635

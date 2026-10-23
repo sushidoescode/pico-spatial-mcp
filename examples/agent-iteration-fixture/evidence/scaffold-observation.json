@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "command": [
+    "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+    "project",
+    "create",
+    "--name",
+    "AgentIterationFixture",
+    "--package",
+    "com.example.picofixture.iteration",
+    "--template",
+    "planar",
+    "--sdk-type",
+    "spatial",
+    "--sdk",
+    "6.1",
+    "--dir",
+    "examples/agent-iteration-fixture"
+  ],
+  "exitCode": 0,
+  "cliVersion": "0.6.1",
+  "utilityVersionPrinted": "0.0.2-alpha.6",
+  "generatedPrimerVersion": "0.0.2-alpha.7",
+  "resolvedSpatialSdk": "6.1.9",
+  "templateVersion": "6.1.0",
+  "unexpectedSharedMutation": {
+    "path": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/templates",
+    "trigger": "Existing package.xml had no channel/download-source marker. project create downloaded and extracted templates-6.1.0.zip automatically.",
+    "packageXmlSha256After": "6b06566c1931812ffdef65a0356570062f8d21a348fc742c54df366398e29ce2",
+    "beforeContentIdentity": "unknown; directory existed at version 6.1.0; no before hash captured",
+    "downloadUrl": "https://lf-devtools.picoxr.com/obj/spatial-toolbox/oversea/templates/6.1/templates-6.1.0.zip",
+    "restored": false,
+    "remainingChanges": "exact overwritten byte delta unknown"
+  },
+  "process": {
+    "nodePid": 80845,
+    "foregroundCommandCompleted": true,
+    "followUpPsFoundPid": false,
+    "backgroundChildren": "not established; no background task was reported"
+  },
+  "nativeOperations": false,
+  "notes": [
+    "Unexpected preservation-boundary violation reported to root immediately. No compensating restore or further CLI scaffold/setup/global operations attempted.",
+    "SDK compile and emulator proof are independent of scaffolding success."
+  ],
+  "observedAtApproximateLocal": "2026-10-23T13:50:00-07:00",
+  "observationTimestampPrecision": "minute; generated file creation minute, not an exact command start timestamp"
+}

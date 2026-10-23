@@ -1,0 +1,36 @@
+{
+  "observedAt": "2026-10-23T21:30:22.621591+00:00",
+  "scope": "Only named child PIDs of exact final distribution worker; unrelated process environment never retained",
+  "records": [
+    {
+      "pid": 41261,
+      "status": 0,
+      "bytes": 7673,
+      "tokenOwnerPid": 39635,
+      "tokenSha256": "5de3b394cc8fd476ee54981b6842df5aa8c27730e0deabe2b1e4561c37b35e5f",
+      "fixtureLogPath": "/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico knowledge ordered reset dqQSsA/server.jsonl",
+      "fixtureLogSha256": "900de3f390a0d51072078259b9c4e9487ac0c4f98d3f02cb6930b48cbc489890",
+      "matchingStartEvents": [
+        {
+          "pid": 41261,
+          "event": "start"
+        }
+      ]
+    },
+    {
+      "pid": 41461,
+      "status": 0,
+      "bytes": 7622,
+      "tokenOwnerPid": 39635,
+      "tokenSha256": "00210f7def90e14f9b87277af6f5b610dce1b44e76f4a2bb1dc2060b4ee67303",
+      "fixtureLogPath": "/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico knowledge reset 2guRnE/server.jsonl",
+      "fixtureLogSha256": "1d819550c41fac00ed2c94501580274d4501d0169f426a33b15c17247efc3eed",
+      "matchingStartEvents": [
+        {
+          "pid": 41461,
+          "event": "start"
+        }
+      ]
+    }
+  ]
+}

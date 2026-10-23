@@ -1,0 +1,2064 @@
+
+> pico-spatial-mcp@38.1.0 test:runreceipt
+> node scripts/run-gate.mjs test:runreceipt
+
+(node:38938) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:38939) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: fleet stage judges only the receipt-bound unique capture
+ok 1 - fleet stage judges only the receipt-bound unique capture
+  ---
+  duration_ms: 164.098875
+  ...
+# Subtest: a failed receipt stage cannot be reported as a concluded fleet run
+ok 2 - a failed receipt stage cannot be reported as a concluded fleet run
+  ---
+  duration_ms: 105.342959
+  ...
+# Subtest: a visual judge failure preserves the recorded structural receipt without concluding
+ok 3 - a visual judge failure preserves the recorded structural receipt without concluding
+  ---
+  duration_ms: 127.576
+  ...
+# (node:38940) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: pure Android parsers reject ambiguity and preserve exact identities
+ok 4 - pure Android parsers reject ambiguity and preserve exact identities
+  ---
+  duration_ms: 1.39975
+  ...
+# Subtest: foreground parser deduplicates one component repeated across resumed summaries
+ok 5 - foreground parser deduplicates one component repeated across resumed summaries
+  ---
+  duration_ms: 0.225417
+  ...
+# Subtest: successful producer binds installed bytes and brackets one exact capture
+ok 6 - successful producer binds installed bytes and brackets one exact capture
+  ---
+  duration_ms: 175.832208
+  ...
+# Subtest: producer resolves adb through the shared adapter: a blank or unusable PICO_ADB fails closed before Gradle, spawning nothing
+ok 7 - producer resolves adb through the shared adapter: a blank or unusable PICO_ADB fails closed before Gradle, spawning nothing
+  ---
+  duration_ms: 115.66125
+  ...
+# Subtest: producer rejects an oversized effective AppSpec before Gradle or live runners
+ok 8 - producer rejects an oversized effective AppSpec before Gradle or live runners
+  ---
+  duration_ms: 60.3185
+  ...
+# Subtest: producer discards a late setup callback and records only a freshly guarded second build
+ok 9 - producer discards a late setup callback and records only a freshly guarded second build
+  ---
+  duration_ms: 128.079916
+  ...
+# Subtest: producer binds one unchanged Gradle input generation across the awaited build
+    # Subtest: persistent selected-file content change
+    ok 1 - persistent selected-file content change
+      ---
+      duration_ms: 76.139833
+      ...
+    # Subtest: selected file changed and restored to identical bytes
+    ok 2 - selected file changed and restored to identical bytes
+      ---
+      duration_ms: 64.74825
+      ...
+    # Subtest: persistent selected membership addition
+    ok 3 - persistent selected membership addition
+      ---
+      duration_ms: 93.860791
+      ...
+    # Subtest: selected source added and removed
+    ok 4 - selected source added and removed
+      ---
+      duration_ms: 53.417459
+      ...
+    # Subtest: root-selected file atomically replaced and restored
+    ok 5 - root-selected file atomically replaced and restored
+      ---
+      duration_ms: 51.782459
+      ...
+    # Subtest: initially absent selected root created and removed
+    ok 6 - initially absent selected root created and removed
+      ---
+      duration_ms: 68.966208
+      ...
+    # Subtest: excluded build outputs and documentation do not invalidate the generation
+    ok 7 - excluded build outputs and documentation do not invalidate the generation
+      ---
+      duration_ms: 176.489959
+      ...
+    # Subtest: buildSrc build and nested metadata outputs do not invalidate or enter the generation
+    ok 8 - buildSrc build and nested metadata outputs do not invalidate or enter the generation
+      ---
+      duration_ms: 92.252833
+      ...
+    # Subtest: excluded buildSrc output cannot mask a simultaneous selected transient member
+    ok 9 - excluded buildSrc output cannot mask a simultaneous selected transient member
+      ---
+      duration_ms: 312.521958
+      ...
+    # Subtest: restored buildSrc documentation file cannot hide a transient same-named selected directory
+    ok 10 - restored buildSrc documentation file cannot hide a transient same-named selected directory
+      ---
+      duration_ms: 313.854167
+      ...
+    1..10
+ok 10 - producer binds one unchanged Gradle input generation across the awaited build
+  ---
+  duration_ms: 1305.932584
+  ...
+# Subtest: producer settles a spaced excluded-only watcher backlog without invalidating continuity
+ok 11 - producer settles a spaced excluded-only watcher backlog without invalidating continuity
+  ---
+  duration_ms: 150.540542
+  ...
+# Subtest: producer discards one inconclusive excluded-output build and records only a freshly guarded second build
+ok 12 - producer discards one inconclusive excluded-output build and records only a freshly guarded second build
+  ---
+  duration_ms: 377.997125
+  ...
+# Subtest: producer discards mixed coalesced callbacks and records only a freshly guarded second build
+ok 13 - producer discards mixed coalesced callbacks and records only a freshly guarded second build
+  ---
+  duration_ms: 106.738541
+  ...
+# Subtest: an excluded callback cannot mask a dropped selected transient on the discarded first build
+ok 14 - an excluded callback cannot mask a dropped selected transient on the discarded first build
+  ---
+  duration_ms: 99.487625
+  ...
+# Subtest: producer fails closed when an uncorroborated selected-looking callback repeats on both guarded builds
+ok 15 - producer fails closed when an uncorroborated selected-looking callback repeats on both guarded builds
+  ---
+  duration_ms: 71.863333
+  ...
+# Subtest: producer converts a watcher error into one bounded continuity failure and closes cleanly
+ok 16 - producer converts a watcher error into one bounded continuity failure and closes cleanly
+  ---
+  duration_ms: 40.657958
+  ...
+# Subtest: producer converts a watcher close error into a bounded failure without retry or hang
+ok 17 - producer converts a watcher close error into a bounded failure without retry or hang
+  ---
+  duration_ms: 33.361375
+  ...
+# Subtest: producer fails closed on a dropped event for an initially absent selected root
+ok 18 - producer fails closed on a dropped event for an initially absent selected root
+  ---
+  duration_ms: 533.220709
+  ...
+# Subtest: producer preserves an exact empty ro.boot.qemu observation
+ok 19 - producer preserves an exact empty ro.boot.qemu observation
+  ---
+  duration_ms: 86.326458
+  ...
+# Subtest: OS 6 co-resumed shell does not defeat the exact fleet foreground component
+ok 20 - OS 6 co-resumed shell does not defeat the exact fleet foreground component
+  ---
+  duration_ms: 77.023375
+  ...
+# Subtest: a same-package alternate resumed component remains a hard foreground failure
+ok 21 - a same-package alternate resumed component remains a hard foreground failure
+  ---
+  duration_ms: 53.3895
+  ...
+# Subtest: an OS 6 shell cannot be force-stopped when the fleet target is absent
+ok 22 - an OS 6 shell cannot be force-stopped when the fleet target is absent
+  ---
+  duration_ms: 57.740917
+  ...
+# Subtest: multiple foreign OS 6 activities keep polling until the fleet target appears
+ok 23 - multiple foreign OS 6 activities keep polling until the fleet target appears
+  ---
+  duration_ms: 76.351375
+  ...
+# Subtest: one foreign foreground blocker can be stopped and relaunched once with disclosure
+ok 24 - one foreign foreground blocker can be stopped and relaunched once with disclosure
+  ---
+  duration_ms: 74.909667
+  ...
+# Subtest: a recovered run discloses the one blocker recovery if a later stage fails
+ok 25 - a recovered run discloses the one blocker recovery if a later stage fails
+  ---
+  duration_ms: 79.133208
+  ...
+# Subtest: PID polling caps child calls and sleeps to one monotonic 24000ms deadline
+ok 26 - PID polling caps child calls and sleeps to one monotonic 24000ms deadline
+  ---
+  duration_ms: 93.191791
+  ...
+# Subtest: PID and foreground polling share one monotonic 24000ms deadline per launch attempt
+ok 27 - PID and foreground polling share one monotonic 24000ms deadline per launch attempt
+  ---
+  duration_ms: 65.697375
+  ...
+# Subtest: default SDK inspection records available facts and explicit tool absence
+    # Subtest: available aapt2 and apksigner
+    ok 1 - available aapt2 and apksigner
+      ---
+      duration_ms: 91.668
+      ...
+    # Subtest: missing build tools
+    ok 2 - missing build tools
+      ---
+      duration_ms: 75.094792
+      ...
+    # Subtest: apksigner inspection is unavailable when the resolved JDK is absent
+    ok 3 - apksigner inspection is unavailable when the resolved JDK is absent
+      ---
+      duration_ms: 70.269875
+      ...
+    1..3
+ok 28 - default SDK inspection records available facts and explicit tool absence
+  ---
+  duration_ms: 237.492583
+  ...
+# Subtest: producer fails closed at every mandatory stage and never publishes a receipt
+    # Subtest: invalid settle
+    ok 1 - invalid settle
+      ---
+      duration_ms: 4.997583
+      ...
+    # Subtest: effective package mismatch
+    ok 2 - effective package mismatch
+      ---
+      duration_ms: 4.930459
+      ...
+    # Subtest: Gradle nonzero
+    ok 3 - Gradle nonzero
+      ---
+      duration_ms: 16.925792
+      ...
+    # Subtest: Gradle timeout
+    ok 4 - Gradle timeout
+      ---
+      duration_ms: 30.494833
+      ...
+    # Subtest: missing metadata APK
+    ok 5 - missing metadata APK
+      ---
+      duration_ms: 38.65475
+      ...
+    # Subtest: ambiguous metadata APK
+    ok 6 - ambiguous metadata APK
+      ---
+      duration_ms: 40.229
+      ...
+    # Subtest: APK CAS corruption
+    ok 7 - APK CAS corruption
+      ---
+      duration_ms: 41.584417
+      ...
+    # Subtest: inspected package mismatch
+    ok 8 - inspected package mismatch
+      ---
+      duration_ms: 43.910084
+      ...
+    # Subtest: install nonzero
+    ok 9 - install nonzero
+      ---
+      duration_ms: 39.174709
+      ...
+    # Subtest: install lacks Success
+    ok 10 - install lacks Success
+      ---
+      duration_ms: 47.796209
+      ...
+    # Subtest: pm path missing
+    ok 11 - pm path missing
+      ---
+      duration_ms: 49.94775
+      ...
+    # Subtest: pm path multiple
+    ok 12 - pm path multiple
+      ---
+      duration_ms: 44.396666
+      ...
+    # Subtest: remote digest mismatch
+    ok 13 - remote digest mismatch
+      ---
+      duration_ms: 47.824209
+      ...
+    # Subtest: installed path replacement before capture
+    ok 14 - installed path replacement before capture
+      ---
+      duration_ms: 54.404292
+      ...
+    # Subtest: installed path replacement after capture
+    ok 15 - installed path replacement after capture
+      ---
+      duration_ms: 50.662875
+      ...
+    # Subtest: installed digest replacement before capture
+    ok 16 - installed digest replacement before capture
+      ---
+      duration_ms: 40.836084
+      ...
+    # Subtest: installed digest replacement after capture
+    ok 17 - installed digest replacement after capture
+      ---
+      duration_ms: 40.98025
+      ...
+    # Subtest: after-install hook
+    ok 18 - after-install hook
+      ---
+      duration_ms: 41.104209
+      ...
+    # Subtest: missing fingerprint
+    ok 19 - missing fingerprint
+      ---
+      duration_ms: 41.745
+      ...
+    # Subtest: missing boot ID
+    ok 20 - missing boot ID
+      ---
+      duration_ms: 44.987417
+      ...
+    # Subtest: boot ID changed before launch
+    ok 21 - boot ID changed before launch
+      ---
+      duration_ms: 41.754125
+      ...
+    # Subtest: boot ID changed before capture
+    ok 22 - boot ID changed before capture
+      ---
+      duration_ms: 57.024667
+      ...
+    # Subtest: boot ID changed after capture
+    ok 23 - boot ID changed after capture
+      ---
+      duration_ms: 44.863125
+      ...
+    # Subtest: launch negative acknowledgement
+    ok 24 - launch negative acknowledgement
+      ---
+      duration_ms: 51.999125
+      ...
+    # Subtest: missing PID
+    ok 25 - missing PID
+      ---
+      duration_ms: 58.355709
+      ...
+    # Subtest: multiple PID
+    ok 26 - multiple PID
+      ---
+      duration_ms: 50.266459
+      ...
+    # Subtest: malformed PID stat
+    ok 27 - malformed PID stat
+      ---
+      duration_ms: 42.299708
+      ...
+    # Subtest: PID restarted before capture
+    ok 28 - PID restarted before capture
+      ---
+      duration_ms: 43.289125
+      ...
+    # Subtest: foreground package prefix collision
+    ok 29 - foreground package prefix collision
+      ---
+      duration_ms: 42.735792
+      ...
+    # Subtest: wrong foreground activity
+    ok 30 - wrong foreground activity
+      ---
+      duration_ms: 52.447541
+      ...
+    # Subtest: wrong foreground before capture
+    ok 31 - wrong foreground before capture
+      ---
+      duration_ms: 48.548375
+      ...
+    # Subtest: wrong foreground after capture
+    ok 32 - wrong foreground after capture
+      ---
+      duration_ms: 43.906458
+      ...
+    # Subtest: binary capture command
+    ok 33 - binary capture command
+      ---
+      duration_ms: 41.352667
+      ...
+    # Subtest: invalid PNG
+    ok 34 - invalid PNG
+      ---
+      duration_ms: 56.752917
+      ...
+    # Subtest: capture CAS corruption
+    ok 35 - capture CAS corruption
+      ---
+      duration_ms: 66.192583
+      ...
+    # Subtest: receipt publication
+    ok 36 - receipt publication
+      ---
+      duration_ms: 66.809542
+      ...
+    1..36
+ok 29 - producer fails closed at every mandatory stage and never publishes a receipt
+  ---
+  duration_ms: 1578.529
+  ...
+# Subtest: command failures report bounded factual exit and timeout state
+ok 30 - command failures report bounded factual exit and timeout state
+  ---
+  duration_ms: 47.009083
+  ...
+# Subtest: the local.properties sdk.dir reader uses real java.util.Properties escaping
+ok 31 - the local.properties sdk.dir reader uses real java.util.Properties escaping
+  ---
+  duration_ms: 7.819209
+  ...
+# (node:38943) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: canonical JSON sorts object keys but preserves array order
+ok 32 - canonical JSON sorts object keys but preserves array order
+  ---
+  duration_ms: 1.193667
+  ...
+# Subtest: canonical JSON rejects values that cannot have one portable identity
+ok 33 - canonical JSON rejects values that cannot have one portable identity
+  ---
+  duration_ms: 0.379583
+  ...
+# Subtest: authored identity parses schema defaults, binds the real source path, and changes with authored intent
+ok 34 - authored identity parses schema defaults, binds the real source path, and changes with authored intent
+  ---
+  duration_ms: 8.360917
+  ...
+# Subtest: effective identity changes when fleet rewrites the package
+ok 35 - effective identity changes when fleet rewrites the package
+  ---
+  duration_ms: 0.202334
+  ...
+# Subtest: Gradle identity contains only the exact sorted V1 allowlist with independently hashed files
+ok 36 - Gradle identity contains only the exact sorted V1 allowlist with independently hashed files
+  ---
+  duration_ms: 40.427208
+  ...
+# Subtest: Gradle identity keeps packaged documentation and nested buildSrc resources
+ok 37 - Gradle identity keeps packaged documentation and nested buildSrc resources
+  ---
+  duration_ms: 21.782208
+  ...
+# Subtest: Gradle identity changes for each selected manifest, source, wrapper, and asset input
+ok 38 - Gradle identity changes for each selected manifest, source, wrapper, and asset input
+  ---
+  duration_ms: 97.484916
+  ...
+# Subtest: Gradle identity rejects a same-size selected file mutation during chunked hashing
+ok 39 - Gradle identity rejects a same-size selected file mutation during chunked hashing
+  ---
+  duration_ms: 77.173458
+  ...
+# Subtest: Gradle identity fails closed on selected symlinks and project-root escapes
+ok 40 - Gradle identity fails closed on selected symlinks and project-root escapes
+  ---
+  duration_ms: 82.078417
+  ...
+# Subtest: Gradle identity fails closed on selected special entries
+ok 41 - Gradle identity fails closed on selected special entries
+  ---
+  duration_ms: 42.38075
+  ...
+# Subtest: Gradle identity regular-to-FIFO replacement cannot block before authoritative fstat
+ok 42 - Gradle identity regular-to-FIFO replacement cannot block before authoritative fstat
+  ---
+  duration_ms: 112.961333
+  ...
+# Subtest: Gradle identity requires an Android manifest and app Kotlin or Java source
+ok 43 - Gradle identity requires an Android manifest and app Kotlin or Java source
+  ---
+  duration_ms: 50.631875
+  ...
+# Subtest: Gradle generation guard fails closed at an explicit directory-count ceiling
+ok 44 - Gradle generation guard fails closed at an explicit directory-count ceiling
+  ---
+  duration_ms: 27.257209
+  ...
+# Subtest: Gradle generation guard fails closed at an explicit directory-depth ceiling
+ok 45 - Gradle generation guard fails closed at an explicit directory-depth ceiling
+  ---
+  duration_ms: 21.190334
+  ...
+# Subtest: Gradle generation guard caps inconclusive watcher diagnostics during an event storm
+ok 46 - Gradle generation guard caps inconclusive watcher diagnostics during an event storm
+  ---
+  duration_ms: 32.998667
+  ...
+# Subtest: guarded collection catches a transient change in an existing selected directory before collection returns
+ok 47 - guarded collection catches a transient change in an existing selected directory before collection returns
+  ---
+  duration_ms: 76.068167
+  ...
+# Subtest: Gradle collection streams bounded directory entries and closes every opened directory on failure
+ok 48 - Gradle collection streams bounded directory entries and closes every opened directory on failure
+  ---
+  duration_ms: 51.5245
+  ...
+# Subtest: guarded collection catches atomic replace and restoration of a root-selected file without watcher delivery
+ok 49 - guarded collection catches atomic replace and restoration of a root-selected file without watcher delivery
+  ---
+  duration_ms: 286.639542
+  ...
+# Subtest: guard fails closed when an initially absent selected root changes with watcher delivery dropped
+ok 50 - guard fails closed when an initially absent selected root changes with watcher delivery dropped
+  ---
+  duration_ms: 324.676833
+  ...
+# Subtest: guard waits for a late coalesced watcher callback and closes every watcher exactly once
+ok 51 - guard waits for a late coalesced watcher callback and closes every watcher exactly once
+  ---
+  duration_ms: 42.7625
+  ...
+# (node:38944) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:38969) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: receipt publication records no evidence and exact public bindings preserve their requested classes
+ok 52 - receipt publication records no evidence and exact public bindings preserve their requested classes
+  ---
+  duration_ms: 618.564625
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39047) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: device receipt admission rejects emulator and mismatched runtime before screencap, then accepts only an exact manual non-emulator fixture
+    # Subtest: emulator receipt runtime
+    ok 1 - emulator receipt runtime
+      ---
+      duration_ms: 755.120542
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39160) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: different serial
+    ok 2 - different serial
+      ---
+      duration_ms: 609.350958
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39196) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: different model
+    ok 3 - different model
+      ---
+      duration_ms: 635.254625
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39264) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: different fingerprint
+    ok 4 - different fingerprint
+      ---
+      duration_ms: 674.365167
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39328) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: different bootQemu
+    ok 5 - different bootQemu
+      ---
+      duration_ms: 569.562583
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39362) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: exact manual non-emulator runtime
+    ok 6 - exact manual non-emulator runtime
+      ---
+      duration_ms: 628.544167
+      ...
+    1..6
+ok 53 - device receipt admission rejects emulator and mismatched runtime before screencap, then accepts only an exact manual non-emulator fixture
+  ---
+  duration_ms: 3873.743083
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39504) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ledger reads strip bindings unless an injected historical validator re-earns them
+ok 54 - ledger reads strip bindings unless an injected historical validator re-earns them
+  ---
+  duration_ms: 578.822833
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39605) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ledger reports erase every malformed persisted runReceipt without leaking private-shaped fields
+    # Subtest: null
+    ok 1 - null
+      ---
+      duration_ms: 411.648209
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39675) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: false
+    ok 2 - false
+      ---
+      duration_ms: 396.43725
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39717) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: zero
+    ok 3 - zero
+      ---
+      duration_ms: 409.098
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: empty string
+    ok 4 - empty string
+      ---
+      duration_ms: 461.530916
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39827) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: runtime-bearing object
+    ok 5 - runtime-bearing object
+      ---
+      duration_ms: 417.268167
+      ...
+    1..5
+ok 55 - ledger reports erase every malformed persisted runReceipt without leaking private-shaped fields
+  ---
+  duration_ms: 2096.834708
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39881) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ledger reports discard every persisted receipt diagnostic and synthesize only current validation results
+    # Subtest: persisted diagnostics without runReceipt
+    ok 1 - persisted diagnostics without runReceipt
+      ---
+      duration_ms: 396.995084
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39904) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: valid runReceipt beside persisted diagnostics
+    ok 2 - valid runReceipt beside persisted diagnostics
+      ---
+      duration_ms: 506.211583
+      ...
+    1..2
+ok 56 - ledger reports discard every persisted receipt diagnostic and synthesize only current validation results
+  ---
+  duration_ms: 903.652375
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39951) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: public ledger reports fail closed on every historical receipt artifact while preserving independent LOOK evidence
+    # Subtest: receipt JSON
+    ok 1 - receipt JSON
+      ---
+      duration_ms: 554.404166
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40004) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: APK CAS
+    ok 2 - APK CAS
+      ---
+      duration_ms: 413.1405
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40051) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: effective AppSpec CAS
+    ok 3 - effective AppSpec CAS
+      ---
+      duration_ms: 425.929417
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40095) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: binding receipt ID
+    ok 4 - binding receipt ID
+      ---
+      duration_ms: 410.23975
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40146) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: binding capture hash
+    ok 5 - binding capture hash
+      ---
+      duration_ms: 359.834417
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40203) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: shared capture CAS
+    ok 6 - shared capture CAS
+      ---
+      duration_ms: 414.935417
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40255) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: receipt belonging to another app
+    ok 7 - receipt belonging to another app
+      ---
+      duration_ms: 439.880333
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40317) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: broken APK CAS preserves independently intact device evidence but strips its binding
+    ok 8 - broken APK CAS preserves independently intact device evidence but strips its binding
+      ---
+      duration_ms: 621.653083
+      ...
+    1..8
+ok 57 - public ledger reports fail closed on every historical receipt artifact while preserving independent LOOK evidence
+  ---
+  duration_ms: 3641.117875
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:40395) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: full-surface receipt binding rejects wrong app, missing or tampered receipt, wrong bytes, and mixed retraction fields
+ok 58 - full-surface receipt binding rejects wrong app, missing or tampered receipt, wrong bytes, and mixed retraction fields
+  ---
+  duration_ms: 422.152833
+  ...
+# Subtest: a supplied receipt ID rejects when no resolver is configured
+ok 59 - a supplied receipt ID rejects when no resolver is configured
+  ---
+  duration_ms: 185.091583
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:40467) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: capture tampering keeps the existing provenance downgrade and removes the consumable receipt binding
+ok 60 - capture tampering keeps the existing provenance downgrade and removes the consumable receipt binding
+  ---
+  duration_ms: 396.900667
+  ...
+# Subtest: the final materialized capture SHA must still equal the resolver binding
+ok 61 - the final materialized capture SHA must still equal the resolver binding
+  ---
+  duration_ms: 199.760292
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:40532) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:40590) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:40627) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:40648) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: promote action is disjoint on the full surface and Door 13 and never touches the evidence ledger
+ok 62 - promote action is disjoint on the full surface and Door 13 and never touches the evidence ledger
+  ---
+  duration_ms: 3929.647042
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:40836) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: portable binding is an exact seven-field private capability with kind-specific resolution
+ok 63 - portable binding is an exact seven-field private capability with kind-specific resolution
+  ---
+  duration_ms: 1300.131541
+  ...
+# (node:38945) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: portable receipt identity catches a missing domain separator
+ok 64 - portable receipt identity catches a missing domain separator
+  ---
+  duration_ms: 4.877959
+  ...
+# Subtest: promotion identity catches a core hash that omits pinned root identities
+ok 65 - promotion identity catches a core hash that omits pinned root identities
+  ---
+  duration_ms: 0.723
+  ...
+# Subtest: promotion audit identity catches a hash that omits recorded audit fields
+ok 66 - promotion audit identity catches a hash that omits recorded audit fields
+  ---
+  duration_ms: 1.308625
+  ...
+# Subtest: portable schema catches untrusted receipt IDs, extra keys, and wrong artifact roles
+ok 67 - portable schema catches untrusted receipt IDs, extra keys, and wrong artifact roles
+  ---
+  duration_ms: 1.188916
+  ...
+# Subtest: portable validators catch noncanonical hashes, root locators, timestamps, and tool versions
+ok 68 - portable validators catch noncanonical hashes, root locators, timestamps, and tool versions
+  ---
+  duration_ms: 1.07925
+  ...
+# Subtest: strict portable receipt, manifest, selector, and binding parsers catch extra persisted fields
+ok 69 - strict portable receipt, manifest, selector, and binding parsers catch extra persisted fields
+  ---
+  duration_ms: 2.009
+  ...
+# Subtest: portable binding synchronous resolvers preserve exact kind-specific identity and native lineage runtime
+ok 70 - portable binding synchronous resolvers preserve exact kind-specific identity and native lineage runtime
+  ---
+  duration_ms: 526.7135
+  ...
+# Subtest: native lineage validator catches a source-root locator rewrite
+ok 71 - native lineage validator catches a source-root locator rewrite
+  ---
+  duration_ms: 112.674666
+  ...
+# Subtest: PROMOTE publishes independently verifiable immutable objects without a ledger row
+ok 72 - PROMOTE publishes independently verifiable immutable objects without a ledger row
+  ---
+  duration_ms: 278.391375
+  ...
+# Subtest: PROMOTE never opens source receipt objects through Node path reads
+ok 73 - PROMOTE never opens source receipt objects through Node path reads
+  ---
+  duration_ms: 198.91875
+  ...
+# Subtest: PROMOTE exact reruns and concurrent publishers reuse the first audit record
+ok 74 - PROMOTE exact reruns and concurrent publishers reuse the first audit record
+  ---
+  duration_ms: 375.203584
+  ...
+# Subtest: PROMOTE committed reruns descriptor-rehash every source before trusting the target
+    # Subtest: same-byte source descendant symlink
+    ok 1 - same-byte source descendant symlink
+      ---
+      duration_ms: 348.499541
+      ...
+    # Subtest: deleted source object
+    ok 2 - deleted source object
+      ---
+      duration_ms: 270.719584
+      ...
+    1..2
+ok 75 - PROMOTE committed reruns descriptor-rehash every source before trusting the target
+  ---
+  duration_ms: 619.646416
+  ...
+# Subtest: PROMOTE interruption boundaries preserve manifest-last resumability
+    # Subtest: apk
+    ok 1 - apk
+      ---
+      duration_ms: 548.925334
+      ...
+    # Subtest: effectiveAppSpec
+    ok 2 - effectiveAppSpec
+      ---
+      duration_ms: 472.132167
+      ...
+    # Subtest: capture
+    ok 3 - capture
+      ---
+      duration_ms: 474.390125
+      ...
+    # Subtest: lineage
+    ok 4 - lineage
+      ---
+      duration_ms: 480.411292
+      ...
+    # Subtest: portable
+    ok 5 - portable
+      ---
+      duration_ms: 441.318375
+      ...
+    # Subtest: manifest
+    ok 6 - manifest
+      ---
+      duration_ms: 433.717959
+      ...
+    1..6
+ok 76 - PROMOTE interruption boundaries preserve manifest-last resumability
+  ---
+  duration_ms: 2852.181625
+  ...
+# Subtest: PROMOTE validates every published or reused dependency before linking the manifest
+    # Subtest: published apk
+    ok 1 - published apk
+      ---
+      duration_ms: 277.511833
+      ...
+    # Subtest: published effectiveAppSpec
+    ok 2 - published effectiveAppSpec
+      ---
+      duration_ms: 242.9245
+      ...
+    # Subtest: published capture
+    ok 3 - published capture
+      ---
+      duration_ms: 224.467375
+      ...
+    # Subtest: published lineage
+    ok 4 - published lineage
+      ---
+      duration_ms: 195.323708
+      ...
+    # Subtest: published portable
+    ok 5 - published portable
+      ---
+      duration_ms: 168.450208
+      ...
+    # Subtest: reused apk
+    ok 6 - reused apk
+      ---
+      duration_ms: 193.999333
+      ...
+    # Subtest: reused effectiveAppSpec
+    ok 7 - reused effectiveAppSpec
+      ---
+      duration_ms: 197.852916
+      ...
+    # Subtest: reused capture
+    ok 8 - reused capture
+      ---
+      duration_ms: 199.77325
+      ...
+    # Subtest: reused lineage
+    ok 9 - reused lineage
+      ---
+      duration_ms: 197.057625
+      ...
+    # Subtest: reused portable
+    ok 10 - reused portable
+      ---
+      duration_ms: 192.351542
+      ...
+    1..10
+ok 77 - PROMOTE validates every published or reused dependency before linking the manifest
+  ---
+  duration_ms: 2091.267375
+  ...
+# Subtest: PROMOTE permits only the designed identical source/target receipt-root exception
+ok 78 - PROMOTE permits only the designed identical source/target receipt-root exception
+  ---
+  duration_ms: 160.037125
+  ...
+# Subtest: PROMOTE reports an ambiguous interpreter override unavailable before target writes
+ok 79 - PROMOTE reports an ambiguous interpreter override unavailable before target writes
+  ---
+  duration_ms: 36.030333
+  ...
+# Subtest: PROMOTE refuses a portable receipt as a recursive source
+ok 80 - PROMOTE refuses a portable receipt as a recursive source
+  ---
+  duration_ms: 217.434416
+  ...
+# Subtest: PROMOTE refuses every missing or mismatched source object
+    # Subtest: receipt deleted
+    ok 1 - receipt deleted
+      ---
+      duration_ms: 104.916
+      ...
+    # Subtest: receipt mismatched
+    ok 2 - receipt mismatched
+      ---
+      duration_ms: 192.271
+      ...
+    # Subtest: APK deleted
+    ok 3 - APK deleted
+      ---
+      duration_ms: 100.520083
+      ...
+    # Subtest: APK mismatched
+    ok 4 - APK mismatched
+      ---
+      duration_ms: 93.910209
+      ...
+    # Subtest: effective AppSpec deleted
+    ok 5 - effective AppSpec deleted
+      ---
+      duration_ms: 91.476791
+      ...
+    # Subtest: effective AppSpec mismatched
+    ok 6 - effective AppSpec mismatched
+      ---
+      duration_ms: 103.47475
+      ...
+    # Subtest: capture deleted
+    ok 7 - capture deleted
+      ---
+      duration_ms: 96.870167
+      ...
+    # Subtest: capture mismatched
+    ok 8 - capture mismatched
+      ---
+      duration_ms: 113.463958
+      ...
+    1..8
+ok 81 - PROMOTE refuses every missing or mismatched source object
+  ---
+  duration_ms: 897.956125
+  ...
+# Subtest: PROMOTE refuses source receipt parent/final symlinks and oversize before reading their bytes
+    # Subtest: parent symlink
+    ok 1 - parent symlink
+      ---
+      duration_ms: 173.809833
+      ...
+    # Subtest: final symlink
+    ok 2 - final symlink
+      ---
+      duration_ms: 111.934208
+      ...
+    # Subtest: oversized
+    ok 3 - oversized
+      ---
+      duration_ms: 85.549333
+      ...
+    1..3
+ok 82 - PROMOTE refuses source receipt parent/final symlinks and oversize before reading their bytes
+  ---
+  duration_ms: 371.906667
+  ...
+# Subtest: PROMOTE refuses source symlinks, target child symlinks, and unsafe root overlap
+    # Subtest: source final symlink
+    ok 1 - source final symlink
+      ---
+      duration_ms: 92.396125
+      ...
+    # Subtest: target child symlink
+    ok 2 - target child symlink
+      ---
+      duration_ms: 156.155875
+      ...
+    # Subtest: root alias and overlap
+    ok 3 - root alias and overlap
+      ---
+      duration_ms: 277.869833
+      ...
+    1..3
+ok 83 - PROMOTE refuses source symlinks, target child symlinks, and unsafe root overlap
+  ---
+  duration_ms: 526.919709
+  ...
+# Subtest: portable historical reads never dereference recorded source roots
+ok 84 - portable historical reads never dereference recorded source roots
+  ---
+  duration_ms: 226.983791
+  ...
+# Subtest: portable historical reader requires the manifest commit marker
+ok 85 - portable historical reader requires the manifest commit marker
+  ---
+  duration_ms: 218.928458
+  ...
+# Subtest: portable historical reads and PROMOTE reruns fail closed on every corrupt final object
+    # Subtest: apk
+    ok 1 - apk
+      ---
+      duration_ms: 357.306417
+      ...
+    # Subtest: effectiveAppSpec
+    ok 2 - effectiveAppSpec
+      ---
+      duration_ms: 320.189625
+      ...
+    # Subtest: capture
+    ok 3 - capture
+      ---
+      duration_ms: 346.621667
+      ...
+    # Subtest: lineage
+    ok 4 - lineage
+      ---
+      duration_ms: 340.888875
+      ...
+    # Subtest: portable
+    ok 5 - portable
+      ---
+      duration_ms: 324.769125
+      ...
+    # Subtest: manifest
+    ok 6 - manifest
+      ---
+      duration_ms: 350.337208
+      ...
+    1..6
+ok 86 - portable historical reads and PROMOTE reruns fail closed on every corrupt final object
+  ---
+  duration_ms: 2040.856
+  ...
+# Subtest: PROMOTE independently refuses a source mutation between source-inspect and publication
+ok 87 - PROMOTE independently refuses a source mutation between source-inspect and publication
+  ---
+  duration_ms: 295.251458
+  ...
+# Subtest: PROMOTE strictly validates source-inspect operation, schema, roots, and measured facts
+    # Subtest: operation
+    ok 1 - operation
+      ---
+      duration_ms: 211.326375
+      ...
+    # Subtest: schema
+    ok 2 - schema
+      ---
+      duration_ms: 231.321166
+      ...
+    # Subtest: root
+    ok 3 - root
+      ---
+      duration_ms: 251.586375
+      ...
+    # Subtest: facts
+    ok 4 - facts
+      ---
+      duration_ms: 200.520333
+      ...
+    1..4
+ok 88 - PROMOTE strictly validates source-inspect operation, schema, roots, and measured facts
+  ---
+  duration_ms: 895.35375
+  ...
+# Subtest: PROMOTE never repairs a dependency beneath an existing committed manifest
+    # Subtest: apk
+    ok 1 - apk
+      ---
+      duration_ms: 460.424042
+      ...
+    # Subtest: effectiveAppSpec
+    ok 2 - effectiveAppSpec
+      ---
+      duration_ms: 419.277041
+      ...
+    # Subtest: capture
+    ok 3 - capture
+      ---
+      duration_ms: 409.518542
+      ...
+    # Subtest: lineage
+    ok 4 - lineage
+      ---
+      duration_ms: 393.086416
+      ...
+    # Subtest: portable final-name drift
+    ok 5 - portable final-name drift
+      ---
+      duration_ms: 412.813833
+      ...
+    1..5
+ok 89 - PROMOTE never repairs a dependency beneath an existing committed manifest
+  ---
+  duration_ms: 2095.860583
+  ...
+# Subtest: PROMOTE shared receipt roots leave native APK and spec directories byte-for-byte metadata stable
+ok 90 - PROMOTE shared receipt roots leave native APK and spec directories byte-for-byte metadata stable
+  ---
+  duration_ms: 166.039625
+  ...
+# Subtest: PROMOTE helper rejects same-path different-inode roots and retained child substitution
+ok 91 - PROMOTE helper rejects same-path different-inode roots and retained child substitution
+  ---
+  duration_ms: 50.154542
+  ...
+# Subtest: PROMOTE helper JSON parser rejects non-finite numbers and lone surrogates recursively
+ok 92 - PROMOTE helper JSON parser rejects non-finite numbers and lone surrogates recursively
+  ---
+  duration_ms: 46.172333
+  ...
+# Subtest: portable historical helper responses require exact canonical stdout bytes
+    # Subtest: noncanonical response 1
+    ok 1 - noncanonical response 1
+      ---
+      duration_ms: 134.805333
+      ...
+    # Subtest: noncanonical response 2
+    ok 2 - noncanonical response 2
+      ---
+      duration_ms: 134.850292
+      ...
+    1..2
+ok 93 - portable historical helper responses require exact canonical stdout bytes
+  ---
+  duration_ms: 311.017209
+  ...
+# Subtest: PROMOTE accepts a valid committed winner from a different tool version
+ok 94 - PROMOTE accepts a valid committed winner from a different tool version
+  ---
+  duration_ms: 276.068708
+  ...
+# Subtest: PROMOTE resumes uncommitted dependency publication only while the manifest is absent
+ok 95 - PROMOTE resumes uncommitted dependency publication only while the manifest is absent
+  ---
+  duration_ms: 332.014958
+  ...
+# Subtest: portable historical reads reject manifest target-root field drift
+ok 96 - portable historical reads reject manifest target-root field drift
+  ---
+  duration_ms: 224.882334
+  ...
+# Subtest: portable historical selection enforces namespace and aggregate candidate caps
+ok 97 - portable historical selection enforces namespace and aggregate candidate caps
+  ---
+  duration_ms: 0.437167
+  ...
+# Subtest: findHistoricalRunReceipt preserves native-only equal and ancestor receipt/ledger roots
+    # Subtest: equal
+    ok 1 - equal
+      ---
+      duration_ms: 97.809625
+      ...
+    # Subtest: receipt ancestor
+    ok 2 - receipt ancestor
+      ---
+      duration_ms: 93.395375
+      ...
+    1..2
+ok 98 - findHistoricalRunReceipt preserves native-only equal and ancestor receipt/ledger roots
+  ---
+  duration_ms: 195.280583
+  ...
+# Subtest: findHistoricalRunReceipt never selects a promoted projection through a symlinked store root
+ok 99 - findHistoricalRunReceipt never selects a promoted projection through a symlinked store root
+  ---
+  duration_ms: 165.701584
+  ...
+# Subtest: findHistoricalRunReceipt enforces payload-free namespace and aggregate candidate caps
+    # Subtest: native namespace
+    ok 1 - native namespace
+      ---
+      duration_ms: 353.642084
+      ...
+    # Subtest: portable namespace
+    ok 2 - portable namespace
+      ---
+      duration_ms: 299.815375
+      ...
+    # Subtest: manifest namespace
+    ok 3 - manifest namespace
+      ---
+      duration_ms: 356.283375
+      ...
+    # Subtest: combined namespaces
+    ok 4 - combined namespaces
+      ---
+      duration_ms: 819.495583
+      ...
+    1..4
+ok 100 - findHistoricalRunReceipt enforces payload-free namespace and aggregate candidate caps
+  ---
+  duration_ms: 3122.664625
+  ...
+# Subtest: portable historical discovery refuses a symlinked namespace parent without parsing an outside manifest
+ok 101 - portable historical discovery refuses a symlinked namespace parent without parsing an outside manifest
+  ---
+  duration_ms: 55.51675
+  ...
+# Subtest: portable historical discovery detects app-directory and manifest replacement through retained descriptors
+    # Subtest: app
+    ok 1 - app
+      ---
+      duration_ms: 161.88625
+      ...
+    # Subtest: manifest
+    ok 2 - manifest
+      ---
+      duration_ms: 175.703458
+      ...
+    1..2
+ok 102 - portable historical discovery detects app-directory and manifest replacement through retained descriptors
+  ---
+  duration_ms: 339.892375
+  ...
+# Subtest: portable historical discovery never falls back after an exact helper error or malformed response
+    # Subtest: error
+    ok 1 - error
+      ---
+      duration_ms: 135.692125
+      ...
+    # Subtest: malformed
+    ok 2 - malformed
+      ---
+      duration_ms: 200.672792
+      ...
+    # Subtest: crash
+    ok 3 - crash
+      ---
+      duration_ms: 6.498083
+      ...
+    1..3
+ok 103 - portable historical discovery never falls back after an exact helper error or malformed response
+  ---
+  duration_ms: 374.491292
+  ...
+# Subtest: portable historical discovery validates response identity, counts, ordering, and duplicates without fallback
+    # Subtest: root identity
+    ok 1 - root identity
+      ---
+      duration_ms: 129.08325
+      ...
+    # Subtest: count mismatch
+    ok 2 - count mismatch
+      ---
+      duration_ms: 126.093458
+      ...
+    # Subtest: ordering
+    ok 3 - ordering
+      ---
+      duration_ms: 140.739
+      ...
+    # Subtest: duplicate
+    ok 4 - duplicate
+      ---
+      duration_ms: 128.695958
+      ...
+    1..4
+ok 104 - portable historical discovery validates response identity, counts, ordering, and duplicates without fallback
+  ---
+  duration_ms: 558.207583
+  ...
+# Subtest: portable historical discovery uses unchanged native selection only when the helper is genuinely unavailable
+ok 105 - portable historical discovery uses unchanged native selection only when the helper is genuinely unavailable
+  ---
+  duration_ms: 78.016333
+  ...
+# Subtest: portable historical selection groups only validated candidates with native precedence and deterministic ambiguity
+ok 106 - portable historical selection groups only validated candidates with native precedence and deterministic ambiguity
+  ---
+  duration_ms: 5.957167
+  ...
+# Subtest: portable historical selection counts and reports sorted malformed JSON candidates
+ok 107 - portable historical selection counts and reports sorted malformed JSON candidates
+  ---
+  duration_ms: 51.943
+  ...
+# Subtest: portable historical selection rejects two fully validated manifests for one native lineage
+ok 108 - portable historical selection rejects two fully validated manifests for one native lineage
+  ---
+  duration_ms: 285.993209
+  ...
+# Subtest: portable historical selection attributes an invalid manifest to its promotion while retaining a valid pair
+ok 109 - portable historical selection attributes an invalid manifest to its promotion while retaining a valid pair
+  ---
+  duration_ms: 324.4375
+  ...
+# Subtest: portable historical selection adds no-valid-marker only when every paired manifest fails inspection
+ok 110 - portable historical selection adds no-valid-marker only when every paired manifest fails inspection
+  ---
+  duration_ms: 269.493167
+  ...
+# Subtest: portable historical discovery reports symlinked and oversized manifests under their promotion IDs
+    # Subtest: symlink
+    ok 1 - symlink
+      ---
+      duration_ms: 202.455709
+      ...
+    # Subtest: oversized
+    ok 2 - oversized
+      ---
+      duration_ms: 209.401291
+      ...
+    1..2
+ok 111 - portable historical discovery reports symlinked and oversized manifests under their promotion IDs
+  ---
+  duration_ms: 412.310041
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:41029) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:41077) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:41116) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:41140) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: golden recapture promotes a session ledger receipt into durable historical-only provenance
+ok 112 - golden recapture promotes a session ledger receipt into durable historical-only provenance
+  ---
+  duration_ms: 4398.529291
+  ...
+# (node:38946) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:38968) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ship checklist publicly leaves hardware immersion and safety boundaries unverified
+ok 113 - ship checklist publicly leaves hardware immersion and safety boundaries unverified
+  ---
+  duration_ms: 455.812625
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39032) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: spatial planner publicly leaves hardware immersion and safety boundaries unverified
+ok 114 - spatial planner publicly leaves hardware immersion and safety boundaries unverified
+  ---
+  duration_ms: 399.69975
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39053) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: native ship has no current receipt when no producer receipt was published
+ok 115 - native ship has no current receipt when no producer receipt was published
+  ---
+  duration_ms: 487.017459
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39166) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: portable provenance remains reportable while ship stays native-current-only
+ok 116 - portable provenance remains reportable while ship stays native-current-only
+  ---
+  duration_ms: 750.049875
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39203) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: native ship keeps the receipt blocker until the current receipt has an exact linked LOOK
+ok 117 - native ship keeps the receipt blocker until the current receipt has an exact linked LOOK
+  ---
+  duration_ms: 407.38225
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39247) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: native ship accepts current debug bytes only with one exact receipt-linked vision LOOK
+ok 118 - native ship accepts current debug bytes only with one exact receipt-linked vision LOOK
+  ---
+  duration_ms: 452.207416
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39313) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: native ship accepts a receipt-linked passing device row but never a device failure
+    # Subtest: passing device evidence
+    ok 1 - passing device evidence
+      ---
+      duration_ms: 759.113708
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39357) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: failing device evidence
+    ok 2 - failing device evidence
+      ---
+      duration_ms: 643.210625
+      ...
+    1..2
+ok 119 - native ship accepts a receipt-linked passing device row but never a device failure
+  ---
+  duration_ms: 1402.902333
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39481) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: native ship independently rejects emulator or mismatched receipt runtime for device rows
+    # Subtest: emulator receipt runtime
+    ok 1 - emulator receipt runtime
+      ---
+      duration_ms: 618.899542
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39599) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: different serial
+    ok 2 - different serial
+      ---
+      duration_ms: 700.226459
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39696) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: different model
+    ok 3 - different model
+      ---
+      duration_ms: 716.191
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39778) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: different fingerprint
+    ok 4 - different fingerprint
+      ---
+      duration_ms: 713.7755
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39878) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: different bootQemu
+    ok 5 - different bootQemu
+      ---
+      duration_ms: 813.825917
+      ...
+    1..5
+ok 120 - native ship independently rejects emulator or mismatched receipt runtime for device rows
+  ---
+  duration_ms: 3563.665291
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:39934) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: nonmatching, nonvisual, retracted, and provenance-broken rows cannot satisfy the linked LOOK gate
+    # Subtest: unlinked historical LOOK
+    ok 1 - unlinked historical LOOK
+      ---
+      duration_ms: 429.890667
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:39973) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: wrong receipt ID
+    ok 2 - wrong receipt ID
+      ---
+      duration_ms: 528.479459
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40028) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: wrong receipt capture hash
+    ok 3 - wrong receipt capture hash
+      ---
+      duration_ms: 414.320708
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40073) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: wrong ledger capture hash
+    ok 4 - wrong ledger capture hash
+      ---
+      duration_ms: 445.95375
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40124) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: auto_judged row
+    ok 5 - auto_judged row
+      ---
+      duration_ms: 424.242083
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40184) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: structural row
+    ok 6 - structural row
+      ---
+      duration_ms: 412.5995
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40250) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: usd_host_render row
+    ok 7 - usd_host_render row
+      ---
+      duration_ms: 400.974625
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40300) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: logcat row
+    ok 8 - logcat row
+      ---
+      duration_ms: 407.603209
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40345) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: retracted LOOK
+    ok 9 - retracted LOOK
+      ---
+      duration_ms: 459.665666
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40416) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: provenance-broken LOOK
+    ok 10 - provenance-broken LOOK
+      ---
+      duration_ms: 406.143625
+      ...
+    1..10
+ok 121 - nonmatching, nonvisual, retracted, and provenance-broken rows cannot satisfy the linked LOOK gate
+  ---
+  duration_ms: 4331.249375
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:40464) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: every current-project, artifact, receipt, and capture drift prevents native receipt acceptance
+    # Subtest: current authored AppSpec drift
+    ok 1 - current authored AppSpec drift
+      ---
+      duration_ms: 400.059666
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40516) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: current Gradle source drift
+    ok 2 - current Gradle source drift
+      ---
+      duration_ms: 417.932417
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40554) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: current APK drift
+    ok 3 - current APK drift
+      ---
+      duration_ms: 470.589083
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40592) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: current AGP metadata drift
+    ok 4 - current AGP metadata drift
+      ---
+      duration_ms: 425.767459
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40628) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: receipt core tamper
+    ok 5 - receipt core tamper
+      ---
+      duration_ms: 405.27725
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40667) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: capture CAS tamper
+    ok 6 - capture CAS tamper
+      ---
+      duration_ms: 420.364084
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40703) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: wrong project path
+    ok 7 - wrong project path
+      ---
+      duration_ms: 438.911917
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:40740) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: unreadable receipt app directory
+    ok 8 - unreadable receipt app directory
+      ---
+      duration_ms: 378.636167
+      ...
+    1..8
+ok 122 - every current-project, artifact, receipt, and capture drift prevents native receipt acceptance
+  ---
+  duration_ms: 3359.258875
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:40754) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: a corrupt older candidate is disclosed while a newer exact linked receipt is accepted
+ok 123 - a corrupt older candidate is disclosed while a newer exact linked receipt is accepted
+  ---
+  duration_ms: 408.759125
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:40778) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:40790) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:40828) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Door 10 transparently returns the exact accepted and drifted ship checklist fields
+ok 124 - Door 10 transparently returns the exact accepted and drifted ship checklist fields
+  ---
+  duration_ms: 3106.918666
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:40910) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:40928) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:40941) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Door 10 selects the standard fleet project with the returned absolute path or omitted projectDir
+ok 125 - Door 10 selects the standard fleet project with the returned absolute path or omitted projectDir
+  ---
+  duration_ms: 3065.913333
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:40996) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:41019) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:41044) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Door 10 omitted projectDir preserves the complete multi-segment fleet package suffix
+ok 126 - Door 10 omitted projectDir preserves the complete multi-segment fleet package suffix
+  ---
+  duration_ms: 3052.41725
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:41260) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ship omitted projectDir preserves the existing non-fleet basename fallback
+ok 127 - ship omitted projectDir preserves the existing non-fleet basename fallback
+  ---
+  duration_ms: 455.335209
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:41284) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:41346) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:41368) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: pico_next applies the selected receipt runtime gate to device-verified rows
+    # Subtest: emulator receipt with a non-emulator device row
+    ok 1 - emulator receipt with a non-emulator device row
+      ---
+      duration_ms: 3335.026541
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:41467) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:41490) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:41504) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: different serial
+    ok 2 - different serial
+      ---
+      duration_ms: 3437.081042
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:41701) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:41828) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:41938) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: different model
+    ok 3 - different model
+      ---
+      duration_ms: 3478.766958
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:42320) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:42356) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:42372) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: different fingerprint
+    ok 4 - different fingerprint
+      ---
+      duration_ms: 3458.701416
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:42522) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:42579) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:42592) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: different bootQemu
+    ok 5 - different bootQemu
+      ---
+      duration_ms: 3356.6005
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:42782) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:42881) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:42938) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: exact manual non-emulator runtime
+    ok 6 - exact manual non-emulator runtime
+      ---
+      duration_ms: 3405.311792
+      ...
+    1..6
+ok 128 - pico_next applies the selected receipt runtime gate to device-verified rows
+  ---
+  duration_ms: 20472.772416
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:43209) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:43226) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:43240) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: pico_next attributes auto-judged status only to the selected receipt and exact capture
+    # Subtest: unlinked
+    ok 1 - unlinked
+      ---
+      duration_ms: 3208.968833
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:43309) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:43325) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:43339) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: older receipt
+    ok 2 - older receipt
+      ---
+      duration_ms: 3139.19775
+      ...
+# pico-spatial-mcp ready (stdio)
+# (node:43404) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:43428) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:43443) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+    # Subtest: selected receipt
+    ok 3 - selected receipt
+      ---
+      duration_ms: 3188.4505
+      ...
+    1..3
+ok 129 - pico_next attributes auto-judged status only to the selected receipt and exact capture
+  ---
+  duration_ms: 9537.2205
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:43485) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:43501) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:43531) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: pico_next uses the newest historical receipt capture and ID instead of mutable forward.png
+ok 130 - pico_next uses the newest historical receipt capture and ID instead of mutable forward.png
+  ---
+  duration_ms: 3204.93875
+  ...
+# (node:38947) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: native receipt FIFO leaves fail closed without blocking the first snapshot open
+ok 131 - native receipt FIFO leaves fail closed without blocking the first snapshot open
+  ---
+  duration_ms: 87.130792
+  ...
+# Subtest: receipt ID binds every payload section and canonical file bytes
+ok 132 - receipt ID binds every payload section and canonical file bytes
+  ---
+  duration_ms: 224.294542
+  ...
+# Subtest: APK, spec, and receipt publication is create-only and rejects corrupt hash targets
+ok 133 - APK, spec, and receipt publication is create-only and rejects corrupt hash targets
+  ---
+  duration_ms: 92.003042
+  ...
+# Subtest: APK publication rejects a same-size source mutation and removes staging bytes
+ok 134 - APK publication rejects a same-size source mutation and removes staging bytes
+  ---
+  duration_ms: 3.799334
+  ...
+# Subtest: publication uses exact CAS paths and unsafe app keys cannot create directories
+ok 135 - publication uses exact CAS paths and unsafe app keys cannot create directories
+  ---
+  duration_ms: 61.337417
+  ...
+# Subtest: effective AppSpec publication and historical reading share one exact stored-byte boundary
+ok 136 - effective AppSpec publication and historical reading share one exact stored-byte boundary
+  ---
+  duration_ms: 133.907916
+  ...
+# Subtest: publisher rejects Gradle manifests outside the exact V1 allowlist or mandatory presence
+ok 137 - publisher rejects Gradle manifests outside the exact V1 allowlist or mandatory presence
+  ---
+  duration_ms: 78.980792
+  ...
+# Subtest: raw historical reader rejects Gradle manifests outside the exact V1 allowlist or mandatory presence
+ok 138 - raw historical reader rejects Gradle manifests outside the exact V1 allowlist or mandatory presence
+  ---
+  duration_ms: 87.039917
+  ...
+# Subtest: publisher and raw reader accept selected files below documentation-named buildSrc directories
+ok 139 - publisher and raw reader accept selected files below documentation-named buildSrc directories
+  ---
+  duration_ms: 58.487541
+  ...
+# Subtest: strict schemas reject unknown keys at every nested receipt object and union
+ok 140 - strict schemas reject unknown keys at every nested receipt object and union
+  ---
+  duration_ms: 37.309625
+  ...
+# Subtest: publisher rejects reserved or malformed mandatory identities without excluding PICO-shaped observations
+ok 141 - publisher rejects reserved or malformed mandatory identities without excluding PICO-shaped observations
+  ---
+  duration_ms: 53.951209
+  ...
+# Subtest: raw reader independently rejects reserved or malformed mandatory identities
+ok 142 - raw reader independently rejects reserved or malformed mandatory identities
+  ---
+  duration_ms: 57.188708
+  ...
+# Subtest: publisher enforces every Gradle manifest maximum within the independent receipt envelope bound
+ok 143 - publisher enforces every Gradle manifest maximum within the independent receipt envelope bound
+  ---
+  duration_ms: 231.822416
+  ...
+# Subtest: raw reader independently enforces every Gradle manifest maximum and exact cross-field totals
+ok 144 - raw reader independently enforces every Gradle manifest maximum and exact cross-field totals
+  ---
+  duration_ms: 290.364084
+  ...
+# Subtest: historical validation independently detects receipt and CAS tampering
+    # Subtest: noncanonical receipt bytes
+    ok 1 - noncanonical receipt bytes
+      ---
+      duration_ms: 45.673959
+      ...
+    # Subtest: recomputed receipt ID mismatch
+    ok 2 - recomputed receipt ID mismatch
+      ---
+      duration_ms: 39.837625
+      ...
+    # Subtest: APK CAS mutation
+    ok 3 - APK CAS mutation
+      ---
+      duration_ms: 57.563083
+      ...
+    # Subtest: effective spec mutation
+    ok 4 - effective spec mutation
+      ---
+      duration_ms: 41.793709
+      ...
+    # Subtest: capture CAS mutation
+    ok 5 - capture CAS mutation
+      ---
+      duration_ms: 38.605084
+      ...
+    # Subtest: unknown nested key
+    ok 6 - unknown nested key
+      ---
+      duration_ms: 40.071042
+      ...
+    # Subtest: unknown schema
+    ok 7 - unknown schema
+      ---
+      duration_ms: 43.261916
+      ...
+    # Subtest: unknown kind
+    ok 8 - unknown kind
+      ---
+      duration_ms: 38.499959
+      ...
+    # Subtest: oversized receipt
+    ok 9 - oversized receipt
+      ---
+      duration_ms: 56.417041
+      ...
+    # Subtest: filename mismatch
+    ok 10 - filename mismatch
+      ---
+      duration_ms: 73.922
+      ...
+    1..10
+ok 145 - historical validation independently detects receipt and CAS tampering
+  ---
+  duration_ms: 476.761167
+  ...
+# Subtest: historical reader preserves canonicality and later-artifact issues when other native facts are invalid
+ok 146 - historical reader preserves canonicality and later-artifact issues when other native facts are invalid
+  ---
+  duration_ms: 43.594208
+  ...
+# Subtest: historical validation rejects package, install, runtime, and capture cross-field disagreement
+ok 147 - historical validation rejects package, install, runtime, and capture cross-field disagreement
+  ---
+  duration_ms: 50.096083
+  ...
+# Subtest: current validation detects mutable authored, Gradle, APK, project, and AGP changes
+    # Subtest: authored spec
+    ok 1 - authored spec
+      ---
+      duration_ms: 53.522458
+      ...
+    # Subtest: Gradle input
+    ok 2 - Gradle input
+      ---
+      duration_ms: 39.8515
+      ...
+    # Subtest: source APK
+    ok 3 - source APK
+      ---
+      duration_ms: 61.853375
+      ...
+    # Subtest: AGP output metadata
+    ok 4 - AGP output metadata
+      ---
+      duration_ms: 60.255625
+      ...
+    # Subtest: project real path
+    ok 5 - project real path
+      ---
+      duration_ms: 79.698666
+      ...
+    1..5
+ok 148 - current validation detects mutable authored, Gradle, APK, project, and AGP changes
+  ---
+  duration_ms: 295.804125
+  ...
+# Subtest: historical validation survives moved source paths while current validation fails closed
+ok 149 - historical validation survives moved source paths while current validation fails closed
+  ---
+  duration_ms: 66.278208
+  ...
+# Subtest: scanning reports overflow and malformed candidates and selects newest valid deterministically
+ok 150 - scanning reports overflow and malformed candidates and selects newest valid deterministically
+  ---
+  duration_ms: 1393.992541
+  ...
+# Subtest: capture binding rejects wrong app, receipt, and frame and returns only structural binding fields
+ok 151 - capture binding rejects wrong app, receipt, and frame and returns only structural binding fields
+  ---
+  duration_ms: 47.327667
+  ...
+# Subtest: runReceiptDirectory honors the hermetic environment override
+ok 152 - runReceiptDirectory honors the hermetic environment override
+  ---
+  duration_ms: 0.134709
+  ...
+1..152
+# tests 337
+# suites 0
+# pass 337
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 59077.858375

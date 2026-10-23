@@ -1,0 +1,18 @@
+Usage: claude mcp [options] [command]
+
+Configure and manage MCP servers
+
+Options:
+  -h, --help                            Display help for command
+
+Commands:
+  add [options] <name> <commandOrUrl> [args...]  Add an MCP server to Claude Code.
+  
+  Examples:
+    # Add HTTP server:
+    claude mcp add --transport http sentry https://mcp.sentry.dev/mcp
+  
+    # Add HTTP server with headers:
+    claude mcp add --transport http corridor https://app.corridor.dev/api/mcp --header "Authorization: Bearer ..."
+  
+    # 

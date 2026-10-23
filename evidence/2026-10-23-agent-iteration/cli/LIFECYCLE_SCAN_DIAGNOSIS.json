@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-23T21:31:46.871Z",
+  "note": "Only process scan completion metadata retained; process commands and environments discarded in memory.",
+  "observations": [
+    {
+      "label": "baseline-1157f33",
+      "elapsedMs": 529,
+      "code": null,
+      "signal": "SIGTERM",
+      "timedOut": true,
+      "outputTruncated": false,
+      "stdoutBytes": 2637824,
+      "stderrBytes": 0,
+      "spawnError": null
+    },
+    {
+      "label": "candidate",
+      "elapsedMs": 528,
+      "code": null,
+      "signal": "SIGTERM",
+      "timedOut": true,
+      "outputTruncated": false,
+      "stdoutBytes": 2719744,
+      "stderrBytes": 0,
+      "spawnError": null
+    }
+  ]
+}
