@@ -338,7 +338,7 @@ or launched. Each step reports `pass`, `fail` or `skipped` with a reason; missin
 tooling is a labeled skip, never evidence that the step passed. It is deliberately not a gate —
 `npm run test:sdk-integration` runs its argument, prerequisite and classification fixtures instead.
 
-The full gate battery has 55 gate invocations (54 `test:` suites plus `smoke`). CI assigns 52 to
+The full gate battery has 56 gate invocations (55 `test:` suites plus `smoke`). CI assigns 53 to
 each Linux matrix run, one to native Windows (`test:picocli-win`), and two to native macOS (the
 CMIO writer/reader suites). The Windows lane checks the smoke fixture's `.cmd`/`.bat` wrapper
 selection but does **not** execute or claim a native `build_and_run` success path. All gates are

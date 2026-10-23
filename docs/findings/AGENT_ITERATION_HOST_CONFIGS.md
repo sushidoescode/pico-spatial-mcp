@@ -1,0 +1,33 @@
+# Agent iteration host configuration candidates
+
+These are discovery-only stdio templates for a built checkout. Replace the literal `REPO_PATH` with its absolute path; the placeholder is not a host expansion variable. The templates enable the opt-in `pico_interaction` tool on the doors surface and set `PICO_ADB=/fixture/no/such/adb`. This prevents device fallback during host conformance checks. It does not authorize or enable an emulator run.
+
+| Host observed on 2026-10-23 | Template | Configuration contract |
+| --- | --- | --- |
+| Claude Code 2.1.288 | [claude.json](../../examples/agent-iteration-fixture/host-configs/claude.json) | `mcpServers`, `type: stdio`, command/args/env; explicit `--mcp-config` with `--strict-mcp-config` |
+| Codex CLI 0.163.0 | [codex.toml](../../examples/agent-iteration-fixture/host-configs/codex.toml) | `[mcp_servers.<name>]`, command/args/env and timeouts; invocation-only TOML `-c` overrides |
+| Gemini CLI 0.64.0 | [gemini-settings.json](../../examples/agent-iteration-fixture/host-configs/gemini-settings.json) | Workspace `.gemini/settings.json`, `mcpServers`, stdio command/args/env, timeout in milliseconds, `trust: false` |
+
+[Installed version/help evidence](../../evidence/2026-10-23-agent-iteration/hosts/HOST_HELP.json) records exact executable paths, hashes, arguments, exits and separate output streams. Claude and Gemini pipe help ended at 512 bytes despite exit 0. [The separate PTY observations](../../evidence/2026-10-23-agent-iteration/hosts/HOST_PTY_HELP.json) retain their complete declarations. [Source identities](../../evidence/2026-10-23-agent-iteration/hosts/SOURCE_IDENTITIES.json) bind Gemini's installed settings schema and storage implementation and Codex's native binary. No interactive host, model request, server registration or installed configuration write was performed.
+
+For a later Claude check, its normal interactive command can load only the supplied MCP configuration:
+
+```sh
+claude --strict-mcp-config --mcp-config REPO_PATH/examples/agent-iteration-fixture/host-configs/claude.json
+```
+
+Normal trust and permission decisions still apply. This is an unexecuted launch example. Claude's `--print` help explicitly says it skips the workspace trust dialog, so a headless print run would not establish the interactive trust behavior.
+
+Codex's installed help supports `exec --ignore-user-config`, which omits the user `config.toml` but continues to use the existing authentication location. It supports TOML `-c key=value` overrides; it does not advertise an arbitrary `--config-file` flag. For a later isolated check, use an empty scratch workspace and translate the template table into invocation-only `-c` values. Project and organization policy must still be accounted for. The TOML server fields and timeouts are also documented by [OpenAI's MCP guide](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) and [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference). Parsing the template here does not prove Codex loaded it.
+
+For a later Gemini check, copy the template only into a new scratch workspace's `.gemini/settings.json`, then use `gemini --allowed-mcp-server-names pico_iteration_fixture` there. Normal workspace trust applies; the template does not set trusted-server behavior. This limits the candidate MCP server names, while other user or organization settings may still apply. No scratch workspace configuration was activated here.
+
+| Evidence boundary | Result for this candidate |
+| --- | --- |
+| JSON/TOML template syntax | Parsed locally; exact versions/help retained |
+| Generic MCP protocol, tool schema, errors and image/resource blocks | Covered by the root integration fixtures; independent of these host CLIs |
+| Claude/Codex/Gemini discovery and tool calls using these templates | Untested in all three hosts |
+| Host image display, model LOOK, approval/trust prompts and cancellation | Untested in all three hosts |
+| Native emulator state, rendered acceptance, hand/controller input | Not established by host configuration evidence |
+
+The first future conformance calls are `pico_doctor {}` and `pico_interaction {"action":"describe"}`. Retain the host's actual tool discovery and returned payload before progressing. An image block in a generic SDK fixture proves its wire shape; it does not prove a host displayed it or that an agent looked at a rendered frame.

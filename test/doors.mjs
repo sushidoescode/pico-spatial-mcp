@@ -377,6 +377,11 @@ if (doorsModule.registerDoorTools.length < 2) {
       ok("pico_look forwards an image block + structuredContent verbatim (raw lane)");
     else fail(`pico_look dropped inner content: ${JSON.stringify(look).slice(0, 300)}`);
 
+    await laneClient.callTool({ name: "pico_look", arguments: {serial:"emulator-5678"} });
+    if (sameJson(rawCalls.at(-1), {name:"capture_canonical",args:{serial:"emulator-5678"}}))
+      ok("pico_look forwards the explicit target without changing it");
+    else fail("pico_look lost the explicit serial");
+
     // raw lane — text-only failure keeps isError and the tool's own words (never {status:'ok', detail})
     const screencapFailed = { content: [{ type: "text", text: "screencap failed (code 1, 0 bytes). Is emulator-5554 running?" }], isError: true };
     responses.set("capture_canonical", screencapFailed);
@@ -714,14 +719,13 @@ if (picoRecordSchema?.properties?.app?.pattern === "^[a-z0-9][a-z0-9._-]{0,199}$
   ok("pico_record advertises canonical keys, caller-recordable tiers, structured device outcomes, and exact receipt binding");
 else fail(`pico_record advertises calls its inner ledger rejects: ${JSON.stringify(picoRecordSchema)}`);
 
-// Minor 5 (fix wave FW1): pico_look forwards capture_canonical {} and so inherits that tool's
-// retained emulator-5554 default; the door must say so where the agent reads it, and take no serial.
+// Explicit targeting is opt-in for historical LOOK; the new session requires it.
 const picoLookDefinition = toolDefinitions.find((tool) => tool.name === "pico_look");
 const picoLookInputs = Object.keys(picoLookDefinition?.inputSchema?.properties ?? {});
-if (/Default target emulator-5554 \(retained this checkpoint\); this door has no serial input\./.test(picoLookDefinition?.description ?? "")
-    && picoLookInputs.length === 0)
-  ok("pico_look discloses its retained default target (emulator-5554) and that it has no serial input");
-else fail(`pico_look does not disclose its default target: inputs=[${picoLookInputs.join(", ")}] description=${JSON.stringify(picoLookDefinition?.description ?? "").slice(0, 200)}`);
+if (/historical calls without serial retain emulator-5554/.test(picoLookDefinition?.description ?? "")
+    && picoLookInputs.includes("serial"))
+  ok("pico_look accepts explicit serial and discloses the historical default");
+else fail("pico_look does not advertise its target migration");
 
 // a door that orchestrates through the child server (vault lookup — fast, no emulator needed)
 const sdk = await client.callTool({ name: "pico_sdk", arguments: { symbol: "RigidBodyComponent" } });

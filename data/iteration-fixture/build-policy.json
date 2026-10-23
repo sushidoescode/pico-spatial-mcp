@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "scope": "Dedicated reviewed single-module fixture; source under app/src may change; other build inputs are sealed",
+  "files": {
+    "app/build.gradle.kts": "91cf329c6a33264743f79aef34efb5011b344ff609fc46e60f710a462c9a0a4b",
+    "app/proguard-rules.pro": "1cf8c57e8f79c250b0af9c1a5a4edad71a5c348a79ab70243b6bae086c150ad2",
+    "build.gradle.kts": "47774018405adb4336f34aa05a2fdc6ca8c2175e5efc5b705f1ecb101eae7094",
+    "gradle.properties": "0c64dc4bd012fbcb1b99318d519ac007261fab30c2ad9d3f04d8ed4282e128e9",
+    "gradle/libs.versions.toml": "23a5d1e120481dc1397f81a7d77dde3ed21621a2686116d24fff3f9b7eb0f77b",
+    "gradle/wrapper/gradle-wrapper.jar": "e996d452d2645e70c01c11143ca2d3742734a28da2bf61f25c82bdc288c9e637",
+    "gradle/wrapper/gradle-wrapper.properties": "cdab1ffb439219b1db125e3c99a86cf2424f8762b9b3faa404ed061e3635ecde",
+    "gradlew": "63135287117a1e6d12c84580f1f49c61d1ba02218ecd28660605e97f976e7d65",
+    "gradlew.bat": "c46a27c79007746de5922b17abb6230d64ad8b1ba3ad1585ee5c6543c2a9b129",
+    "settings.gradle.kts": "5a8c51072af58b66646b0df4708dd844733ce17624c4d5217c9357ce75101041"
+  }
+}

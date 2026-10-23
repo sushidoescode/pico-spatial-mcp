@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "name": "show-fixture-panel",
+  "initial": { "panelVisible": false, "counter": 0 },
+  "steps": [
+    { "actionId": "panel.show", "args": { "panelId": "fixture.panel" }, "expect": { "panelVisible": true, "counter": 1 } }
+  ],
+  "limits": { "maxSteps": 20, "timeoutMs": 90000, "actionTimeoutMs": 10000 }
+}

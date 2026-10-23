@@ -201,7 +201,7 @@ export const GATES = Object.freeze({
   "test:emulator-restart": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/emulator.mjs", "test/restart-emulator.mjs", "test/observation.mjs", "test/navigation.mjs", "test/runtimecontinuity.mjs", "test/navigationtarget.mjs", "test/worldlocomotion.mjs"]] },
   "test:modelmeasure": { host: "linux", scope: "fixture", commands: [["node", "test/modelmeasure.mjs"]] },
   "test:docsmeta": { host: "linux", scope: "fixture", commands: [["node", "test/docsmeta.mjs"], ["node", "--test", "test/public-docs.mjs"]] },
-  "test:picocli": { host: "linux", scope: "fixture", commands: [["node", "test/picocli.mjs"], ["node", "--test", "test/picocli-autoinstall.mjs", "test/picocli-sweep.mjs", "test/picocli-childenv.mjs"], ["node", "--test", "test/cliobservations.mjs"]] },
+  "test:picocli": { host: "linux", scope: "fixture", commands: [["node", "test/picocli.mjs"], ["node", "--test", "test/picocli-autoinstall.mjs", "test/picocli-sweep.mjs", "test/picocli-childenv.mjs"], ["node", "--test", "test/cliobservations.mjs", "test/picocli-agent-contracts.mjs"]] },
   "test:runreceipt": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/runreceipt-identity.mjs", "test/runreceipt-store.mjs", "test/nativefleetreceipt.mjs", "test/fleetreceipt.mjs", "test/runreceipt-ledger.mjs", "test/runreceipt-ship.mjs", "test/runreceipt-portability.mjs"]] },
   "test:runrevision": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/runrevision-contracts.mjs", "test/runrevision-store.mjs", "test/runrevision-locator.mjs", "test/runrevision-locks.mjs"]] },
   // The SDK-selection track (S1-S6) as ONE gate: six suites that share one subject — which
@@ -232,6 +232,7 @@ export const GATES = Object.freeze({
   // one allowed explicit clear, and every observation site's recording-fixture proof that it never
   // clears the device log. NOT test/observation.mjs (the emulator observation suite), which stays
   // in test:emulator-restart.
+  "test:interaction": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/interactiontarget.mjs", "test/interaction.mjs", "test/interactionbridge.mjs", "test/interactionprocess.mjs", "test/interactionsession.mjs", "test/fixturebuild.mjs", "test/interactiontools.mjs", "test/interactionhost.mjs", "test/iterationcli.mjs"]] },
   "test:observation": {
     host: "linux",
     scope: "fixture",

@@ -10,6 +10,7 @@ export interface RunResult {
 }
 
 export interface RunOptions {
+  signal?: AbortSignal;
   cwd?: string;
   env?: Record<string, string | undefined>;
   timeoutMs?: number;
@@ -19,6 +20,7 @@ export interface RunOptions {
 /** Run a command to completion, capturing output. Never throws on non-zero exit. */
 export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
   return new Promise((resolve) => {
+    if (opts.signal?.aborted) { resolve({code:null,stdout:"",stderr:"cancelled before spawn",timedOut:false}); return; }
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.env },
@@ -32,6 +34,9 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       timedOut = true;
       child.kill("SIGKILL");
     }, timeoutMs);
+    const abort = () => { child.kill("SIGKILL"); };
+    opts.signal?.addEventListener("abort", abort, {once:true});
+    if (opts.signal?.aborted) abort();
     const append = (which: "stdout" | "stderr", d: Buffer) => {
       const next = d.toString();
       const current = stdout.length + stderr.length;
@@ -48,10 +53,12 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     child.stderr.on("data", (d: Buffer) => append("stderr", d));
     child.on("error", (e) => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", abort);
       resolve({ code: null, stdout, stderr: `${stderr}\nspawn error: ${e.message}`, timedOut });
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", abort);
       resolve({ code, stdout, stderr, timedOut });
     });
   });
@@ -64,6 +71,7 @@ export function runBinary(
   opts: RunOptions = {},
 ): Promise<{ code: number | null; stdout: Buffer; stderr: string; timedOut: boolean }> {
   return new Promise((resolve) => {
+    if (opts.signal?.aborted) { resolve({code:null,stdout:Buffer.alloc(0),stderr:"cancelled before spawn",timedOut:false}); return; }
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.env },
@@ -78,6 +86,9 @@ export function runBinary(
       timedOut = true;
       child.kill("SIGKILL");
     }, opts.timeoutMs ?? 60_000);
+    const abort = () => { child.kill("SIGKILL"); };
+    opts.signal?.addEventListener("abort", abort, {once:true});
+    if (opts.signal?.aborted) abort();
     child.stdout.on("data", (d: Buffer) => {
       const limit = opts.maxOutputBytes;
       if (limit == null) {
@@ -96,10 +107,12 @@ export function runBinary(
     child.stderr.on("data", (d) => (stderr += d.toString()));
     child.on("error", () => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", abort);
       resolve({ code: null, stdout: Buffer.concat(chunks), stderr, timedOut });
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", abort);
       resolve({ code, stdout: Buffer.concat(chunks), stderr, timedOut });
     });
   });

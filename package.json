@@ -19,7 +19,8 @@
     "GETTING_STARTED.md",
     "TESTERS.md",
     "SKILLS.md",
-    "DESIGN.md"
+    "DESIGN.md",
+    "data/iteration-fixture"
   ],
   "scripts": {
     "build": "node scripts/build-source.mjs",
@@ -80,7 +81,8 @@
     "test:buildfreshness": "node scripts/run-gate.mjs test:buildfreshness",
     "test:plugin-bootstrap-freshness": "node scripts/run-gate.mjs test:plugin-bootstrap-freshness",
     "test:observation": "node scripts/run-gate.mjs test:observation",
-    "test:picocli-win": "node scripts/run-gate.mjs test:picocli-win"
+    "test:picocli-win": "node scripts/run-gate.mjs test:picocli-win",
+    "test:interaction": "node scripts/run-gate.mjs test:interaction"
   },
   "engines": {
     "node": ">=20"

@@ -89,9 +89,11 @@ export function resolveDeviceAdb(): string {
 }
 
 /** Probe raw identity directly from one currently attached adb serial. */
-export async function probeDeviceIdentity(adb: string, serial: string): Promise<ProbedDeviceIdentity> {
+export async function probeDeviceIdentity(adb: string, serial: string, budget?: {deadlineEpochMs:number;signal?:AbortSignal}): Promise<ProbedDeviceIdentity> {
   const prop = async (name: string) => {
-    const result = await run(adb, ["-s", serial, "shell", "getprop", name], { timeoutMs: 10_000 });
+    const remaining = budget ? budget.deadlineEpochMs - Date.now() : 10_000;
+    if (remaining <= 0 || budget?.signal?.aborted) throw new Error("identity probe cancelled/deadline elapsed");
+    const result = await run(adb, ["-s", serial, "shell", "getprop", name], { timeoutMs: Math.min(budget ? 4_000 : 10_000,remaining), signal:budget?.signal });
     if (result.code !== 0 || result.timedOut) throw new Error(`adb identity probe '${name}' failed for '${serial}' (exit ${result.code}${result.timedOut ? ", timeout" : ""}): ${result.stderr.trim() || "no stderr"}`);
     return result.stdout.trim();
   };

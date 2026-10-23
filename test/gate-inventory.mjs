@@ -148,7 +148,7 @@ test("multi-command gates keep every && tail as its own sequential argv array", 
   assert.deepEqual(GATES["test:picocli"].commands, [
     ["node", "test/picocli.mjs"],
     ["node", "--test", "test/picocli-autoinstall.mjs", "test/picocli-sweep.mjs", "test/picocli-childenv.mjs"],
-    ["node", "--test", "test/cliobservations.mjs"],
+    ["node", "--test", "test/cliobservations.mjs", "test/picocli-agent-contracts.mjs"],
   ]);
   assert.deepEqual(GATES["test:bridge"].commands, [
     ["node", "test/mousebridge.mjs"],
@@ -722,11 +722,16 @@ test("a timed-out gate stops before its remaining commands", async () => {
     child.kill = (signal) => { if (signal === "SIGKILL") child.emit("close", null, "SIGKILL"); };
     return child;
   };
-  const exit = await runGate("test:eye", {
-    root: repoRoot, env: {}, verify: fresh, timeoutMs: 10, graceMs: 10, spawnChild: stalls,
-  });
-  assert.equal(exit, 1);
-  assert.equal(record.length, 1, "the second command must not run after the first was killed");
+  // A real ChildProcess owns a referenced handle. This EventEmitter fake must model that;
+  // the runner correctly unrefs its own watchdogs, so a bare unresolved Promise is insufficient.
+  const handle=setInterval(()=>{},1000);
+  try {
+    const exit = await runGate("test:eye", {
+      root: repoRoot, env: {}, verify: fresh, timeoutMs: 10, graceMs: 10, spawnChild: stalls,
+    });
+    assert.equal(exit, 1);
+    assert.equal(record.length, 1, "the second command must not run after the first was killed");
+  } finally {clearInterval(handle);}
 });
 
 test("only npm goes through the Windows launch shim; node and sh are spawned directly", () => {

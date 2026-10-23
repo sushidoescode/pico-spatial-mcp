@@ -354,10 +354,11 @@ export function parseOnlineAdbSerials(output: string): string[] {
     .map((fields) => fields[0]);
 }
 
-export async function captureAdbFrame(adb: string, serial: string, timeoutMs = 30_000): Promise<CapturedFrame> {
+export async function captureAdbFrame(adb: string, serial: string, timeoutMs = 30_000, signal?: AbortSignal): Promise<CapturedFrame> {
   const result = await runBinary(adb, ["-s", serial, "exec-out", "screencap", "-p"], {
     timeoutMs,
     maxOutputBytes: 64 * 1024 * 1024,
+    signal,
   });
   if (result.code !== 0 || result.timedOut) {
     throw new Error(

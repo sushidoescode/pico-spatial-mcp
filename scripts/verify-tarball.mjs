@@ -611,6 +611,38 @@ try {
     : fail(`env-unset default listed ${defaultTools.tools.length} tools, expected the 18-tool doors surface`);
   await defaultClient.close();
 
+  // The opt-in interaction tool resolves this policy beside dist. Check the exact packed bytes
+  // and both real stdio surfaces without selecting a CLI or allowing any device operation.
+  const iterationPolicy = path.join(installed, "data", "iteration-fixture", "build-policy.json");
+  const sourceIterationPolicy = path.join(repoRoot, "data", "iteration-fixture", "build-policy.json");
+  fs.existsSync(iterationPolicy) && sha256File(iterationPolicy) === sha256File(sourceIterationPolicy)
+    ? ok("dedicated iteration fixture policy ships with exact reviewed bytes")
+    : fail("dedicated iteration fixture policy is missing or differs in the installed package");
+  for (const surface of ["doors", "full"]) {
+    const iterationTransport = new StdioClientTransport({
+      command: process.execPath, args: [entry], cwd: sandbox,
+      env: { ...process.env, PICO_MCP_SURFACE: surface, PICO_MCP_INTERACTION: "1",
+        PICO_MCP_CLI_POLICY: "disabled", PICO_ADB: "/fixture/no/such/adb" },
+    });
+    const iterationClient = new Client({ name: "tarball-verifier-interaction", version: "0.0.0" });
+    try {
+      await iterationClient.connect(iterationTransport);
+      const listed = await iterationClient.listTools();
+      const expected = surface === "doors" ? 19 : EXPECTED_PLATFORM_TOOLS + 1;
+      const described = await iterationClient.callTool({ name: "pico_interaction", arguments: { action: "describe" } });
+      listed.tools.length === expected && listed.tools.some((tool) => tool.name === "pico_interaction")
+        && !described.isError && described.structuredContent?.offlineDiscovery === true
+        && described.structuredContent?.humanInputVerified === false
+        ? ok(`installed ${surface} opt-in discovery lists ${expected} tools and describes semantic actions offline`)
+        : fail(`installed ${surface} opt-in interaction discovery has an unexpected count or contract`);
+    } catch (error) {
+      fail(`installed ${surface} opt-in interaction check failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      await iterationClient.close().catch(() => {});
+      await iterationTransport.close().catch(() => {});
+    }
+  }
+
   // [M9] The publication receipt names the build that produced THIS payload, read out of the packed
   //      copy — not out of whatever the checkout happens to hold afterwards. Assert it here, as a
   //      check, so a payload with no build binding fails the gate instead of yielding a holed receipt.

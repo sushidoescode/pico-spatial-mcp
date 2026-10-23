@@ -3,6 +3,10 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { okJson, run, runBinary, sleep } from "./util.js";
 
+// Opt-in debug source-set extension using the existing app-private run-as transport pattern.
+// It intentionally does not inherit the legacy exported broadcast surface.
+export { emitAgentInteractionBridgeKt, createInteractionBridgeBackend } from "./interactionbridge.js";
+
 export const AGENT_BRIDGE_SCENE_PAYLOAD_KIND = "pico.agent-bridge.scene-snapshot" as const;
 export const AGENT_BRIDGE_SCENE_SCHEMA_VERSION = 1 as const;
 export const AGENT_BRIDGE_SCENE_REVISION = 41 as const;
