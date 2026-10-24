@@ -1,0 +1,2 @@
+# Retained CLI stdout/stderr are byte-pinned evidence, not editable text.
+/test/fixtures/picocli/help/**/*.txt -text

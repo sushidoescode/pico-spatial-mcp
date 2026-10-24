@@ -234,6 +234,15 @@ export function readLog(logPath) {
   return fs.readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 
+export function managedRuntimeEnvironment(baseEnv, overrides, platform = process.platform) {
+  // The SDK adds inherited uppercase PATH/USERPROFILE before these values. On Windows, a
+  // second spelling such as Path can lose to that inherited PATH during child-process creation.
+  // Canonicalize both inputs before merging so the fixture overrides remain the only spelling.
+  const canonical = (env) => Object.fromEntries(Object.entries(env)
+    .map(([key, value]) => [platform === "win32" ? key.toUpperCase() : key, value]));
+  return { ...canonical(baseEnv), ...canonical(overrides) };
+}
+
 /**
  * Fresh-process Task 4 fixture. It never mutates this test process's HOME/PATH and every npm/CLI
  * byte lives below one temporary root. Callers pass `env` to a newly spawned Node/MCP child.
@@ -259,17 +268,13 @@ export function createManagedRuntimeHarness({ latestVersion = "0.4.2", operation
   fs.writeFileSync(driverPath, runtimeDriverSource());
   writeCommand(binDir, "npm", driverPath, "npm");
   writeCommand(binDir, "node", driverPath, "node-proxy");
-  const pathKey = process.platform === "win32"
-    ? (Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "Path")
-    : "PATH";
   const supportPath = process.platform === "win32"
     ? [path.win32.dirname(process.env.ComSpec ?? `${process.env.SystemRoot ?? "C:\\Windows"}\\System32\\cmd.exe`)]
     : [path.dirname(process.execPath)];
-  const env = {
-    ...process.env,
+  const env = managedRuntimeEnvironment(process.env, {
     HOME: home,
     USERPROFILE: home,
-    [pathKey]: [binDir, ...supportPath].join(path.delimiter),
+    PATH: [binDir, ...supportPath].join(path.delimiter),
     PICO_MCP_CLI_POLICY: "managed-latest",
     PICO_HOME: path.join(root, "missing-pico-home"),
     FAKE_PICO_LOG: logPath,
@@ -284,7 +289,7 @@ export function createManagedRuntimeHarness({ latestVersion = "0.4.2", operation
     ),
     FAKE_KNOWLEDGE_LOG: knowledgeLogPath,
     FAKE_KNOWLEDGE_SERVER: path.resolve("test", "fixtures", "fake-knowledge-server.mjs"),
-  };
+  });
   if (helpMap) {
     const helpMapPath = path.join(root, "help-map.json");
     fs.writeFileSync(helpMapPath, JSON.stringify(helpMap));
@@ -318,8 +323,9 @@ export function createHarness({
   registryMode = "success",
   canaryFailure = "",
   separateGlobalBin = false,
+  tempParent = os.tmpdir(),
 } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico cli auto "));
+  const root = fs.mkdtempSync(path.join(tempParent, "pico cli auto "));
   tempRoots.push(root);
   const binDir = path.join(root, "bin");
   const templateDir = path.join(root, "template");

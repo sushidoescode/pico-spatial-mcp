@@ -26,6 +26,7 @@ import {
   createManagedIO,
   createManagedRuntimeHarness,
   launchManagedConvergenceWorker,
+  managedRuntimeEnvironment,
   publishManagedFixtureVersion,
   restoreEnvironment,
   saveEnvironment,
@@ -101,6 +102,31 @@ async function waitForProcessExit(pid, timeoutMs = 2_000) {
 }
 
 saveEnvironment();
+
+test("runtime fixture Windows environment overrides inherited SDK PATH without mixed-case duplicates", () => {
+  const inherited = { Path: "old-fixture-bin", UserProfile: "old-fixture-home", FAKE_LATEST_VERSION: "0.4.2" };
+  const overrides = { PATH: "new-fixture-bin", USERPROFILE: "new-fixture-home" };
+  const env = managedRuntimeEnvironment(inherited, overrides, "win32");
+  const sdkMerged = { PATH: "old-fixture-bin", USERPROFILE: "old-fixture-home", ...env };
+  assert.deepEqual(Object.keys(sdkMerged).filter((key) => key.toUpperCase() === "PATH"), ["PATH"]);
+  assert.deepEqual(Object.keys(sdkMerged).filter((key) => key.toUpperCase() === "USERPROFILE"), ["USERPROFILE"]);
+  assert.equal(sdkMerged.PATH, "new-fixture-bin");
+  assert.equal(sdkMerged.USERPROFILE, "new-fixture-home");
+  assert.deepEqual(managedRuntimeEnvironment({ Path: "case-sensitive-value" }, { PATH: "fixture-bin" }, "linux"),
+    { Path: "case-sensitive-value", PATH: "fixture-bin" });
+});
+
+test("retained CLI help transcripts match their original byte hashes on every checkout", () => {
+  const directory = path.join(repoRoot, "test", "fixtures", "picocli", "help");
+  const index = JSON.parse(fs.readFileSync(path.join(directory, "index.json"), "utf8"));
+  for (const entry of index.entries) {
+    for (const stream of ["stdout", "stderr"]) {
+      const file = path.join(directory, entry.files[`${stream}.txt`]);
+      const actual = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+      assert.equal(actual, entry[`${stream}Sha256`], `byte-pinned transcript changed: ${file}`);
+    }
+  }
+});
 
 test("managed directory sync distinguishes unsupported metadata durability from real failures", { concurrency: false }, async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pico directory sync "));
@@ -489,8 +515,8 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
     }
   });
 
-  function managedFixture() {
-    const harness = createHarness({ latestVersion: "0.4.2" });
+  function managedFixture({ tempParent } = {}) {
+    const harness = createHarness({ latestVersion: "0.4.2", tempParent });
     const root = harness.root;
     const managedRoot = path.join(harness.root, "managed");
     const calls = [];
@@ -567,7 +593,9 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
   });
 
   await t.test("a relative managedRoot resolves the published immutable version", async () => {
-    const fixture = managedFixture();
+    // A Windows runner may put its repository on D: and os.tmpdir() on C:. Create this fixture
+    // beside cwd so path.relative exercises an actual relative path on every supported host.
+    const fixture = managedFixture({ tempParent: process.cwd() });
     const newestShim = await fixture.publish("0.4.2");
     const relativeManagedRoot = path.relative(process.cwd(), fixture.managedRoot);
     assert.equal(path.isAbsolute(relativeManagedRoot), false);
