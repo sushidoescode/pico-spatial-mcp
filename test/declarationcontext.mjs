@@ -27,7 +27,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { declarationIOFromTree } from "./helpers/toolchain-fixture.mjs";
+import { declarationIOFromTree, macSdkTree, toolchainIOFromTree } from "./helpers/toolchain-fixture.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DATA_DIR = path.join(repoRoot, "data", "sdk-compatibility");
@@ -47,6 +47,10 @@ const {
   SDK_COMPATIBILITY_INDEX_PATH,
 } = await import("../dist/declarationcontext.js");
 const { readProjectSdkIdentity } = await import("../dist/projectidentity.js");
+const { resolveToolchain } = await import("../dist/toolchainselection.js");
+// Resolve imports before registering tests/cleanup. A later top-level await can
+// let the runner drain the earlier tests and remove their shared temp projects.
+const { describeDeclarationAuthority, lookupHeadline } = await import("../dist/vault.js");
 
 // ─── the fixture vault (synthetic declarations; package.xml mirrors the historical 0.13.3 shape) ──
 const VAULT = "/vault";
@@ -824,8 +828,6 @@ test("the module reads only; it never spawns a process, runs Gradle or the CLI, 
 // The consumer must not headline a lookup `target-verified` when only some of its returned
 // matches are in the verified scope, and a MISSING or INVALID packaged index must read
 // differently from an index that simply lists no records.
-const { describeDeclarationAuthority, lookupHeadline } = await import("../dist/vault.js");
-
 const OTHER_REL = "knowledge/api-reference/com.pico.spatial.other.md";
 const OTHER_MD = ["# com.pico.spatial.other", "# Entity", "package com.pico.spatial.other {", "    class Entity {", "        constructor ();", "    }", "}", ""].join("\n");
 const OTHER_ENTITY = "com.pico.spatial.other.Entity";
@@ -835,7 +837,7 @@ const twoEntityVault = () => ({ ...vaultFiles(), [`${VAULT}/${OTHER_REL}`]: OTHE
 function authorityFor(io, source, target, recordPaths) {
   const loaded = loadVerifiedCompatibilityEvidence(recordPaths, source, target, io);
   const context = resolveDeclarationContext(source, target, loaded.accepted);
-  return { identity: { status: "ok", identity: source }, target, accepted: loaded.accepted, context };
+  return { identity: { status: "ok", identity: source }, target, accepted: loaded.accepted, context, rejected: loaded.rejected };
 }
 
 test("a multi-match lookup is headlined target-verified only when EVERY returned match is verified; a partial match stays unknown and names the verified ones", () => {
@@ -845,7 +847,7 @@ test("a multi-match lookup is headlined target-verified only when EVERY returned
   const scoped = recordFor(source); // scoped to com.pico.spatial.core.ecs.Entity only
   const io = ioFor(specFor({ vault, records: [{ rel: RECORD_REL, bytes: recordBytes(scoped) }] }));
   const authority = authorityFor(io, source, identityA, [RECORD_PATH]);
-  assert.equal(authority.accepted.length, 1);
+  assert.equal(authority.accepted.length, 1, JSON.stringify(authority.rejected));
   assert.equal(authority.context.status, "target-compatible");
 
   const partial = lookupHeadline(authority, [SYMBOL, OTHER_ENTITY]);
@@ -943,8 +945,6 @@ test("a missing or invalid packaged index is reported distinctly from an index t
 // any reviewed record links them (nothing does). §7 reads each from its own bytes, proves no read
 // path writes to a project, and proves the CLI adapter's hints select what is READ and never
 // supply the identity, the revision or the verdict.
-const { macSdkTree, toolchainIOFromTree } = await import("./helpers/toolchain-fixture.mjs");
-const { resolveToolchain } = await import("../dist/toolchainselection.js");
 
 /** The skeleton's settings + catalog form (appskeleton/gradle/libs.versions.toml), on disk. */
 const SKELETON_SETTINGS = 'rootProject.name = "fixture"\ninclude(":app")\n';
@@ -1075,7 +1075,7 @@ test("a fabricated CLI version/fingerprint hint never becomes authority: only th
 
   // (d) the genuine tuple still verifies, so (b) and (c) are refusals rather than a dead fixture.
   const loadedGenuine = loadVerifiedCompatibilityEvidence([RECORD_PATH], source, identityA, io);
-  assert.equal(loadedGenuine.accepted.length, 1);
+  assert.equal(loadedGenuine.accepted.length, 1, JSON.stringify(loadedGenuine.rejected));
   assert.equal(loadedGenuine.accepted[0].packageRevision, "0.13.3");
 
   // (e) an unsupported transport — a workspace the CLI can name but this process cannot read as a

@@ -1,0 +1,77 @@
+{
+  "at": "2026-10-24T12:04:40.823017+00:00",
+  "trigger": "GitHub Windows checkout failed at test:claims.log before any tests",
+  "failedWorkflow": 40092138554,
+  "failedJob": 120866823231,
+  "moves": [
+    {
+      "oldPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/merge-t2-t3/test:claims.log",
+      "newPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/merge-t2-t3/test-claims.log",
+      "bytes": 1523,
+      "sha256": "924f289f142cbe4eda9200ff2d184baa53d0ef8a0e30d6ae9b1d46447ef954e9"
+    },
+    {
+      "oldPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/merge-t2-t3/test:docsmeta.log",
+      "newPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/merge-t2-t3/test-docsmeta.log",
+      "bytes": 3599,
+      "sha256": "5199a6d937ca08e389ed9471eecae9f6a78cecbf77b76f7b5323b8ebc179908b"
+    },
+    {
+      "oldPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/merge-t2-t3/test:eye.log",
+      "newPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/merge-t2-t3/test-eye.log",
+      "bytes": 4372,
+      "sha256": "fd3a8b464568417ba1a0a4caad136810f964d7f79a839c4468e784a6d48b82df"
+    },
+    {
+      "oldPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/merge-t2-t3/test:lint.log",
+      "newPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/merge-t2-t3/test-lint.log",
+      "bytes": 8856,
+      "sha256": "8f07ce49ca3ba0ab1e6b4edfb91758bad4b189215bcddf71725adda5e5641bef"
+    },
+    {
+      "oldPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/merge-t2-t3/test:observation.log",
+      "newPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/merge-t2-t3/test-observation.log",
+      "bytes": 6798,
+      "sha256": "1e8374aec8289dfb8584bd02c0837a5f2fc47f4051f9c82daa0fc991da6e2681"
+    },
+    {
+      "oldPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/merge-t2-t3/test:tarball.log",
+      "newPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/merge-t2-t3/test-tarball.log",
+      "bytes": 4705,
+      "sha256": "6877dbfcfaa51cc1c60249664b42bc20b679f2c53f56abe8f478318aab3162ae"
+    },
+    {
+      "oldPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/task-1/controller-postfold-test:distribution-adoption.log",
+      "newPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/task-1/controller-postfold-test-distribution-adoption.log",
+      "bytes": 4361,
+      "sha256": "8ffc47432e06d9eb510df2c7a58638dbcebf5702fc75bca3712c490a2cb6ec43"
+    },
+    {
+      "oldPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/task-1/controller-postfold-test:docsmeta.log",
+      "newPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/task-1/controller-postfold-test-docsmeta.log",
+      "bytes": 3605,
+      "sha256": "198949fe9231b3776e805b97ca8ffb7d935c7fb61cd9ab7096d5b1c3bd1fa6b6"
+    },
+    {
+      "oldPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/task-1/controller-postfold-test:doors.log",
+      "newPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/task-1/controller-postfold-test-doors.log",
+      "bytes": 9142,
+      "sha256": "066f9f998d2a5fba32bd9bc344f3d42f4907f1da9e8c271b0bede2bee8985561"
+    },
+    {
+      "oldPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/task-1/controller-postfold-test:lint.log",
+      "newPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/task-1/controller-postfold-test-lint.log",
+      "bytes": 8868,
+      "sha256": "ead00e1e09bc3856c8848e39318dba9dadede744c23e84f75a18a11b30b6ef36"
+    },
+    {
+      "oldPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/task-1/controller-postfold-test:picocli.log",
+      "newPath": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/host-completion/task-1/controller-postfold-test-picocli.log",
+      "bytes": 30240,
+      "sha256": "0da556379cb9aa77e4a7f5cd0b224f6669b3367b3c83aa21cc54e134b734348d"
+    }
+  ],
+  "contentChanged": false,
+  "originalNamesRetainedInGitHistory": true,
+  "historicalLogsUnedited": true
+}

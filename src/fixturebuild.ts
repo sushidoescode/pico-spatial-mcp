@@ -51,6 +51,22 @@ export function collectFixtureInputs(projectDir:string,check:()=>void=()=>{}):It
 
 type InputRecord={path:string;sha256:string};
 type DirectoryIdentity={generation:string;members:string[]};
+const maxResolvedReportBytes=16*1024*1024;
+function prepareFreshResolvedReport(file:string,retainedPath:string,check:()=>void):string|null {
+  check();
+  if(fs.realpathSync(path.dirname(file))!==path.dirname(file))throw new Error("resolved report parent must remain inside the canonical fixture build directory");
+  let stat:fs.Stats;
+  try {stat=fs.lstatSync(file);}catch(e:any){if(e.code==="ENOENT")return null;throw e;}
+  if(!stat.isFile()||stat.isSymbolicLink()||stat.size>maxResolvedReportBytes)throw new Error("previous resolved input report must be a bounded regular file");
+  const generation=fileGeneration(file),sha256=hashBuildFile(file,check);
+  fs.copyFileSync(file,retainedPath,fs.constants.COPYFILE_EXCL);
+  if(hashBuildFile(retainedPath,check)!==sha256||fileGeneration(file)!==generation)throw new Error("resolved report changed while retaining previous output");
+  check();
+  // Preserve the old bytes, then require this invocation to create its output. Filesystem
+  // timestamps can trail Date.now() even for a new write; freshness is causal, not a clock test.
+  fs.unlinkSync(file);
+  return generation;
+}
 function directoryIdentity(directory:string):DirectoryIdentity {
   const generation=fileGeneration(directory);
   if(!fs.lstatSync(directory).isDirectory())throw new Error(`build input parent is not a directory: ${directory}`);
@@ -78,7 +94,7 @@ function scanDirectory(root:string,check:()=>void):Map<string,DirectoryIdentity>
 }
 async function validateResolvedInputs(file:string,projectDir:string,check:()=>void) {
   check();
-  if(fs.statSync(file).size>16*1024*1024)throw new Error("resolved input report exceeds size limit");
+  if(fs.statSync(file).size>maxResolvedReportBytes)throw new Error("resolved input report exceeds size limit");
   const reportGeneration=fileGeneration(file);
   const bytes=fs.readFileSync(file),report=JSON.parse(bytes.toString("utf8"));
   if(reportGeneration!==fileGeneration(file))throw new Error("resolved report changed while reading");
@@ -270,8 +286,10 @@ export async function buildIterationFixture(options:FixtureBuildOptions) {
     const common=["--offline","--no-daemon","--console=plain","-Dorg.gradle.java.installations.auto-download=false","-Pandroid.builder.sdkDownload=false","-Pkotlin.compiler.execution.strategy=in-process"];
     const execute=async(name:string,task:string)=>{
       await assertConfiguration();
-      const argv=[task,...common],startedAt=Date.now();
-      const previousReportGeneration=task===":app:writeIterationInputs"&&fs.existsSync(reportFile)?fileGeneration(reportFile):null;
+      const argv=[task,...common];
+      const previousReportGeneration=task===":app:writeIterationInputs"
+        ?prepareFreshResolvedReport(reportFile,path.join(attempt,`${name}-previous-report.json`),()=>{check();owner!.assertOwned();}):null;
+      const startedAt=Date.now();
       processUncertain=true;
       const command=await (options.runBuild??runPicoCliCommand)(gradle,argv,{cwd:root,timeoutMs:Math.max(1,Math.floor(deadline-performance.now())),signal:options.signal,
         baseEnv,env:{},maxOutputBytes:1024*1024});
@@ -282,7 +300,7 @@ export async function buildIterationFixture(options:FixtureBuildOptions) {
       fs.writeFileSync(path.join(attempt,`${name}-stderr.txt`),command.stderr,{flag:"wx"});
       if(command.code!==0||command.timedOut||command.cancelled||command.spawnError||command.outputTruncated)throw new Error(`${name} failed/cancelled/incomplete; previous APK is never reused`);
       check();
-      if(task===":app:writeIterationInputs"&&(!fs.existsSync(reportFile)||fs.statSync(reportFile).mtimeMs<startedAt||fileGeneration(reportFile)===previousReportGeneration))throw new Error("fresh resolved input report absent");
+      if(task===":app:writeIterationInputs"&&(!fs.existsSync(reportFile)||!fs.lstatSync(reportFile).isFile()||fileGeneration(reportFile)===previousReportGeneration))throw new Error("fresh resolved input report absent or not a new regular file");
     };
     await execute("pre-inputs",":app:writeIterationInputs");
     const before=await validateResolvedInputs(reportFile,root,check);

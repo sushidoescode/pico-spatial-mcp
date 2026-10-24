@@ -99,6 +99,23 @@ test('build pins resolved inputs before compilation and retains APK before post-
     fs.writeFileSync(f.apk,'later build output');assert.equal(fs.readFileSync(outcome.apkPath,'utf8'),'new compiled APK');
   } finally {if(previous===undefined)delete process.env[key];else process.env[key]=previous;}
 });
+test('new reports remain fresh when filesystem timestamps trail the phase clock; previous bytes are retained',async t=>{
+  const f=setup(t),file=path.join(f.root,'app/build/iteration-inputs.json'),previous=Buffer.from('previous generated report bytes');
+  fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,previous);
+  const observed=[];
+  const outcome=await build.buildIterationFixture({...f.options,runBuild:f.runner(async({argv})=>{
+    if(argv[0]!==':app:writeIterationInputs')return;
+    const older=new Date(Date.now()-1000);fs.utimesSync(file,older,older);
+    observed.push({mtimeMs:fs.statSync(file).mtimeMs,bytes:fs.readFileSync(file)});
+  })});
+  assert.equal(outcome.status,'built',JSON.stringify(outcome));
+  const reportPhases=outcome.gradle.phases.filter(phase=>phase.argv[0]===':app:writeIterationInputs');
+  assert.equal(observed.length,2);
+  for(let index=0;index<observed.length;index++)assert.ok(observed[index].mtimeMs<reportPhases[index].startedAt);
+  const attempt=path.dirname(outcome.recordPath);
+  assert.deepEqual(fs.readFileSync(path.join(attempt,'pre-inputs-previous-report.json')),previous);
+  assert.deepEqual(fs.readFileSync(path.join(attempt,'post-inputs-previous-report.json')),observed[0].bytes);
+});
 for(const [name,mutate] of [
   ['changed and restored dependency bytes',file=>{const bytes=fs.readFileSync(file),stat=fs.statSync(file);fs.writeFileSync(file,'different compiler input');fs.writeFileSync(file,bytes);fs.utimesSync(file,stat.atime,stat.mtime);}],
   ['same-byte dependency replacement',file=>{const bytes=fs.readFileSync(file);fs.unlinkSync(file);fs.writeFileSync(file,bytes);}],
@@ -117,9 +134,29 @@ test('post-build resolved set drift refuses the retained APK',async t=>{
 });
 test('an unchanged future-dated report cannot stand in for a fresh pre-build report',async t=>{
   const f=setup(t),file=path.join(f.root,'app/build/iteration-inputs.json');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(f.report()));
+  const previous=fs.readFileSync(file);
   const future=new Date(Date.now()+60_000);fs.utimesSync(file,future,future);
   const outcome=await build.buildIterationFixture({...f.options,runBuild:async()=>succeeded});
   assertUnusable(outcome,/fresh resolved input report absent/);
+  assert.deepEqual(fs.readFileSync(path.join(path.dirname(outcome.recordPath),'pre-inputs-previous-report.json')),previous);
+});
+test('a successful post-report command must produce a new report instead of reusing the pre-report',async t=>{
+  const f=setup(t),runner=f.runner();let reports=0;
+  const outcome=await build.buildIterationFixture({...f.options,runBuild:async(command,argv,options)=>{
+    if(argv[0]===':app:writeIterationInputs'&&++reports===2)return {...succeeded};
+    return runner(command,argv,options);
+  }});
+  assertUnusable(outcome,/fresh resolved input report absent/);assert.equal(reports,2);
+  const attempt=path.dirname(outcome.recordPath);
+  assert.deepEqual(fs.readFileSync(path.join(attempt,'post-inputs-previous-report.json')),fs.readFileSync(path.join(attempt,'resolved-inputs-before.json')));
+});
+test('a new symbolic report is refused before it can substitute resolved inputs',async t=>{
+  const f=setup(t),file=path.join(f.root,'app/build/iteration-inputs.json');
+  const outcome=await build.buildIterationFixture({...f.options,runBuild:f.runner(async({argv})=>{
+    if(argv[0]!==':app:writeIterationInputs')return;
+    fs.unlinkSync(file);fs.symlinkSync(f.dependency,file);
+  })});
+  assertUnusable(outcome,/fresh resolved input report absent|regular file|symbolic/);assert.equal(f.calls.length,1);
 });
 test('Gradle user-home properties and init scripts refuse before spawning',async t=>{
   for(const relative of ['gradle.properties','init.gradle','init.gradle.kts','init.d']){

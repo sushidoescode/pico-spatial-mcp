@@ -122,7 +122,7 @@ if (packagedInventoryPath) {
     fail(`public docs: packaged inventory ${packagedInventoryPath} is unusable — ${e.message}`);
   }
 } else {
-  const tracked = spawnSync("git", ["-C", repoRoot, "ls-files", "-z", "--", "*.md"], {
+  const tracked = spawnSync("git", ["-C", repoRoot, "ls-files", "-z"], {
     encoding: "utf8",
     shell: false,
     timeout: 60_000,
@@ -133,7 +133,15 @@ if (packagedInventoryPath) {
     fail(`public docs: not a git checkout — ${detail}. Run this gate from a git checkout, or pass `
       + `--packaged <inventory.json> for a source-less install. This gate never falls back to scanning the tree.`);
   } else {
-    publicDocs = publicMarkdownFiles({ root: repoRoot, trackedPaths: parseTrackedPaths(tracked.stdout) });
+    const trackedPaths = parseTrackedPaths(tracked.stdout);
+    // A colon in a retained log filename prevents Windows from checking out the
+    // repository at all, before its own gate can report the problem.
+    const invalidPaths = trackedPaths.filter(file => file.split("/").some(part =>
+      /[<>:"\\|?*\x00-\x1f]|[ .]$/.test(part)
+      || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part)));
+    if (invalidPaths.length) fail(`tracked paths cannot be checked out on Windows: ${invalidPaths.join(", ")}`);
+    else ok("tracked paths have no forbidden Windows filename components");
+    publicDocs = publicMarkdownFiles({ root: repoRoot, trackedPaths });
   }
 }
 
