@@ -40,6 +40,7 @@ import {
   PICO_CLI_POLICY_ENV,
   managedContentIdentityForFixture,
   cliSelectionIdentity,
+  fsyncDirectoryWhereSupported,
 } from "../dist/picoclimanaged.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -100,6 +101,87 @@ async function waitForProcessExit(pid, timeoutMs = 2_000) {
 }
 
 saveEnvironment();
+
+test("managed directory sync distinguishes unsupported metadata durability from real failures", { concurrency: false }, async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pico directory sync "));
+  tempRoots.push(directory);
+
+  for (const { platform, code, expected } of [
+    { platform: "win32", code: "EPERM", expected: "unsupported" },
+    { platform: "linux", code: "EPERM", expected: "throw" },
+    { platform: "darwin", code: "EPERM", expected: "throw" },
+    { platform: "win32", code: "EIO", expected: "throw" },
+    { platform: "linux", code: "EIO", expected: "throw" },
+    { platform: "win32", code: "EACCES", expected: "throw" },
+    { platform: "linux", code: "EINVAL", expected: "unsupported" },
+    { platform: "win32", code: null, expected: "synced" },
+  ]) {
+    await t.test(`${platform} directory fsync ${code ?? "success"} is ${expected}`, (subtest) => {
+      let openedDescriptor;
+      const failure = Object.assign(new Error(`fixture fsync ${code}`), { code });
+      subtest.mock.method(fs, "fsyncSync", (descriptor) => {
+        assert.equal(fs.fstatSync(descriptor).isDirectory(), true);
+        openedDescriptor = descriptor;
+        if (code) throw failure;
+      });
+      if (expected === "throw") {
+        assert.throws(() => fsyncDirectoryWhereSupported(directory, platform), (error) => error === failure);
+      } else {
+        assert.deepEqual(fsyncDirectoryWhereSupported(directory, platform), expected === "synced"
+          ? { status: "synced" }
+          : { status: "unsupported", operation: "fsync", code });
+      }
+      assert.notEqual(openedDescriptor, undefined, "the fixture must reach fsync on an opened directory");
+      assert.throws(() => fs.fstatSync(openedDescriptor), { code: "EBADF" }, "every result closes the descriptor");
+    });
+  }
+
+  for (const method of ["openSync", "fstatSync"]) {
+    await t.test(`Windows EPERM from ${method} still throws`, (subtest) => {
+      const failure = Object.assign(new Error(`fixture ${method} EPERM`), { code: "EPERM" });
+      subtest.mock.method(fs, method, () => { throw failure; });
+      assert.throws(() => fsyncDirectoryWhereSupported(directory, "win32"), (error) => error === failure);
+    });
+  }
+
+  await t.test("the directory-only fallback refuses an opened regular file", (subtest) => {
+    const file = path.join(directory, "regular-file");
+    fs.writeFileSync(file, "fixture");
+    let syncCalls = 0;
+    subtest.mock.method(fs, "fsyncSync", () => { syncCalls += 1; });
+    assert.throws(() => fsyncDirectoryWhereSupported(file, "win32"), { code: "ENOTDIR" });
+    assert.equal(syncCalls, 0, "a regular file never reaches the directory-specific fallback");
+  });
+
+  await t.test("a directory close failure remains an error", (subtest) => {
+    const close = fs.closeSync;
+    const failure = Object.assign(new Error("fixture close EIO"), { code: "EIO" });
+    subtest.mock.method(fs, "fsyncSync", () => {});
+    subtest.mock.method(fs, "closeSync", (descriptor) => { close(descriptor); throw failure; });
+    assert.throws(() => fsyncDirectoryWhereSupported(directory, "win32"), (error) => error === failure);
+  });
+});
+
+test("managed publication still refuses regular-file fsync EPERM", { concurrency: false }, async (t) => {
+  const harness = createHarness({ latestVersion: "0.4.2" });
+  const managedRoot = path.join(harness.root, "managed");
+  const originalSync = fs.fsyncSync;
+  let refusedFiles = 0;
+  t.mock.method(fs, "fsyncSync", (descriptor) => {
+    if (fs.fstatSync(descriptor).isFile()) {
+      refusedFiles += 1;
+      throw Object.assign(new Error("fixture regular-file fsync EPERM"), { code: "EPERM" });
+    }
+    return originalSync(descriptor);
+  });
+  const result = await resolveManagedPicoCli({ managedRoot, forceRefresh: true }, createManagedIO(harness));
+  assert.equal(refusedFiles, 1, "the staging owner file must be synchronously flushed before npm can run");
+  assert.equal(result.status, "unavailable", JSON.stringify(result));
+  assert.match(result.note ?? "", /regular-file fsync EPERM/);
+  assert.equal(fs.existsSync(path.join(managedRoot, "versions", "0.4.2")), false);
+  assert.equal(fs.existsSync(path.join(managedRoot, "versions", ".0.4.2.publish")), false);
+  assert.equal(harness.calls().some((call) => call.role === "npm" && call.args[0] === "install"), false);
+});
 
 test("bounded runner compatibility helpers remain covered without ambient CLI access", () => {
   assert.equal(PICO_CLI_INSTALL_TIMEOUT_MS, 120_000);

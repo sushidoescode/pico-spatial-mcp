@@ -356,7 +356,7 @@ try {
   }));
   const swanColorKey = await analyzeColorKeys(swanFixturePath, swanPalette);
   check(
-    `Swan capture-derived swatches find all seven authored color keys (found ${swanColorKey.found.length}: ${swanColorKey.found.join(",")}; missing ${swanColorKey.missing.join(",") || "none"})`,
+    `Swan capture-derived swatches find all seven authored color keys (found ${swanColorKey.found.length}: ${swanColorKey.found.join(",")}; missing ${swanColorKey.missing.join(",") || "none"}; detector ${swanColorKey.available ? "available" : swanColorKey.error})`,
     swanColorKey.available
       && swanColorKey.expected.length === SWAN_CAPTURE_RGB.length
       && swanColorKey.found.length === SWAN_CAPTURE_RGB.length

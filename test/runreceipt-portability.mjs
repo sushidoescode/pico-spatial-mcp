@@ -336,6 +336,14 @@ function writeFakePythonResponse(scratch, name, response) {
   return fs.realpathSync(fake);
 }
 
+function writeCrashingDiscoveryPython(scratch) {
+  const fake = path.join(scratch, "crashing-discovery-python.py");
+  // An immediate /usr/bin/false can race spawnSync's stdin write and report
+  // EPIPE instead of exit 1. Drain the request to isolate nonzero-exit handling.
+  fs.writeFileSync(fake, `#!${resolvedPython3()}\nimport sys\nsys.stdin.buffer.read()\nsys.exit(1)\n`, { mode: 0o700 });
+  return fs.realpathSync(fake);
+}
+
 function writeStrictDiscoveryErrorPython(scratch) {
   const fake = path.join(scratch, "strict-discovery-error-python.py");
   fs.writeFileSync(fake, `#!${resolvedPython3()}
@@ -1727,12 +1735,13 @@ test("portable historical discovery never falls back after an exact helper error
   const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
   const exactError = writeStrictDiscoveryErrorPython(fixture.scratch);
   const malformed = writeFakePythonResponse(fixture.scratch, "malformed-discovery-python", "{}\n");
+  const crashing = writeCrashingDiscoveryPython(fixture.scratch);
   const previous = process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
   try {
     for (const [name, fakePython, expected] of [
       ["error", exactError, /synthetic discover error after exact request/i],
       ["malformed", malformed, /invalid response|discover|schema/i],
-      ["crash", "/usr/bin/false", /terminated.*exit 1/i],
+      ["crash", crashing, /terminated.*exit 1/i],
     ]) {
       await t.test(name, () => {
         process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = fakePython;

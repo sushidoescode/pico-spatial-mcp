@@ -71,9 +71,15 @@ test("the native Windows CI lane owns the tracked wrapper-selection contract", (
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
   assert.equal(pkg.scripts["test:picocli-win"], gateScriptCommand("test:picocli-win"));
   const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");
-  const windowsJob = workflow.match(/^  picocli-windows:\n([\s\S]*?)(?=^  [A-Za-z0-9_-]+:\n)/m)?.[1] ?? "";
-  assert.match(windowsJob, /npm run test:picocli-win/);
-  assert.match(windowsJob, /no native build_and_run execution/i);
+  // Git may check out this tracked workflow with CRLF on Windows. Exercise both
+  // forms here so a POSIX-only local run still catches the native checkout regression.
+  for (const newline of ["\n", "\r\n"]) {
+    const checkedOutWorkflow = workflow.replace(/\r?\n/g, newline);
+    const windowsJob = checkedOutWorkflow.match(/^  picocli-windows:\r?\n([\s\S]*?)(?=^  [A-Za-z0-9_-]+:\r?\n)/m)?.[1] ?? "";
+    assert.match(windowsJob, /npm run test:picocli-win/);
+    assert.match(windowsJob, /no native build_and_run execution/i);
+    assert.doesNotMatch(windowsJob, /ubuntu-latest/);
+  }
 });
 
 test("the fixture environment names only fixture paths and cannot provision a CLI", () => {

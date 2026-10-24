@@ -47,8 +47,8 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      - name: ImageMagick (the eye's pixel assists)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
+      - name: Image measurement dependencies (ImageMagick and Python color-key detector)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick python3-numpy python3-pil python3-scipy
       - name: Build (tsc)
         run: npm run build
       - name: Prompt/tool surface conformance
@@ -136,6 +136,8 @@ jobs:
       - name: Digest-bound native run receipt identity, producer, ledger, and ship consumers
         run: npm run test:runreceipt
       - name: Eye calibration
+        env:
+          PICO_PY: /usr/bin/python3
         run: npm run test:eye
       - name: Asset gate
         run: npm run test:assetgate

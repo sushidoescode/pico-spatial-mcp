@@ -1398,14 +1398,39 @@ function writeFsyncedJson(file: string, value: unknown): void {
   }
 }
 
-function fsyncDirectoryWhereSupported(directory: string): void {
+export type ManagedDirectorySyncResult =
+  | { status: "synced" }
+  | { status: "unsupported"; operation: "open" | "fsync"; code: string };
+
+/**
+ * Directory metadata flushing is best-effort on platforms/filesystems that do not support it.
+ * `unsupported` does not promise that a rename or hard link survives a crash; control-record
+ * contents are still synced separately, and publication/ownership validation is unchanged. Windows libuv
+ * uses FlushFileBuffers, which requires a writable handle and reports EPERM for our read-only
+ * directory handle. Permit that case only after fstat proves the opened descriptor is a directory.
+ * The platform parameter is a fixture seam; production always uses the current process platform.
+ */
+export function fsyncDirectoryWhereSupported(
+  directory: string,
+  platform: NodeJS.Platform = process.platform,
+): ManagedDirectorySyncResult {
   let descriptor: number | undefined;
+  let operation: "open" | "inspect" | "fsync" = "open";
   try {
     descriptor = fs.openSync(directory, "r");
+    operation = "inspect";
+    if (!fs.fstatSync(descriptor).isDirectory()) {
+      throw Object.assign(new Error(`Directory sync requires a directory: ${directory}`), { code: "ENOTDIR" });
+    }
+    operation = "fsync";
     fs.fsyncSync(descriptor);
+    return { status: "synced" };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException)?.code;
-    if (!code || !["EINVAL", "ENOTSUP", "EISDIR", "EBADF"].includes(code)) throw error;
+    const unsupportedWindowsDirectorySync = platform === "win32" && operation === "fsync" && code === "EPERM";
+    if (operation === "inspect" || !code
+      || (!["EINVAL", "ENOTSUP", "EISDIR", "EBADF"].includes(code) && !unsupportedWindowsDirectorySync)) throw error;
+    return { status: "unsupported", operation, code };
   } finally {
     if (descriptor !== undefined) fs.closeSync(descriptor);
   }
