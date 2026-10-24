@@ -10,5 +10,5 @@ enabled_tools = ["pico_doctor", "pico_interaction"]
 [mcp_servers.pico_iteration_fixture.env]
 PICO_MCP_SURFACE = "doors"
 PICO_MCP_INTERACTION = "1"
-PICO_MCP_CLI_POLICY = "managed-cached"
+PICO_MCP_CLI_POLICY = "disabled"
 PICO_ADB = "/fixture/no/such/adb"

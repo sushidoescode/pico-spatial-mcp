@@ -1,0 +1,9 @@
+p9818
+ftxt
+n/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb
+ftxt
+n/private/var/db/diagnostics/logd/.plist-cache.zE20ndPQ
+ftxt
+n/System/Library/Extensions/IOUSBHostFamily.kext/Contents/PlugIns/IOUSBLib.bundle/Contents/MacOS/IOUSBLib
+ftxt
+n/usr/lib/dyld

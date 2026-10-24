@@ -1,0 +1,12 @@
+Toybox 0.8.12-android multicall binary (see toybox --help)
+
+usage: mv [-FfinTvx] [-t TARGET] SOURCE... [DEST]
+
+-F	Delete any existing DEST first (--remove-destination)
+-f	Force copy by deleting destination file
+-i	Interactive, prompt before overwriting existing DEST
+-n	No clobber (don't overwrite DEST)
+-t	Move to TARGET dir (no DEST)
+-T	DEST always treated as file, max 2 arguments
+-v	Verbose
+-x	Atomically exchange source/dest (--swap)

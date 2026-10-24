@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-24T05:21:33.487332+00:00",
+  "reviewer": "root vision-capable agent",
+  "artifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/3d765143-2305-4cd5-9dc8-bf87eab17baf/attempts/8f380859-a019-4613-9e1f-2a01864345af/frame.png",
+  "sha256": "29c8678a1cafac010350fc99eab67487a3fa8b2fde4c828f08e962fc6dc88cad",
+  "expectedRenderedPostcondition": "State transitions: 1 and Panel visible \u2014 fixture.panel",
+  "outcome": "failed",
+  "attestation": "I opened the exact immediate action frame. It still displayed source revision 2, State transitions: 0, and Panel hidden; bytes equaled the looked-at initial baseline. ACK/readback success did not establish rendered success. Later read-only capture confirmed the visual change without an action resend.",
+  "replacementEvidence": "after-delayed-look.json",
+  "actionRecord": "evidence/agent-iteration-example/3d765143-2305-4cd5-9dc8-bf87eab17baf/attempts/8f380859-a019-4613-9e1f-2a01864345af/result.json",
+  "resendCount": 0
+}

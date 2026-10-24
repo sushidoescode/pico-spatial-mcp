@@ -1,0 +1,63 @@
+{
+  "target": {
+    "serial": "emulator-5554",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "model": "swan_arm64",
+    "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+    "bootQemu": "1",
+    "bootId": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+    "apkSha256": "24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04",
+    "pid": 4296,
+    "pidStartTicks": "44574",
+    "appGeneration": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+    "schemaVersion": 1,
+    "bindingSha256": "c69a64e0562bec8ca6e9c0433655179963792fe48143393f88d757bb31860a66",
+    "observedAt": "2026-10-24T05:18:16.724Z",
+    "enforcementScope": "interaction-session-only"
+  },
+  "state": {
+    "schemaVersion": 1,
+    "kind": "pico.agent-bridge.semantic-state",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "generation": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+    "revision": 1,
+    "observedAtEpochMs": 1792819096255,
+    "pid": 4296,
+    "pidStartTicks": "44574",
+    "state": {
+      "panel": {
+        "id": "fixture.panel",
+        "visible": true
+      },
+      "counter": 1
+    },
+    "actions": [
+      "panel.show"
+    ]
+  },
+  "after": {
+    "schemaVersion": 1,
+    "kind": "pico.agent-bridge.semantic-state",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "generation": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+    "revision": 1,
+    "observedAtEpochMs": 1792819097883,
+    "pid": 4296,
+    "pidStartTicks": "44574",
+    "state": {
+      "panel": {
+        "id": "fixture.panel",
+        "visible": true
+      },
+      "counter": 1
+    },
+    "actions": [
+      "panel.show"
+    ]
+  },
+  "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/after-delayed.png",
+  "sha256": "a47573759f44babe72a7af4318413a8ac7f1a9f0966ccdd9b281fda4a62649c7",
+  "bytes": 2988830,
+  "capturedAt": "2026-10-24T05:18:18.003Z",
+  "lookPending": true
+}

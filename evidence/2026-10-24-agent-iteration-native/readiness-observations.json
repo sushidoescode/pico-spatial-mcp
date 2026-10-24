@@ -1,0 +1,109 @@
+[
+  {
+    "name": "cli-doctor",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "doctor",
+      "--format",
+      "json",
+      "--platform",
+      "spatial"
+    ],
+    "exitCode": 3,
+    "durationMs": 2112,
+    "stdoutSha256": "979e26943b503e06f2336b1a1b264fc36bd4f990d8a5a67862d03d4a329661f4",
+    "stderrSha256": "1ca3af96c5682c3fdc176451dbb80b1913d3369492cab1e669a789a4c401ec11"
+  },
+  {
+    "name": "emulator-status",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "emulator",
+      "status",
+      "--adb-device",
+      "emulator-5554",
+      "--format",
+      "json"
+    ],
+    "exitCode": 0,
+    "durationMs": 444,
+    "stdoutSha256": "576e29e4cd2e2930a07280777306f4117b2c10fb7d706f4b9046a1f473e270df",
+    "stderrSha256": "d8616904d4b50658a1f4be912edf3cfaf7e7c0775db190bfc17e070b2f9b9656"
+  },
+  {
+    "name": "boot-ready",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "shell",
+      "--device",
+      "emulator-5554",
+      "getprop",
+      "sys.boot_completed"
+    ],
+    "exitCode": 0,
+    "durationMs": 400,
+    "stdoutSha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "stderrSha256": "7b97c7c6012a3eb90328249f253f7569f3f5a05f06f2f911036ad6e5354af5fb"
+  },
+  {
+    "name": "boot-id",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "shell",
+      "--device",
+      "emulator-5554",
+      "cat",
+      "/proc/sys/kernel/random/boot_id"
+    ],
+    "exitCode": 0,
+    "durationMs": 378,
+    "stdoutSha256": "8da27639ef1626dea8956aa005ddfee261ed481ea7e217df40e77a22c4785b6c",
+    "stderrSha256": "dfb8f848665cbfe2dc96f902b7452e3696c563ae03488e078e3822143d93b5fb"
+  },
+  {
+    "name": "qemu",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "shell",
+      "--device",
+      "emulator-5554",
+      "getprop",
+      "ro.boot.qemu"
+    ],
+    "exitCode": 0,
+    "durationMs": 371,
+    "stdoutSha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "stderrSha256": "fa7182aec3cecd5b42dedb3566f51f94e938e14021ea1c4af4a4cc7b1d47ae39"
+  },
+  {
+    "name": "avd-name",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "shell",
+      "--device",
+      "emulator-5554",
+      "getprop",
+      "ro.boot.qemu.avd_name"
+    ],
+    "exitCode": 0,
+    "durationMs": 351,
+    "stdoutSha256": "091394f42a12c3a4f876cd0e24f8844d7f774b1f060105f60eaaee921f93a203",
+    "stderrSha256": "9d4016fc102968541369adc8c9fe3f72a3a01a12c8eac3e3a114361324c5a97f"
+  },
+  {
+    "name": "installed-fixture-before",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "shell",
+      "--device",
+      "emulator-5554",
+      "pm",
+      "path",
+      "com.example.picofixture.iteration.debug"
+    ],
+    "exitCode": 3,
+    "durationMs": 427,
+    "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderrSha256": "d632f4a84d8a27b522d0c32624671211cb9faa6a66ec537505d0f3b6e5e91449"
+  }
+]

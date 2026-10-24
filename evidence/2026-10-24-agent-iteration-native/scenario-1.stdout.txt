@@ -1,0 +1,8 @@
+{
+  "tool": "pico_interaction",
+  "status": "error",
+  "reason": "target probe failed: error: protocol fault (couldn't read status): Connection reset by peer\n",
+  "lookPending": true,
+  "outcome": "Inspect retained session evidence before any repeat; this error does not certify that no action occurred.",
+  "inlineImageDelivered": false
+}

@@ -1,0 +1,180 @@
+{
+  "tool": "pico_interaction",
+  "status": "opened",
+  "sessionId": "e682ba58-24c2-4725-9cd4-3947779caa58",
+  "target": {
+    "serial": "emulator-5554",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "model": "swan_arm64",
+    "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+    "bootQemu": "1",
+    "bootId": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+    "apkSha256": "24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04",
+    "pid": 4296,
+    "pidStartTicks": "44574",
+    "appGeneration": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+    "schemaVersion": 1,
+    "bindingSha256": "c69a64e0562bec8ca6e9c0433655179963792fe48143393f88d757bb31860a66",
+    "observedAt": "2026-10-24T05:05:40.005Z",
+    "enforcementScope": "interaction-session-only"
+  },
+  "state": {
+    "schemaVersion": 1,
+    "kind": "pico.agent-bridge.semantic-state",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "generation": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+    "revision": 0,
+    "observedAtEpochMs": 1792818339871,
+    "pid": 4296,
+    "pidStartTicks": "44574",
+    "state": {
+      "panel": {
+        "id": "fixture.panel",
+        "visible": false
+      },
+      "counter": 0
+    },
+    "actions": [
+      "panel.show"
+    ]
+  },
+  "recordPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/e682ba58-24c2-4725-9cd4-3947779caa58/session.json",
+  "lookPending": true,
+  "enforcementScope": "interaction-session-only",
+  "inlineImageDelivered": false
+}
+{
+  "tool": "pico_interaction",
+  "schemaVersion": 1,
+  "kind": "pico.semantic-scenario",
+  "scenarioId": "7ffa7dae-508d-49ff-ba7e-c90e62ab80ab",
+  "scenario": {
+    "schemaVersion": 1,
+    "name": "show-fixture-panel",
+    "initial": {
+      "panelVisible": false,
+      "counter": 0
+    },
+    "steps": [
+      {
+        "actionId": "panel.show",
+        "args": {
+          "panelId": "fixture.panel"
+        },
+        "expect": {
+          "panelVisible": true,
+          "counter": 1
+        }
+      }
+    ],
+    "limits": {
+      "maxSteps": 20,
+      "timeoutMs": 90000,
+      "actionTimeoutMs": 10000
+    }
+  },
+  "target": {
+    "serial": "emulator-5554",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "model": "swan_arm64",
+    "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+    "bootQemu": "1",
+    "bootId": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+    "apkSha256": "24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04",
+    "pid": 4296,
+    "pidStartTicks": "44574",
+    "appGeneration": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+    "schemaVersion": 1,
+    "bindingSha256": "c69a64e0562bec8ca6e9c0433655179963792fe48143393f88d757bb31860a66",
+    "observedAt": "2026-10-24T05:05:40.005Z",
+    "enforcementScope": "interaction-session-only"
+  },
+  "status": "in_doubt",
+  "reason": "in_doubt: bridge publication failed (0); do not resend request 04f69643-b23e-4f95-b3f4-87d26b002287",
+  "actions": [
+    {
+      "schemaVersion": 1,
+      "kind": "pico.interaction-result",
+      "status": "in_doubt",
+      "request": {
+        "schemaVersion": 1,
+        "requestId": "04f69643-b23e-4f95-b3f4-87d26b002287",
+        "packageName": "com.example.picofixture.iteration.debug",
+        "expectedGeneration": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+        "expectedRevision": 0,
+        "actionId": "panel.show",
+        "args": {
+          "panelId": "fixture.panel"
+        },
+        "deadlineEpochMs": 1792818351335
+      },
+      "target": {
+        "serial": "emulator-5554",
+        "packageName": "com.example.picofixture.iteration.debug",
+        "model": "swan_arm64",
+        "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+        "bootQemu": "1",
+        "bootId": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+        "apkSha256": "24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04",
+        "pid": 4296,
+        "pidStartTicks": "44574",
+        "appGeneration": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+        "schemaVersion": 1,
+        "bindingSha256": "c69a64e0562bec8ca6e9c0433655179963792fe48143393f88d757bb31860a66",
+        "observedAt": "2026-10-24T05:05:40.005Z",
+        "enforcementScope": "interaction-session-only"
+      },
+      "attempted": true,
+      "before": {
+        "schemaVersion": 1,
+        "kind": "pico.agent-bridge.semantic-state",
+        "packageName": "com.example.picofixture.iteration.debug",
+        "generation": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+        "revision": 0,
+        "observedAtEpochMs": 1792818341193,
+        "pid": 4296,
+        "pidStartTicks": "44574",
+        "state": {
+          "panel": {
+            "id": "fixture.panel",
+            "visible": false
+          },
+          "counter": 0
+        },
+        "actions": [
+          "panel.show"
+        ]
+      },
+      "acknowledgement": null,
+      "after": null,
+      "evidence": {
+        "status": "not_requested",
+        "reason": "no completed action"
+      },
+      "evidenceCeiling": "structural",
+      "lookPending": true,
+      "inputRoute": "app-semantic-debug-bridge",
+      "humanInputVerified": false,
+      "reason": "in_doubt: bridge publication failed (0); do not resend request 04f69643-b23e-4f95-b3f4-87d26b002287",
+      "recordPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/e682ba58-24c2-4725-9cd4-3947779caa58/attempts/89fb3a53-4a09-4adb-89ac-35727280124c/result.json"
+    }
+  ],
+  "requestedTimeoutMs": 90000,
+  "measuredDurationMs": 1033,
+  "recordPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/e682ba58-24c2-4725-9cd4-3947779caa58/scenarios/7ffa7dae-508d-49ff-ba7e-c90e62ab80ab.json",
+  "lookPending": true,
+  "humanInputVerified": false,
+  "evidenceCeiling": "structural",
+  "cliWorkflowLifecycleOwner": "official-cli",
+  "cliWorkflow": null,
+  "workflow": null,
+  "inlineImageDelivered": false
+}
+{
+  "tool": "pico_interaction",
+  "status": "error",
+  "reason": "cannot stop without definite drain: in_doubt (uncertain work remains held)",
+  "lookPending": true,
+  "outcome": "Inspect retained session evidence before any repeat; this error does not certify that no action occurred.",
+  "inlineImageDelivered": false
+}

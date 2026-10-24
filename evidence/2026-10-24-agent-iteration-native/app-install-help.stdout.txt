@@ -1,0 +1,16 @@
+[1mDescription[22m:
+Install an APK to the preferred current device
+
+[1mUsage[22m:
+  $ [1mpico-cli app install[22m <path>
+
+[1mOptions[22m:
+  [1m-d, --device <device>[22m    Target device id (overrides automatic selection)
+  [1m-r, --replace[22m            Replace an existing application
+  [1m--downgrade[22m              Allow version code downgrade (adb install -d)
+  [1m-t, --test[22m               Allow test packages
+  [1m-g, --grant-permissions[22m  Grant runtime permissions on install
+  [1m-h, --help[22m               Display this message
+
+[1mExamples[22m:
+  $ pico-cli app install <path-to-app.apk> --replace

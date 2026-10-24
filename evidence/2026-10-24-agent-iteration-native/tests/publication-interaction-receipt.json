@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "npm",
+    "run",
+    "test:interaction"
+  ],
+  "cwd": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23",
+  "environment": {
+    "PICO_ADB": "/fixture/no/such/adb"
+  },
+  "startedAt": "2026-10-24T05:16:44.817594+00:00",
+  "finishedAt": "2026-10-24T05:16:50.007250+00:00",
+  "exitCode": 0,
+  "timedOut": false,
+  "stdout": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/tests/publication-interaction.stdout.txt",
+  "stderr": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/tests/publication-interaction.stderr.txt"
+}

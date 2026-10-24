@@ -1,0 +1,14 @@
+[1mDescription[22m:
+Launch an app on the preferred current device
+
+[1mUsage[22m:
+  $ [1mpico-cli app launch[22m <package>
+
+[1mOptions[22m:
+  [1m-d, --device <device>[22m  Target device id (overrides automatic selection)
+  [1m--activity <activity>[22m  Optional activity (e.g. .MainActivity)
+  [1m-h, --help[22m             Display this message
+
+[1mExamples[22m:
+  # Waits for process creation; poll app-specific readiness separately before UI automation
+  $ pico-cli app launch com.example.app

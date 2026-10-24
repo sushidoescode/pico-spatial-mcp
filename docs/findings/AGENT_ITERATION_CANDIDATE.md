@@ -2,7 +2,7 @@
 
 This source candidate is on `feature/cli-agent-iteration-2026-10-23`, based on main `1157f33ad2d3934595a3ebaafe4d3fbfc7e1ce36`. It adds one opt-in `pico_interaction` tool to either MCP surface. The installed registration remains on main. Stage 1 remains separately at `3b09ac5db919afef612558f3fdb5302b2c55e3eb`; Stage 2 and Mission Replay restrictions are unchanged. No merge, push, version release or activation occurred.
 
-The loop is **observe → semantic action → independent assertion → capture → source-bound rebuild → reconnect → replay**. The implementation and host fixtures do not establish emulator or simulator parity. No emulator was available at the initial doctor check. Actual native ownership/release and any necessary start authority have not been supplied for this candidate.
+The loop is **observe → semantic action → independent assertion → capture → source-bound rebuild → reconnect → replay**. The dedicated fixture completed this loop on `emulator-5554` after the user confirmed exclusive emulator use and authorized native work. Root inspected the rendered initial state, action result and source-revision-3 replay result. This is bounded emulator evidence, not simulator parity, physical hand/controller input or interactive host conformance. The emulator was already running; no boot or restart was issued. Native work is drained and [root ownership released](../../evidence/2026-10-24-agent-iteration-native/RELEASE.json), with the fixture and emulator left running.
 
 ## Runnable source-checkout example
 
@@ -25,26 +25,41 @@ JAVA_HOME=/absolute/existing/jdk \
 
 The adapter uses offline Gradle, a project-local user home, no daemon, no automatic SDK/JDK download and bounded owned-child cleanup. Missing dependencies fail. A policy seals the reviewed single-module scripts while allowing `app/src` edits. Extra modules, edited scripts, injected JVM options or untracked Gradle configuration refuse the binding. Resolved dependencies/compiler/plugins/JDK/SDK/Gradle/signing inputs are collected before and after compilation and checked for byte/generation continuity. This is bounded fixture provenance, not general Stage 2 support or a hermetic host claim.
 
-After a separately recorded native handover, with an explicit emulator already running and the exact debug APK installed/launched through the official CLI, the **unexecuted** native example is:
+With native ownership, an explicit emulator running and the exact debug APK installed/launched through the official CLI, the exercised native example is:
 
 ```sh
-node scripts/agent-iteration-example.mjs scenario \
+PICO_ADB=/absolute/existing/adb ADB_PATH=/absolute/existing/adb \
+  node scripts/agent-iteration-example.mjs scenario \
   --native-authorized --serial emulator-N --apk-sha INSTALLED_DEBUG_APK_SHA256
 ```
 
-The flag records intent; it grants no ownership or boot permission. The app must begin hidden at counter zero. The [scenario](../../examples/agent-iteration-fixture/scenario.json) names only `panel.show` on `fixture.panel`. Open and judge its returned frame before recording a visual claim. Shell capture can be inconclusive for XR layers; an ACK does not resolve an inconclusive image.
+The flag records intent; it grants no ownership or boot permission. Set both ADB variables to the same existing executable before starting the session: MCP reads `PICO_ADB`, while CLI 0.6.1 reads `ADB_PATH`. The app must begin hidden at counter zero. The [scenario](../../examples/agent-iteration-fixture/scenario.json) names only `panel.show` on `fixture.panel`. Open and judge its returned frame before recording a visual claim. Shell capture can be inconclusive for XR layers; an ACK does not resolve an inconclusive image.
+
+The fixture requests `limits.captureSettleMs: 2500`. The optional interval defaults to zero, is capped at 3000 ms, consumes the existing deadline and remains cancellable. Target/state are rechecked after waiting; a frame predating the post-wait capture request is refused. This is a timing accommodation, not render readiness. On this emulator the immediate action frame still showed the initial state, and the immediate rebuild frame showed only the room even with settling. Both failed LOOKs are retained. Later read-only captures showed the expected state without resending either action.
+
+After a failed LOOK, capture again using the current installed APK hash:
+
+```sh
+PICO_ADB=/absolute/existing/adb ADB_PATH=/absolute/existing/adb \
+  node scripts/agent-iteration-example.mjs capture \
+  --native-authorized --serial emulator-5554 \
+  --apk-sha 9e311dc104d70a3997832162d6597d45805692f22f729ca869c86bdff45d9a12
+```
+
+This mode opens a bound session, calls existing `pico_look` with the explicit serial, rechecks identity/state, and retains the hash-checked frame in the session. It sends no semantic action. It was executed successfully; the returned source-revision-3 frame was opened and recorded with `record_verification` in a worktree-local ledger. A future install requires its own current hash.
 
 For the later rebuild/replay experiment, edit the title in `content/HomePage.kt` and invoke `replay` with the previous installed APK hash and existing Gradle path:
 
 ```sh
 JAVA_HOME=/absolute/existing/jdk \
+  PICO_ADB=/absolute/existing/adb ADB_PATH=/absolute/existing/adb \
   node scripts/agent-iteration-example.mjs replay \
   --native-authorized --serial emulator-N --apk-sha PREVIOUS_INSTALLED_DEBUG_APK_SHA256 \
   --project /absolute/path/to/examples/agent-iteration-fixture \
   --gradle /absolute/existing/gradle-8.13/bin/gradle
 ```
 
-This unexecuted example explicitly consents to stopping/replacing/relaunching only the debug fixture, preserves app data, requires a different APK and new Bridge generation on the same boot, then replays the scenario. No AVD snapshot, data clear or automatic action retry occurs.
+This exercised example explicitly consents to stopping/replacing/relaunching only the debug fixture, preserves app data, requires a different APK and new Bridge generation on the same boot, then replays the scenario. No AVD snapshot, data clear or automatic action retry occurs. Make a new source edit before another replay: an unchanged APK is deliberately refused.
 
 The example releases only a drained MCP session. Uncertainty retains the target hold. The opt-in `watch` action accepts at most five cycles and 30 minutes, coalesces edits and excludes generated outputs. Its deadline/cancellation reaches the current cycle; measured time includes owned-child drain after the requested deadline. Default iteration is one cycle.
 
@@ -69,14 +84,14 @@ The fence's scope is `interaction-session-only`. It coordinates upgraded callers
 
 | Capability | Implemented | Host evidence | Native runtime tested | Rendered frame reviewed | Remaining boundary |
 | --- | --- | --- | --- | --- | --- |
-| CLI help/selection | Yes | Real read-only observations and negative fixtures | No mutations | No | Runtime semantics and platform differences |
-| Target/fence | Yes | Mixed devices, drift, competing owners, cancellation | No | No | Actual emulator and interference |
-| `panel.show`, ACK/readback | Yes | Protocol/shell/negative fixtures; JVM state test | No | No | Android enforcement and visible response |
-| Fresh frame/MCP delivery | Yes | Synthetic-image attribution and tamper tests | No | No | Real capture, host display and LOOK |
-| Source-bound debug build | Yes | Two actual builds around a title edit; changed source/APK hashes; closure/failure tests | No install | No | Reconnect/replay on emulator |
-| Bounded scenario/watch | Yes | Full injected public-service loop and negatives | No | No | End-to-end native acceptance |
+| CLI help/selection | Yes | Real help and negative fixtures | Stop/install/launch through CLI 0.6.1 | Not applicable | Other CLI operations/platforms; live WorkflowRun reference |
+| Target/fence | Yes | Mixed devices, drift, competing owners, cancellation | Exact emulator/boot/APK/process binding; drained release | Not applicable | Competing native writers remain fixture-only; legacy writers are not fenced |
+| `panel.show`, ACK/readback | Yes | Protocol/shell/negative fixtures; JVM state test | Two completed actions across a rebuild | Yes, later captures | Ordinary-UID denial and release enforcement were not tested live |
+| Fresh frame/MCP delivery | Yes | Synthetic attribution/tamper and public protocol cases | Real capture; public MCP recapture | Initial, source 2 and source 3 frames | Immediate frames failed LOOK; timing is not readiness; host UI display untested |
+| Source-bound debug build | Yes | Resolved closure/failure tests and actual offline builds | New APK installed; new generation on same boot; replay | Source revision 3 visible | Dedicated fixture provenance only; broader Stage 2 unchanged |
+| Bounded scenario/watch | Yes | Full injected public-service loop and negatives | Scenario and one rebuild/replay cycle | Yes, later captures | Multiple watch cycles/cancellation not tested native |
 | Generic MCP stdio | Yes | Candidate process and SDK protocol fixtures | Not applicable | No | Specific host UI behavior |
-| Packed candidate | Yes | Exact policy bytes; offline stdio discovery from temporary install on both surfaces | No | No | Other operating systems and host activation |
+| Packed candidate | Yes | Updated `9265d1e…` tarball: exact policy and offline stdio discovery from temporary install on both surfaces | Source checkout ran native; packed copy did not | No packed-host LOOK | Other operating systems and host activation |
 | Claude/Codex/Gemini | Config templates | Syntax, installed help/source contracts | No | No | Discovery, calls, trust, cancellation and image display all untested |
 | Hand/controller, room/sensor replay | No | None | No | No | Separate backend and authority |
 
@@ -86,13 +101,13 @@ See [CLI observations](CLI_AGENT_CONTRACTS.md), [host configurations](AGENT_ITER
 
 Local source commits are `01180db` (CLI contracts) and `9ca38de` (interaction loop). The [independent review](../../evidence/2026-10-23-agent-iteration/REVIEW_RESULT.json) reports no remaining material source findings, including its packaging follow-up. The reviewer did not independently rerun tests or perform native operations.
 
-The [validation manifest](../../evidence/2026-10-23-agent-iteration/VALIDATION.json) retains log hashes and distinguishes final-build runs from earlier regression runs. Final-build results: interaction **74/74**, observation **83/83**, CLI contract/observation cases **33/33**, lint **63/63**, docs **26/26**, smoke **12 checks**, and tarball checks passed. Earlier receipt **337/337**, revision **327/327**, bridge **630/630**, doors and emulator regression gates passed; the latter reports one skipped test. The full battery was not run and three broader gates remain failing as described below.
+The [initial host validation manifest](../../evidence/2026-10-23-agent-iteration/VALIDATION.json) retains log hashes and distinguishes its final build from earlier regression runs. That host snapshot passed interaction **74/74**, observation **83/83**, CLI contract/observation cases **33/33**, lint **63/63**, docs **26/26**, smoke **12 checks**, and tarball checks. Earlier receipt **337/337**, revision **327/327**, bridge **630/630**, doors and emulator regression gates passed; the latter reports one skipped test. The native follow-up adds transport/settling coverage; its interaction gate passes **82/82**. The full battery was not run and three broader gates remain failing as described below.
 
-The [rebuild experiment](../../evidence/2026-10-23-agent-iteration/REBUILD_EXPERIMENT.json) retains both successful host builds. The only changed authored input was the title in `HomePage.kt`. Each build retained 12,342 matching before/after resolved input identities and released its project owner. APK SHA-256 changed from `05edb1f0d71e7e3f4cfc564bfa34f997cdbeac10291ee69634cdf8cd143c970f` to `24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04`. This proves host compilation of the source change; install, generation reconnect, action replay and rendered response remain pending.
+The [rebuild experiment](../../evidence/2026-10-23-agent-iteration/REBUILD_EXPERIMENT.json) retains both initial host builds. The only changed authored input was the title in `HomePage.kt`. Each build retained 12,342 matching before/after resolved input identities and released its project owner. APK SHA-256 changed from `05edb1f0d71e7e3f4cfc564bfa34f997cdbeac10291ee69634cdf8cd143c970f` to `24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04`. This initial record proves host compilation. The later native follow-up adds install, generation reconnect, replay and looked-at response for source revision 3.
 
-[Exact artifact identities and paths](../../evidence/2026-10-23-agent-iteration/ARTIFACTS.json) cover CLI 0.6.1, server source/output, policy, debug APKs, the pre-title-edit release packaging checkpoint, build records and the retained tarball. The local tarball is byte-identical to the artifact that passed the installed-artifact gate; it remains unpublished at version 38.1.0. APKs, the tarball and complete resolved-input inventories remain local and gitignored. Source, manifests and raw text evidence are committed. Raw PTY/TAP whitespace is preserved; an unfiltered whitespace check is not claimed.
+[Initial artifact identities](../../evidence/2026-10-23-agent-iteration/ARTIFACTS.json) are historical: their `c75843e…` tarball predates the native fixes. The [native follow-up artifact manifest](../../evidence/2026-10-24-agent-iteration-native/ARTIFACTS.json) pins the current server, APK, rendered evidence and replacement tarball SHA-256 `9265d1e35152f31869cc0ff1be590a156d9642ae907fbd54d9b4a2fac08cbdbb`. The exact replacement bytes passed the installed-artifact gate and remain local, unpublished at version 38.1.0. [Follow-up validation](../../evidence/2026-10-24-agent-iteration-native/VALIDATION.json) records interaction **82/82**, observation **83/83**, lint **63/63**, docs **26/26**, and the tarball gate. Native execution used the source checkout. APKs, frames, tarballs and complete resolved-input inventories remain local and gitignored; source, manifests and raw text evidence are committed. Raw PTY/TAP whitespace is preserved; an unfiltered whitespace check is not claimed.
 
-Native acceptance needs the actual outgoing-owner release, a recorded acquisition and any necessary emulator-start permission. Root must then target the authorized emulator, perform the finite scenario, inspect its rendered frame, rebuild and replay. Interactive Claude/Codex/Gemini discovery, trust, cancellation and image-display trials remain separately unrun. Semantic `panel.show` does not establish hand/controller usability.
+The [native run report](AGENT_ITERATION_NATIVE.md) links authorization, exact target/artifact identities, two failed immediate LOOKs, later successful captures, the uncertainty reconciliation and final release. Interactive Claude/Codex/Gemini discovery, trust, cancellation and image-display trials remain unrun. Semantic `panel.show` does not establish hand/controller usability.
 
 ## Known failures and incident
 
@@ -100,4 +115,4 @@ The full CLI gate fails one detached-child output-cap cleanup assertion and its 
 
 Knowledge lifecycle has four failures (23/27 pass), all directly reproduced on isolated main. The unchanged process-table provider exceeds its 250 ms budget. Distribution adoption has three retirement failures (40/43 pass) on the same unchanged provider path; this common cause is an inference, because those exact distribution cases were not rerun on main. [The diagnosis and cleanup record](../../evidence/2026-10-23-agent-iteration/cli/LIFECYCLE_TRIAGE.json) distinguishes this timeout from the separate 4 MiB sweep limit. Only freshly identity-checked, task-owned fixtures/workers were signalled. No unrelated runner fix or weaker ownership check was introduced.
 
-Official scaffold creation unexpectedly refreshed shared SDK 6.1 templates despite selecting the existing SDK and passing no setup/update command. This crossed the SDK-preservation boundary. Scaffold commands stopped, affected paths/output were retained, and no speculative rollback occurred. The [incident record](../../examples/agent-iteration-fixture/evidence/scaffold-observation.json) states that prior identity was unavailable. Later dependencies used the authorized worktree-local cache. No emulator boot, APK install/launch, headset fallback or rendered-frame claim followed.
+Official scaffold creation unexpectedly refreshed shared SDK 6.1 templates despite selecting the existing SDK and passing no setup/update command. This crossed the SDK-preservation boundary. Scaffold commands stopped, affected paths/output were retained, and no speculative rollback occurred. The [incident record](../../examples/agent-iteration-fixture/evidence/scaffold-observation.json) states that prior identity was unavailable. Later dependencies used the authorized worktree-local cache. No native work occurred during that host phase. The separately authorized native follow-up changed only the dedicated fixture and retained evidence; no SDK/setup/configuration repair or headset fallback was used.

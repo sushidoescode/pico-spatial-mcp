@@ -1,0 +1,12 @@
+[1mDescription[22m:
+Run a shell command on the preferred current device
+
+[1mUsage[22m:
+  $ [1mpico-cli shell[22m [commands...]
+
+[1mOptions[22m:
+  [1m--device <device>[22m  Target device id (overrides PICO_CLI_DEVICE)
+  [1m-h, --help[22m         Display this message
+
+[1mExamples[22m:
+  $ pico-cli shell getprop ro.product.model

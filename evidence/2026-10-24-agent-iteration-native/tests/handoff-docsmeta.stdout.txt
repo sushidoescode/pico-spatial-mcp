@@ -1,0 +1,167 @@
+
+> pico-spatial-mcp@38.1.0 test:docsmeta
+> node scripts/run-gate.mjs test:docsmeta
+
+package.json version: 38.1.0
+
+  ok   plugin.json carries version 38.1.0
+  ok   .claude-plugin/plugin.json carries version 38.1.0
+  ok   .claude-plugin/marketplace.json carries version 38.1.0
+  ok   .claude-plugin/marketplace.json carries version 38.1.0
+  ok   .codex-plugin/plugin.json carries version 38.1.0
+  ok   .agents/plugins/marketplace.json carries version 38.1.0
+  ok   .cursor-plugin/plugin.json carries version 38.1.0
+  ok   .cursor-plugin/marketplace.json carries version 38.1.0
+  ok   .github/plugin/marketplace.json carries version 38.1.0
+  ok   .github/plugin/marketplace.json carries version 38.1.0
+  ok   package-lock.json version carries version 38.1.0
+  ok   package-lock.json packages[''].version carries version 38.1.0
+  ok   plugin.json targets Agent Plugins 1.0.0
+  ok   portable and Claude manifests carry one plugin identity
+  ok   sync-metadata --check: no stale version/tool-count literals
+  ok   all 234 relative markdown links resolve (87 git-tracked files: root *.md + docs/**)
+  WARN homepage/origin check skipped: ENOTDIR: not a directory, open '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/.git/config'
+
+Docs/metadata gate done. Failures: 0
+TAP version 13
+# (node:68357) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: publicMarkdownFiles keeps tracked root and docs Markdown, and drops everything else
+ok 1 - publicMarkdownFiles keeps tracked root and docs Markdown, and drops everything else
+  ---
+  duration_ms: 2.104708
+  ...
+# Subtest: nested tracked Markdown outside docs/ is not public documentation
+ok 2 - nested tracked Markdown outside docs/ is not public documentation
+  ---
+  duration_ms: 0.942333
+  ...
+# Subtest: selection is ordered by code unit, not by locale, and deduplicated
+ok 3 - selection is ordered by code unit, not by locale, and deduplicated
+  ---
+  duration_ms: 2.393958
+  ...
+# Subtest: selection never reads the filesystem, so an untracked note cannot join the set
+ok 4 - selection never reads the filesystem, so an untracked note cannot join the set
+  ---
+  duration_ms: 2.761
+  ...
+# Subtest: a path that climbs out of the checkout is never public documentation
+ok 5 - a path that climbs out of the checkout is never public documentation
+  ---
+  duration_ms: 1.23025
+  ...
+# Subtest: publicMarkdownFiles refuses a caller that supplies no tracked paths
+ok 6 - publicMarkdownFiles refuses a caller that supplies no tracked paths
+  ---
+  duration_ms: 1.053334
+  ...
+# Subtest: parseTrackedPaths reads NUL-separated git output, including a trailing separator
+ok 7 - parseTrackedPaths reads NUL-separated git output, including a trailing separator
+  ---
+  duration_ms: 0.159917
+  ...
+# Subtest: parsePackagedInventory accepts an explicit list and refuses anything vaguer
+ok 8 - parsePackagedInventory accepts an explicit list and refuses anything vaguer
+  ---
+  duration_ms: 0.480667
+  ...
+# Subtest: relativeLinkFailures reports a tracked broken link
+ok 9 - relativeLinkFailures reports a tracked broken link
+  ---
+  duration_ms: 1.178833
+  ...
+# Subtest: a broken link carries the file, the target as authored, and a known reason
+ok 10 - a broken link carries the file, the target as authored, and a known reason
+  ---
+  duration_ms: 1.245458
+  ...
+# Subtest: percent-encoded targets are decoded before they are resolved
+ok 11 - percent-encoded targets are decoded before they are resolved
+  ---
+  duration_ms: 1.065667
+  ...
+# Subtest: a malformed percent escape is a failure, not a crash
+ok 12 - a malformed percent escape is a failure, not a crash
+  ---
+  duration_ms: 0.938959
+  ...
+# Subtest: a symlink that leaves the checkout fails even though the target exists
+ok 13 - a symlink that leaves the checkout fails even though the target exists
+  ---
+  duration_ms: 1.314292
+  ...
+# Subtest: a selected document that is itself a symlink out of the checkout is refused, unread
+ok 14 - a selected document that is itself a symlink out of the checkout is refused, unread
+  ---
+  duration_ms: 0.834
+  ...
+# Subtest: a packaged inventory cannot smuggle in a document that resolves outside the checkout
+ok 15 - a packaged inventory cannot smuggle in a document that resolves outside the checkout
+  ---
+  duration_ms: 1.325791
+  ...
+# Subtest: a relative path that climbs out of the checkout fails even though the target exists
+ok 16 - a relative path that climbs out of the checkout fails even though the target exists
+  ---
+  duration_ms: 1.342125
+  ...
+# Subtest: a relative path inside the checkout that climbs and comes back is fine
+ok 17 - a relative path inside the checkout that climbs and comes back is fine
+  ---
+  duration_ms: 0.899583
+  ...
+# Subtest: http, mailto, other schemes, protocol-relative, fragment-only and autolink targets are not checked
+ok 18 - http, mailto, other schemes, protocol-relative, fragment-only and autolink targets are not checked
+  ---
+  duration_ms: 0.934209
+  ...
+# Subtest: a fragment is stripped before the target is resolved
+ok 19 - a fragment is stripped before the target is resolved
+  ---
+  duration_ms: 1.765291
+  ...
+# Subtest: fenced blocks and inline code carry example paths, not links
+ok 20 - fenced blocks and inline code carry example paths, not links
+  ---
+  duration_ms: 2.103917
+  ...
+# Subtest: image links and link titles are handled like the gate always handled them
+ok 21 - image links and link titles are handled like the gate always handled them
+  ---
+  duration_ms: 1.839084
+  ...
+# Subtest: a selected file that cannot be read is a failure, not a thrown gate
+ok 22 - a selected file that cannot be read is a failure, not a thrown gate
+  ---
+  duration_ms: 1.088917
+  ...
+# Subtest: relativeLinkReport counts every relative link it checked across every file
+ok 23 - relativeLinkReport counts every relative link it checked across every file
+  ---
+  duration_ms: 1.42
+  ...
+# Subtest: git ls-files feeds selection: staged docs are in, ignored local notes are out
+ok 24 - git ls-files feeds selection: staged docs are in, ignored local notes are out
+  ---
+  duration_ms: 256.764209
+  ...
+# Subtest: test/docsmeta.mjs selects through git ls-files and refuses to guess without it
+ok 25 - test/docsmeta.mjs selects through git ls-files and refuses to guess without it
+  ---
+  duration_ms: 0.2855
+  ...
+# Subtest: the docs gate runs this suite
+ok 26 - the docs gate runs this suite
+  ---
+  duration_ms: 8.591834
+  ...
+1..26
+# tests 26
+# suites 0
+# pass 26
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 355.689709

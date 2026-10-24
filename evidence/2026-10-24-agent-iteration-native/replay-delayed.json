@@ -1,0 +1,63 @@
+{
+  "target": {
+    "serial": "emulator-5554",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "model": "swan_arm64",
+    "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+    "bootQemu": "1",
+    "bootId": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+    "apkSha256": "9e311dc104d70a3997832162d6597d45805692f22f729ca869c86bdff45d9a12",
+    "pid": 8478,
+    "pidStartTicks": "170913",
+    "appGeneration": "659e3ad2-39ed-42cf-bdc8-90a73810de4d",
+    "schemaVersion": 1,
+    "bindingSha256": "03fcdb9756d2a10352cf63b7893d4b067233366a6a20ad8ac72b3caebd2e596e",
+    "observedAt": "2026-10-24T05:25:00.186Z",
+    "enforcementScope": "interaction-session-only"
+  },
+  "state": {
+    "schemaVersion": 1,
+    "kind": "pico.agent-bridge.semantic-state",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "generation": "659e3ad2-39ed-42cf-bdc8-90a73810de4d",
+    "revision": 1,
+    "observedAtEpochMs": 1792819499767,
+    "pid": 8478,
+    "pidStartTicks": "170913",
+    "state": {
+      "panel": {
+        "id": "fixture.panel",
+        "visible": true
+      },
+      "counter": 1
+    },
+    "actions": [
+      "panel.show"
+    ]
+  },
+  "after": {
+    "schemaVersion": 1,
+    "kind": "pico.agent-bridge.semantic-state",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "generation": "659e3ad2-39ed-42cf-bdc8-90a73810de4d",
+    "revision": 1,
+    "observedAtEpochMs": 1792819501291,
+    "pid": 8478,
+    "pidStartTicks": "170913",
+    "state": {
+      "panel": {
+        "id": "fixture.panel",
+        "visible": true
+      },
+      "counter": 1
+    },
+    "actions": [
+      "panel.show"
+    ]
+  },
+  "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/replay-delayed.png",
+  "sha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc",
+  "bytes": 2988825,
+  "capturedAt": "2026-10-24T05:25:01.411Z",
+  "lookPending": true
+}

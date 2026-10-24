@@ -18,7 +18,7 @@ fun HomePage() {
         modifier = Modifier.fillMaxSize().padding(40.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        Text("Agent iteration fixture (source revision 2)", color = PicoTheme.colorScheme.labelPrimary)
+        Text("Agent iteration fixture (source revision 3)", color = PicoTheme.colorScheme.labelPrimary)
         Text("State transitions: " + FixtureState.counter, color = PicoTheme.colorScheme.labelPrimary)
         if (FixtureState.panelVisible) {
             Text(

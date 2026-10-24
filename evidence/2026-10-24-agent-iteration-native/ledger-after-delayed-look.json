@@ -1,0 +1,33 @@
+{
+  "input": {
+    "app": "com.example.picofixture.iteration.debug",
+    "claim": "The dedicated fixture on emulator-5554 renders source revision 2, State transitions: 1, and Panel visible — fixture.panel after acknowledged semantic panel.show.",
+    "evidenceType": "vision_verified",
+    "artifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/after-delayed.png",
+    "attestation": "I opened the exact after-delayed.png capture. The same rounded app window now visibly reads source revision 2, State transitions: 1, and Panel visible — fixture.panel. The target was independently rebound before and after capture to the original boot/APK/PID/start/generation. This later frame establishes the visible result; the immediate action frame did not. No hand/controller input is claimed.",
+    "cClass": "C0_emulator"
+  },
+  "captureSha256": "a47573759f44babe72a7af4318413a8ac7f1a9f0966ccdd9b281fda4a62649c7",
+  "result": {
+    "status": "recorded",
+    "entry": {
+      "seq": 1,
+      "claim": "The dedicated fixture on emulator-5554 renders source revision 2, State transitions: 1, and Panel visible — fixture.panel after acknowledged semantic panel.show.",
+      "evidenceType": "vision_verified",
+      "artifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/ledger/artifacts/a47573759f44babe72a7af4318413a8ac7f1a9f0966ccdd9b281fda4a62649c7.png",
+      "sourceArtifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/after-delayed.png",
+      "attestation": "I opened the exact after-delayed.png capture. The same rounded app window now visibly reads source revision 2, State transitions: 1, and Panel visible — fixture.panel. The target was independently rebound before and after capture to the original boot/APK/PID/start/generation. This later frame establishes the visible result; the immediate action frame did not. No hand/controller input is claimed.",
+      "cClass": "C0_emulator",
+      "capture": {
+        "sha256": "a47573759f44babe72a7af4318413a8ac7f1a9f0966ccdd9b281fda4a62649c7",
+        "width": 2160,
+        "height": 2158,
+        "bytes": 2988830,
+        "format": "png"
+      },
+      "reproHash": null
+    },
+    "totalEntries": 2,
+    "app": "com.example.picofixture.iteration.debug"
+  }
+}

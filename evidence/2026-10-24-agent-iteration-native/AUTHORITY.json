@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-24 04:58:34 UTC",
+  "owner": "/root in this conversation",
+  "userConfirmation": "I can confirm the emulator is not being used by anything other than you. Go ahead and do what you need to do.",
+  "interpretation": "User confirms sole use and authorizes the previously requested existing-PICO_6.1 emulator and dedicated fixture native validation; recorded root acquisition.",
+  "scope": [
+    "explicit emulator identity",
+    "install/launch/relaunch com.example.picofixture.iteration.debug",
+    "acknowledged semantic action and independent readback",
+    "capture and rendered-frame LOOK",
+    "source-bound rebuild/reconnect/replay",
+    "routine source fixes/tests and local reviewed commits"
+  ],
+  "serialObserved": "emulator-5554",
+  "alreadyRunning": true,
+  "bootRequested": false,
+  "preservedRestrictions": [
+    "no physical device fallback",
+    "no SDK/setup/global configuration changes",
+    "no wipe/uninstall/data clear",
+    "no other app/native program-track work",
+    "no unrelated process termination",
+    "no merge/push/version release/installed host activation"
+  ],
+  "state": "acquired; bind current boot before mutation"
+}

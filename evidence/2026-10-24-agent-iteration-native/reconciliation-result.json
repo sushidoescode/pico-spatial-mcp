@@ -1,0 +1,10 @@
+{
+  "at": "2026-10-24T05:14:25.220Z",
+  "status": "explicit-root-resolution-and-owner-archived",
+  "proof": "reconciliation-proof.json",
+  "archivePath": "/Users/sushantsrikrish/.pico-mcp/interaction-fences/history/04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017-ca7b0327-cc11-46a9-9ba0-a46b4eb1f642.reconciled-owner.json",
+  "ownerSha256": "e75244f15ea851918e2a9182304a5218b39f93f2b7a8dc029de06302c18118f4",
+  "retiredNonce": "04f69643-b23e-4f95-b3f4-87d26b002287",
+  "resendCount": 0,
+  "originalHistoryUnchanged": true
+}

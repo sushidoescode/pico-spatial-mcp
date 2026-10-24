@@ -1,0 +1,11 @@
+{
+  "at": "2026-10-24T05:15:12.873823+00:00",
+  "reviewer": "root vision-capable agent",
+  "artifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/before.png",
+  "sha256": "29c8678a1cafac010350fc99eab67487a3fa8b2fde4c828f08e962fc6dc88cad",
+  "evidenceType": "vision_verified",
+  "claim": "Initial dedicated fixture frame shows source revision 2, State transitions: 0, and Panel hidden.",
+  "attestation": "I opened the exact before.png capture. A single pale rounded app window is rendered in the emulator room; its visible text reads Agent iteration fixture (source revision 2), State transitions: 0, and Panel hidden. This is the initial state, not action or hand/controller evidence.",
+  "targetBindingSha256": "c69a64e0562bec8ca6e9c0433655179963792fe48143393f88d757bb31860a66",
+  "ledgerRecordPending": true
+}

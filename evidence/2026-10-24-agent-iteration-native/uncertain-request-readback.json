@@ -1,0 +1,70 @@
+{
+  "priorResultPath": "evidence/agent-iteration-example/e682ba58-24c2-4725-9cd4-3947779caa58/attempts/89fb3a53-4a09-4adb-89ac-35727280124c/result.json",
+  "request": {
+    "actionId": "panel.show",
+    "args": {
+      "panelId": "fixture.panel"
+    },
+    "deadlineEpochMs": 1792818351335,
+    "expectedGeneration": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+    "expectedRevision": 0,
+    "packageName": "com.example.picofixture.iteration.debug",
+    "requestId": "04f69643-b23e-4f95-b3f4-87d26b002287",
+    "schemaVersion": 1
+  },
+  "state": {
+    "schemaVersion": 1,
+    "kind": "pico.agent-bridge.semantic-state",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "generation": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+    "revision": 0,
+    "observedAtEpochMs": 1792818416036,
+    "pid": 4296,
+    "pidStartTicks": "44574",
+    "state": {
+      "panel": {
+        "id": "fixture.panel",
+        "visible": false
+      },
+      "counter": 0
+    },
+    "actions": [
+      "panel.show"
+    ]
+  },
+  "ack": null,
+  "calls": [
+    {
+      "argv": [
+        "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+        [
+          "-s",
+          "emulator-5554",
+          "exec-out",
+          "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'test ! -L '\\''files'\\'' && test ! -L '\\''files/agentbridge'\\'' && test ! -L '\\''files/agentbridge/interaction-v1'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/state.json'\\'' || exit 73; if test -f \"$1\"; then printf '\\''\\001'\\''; head -c 65537 \"$1\"; else printf '\\''\\000'\\''; fi' 'pico-mcp' 'files/agentbridge/interaction-v1/state.json'"
+        ]
+      ],
+      "code": 0,
+      "stdoutBase64": "AXsic2NoZW1hVmVyc2lvbiI6MSwia2luZCI6InBpY28uYWdlbnQtYnJpZGdlLnNlbWFudGljLXN0YXRlIiwicGFja2FnZU5hbWUiOiJjb20uZXhhbXBsZS5waWNvZml4dHVyZS5pdGVyYXRpb24uZGVidWciLCJnZW5lcmF0aW9uIjoiOTcxYjE4NmYtZTUyOS00YmQ2LThiYWItYzNiNTdmNTdkMDE1IiwicmV2aXNpb24iOjAsIm9ic2VydmVkQXRFcG9jaE1zIjoxNzkyODE4NDE2MDM2LCJwaWQiOjQyOTYsInBpZFN0YXJ0VGlja3MiOiI0NDU3NCIsInN0YXRlIjp7InBhbmVsIjp7ImlkIjoiZml4dHVyZS5wYW5lbCIsInZpc2libGUiOmZhbHNlfSwiY291bnRlciI6MH0sImFjdGlvbnMiOlsicGFuZWwuc2hvdyJdfQ==",
+      "stderr": "",
+      "timedOut": false
+    },
+    {
+      "argv": [
+        "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+        [
+          "-s",
+          "emulator-5554",
+          "exec-out",
+          "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'test ! -L '\\''files'\\'' && test ! -L '\\''files/agentbridge'\\'' && test ! -L '\\''files/agentbridge/interaction-v1'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/acks'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/acks/04f69643-b23e-4f95-b3f4-87d26b002287.json'\\'' || exit 73; if test -f \"$1\"; then printf '\\''\\001'\\''; head -c 65537 \"$1\"; else printf '\\''\\000'\\''; fi' 'pico-mcp' 'files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/acks/04f69643-b23e-4f95-b3f4-87d26b002287.json'"
+        ]
+      ],
+      "code": 0,
+      "stdoutBase64": "AA==",
+      "stderr": "",
+      "timedOut": false
+    }
+  ],
+  "readOnly": true,
+  "resendCount": 0
+}

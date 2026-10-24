@@ -46,6 +46,9 @@ export interface InteractionResultV1 {
   humanInputVerified: false;
   reason: string;
   recordPath: string;
+  captureSettleMs: number;
+  captureSettleMeasuredMs: number;
+  captureRequestedAt: string | null;
 }
 
 export function assertStateTarget(state: BridgeSemanticStateV1, target: InteractionTargetV1,now=Date.now()): void {
@@ -55,7 +58,7 @@ export function assertStateTarget(state: BridgeSemanticStateV1, target: Interact
 }
 
 /** One send at most. App ACK, independent state readback and pixels remain separate evidence. */
-export async function dispatchInteraction(target: InteractionTargetV1, raw: unknown, deps: InteractionDependencies): Promise<InteractionResultV1> {
+export async function dispatchInteraction(target: InteractionTargetV1, raw: unknown, deps: InteractionDependencies, options: {captureSettleMs?:number} = {}): Promise<InteractionResultV1> {
   const attemptDir = path.join(deps.evidenceRoot, "attempts", crypto.randomUUID());
   fs.mkdirSync(attemptDir, { recursive: true, mode: 0o700 });
   const result: InteractionResultV1 = {
@@ -64,6 +67,8 @@ export async function dispatchInteraction(target: InteractionTargetV1, raw: unkn
     evidence: { status: "not_requested", reason: "no completed action" }, evidenceCeiling: "structural",
     lookPending: true, inputRoute: "app-semantic-debug-bridge", humanInputVerified: false, reason: "",
     recordPath: path.join(attemptDir, "result.json"),
+    captureSettleMs: options.captureSettleMs ?? 0,
+    captureSettleMeasuredMs: 0, captureRequestedAt: null,
   };
   let ownsOperation = false;
   let dispatchedAt = 0;
@@ -72,6 +77,7 @@ export async function dispatchInteraction(target: InteractionTargetV1, raw: unkn
     return result;
   };
   try {
+    if(!Number.isInteger(result.captureSettleMs)||result.captureSettleMs<0||result.captureSettleMs>3000)throw new Error("capture settle must be 0..3000 ms");
     const request = interactionBridgeRequestSchema.parse(raw);
     const budget={deadlineEpochMs:request.deadlineEpochMs,signal:deps.signal,now:deps.now};
     const remaining = () => Math.max(1, Math.min(4_000, request.deadlineEpochMs - deps.now()));
@@ -79,9 +85,11 @@ export async function dispatchInteraction(target: InteractionTargetV1, raw: unkn
       if (deps.signal?.aborted) throw new Error("cancelled");
       if (deps.now() >= request.deadlineEpochMs) throw new Error("action deadline elapsed");
     };
+    const checkSettleFits = () => { if(result.captureSettleMs>=request.deadlineEpochMs-deps.now())throw new Error("capture settle cannot fit within the action deadline"); };
     if (request.packageName !== target.packageName || request.expectedGeneration !== target.appGeneration) throw new Error("request does not name the bound app generation");
     if (request.deadlineEpochMs <= deps.now()) { result.status = "timed_out"; throw new Error("action deadline elapsed before dispatch"); }
     if (request.deadlineEpochMs - deps.now() > 60_000) throw new Error("action deadline exceeds explicit 60-second limit (default is 10 seconds)");
+    checkSettleFits();
     checkDeadline();
     if (deps.fence.serial !== target.serial) throw new Error("fence belongs to another target");
     deps.fence.begin("semantic action"); ownsOperation = true;
@@ -93,6 +101,7 @@ export async function dispatchInteraction(target: InteractionTargetV1, raw: unkn
     if (before.revision !== request.expectedRevision) throw new Error("semantic revision changed before dispatch; possible external writer (not prevented)");
     if (!before.actions.includes(request.actionId)) throw new Error("action is not declared by this app");
     checkDeadline();
+    checkSettleFits();
     // Reserve the ID durably BEFORE dispatch. A process interruption never makes it reusable.
     const requests = path.join(deps.evidenceRoot, "requests");
     fs.mkdirSync(requests, { recursive: true, mode: 0o700 });
@@ -100,6 +109,7 @@ export async function dispatchInteraction(target: InteractionTargetV1, raw: unkn
     try { fs.writeSync(fd, canonicalJson({ request, target, attemptDir })); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     deps.fence.assertOwned();
     checkDeadline();
+    checkSettleFits();
     result.attempted = true; // From this point, a transport error can mean the app acted.
     dispatchedAt = deps.now();
     await deps.bridge.send(request, remaining());
@@ -141,13 +151,31 @@ export async function dispatchInteraction(target: InteractionTargetV1, raw: unkn
     result.status = "completed";
     result.reason = "app acknowledged panel.show; independent semantic assertion passed";
     const completedAt = deps.now();
+    // Explicit compositor accommodation, never a render assertion. It consumes the existing
+    // action/scenario deadline and remains interruptible; the resulting frame still needs LOOK.
+    const settleUntil = completedAt + result.captureSettleMs;
+    while(deps.now()<settleUntil) {
+      checkDeadline();deps.fence.assertOwned();
+      await deps.sleep(Math.min(50,settleUntil-deps.now(),remaining()));
+      result.captureSettleMeasuredMs=deps.now()-completedAt;
+    }
+    checkDeadline();
+    if(result.captureSettleMs) {
+      await revalidateInteractionTarget(target,deps.probes,budget);
+      const settledState=parseBridgeSemanticState(await deps.bridge.observe(remaining()));
+      assertStateTarget(settledState,target,deps.now());
+      if(settledState.revision!==after.revision||canonicalJson(settledState.state)!==canonicalJson(after.state))throw new Error("state changed while waiting for capture");
+      result.after=settledState;
+    }
+    checkDeadline();
     try {
+      const captureRequestedAt=deps.now();result.captureRequestedAt=new Date(captureRequestedAt).toISOString();
       const frame = await deps.capture(target, remaining());
       const checked = validateCaptureBuffer(frame.bytes, "interaction capture");
       const framePath = path.join(attemptDir, "frame.png");
       fs.writeFileSync(framePath, frame.bytes, {flag:"wx",mode:0o600}); // retain even a refused frame
       if (!checked.ok || checked.format !== "png" || !Number.isFinite(Date.parse(frame.capturedAt))
-        || Date.parse(frame.capturedAt) < completedAt || Date.parse(frame.capturedAt) > deps.now() + 1000) {
+        || Date.parse(frame.capturedAt) < captureRequestedAt || Date.parse(frame.capturedAt) > deps.now() + 1000) {
         result.evidence = {status:"failed",reason:"invalid or stale capture; not attributable",path:framePath};
       } else {
         result.evidence = {status:"captured",path:framePath,sha256:sha256Bytes(frame.bytes),bytes:frame.bytes.length,

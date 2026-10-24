@@ -1,0 +1,5 @@
+  399 97358 Fri Oct 23 21:55:36 2026     /Users/sushantsrikrish/Library/PICO/sdk/6.1/emulator/qemu/darwin-aarch64/qemu-system-aarch64 -netdelay none -netspeed full -avd PICO_6.1 -gpu angle_indirect -feature GuestAngle,GuestUsesAngle,VulkanNativeSwapchain
+ 9818     1 Fri Oct 23 22:03:45 2026     adb -L tcp:5037 fork-server server --reply-fd 4
+ 9849  8631 Fri Oct 23 22:03:50 2026     adb -s 2G0YC5ZF7Z056Q logcat -v threadtime -v year -v UTC -T 1
+ 9851  9849 Fri Oct 23 22:03:50 2026     caffeinate -ims adb -s 2G0YC5ZF7Z056Q logcat -v threadtime -v year -v UTC -T 1
+ 9852 45280 Fri Oct 23 22:03:50 2026     adb -s 2G0YC5ZF7Z056Q logcat -v threadtime -v year -v UTC -T 1792818223.281

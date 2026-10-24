@@ -1,0 +1,356 @@
+--------- beginning of main
+10-23 22:03:04.147  4296  4296 W Zygote  : Unable to open libbeluga.so: dlopen failed: library "libbeluga.so" not found.
+10-23 22:03:04.175  4296  4296 I iteration.debug: Late-enabling -Xcheck:jni
+10-23 22:03:04.194  4296  4296 I iteration.debug: Using CollectorTypeCMC GC.
+--------- beginning of system
+10-23 22:03:04.201  4296  4296 I SysMonitorFwBridge: sISysMonitorFwFactory = android.app.SysMonitorFwFactoryImpl@65d5ccf
+10-23 22:03:04.206  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.204  4296  4296 W re-initialized>: type=1400 audit(0.0:2450): avc:  denied  { read } for  name="u:object_r:userdebug_or_eng_prop:s0" dev="tmpfs" ino=381 scontext=u:r:untrusted_app:s0:c101,c256,c512,c768 tcontext=u:object_r:userdebug_or_eng_prop:s0 tclass=file permissive=0 app=com.example.picofixture.iteration.debug
+10-23 22:03:04.215  4296  4309 W ActivityThread: bindApplication AppSpatialConfig{mPackageName='com.example.picofixture.iteration.debug', mLaunchStyle='null', mEnable2dSpatial=true, mEnable2DMipmap=false, mHasAppLevelConfig=false, mEnableTapCompat=false, mSkipImeFrameFix=false, mTapCompatWindows=[], mConfigOrientation=1, mWidth=1080, mHeight=1920, mDensity=400, mTouchSlop=-1, mEnable2dSpatial=true, mDimBackground=false, mDisableShortcutRemap=false, mShortcutRemapFixed=false}, android.app.IApplicationThread$Stub.onTransact:1140 android.app.ActivityThread$ApplicationThread.onTransact:2524 android.os.Binder.execTransactInternal:1435 android.os.Binder.execTransact:1374 <bottom of call stack> <bottom of call stack> <bottom of call stack> <bottom of call stack> <bottom of call stack> <bottom of call stack> <bottom of call stack> <bottom of call stack> 
+10-23 22:03:04.215  4296  4309 I ActivityThread: onBindApplication, appInfo: ApplicationInfo{2f9ad65 com.example.picofixture.iteration.debug}, initDensityDpi: 320
+10-23 22:03:04.215  4296  4309 I Container: registerSpatialContainerStateListener, listener: android.app.SpaceActivityThreadImpl$1@841ca3a, currentList: [Handler (com.spatial.app.SpatialContainerStateListenerDelegate) {27cf6eb}]
+10-23 22:03:04.216  4296  4296 I SysFwBridge: sInstance: = android.app.SysFwFactoryImpl@c5cbae1
+10-23 22:03:04.299  4296  4296 I iteration.debug: AssetManager2(0xb40000716a81c458) locale list changing from [] to [en-US]
+10-23 22:03:04.303  4296  4296 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+10-23 22:03:04.305  4296  4296 E BoostFramework: BoostFramework() : Exception_1 = java.lang.ClassNotFoundException: com.qualcomm.qti.Performance
+10-23 22:03:04.305  4296  4296 E BoostFramework: BoostFramework() Ux Perf: Exception = java.lang.ClassNotFoundException: com.qualcomm.qti.UxPerformance
+10-23 22:03:04.321  4296  4296 W ActivityThread: spatialEnabled true, com.example.picofixture.iteration.debug, java.lang.reflect.Constructor.newInstance0:-2 java.lang.reflect.Constructor.newInstance:343 android.os.ImplFactory.getImpl:108 android.content.pm.ApplicationInfo.<init>:3098 com.android.internal.pm.parsing.pkg.PackageImpl.toAppInfoWithoutStateWithoutFlags:2652 com.android.internal.pm.parsing.pkg.PackageImpl.toAppInfoWithoutState:3210 com.android.server.pm.parsing.pkg.AndroidPackageUtils.generateAppInfoWithoutState:301 com.android.server.pm.parsing.PackageInfoUtils.generateApplicationInfo:475 com.android.server.pm.parsing.PackageInfoUtils.generateActivityInfo:561 com.android.server.pm.parsing.PackageInfoUtils.generateActivityInfo:544 com.android.server.pm.ComputerEngine.getActivityInfoInternalBody:940 com.android.server.pm.ComputerEngine.getActivityInfoInternal:920 com.android.server.pm.ComputerEngine.getActivityInfo:882 com.android.server.pm.ComputerEngine.queryIntentActivitiesInternal:551 com.android.server.pm.ResolveIntentHelper.resolveIntentInternal:124 com.android.server.pm.PackageManagerInternalBase.resolveIntent:476 com.android.server.wm.ActivityTaskSupervisor.resolveIntent:866 com.android.server.wm.ActivityStarter$Request.resolveActivity:634 com.android.server.wm.ActivityStarter.execute:861 com.android.server.wm.ActivityTaskManagerService.startActivityAsUser:1367 com.android.server.wm.ActivityTaskManagerService.startActivityAsUser:1300 com.android.server.am.ActivityManagerService.startActivityAsUserWithFeature:3588 com.android.server.am.ActivityManagerShellCommand.runStartActivity:871 com.android.server.am.ActivityManagerShellCommand.onCommand:252 com.android.modules.utils.BasicShellCommandHandler.exec:97 
+10-23 22:03:04.321  4296  4296 W ActivityThread: data.appInfo pkg [com.example.picofixture.iteration.debug] forceEnable2dSpatialRender [0] appSpatialConfig AppSpatialConfig{mPackageName='com.example.picofixture.iteration.debug', mLaunchStyle='null', mEnable2dSpatial=true, mEnable2DMipmap=false, mHasAppLevelConfig=false, mEnableTapCompat=false, mSkipImeFrameFix=false, mTapCompatWindows=[], mConfigOrientation=1, mWidth=1080, mHeight=1920, mDensity=400, mTouchSlop=-1, mEnable2dSpatial=true, mDimBackground=false, mDisableShortcutRemap=false, mShortcutRemapFixed=false}
+10-23 22:03:04.321  4296  4296 I HWUI    : #hwui-debug# app: com.example.picofixture.iteration.debug sa
+10-23 22:03:04.321  4296  4296 I ActivityThread: sa: true
+10-23 22:03:04.321  4296  4296 I HWUI    : #hwui-debug# set sa
+10-23 22:03:04.321  4296  4296 I ActivityThread: setIsSpatialApp
+10-23 22:03:04.338  4296  4296 I SpatialPack: [main] Found PICO OS version: 0.11.24
+10-23 22:03:04.339  4296  4296 I SpatialPack: [main] SpatialSDK Version Name: [6.1.9]
+10-23 22:03:04.340  4296  4296 I SpatialPack: [main] SpatialFoundation Version Name: [6.1.0-alpha.1-mol] CommitID: [7253c5a]
+10-23 22:03:04.341  4296  4296 I SpatialPack: [main] Spatial App attachment V2 enabled: false
+10-23 22:03:04.344  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->containerName:Ljava/lang/String; (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.344  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->tag:Ljava/lang/String; (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.344  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerInfo;->containerId:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.344  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->styleForWindowGroup:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.344  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->width:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.344  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->height:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.344  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->depth:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.344  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->resizeType:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.344  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->resizeRestriction:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.344  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->volumeAlignment:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.344  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->volumeBasePanelStyle:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.344  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->captionBarStyle:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.344  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->scaleType:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.345  4296  4296 I SpatialPack_SpatialContainer: [main] registerSpatialContainers
+10-23 22:03:04.348  4296  4296 I SpatialPack_SpatialContainer: [main] default container name YourPlanarWindowContainer
+10-23 22:03:04.355  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->brightness:F (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.355  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->containerType:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.357  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->VOLUME_ALIGNMENT_TILTED:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.357  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->VOLUME_ALIGNMENT_GRAVITY:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.357  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->SCALE_FIXED:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.357  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->SCALE_DYNAMIC:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.357  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerParams;->SCALE_AUTOMATIC:I (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.358  4296  4296 I SpatialPack_SpatialContainer: [main] SpatialContainerManager registerWindowContainer: YourPlanarWindowContainer
+10-23 22:03:04.358  4296  4296 I SSessionController: [ec-ui]initSpatialSession: pkgName=com.example.picofixture.iteration.debug, context=com.example.picofixture.iteration.platform.SpatialApplication@d9df778
+10-23 22:03:04.361  4296  4296 I iteration.debug: AssetManager2(0xb40000716a81baf8) locale list changing from [] to [en-US]
+10-23 22:03:04.369  4296  4296 I SpatialPackProvider: LoadLibrary.begin
+10-23 22:03:04.369  4296  4296 I SpatialPackProvider: LoadLibrary.before
+10-23 22:03:04.400  4296  4296 W iteration.debug: type=1400 audit(0.0:2451): avc:  denied  { read } for  name="overcommit_memory" dev="proc" ino=2794 scontext=u:r:untrusted_app:s0:c101,c256,c512,c768 tcontext=u:object_r:proc_overcommit_memory:s0 tclass=file permissive=0 app=com.example.picofixture.iteration.debug
+10-23 22:03:04.409  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.409  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.409  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.408  4296  4296 W iteration.debug: type=1400 audit(0.0:2452): avc:  denied  { read } for  name="u:object_r:userdebug_or_eng_prop:s0" dev="tmpfs" ino=381 scontext=u:r:untrusted_app:s0:c101,c256,c512,c768 tcontext=u:object_r:userdebug_or_eng_prop:s0 tclass=file permissive=0 app=com.example.picofixture.iteration.debug
+10-23 22:03:04.409  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.408  4296  4296 W iteration.debug: type=1400 audit(0.0:2453): avc:  denied  { read } for  name="u:object_r:userdebug_or_eng_prop:s0" dev="tmpfs" ino=381 scontext=u:r:untrusted_app:s0:c101,c256,c512,c768 tcontext=u:object_r:userdebug_or_eng_prop:s0 tclass=file permissive=0 app=com.example.picofixture.iteration.debug
+10-23 22:03:04.408  4296  4296 W iteration.debug: type=1400 audit(0.0:2454): avc:  denied  { read } for  name="u:object_r:userdebug_or_eng_prop:s0" dev="tmpfs" ino=381 scontext=u:r:untrusted_app:s0:c101,c256,c512,c768 tcontext=u:object_r:userdebug_or_eng_prop:s0 tclass=file permissive=0 app=com.example.picofixture.iteration.debug
+10-23 22:03:04.408  4296  4296 W iteration.debug: type=1400 audit(0.0:2455): avc:  denied  { read } for  name="u:object_r:userdebug_or_eng_prop:s0" dev="tmpfs" ino=381 scontext=u:r:untrusted_app:s0:c101,c256,c512,c768 tcontext=u:object_r:userdebug_or_eng_prop:s0 tclass=file permissive=0 app=com.example.picofixture.iteration.debug
+10-23 22:03:04.409  4296  4296 E libc    : The property "ro.build.fingerprint" has a value with length 92 that is too large for __system_property_get()/__system_property_read(); use __system_property_read_callback() instead.
+10-23 22:03:04.409  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.409  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.408  4296  4296 W iteration.debug: type=1400 audit(0.0:2456): avc:  denied  { read } for  name="u:object_r:userdebug_or_eng_prop:s0" dev="tmpfs" ino=381 scontext=u:r:untrusted_app:s0:c101,c256,c512,c768 tcontext=u:object_r:userdebug_or_eng_prop:s0 tclass=file permissive=0 app=com.example.picofixture.iteration.debug
+10-23 22:03:04.409  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.410  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.410  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.410  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.410  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.410  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.423  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.424  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.430  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.431  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.431  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.431  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.431  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.431  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.431  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.432  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.432  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.432  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.432  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.432  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.432  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.433  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.433  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.433  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.433  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.433  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.433  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.434  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.436  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.436  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.436  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.436  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.436  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.436  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.436  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.436  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.437  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.440  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.441  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.441  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.441  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.441  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.441  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.442  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.442  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.442  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.442  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.443  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.443  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.443  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.443  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.444  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.445  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.445  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.445  4296  4296 I SpatialPackProvider: LoadLibrary.end 0xc300051c2b6c8133
+10-23 22:03:04.445  4296  4296 E SimpleTimeTrace: loadLibraryContext:86.965004 ms
+10-23 22:03:04.446  4296  4296 E SPPackGlue: type check failed: [12423309027427213622][12313712703045756264] has different sizeof p:[32] :e[96] ControllerActionResult:[int64_t]
+10-23 22:03:04.449  4296  4296 E SimpleTimeTrace: Bindings:3.838000 ms
+10-23 22:03:04.449  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.450  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.450  4296  4296 W SPC-debu39-SpatialInstance: Init pkg:com.example.picofixture.iteration.debug-instance
+10-23 22:03:04.450  4296  4296 I SPC-debu39-JniHelper: jni information setting start...
+10-23 22:03:04.450  4296  4296 I SPC-debu39-JniHelper: JniHelper::initJavaVM(12970367409381775760), pthread_self() = 491905664504
+10-23 22:03:04.450  4296  4296 I SPC-debu39-JniHelper: Init class loader suc.
+10-23 22:03:04.450  4296  4296 I SPC-debu39-JniHelper: jni information setting suc.
+10-23 22:03:04.450  4296  4296 I SPC-debu39-AndroidHelper: Apk process name: 
+10-23 22:03:04.451  4296  4296 I SPC-debu39-AndroidHelper: Query android writable path suc, path:/data/user_de/0/com.example.picofixture.iteration.debug/files
+10-23 22:03:04.451  4296  4296 I SPC-debu39-AndroidHelper: Query android dpi scale suc, dpi scale:2
+10-23 22:03:04.451  4296  4296 I SPC-debu39-JniHelper: AndroidHelp init finish!
+10-23 22:03:04.451  4296  4296 I SPC-debu39-JniHelper: writable path:/data/user_de/0/com.example.picofixture.iteration.debug/files.
+10-23 22:03:04.451  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.454  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.455  4296  4296 I SPC-debu39-LogModule: Init StatisticsFileWriter suc, log file path:/data/user_de/0/com.example.picofixture.iteration.debug/files/statistics/spatial_engine_20261023_220304_1.log
+10-23 22:03:04.458  4296  4325 W RmClient: Rm::create() mRm 0xb40000705a845fd0 serial=1
+10-23 22:03:04.461  4296  4296 I SPC-debu39-DynamicVideoModule: DynlibCreateModule
+10-23 22:03:04.461  4296  4296 I SPC-debu39-DynamicVideoModule: preCreate
+10-23 22:03:04.461  4296  4296 I SPC-debu39-setDynamicVideoModule: Setting dynamic video module
+10-23 22:03:04.461  4296  4296 I SPC-debu39-setDynamicVideoModule: Setting dynamic video module
+10-23 22:03:04.461  4296  4325 I iteration.debug: Thread attached to JVM
+10-23 22:03:04.461  4296  4325 I iteration.debug: reportCriticalThreads pid 4296 type 3 event 1 updateType 1 tids 4325
+10-23 22:03:04.462  4296  4296 I SPC-debu39-DynamicAudioModule: DynlibCreateModule
+10-23 22:03:04.462  4296  4296 I SPC-debu39-DynamicAudioModule: preCreate
+10-23 22:03:04.462  4296  4296 I SPC-debu39-setDynamicAudioModule: Setting dynamic audio module
+10-23 22:03:04.462  4296  4326 I iteration.debug: Thread attached to JVM
+10-23 22:03:04.462  4296  4326 I iteration.debug: reportCriticalThreads pid 4296 type 3 event 1 updateType 1 tids 4326
+10-23 22:03:04.462  4296  4328 I iteration.debug: Thread attached to JVM
+10-23 22:03:04.462  4296  4328 I iteration.debug: reportCriticalThreads pid 4296 type 3 event 1 updateType 1 tids 4328
+10-23 22:03:04.462  4296  4327 I iteration.debug: Thread attached to JVM
+10-23 22:03:04.462  4296  4327 I iteration.debug: reportCriticalThreads pid 4296 type 3 event 1 updateType 1 tids 4327
+10-23 22:03:04.463  4296  4296 I SPC-debu39-DynamicVideoModule: initModule
+10-23 22:03:04.463  4296  4296 I SPC-debu39-DynamicAudioModule: initModule
+10-23 22:03:04.463  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.463  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.468  4296  4296 I SpatialClient: preload:false  Load lib:spatial_client
+10-23 22:03:04.469  4296  4296 I SpatialClient: Create
+10-23 22:03:04.469  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.469  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.471  4296  4325 I SpatialClient: Bind spatial runtime SUCCESS!
+10-23 22:03:04.471  4296  4339 I SpatialClient: onServiceConnected
+10-23 22:03:04.472  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.472  4296  4296 I iteration.debug: reportCriticalThreads pid 4296 type 3 event 1 updateType 1 tids 4296
+10-23 22:03:04.473  4296  4342 I iteration.debug: Thread attached to JVM
+10-23 22:03:04.473  4296  4342 I iteration.debug: reportCriticalThreads pid 4296 type 3 event 1 updateType 1 tids 4342
+10-23 22:03:04.473  4296  4341 I iteration.debug: Thread attached to JVM
+10-23 22:03:04.473  4296  4341 I iteration.debug: reportCriticalThreads pid 4296 type 3 event 1 updateType 1 tids 4341
+10-23 22:03:04.473  4296  4336 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.473  4296  4326 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.473  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.473  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.473  4296  4336 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.473  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.474  4296  4343 I iteration.debug: Thread attached to JVM
+10-23 22:03:04.474  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.474  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.474  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.474  4296  4343 I iteration.debug: reportCriticalThreads pid 4296 type 3 event 1 updateType 1 tids 4343
+10-23 22:03:04.475  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.476  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.476  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.476  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.476  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.476  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.476  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.476  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.477  4296  4296 I Container: registerSpatialContainerStateListener, listener: com.pico.spatial.runtime.AppFormBridge$1@dd72053, currentList: [Handler (com.spatial.app.SpatialContainerStateListenerDelegate) {27cf6eb}, Handler (com.spatial.app.SpatialContainerStateListenerDelegate) {3a43d90}]
+10-23 22:03:04.477  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.477  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.477  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.477  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.477  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.477  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.477  4296  4296 E SPC-debu39-MetricsManager: onSessionPostCreated, mode:0
+10-23 22:03:04.477  4296  4296 E SPC-debu39-SpatialContext: registerSession sess:12970367413676776032 ret:1
+10-23 22:03:04.477  4296  4296 E SPC-debu39-MetricsManager: onSessionPreInit:com.example.picofixture.iteration.debug-session
+10-23 22:03:04.477  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.477  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.477  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.477  4296  4296 W SPC-debu39-SpatialSession: setExposedComponentTypes, exposedTypesCount = 118
+10-23 22:03:04.478  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.478  4296  4296 E SPC-debu39-AsyncTaskHandlerRegister: set callback success
+10-23 22:03:04.478  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.478  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.478  4296  4296 I iteration.debug: registerSpatialSessionCallback
+10-23 22:03:04.478  4296  4296 E SPC-debu39-MetricsManager: onSessionReady
+10-23 22:03:04.478  4296  4296 E SPC-debu39-SpatialSession: beginSession:com.example.picofixture.iteration.debug-instance
+10-23 22:03:04.479  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.479  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.479  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.479  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.480  4296  4296 E SPC-debu39-SpatialSession: onSessionBegin: com.example.picofixture.iteration.debug-instance
+10-23 22:03:04.480  4296  4296 I iteration.debug: reportCriticalThreads pid 4296 type 3 event 1 updateType 1 tids 4296
+10-23 22:03:04.480  4296  4296 E SPC-debu39-Global: JobSystem::initInMainThread() can only call one time!
+10-23 22:03:04.480  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.480  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.480  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.480  4296  4296 E SPC-debu39-IPCClientService: send async, cb is null
+10-23 22:03:04.480  4296  4296 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:04.480  4296  4296 E SPC-debu39-PerfProfiler: perfL: PerfProfiler::OnSessionBegin 1
+10-23 22:03:04.480  4296  4296 E SPC-debu39-MetricsManager: onSessionPostBegin
+10-23 22:03:04.480  4296  4327 W libc    : Unable to set property "persist.pxr.log.com.example.picofixture.iteration.debug" to "5": connection failed: Permission denied
+10-23 22:03:04.480  4296  4327 E iteration.debug: [###][###:174]: set property persist.pxr.log.com.example.picofixture.iteration.debug failed.
+10-23 22:03:04.480  4296  4327 I iteration.debug: [###][###:96]: setPersistModuleLevel Totaltime:91us start:0us get level from memory:21us set level to property:70us 
+10-23 22:03:04.481  4296  4296 I SpatialPack: initializeEngine JNIEnv ptr: 0xb40000719a80a810
+10-23 22:03:04.481  4296  4296 I SpatialPack: Current Spatial Loader SDK version is 6.1.0, commit a2fa365520
+10-23 22:03:04.481  4296  4327 W iteration.debug: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. This might not be intended. AIBinder_DeathRecipient_setOnUnlinked should be called first.
+10-23 22:03:04.481  4296  4296 I SpatialPackProvider: LoadLibrary.begin
+10-23 22:03:04.481  4296  4296 E SimpleTimeTrace: loadLibraryContext:0.304000 ms
+10-23 22:03:04.482  4296  4327 E PxrNotificationClient: [PxrNotificationClient][###][###:150]: binder status check failed! info: Status(-8, EX_SERVICE_SPECIFIC): '-22: ', errorMessage: 
+10-23 22:03:04.482  4296  4327 I PxrNotificationClient: [###][###:96]: addPxrCallback Totaltime:1331us checkParma:0us checkCache:1us waiteBinder:1330us 
+10-23 22:03:04.483  4296  4327 E PxrConfigServiceClient: [###][###:62]: find configname: spruntime.input value is null, please check it!
+10-23 22:03:04.483  4296  4296 E SPPackGlue: type check failed: [12423309027427213622][12313712703045756264] has different sizeof p:[32] :e[96] ControllerActionResult:[int64_t]
+10-23 22:03:04.487  4296  4296 E SimpleTimeTrace: Bindings:5.745000 ms
+10-23 22:03:04.487  4296  4296 I SpatialPack: SpatialPackLoader loaded success!
+10-23 22:03:04.487  4296  4296 I SpatialPack: SpatialApp retrieve session result 0
+10-23 22:03:04.510  4296  4296 I LifeCycle: handleContainerStateChanged id=3, pkg=com.example.picofixture.iteration.debug, name=YourPlanarWindowContainer, v=true, f=false, t=window_group, c=none, life=foreground, size(2160, 1280, 1280), spatialApp=true, entityId=2387628154421343, contentId=2387628154421342, caller (0, pkg=null), local: 
+10-23 22:03:04.510  4296  4296 I SpatialPack_SpatialContainer: [main] onAppContainerCreate: com.spatial.app.BaseWindowContainer@e1a4966
+10-23 22:03:04.514  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerInfo;->hasFocus:Z (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.515  4296  4296 I SpatialPack_SpatialContainer: [main] WindowContainer-YourPlanarWindowContainer onContainerCreate: com.spatial.app.BaseWindowContainer@e1a4966
+10-23 22:03:04.515  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerInfo;->isStaged:Z (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.515  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Lcom/spatial/app/SpatialContainerInfo;->isSighted:Z (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.515  4296  4296 I LifeCycle: dispatch container create, info: Info{id=3, pkg=com.example.picofixture.iteration.debug, name=YourPlanarWindowContainer, visible=true, focus=false, type=window_group, cat=none, life=create, size(2160, 1280, 1280), min size(640, 360, 1280), max size(5400, 3600, 1280), density=320, spatialApp=true, entityId=2387628154421343, contentId=2387628154421342, wcStyle=1, rotatable=false, isSighted=true, isStaged=true, resizeType=1, scaleType=1, placementOffset=112, callerContainerId=0, callerPkg=null, createTime=445708, lastActiveTime=445721, baseIntent=Intent { cmp=com.example.picofixture.iteration.debug/com.example.picofixture.iteration.platform.LaunchActivity }, launchedFromPid=4292, launchedFromUid=2000, lastActionPid=4292}
+10-23 22:03:04.515  4296  4296 E SpatialPack: [main] There is no change of SpatialContainerInfo!
+10-23 22:03:04.516  4296  4296 I Java.AppFormBridge: SpatialContainerStateListener onCreate id:3 name:YourPlanarWindowContainer type:1 size:2160,1280,1280
+10-23 22:03:04.516  4296  4296 W Container: space state changed, from [-1] to [0]
+10-23 22:03:04.516  4296  4296 W ActivityThread: notifyAppLaunchStatus com.example.picofixture.iteration.debug com.example.picofixture.iteration.platform.LaunchActivity
+10-23 22:03:04.518  4296  4346 I DisplayManager: Choreographer implicitly registered for the refresh rate.
+10-23 22:03:04.519  4296  4346 I HWUI    : hwui-debug, RenderThread::threadLoop!!!
+10-23 22:03:04.519  4296  4346 I PXR-HWUI: [###][###:36]: smm name: com.example.picofixture.iteration.debug, init size: 134217728.
+10-23 22:03:04.519  4296  4346 I iteration.debug: Allocator::initialize: mAddress: 0x6e15000000, mSize: 134217728
+10-23 22:03:04.519  4296  4349 W PXR-HWUI: [###][###:167]: #hwui-debug# sf fn missing.
+10-23 22:03:04.519  4296  4349 I PXR-HWUI: [###][###:127]: #hwui-debug# in initialized
+10-23 22:03:04.519  4296  4349 I PXR-HWUI: [###][###:50]: ss init success
+10-23 22:03:04.519  4296  4346 I PXR-HWUI: [###][###:36]: smm name: com.example.picofixture.iteration.debug, init size: 134217728.
+10-23 22:03:04.519  4296  4346 I iteration.debug: Allocator::initialize: mAddress: 0x6e0d000000, mSize: 134217728
+10-23 22:03:04.520  4296  4296 I iteration.debug: AssetManager2(0xb40000716a81be18) locale list changing from [] to [en-US]
+10-23 22:03:04.523  4296  4346 W libc    : Access denied finding property "vendor.mesa.log"
+10-23 22:03:04.523  4296  4346 W libc    : Access denied finding property "vendor.mesa.log.file"
+10-23 22:03:04.523  4296  4346 E MESA    : Failed to open rendernode: No such file or directory
+10-23 22:03:04.528  4296  4346 W libc    : Access denied finding property "vendor.mesa.vk.trace.per.submit"
+10-23 22:03:04.528  4296  4346 W libc    : Access denied finding property "vendor.mesa.gallium.print.optio"
+10-23 22:03:04.528  4296  4346 W libc    : Access denied finding property "vendor.mesa.vk.trace.frame"
+10-23 22:03:04.529  4296  4346 I MESA    : host OS is mac.
+10-23 22:03:04.530  4296  4346 W libc    : Access denied finding property "vendor.mesa.vk.wsi.headless.swa"
+10-23 22:03:04.536  4296  4296 E SYS_DEFAULT_LOG: class android.app.ISysMonitorFwFactory$12|IRecoverActions|setCurActivity|SYS_DEFAULT_FUN_CONTENT
+10-23 22:03:04.540  4296  4296 W Activity: onCreate com.example.picofixture.iteration.platform.LaunchActivity@22cf09b
+10-23 22:03:04.540  4296  4296 E SYS_DEFAULT_LOG: class android.app.ISysMonitorFwFactory$12|IRecoverActions|setCurActivity|SYS_DEFAULT_FUN_CONTENT
+10-23 22:03:04.542  4296  4296 I Container: getContainerByContext containerId: 3
+10-23 22:03:04.544  4296  4296 I iteration.debug: hiddenapi: Accessing hidden field Landroid/os/PicoOSBuild;->IS_SPACE_OS:Z (runtime_flags=0, domain=platform, api=blocked) from /data/app/~~YTzaypzJ_A9sQ-fjWJNErg==/com.example.picofixture.iteration.debug-MUkTejudmWZ8I2PnFIQHwA==/base.apk!classes6.dex (domain=app) using linking: allowed
+10-23 22:03:04.556  4296  4296 I SpatialPack_SpatialContainer: [main] WindowContainer-YourPlanarWindowContainer onContainerForeground: com.spatial.app.BaseWindowContainer@e1a4966
+10-23 22:03:04.556  4296  4296 I LifeCycle: dispatch container foreground, info: Info{id=3, pkg=com.example.picofixture.iteration.debug, name=YourPlanarWindowContainer, visible=true, focus=false, type=window_group, cat=none, life=foreground, size(2160, 1280, 1280), min size(640, 360, 1280), max size(5400, 3600, 1280), density=320, spatialApp=true, entityId=2387628154421343, contentId=2387628154421342, wcStyle=1, rotatable=false, isSighted=true, isStaged=true, resizeType=1, scaleType=1, placementOffset=112, callerContainerId=0, callerPkg=null, createTime=445708, lastActiveTime=445721, baseIntent=Intent { cmp=com.example.picofixture.iteration.debug/com.example.picofixture.iteration.platform.LaunchActivity }, launchedFromPid=4292, launchedFromUid=2000, lastActionPid=4292}
+10-23 22:03:04.556  4296  4296 E SpatialPack: [main] There is no change of SpatialContainerInfo!
+10-23 22:03:04.556  4296  4296 I SpatialContainerImpl: Container(3) state changed to foreground
+10-23 22:03:04.556  4296  4296 W Activity: onResume com.example.picofixture.iteration.platform.LaunchActivity@22cf09b
+10-23 22:03:04.556  4296  4296 E SYS_DEFAULT_LOG: class android.app.ISysMonitorFwFactory$12|IRecoverActions|setCurActivity|SYS_DEFAULT_FUN_CONTENT
+10-23 22:03:04.562  4296  4296 W HWUI    : Unknown dataspace 0
+10-23 22:03:04.563  4296  4346 I iteration.debug: Allocator::initialize: mAddress: 0x6e05600000, mSize: 67108864
+10-23 22:03:04.575  4296  4352 E HostConnection: process name: 4352:com.example.picofixture.iteration.debug
+10-23 22:03:04.578  4296  4296 I InputTransport: TouchBoost: 1
+10-23 22:03:04.579  4296  4346 I PXR-HWUI: [###][###:262]: set wg = 1, st = -1, this = 0xb4000071ba810b08.
+10-23 22:03:04.580  4296  4296 I ViewRootImpl: updateMaterialBackground materialBackgroundType: 1
+10-23 22:03:04.581  4296  4296 I LifeCycle: handleContainerStateChanged id=3, pkg=com.example.picofixture.iteration.debug, name=YourPlanarWindowContainer, v=true, f=false, t=window_group, c=none, life=foreground, size(2160, 1280, 1280), spatialApp=true, entityId=2387628154421343, contentId=2387628154421342, caller (0, pkg=null), local: id=3, pkg=com.example.picofixture.iteration.debug, name=YourPlanarWindowContainer, v=true, f=false, t=window_group, c=none, life=foreground, size(2160, 1280, 1280), spatialApp=true, entityId=2387628154421343, contentId=2387628154421342, caller (0, pkg=null)
+10-23 22:03:05.057  4296  4303 I iteration.debug: Compiler allocated 5450KB to compile void android.view.ViewRootImpl.performTraversals()
+10-23 22:03:05.096  4296  4296 I iteration.debug: hiddenapi: Accessing hidden method Landroid/os/SystemProperties;->addChangeCallback(Ljava/lang/Runnable;)V (runtime_flags=0, domain=platform, api=unsupported) from Landroidx/compose/ui/platform/AndroidComposeView$Companion; (domain=app) using reflection: allowed
+10-23 22:03:05.130  4296  4296 I iteration.debug: #hwui-debug# MakeFromFileNameforAshm path: /system/fonts/PICOSans.ttf.
+10-23 22:03:05.140  4296  4296 W libc    : Access denied finding property "vendor.display.enable_optimal_refresh_rate"
+10-23 22:03:05.140  4296  4296 W libc    : Access denied finding property "vendor.display.enable_optimal_refresh_rate"
+10-23 22:03:05.141  4296  4346 E SPC-debu39-MetricsManager: onSessionPostCreated, mode:0
+10-23 22:03:05.141  4296  4346 E SPC-debu39-SpatialContext: registerSession sess:12970367413676819840 ret:2
+10-23 22:03:05.141  4296  4346 E SPC-debu39-MetricsManager: onSessionPreInit:com.example.picofixture.iteration.debug
+10-23 22:03:05.141  4296  4346 W SPC-debu39-SpatialSession: setExposedComponentTypes, exposedTypesCount = 118
+10-23 22:03:05.141  4296  4346 I PXR-HWUI: [###][###:164]: #hwui-debug# sr=[6,1,0,a2fa365520,'',2026_08_26_15]
+10-23 22:03:05.141  4296  4346 E SPC-debu39-MetricsManager: onSessionReady
+10-23 22:03:05.141  4296  4346 E SPC-debu39-SpatialSession: beginSession:com.example.picofixture.iteration.debug-instance
+10-23 22:03:05.141  4296  4346 E SPC-debu39-SpatialSession: onSessionBegin: com.example.picofixture.iteration.debug-instance
+10-23 22:03:05.141  4296  4346 I iteration.debug: reportCriticalThreads pid 4296 type 3 event 1 updateType 1 tids 4346
+10-23 22:03:05.141  4296  4328 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:05.141  4296  4346 E SPC-debu39-PerfProfiler: perfL: PerfProfiler::OnSessionBegin 1
+10-23 22:03:05.141  4296  4328 W SPC-debu39-NotificationService: configuration_changed_callback with configName=spruntime.input has already exist in callback map
+10-23 22:03:05.141  4296  4346 E SPC-debu39-MetricsManager: onSessionPostBegin
+10-23 22:03:05.141  4296  4346 I PXR-HWUI: [###][###:172]: #hwui-debug# start, ret = 0
+10-23 22:03:05.141  4296  4346 I PXR-HWUI: [###][###:36]: smm name: com.example.picofixture.iteration.debug, init size: 16777216.
+10-23 22:03:05.142  4296  4346 I iteration.debug: Allocator::initialize: mAddress: 0x6e00c00000, mSize: 16777216
+10-23 22:03:05.146  4296  4328 E PXR-HWUI: [###][###:62]: find configname: spruntime.input value is null, please check it!
+10-23 22:03:05.147  4296  4346 I PXR-HWUI: [###][###:909]: register nqr : 18898057965862924
+10-23 22:03:05.147  4296  4346 I PXR-HWUI: [###][###:36]: smm name: com.example.picofixture.iteration.debug, init size: 16777216.
+10-23 22:03:05.147  4296  4346 I iteration.debug: Allocator::initialize: mAddress: 0x6dffc00000, mSize: 16777216
+10-23 22:03:05.147  4296  4346 I PXR-HWUI: [###][###:933]: SceneReady: NCR=18898057965862926 QR=18898057965862924 FD=126
+10-23 22:03:05.148  4296  4346 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:05.148  4296  4346 I PXR-HWUI: [###][###:616]: #hwui-debug# sc: 0xb40000714a80bad0, sn: com.example.picofixture.iteration.debug/com.example.picofixture.iteration.platform.LaunchActivity#90, fh: 0.
+10-23 22:03:05.148  4296  4346 I PXR-HWUI: [###][###:552]: #hwui-debug# size: com.example.picofixture.iteration.debug/com.example.picofixture.iteration.platform.LaunchActivity#90, w: 2160, h: 1280.
+10-23 22:03:05.148  4296  4346 I PXR-HWUI: [###][###:825]: #hwui-debug# sc: 0xb40000714a80bad0, sn: com.example.picofixture.iteration.debug/com.example.picofixture.iteration.platform.LaunchActivity#90.
+10-23 22:03:05.148  4296  4346 I PXR-HWUI: [###][###:771]: sn: com.example.picofixture.iteration.debug/com.example.picofixture.iteration.platform.LaunchActivity#90, weu: 18898057965862933.
+10-23 22:03:05.148  4296  4346 E iteration.debug: SurfaceComposerClient linkEntity entityId: 18898057965862933, linkConfigFlags: 1
+10-23 22:03:05.148  4296  4346 I PXR-HWUI: [###][###:783]: sn: com.example.picofixture.iteration.debug/com.example.picofixture.iteration.platform.LaunchActivity#90, ngeu: 18898057965862933 enableWideColorSpace[0].
+10-23 22:03:05.148  4296  4346 I PXR-HWUI: [###][###:616]: #hwui-debug# sc: 0xb40000714a80bad0, sn: com.example.picofixture.iteration.debug/com.example.picofixture.iteration.platform.LaunchActivity#90, fh: 0.
+10-23 22:03:05.148  4296  4346 I PXR-HWUI: [###][###:825]: #hwui-debug# sc: 0xb40000714a80bad0, sn: com.example.picofixture.iteration.debug/com.example.picofixture.iteration.platform.LaunchActivity#90.
+10-23 22:03:05.149  4296  4346 W PXR-HWUI: [###][###:759]: #hwui-debug# window already create.
+10-23 22:03:05.153  4296  4346 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:05.153  4296  4346 I PXR-HWUI: [###][###:309]: Resize com.example.picofixture.iteration.debug/com.example.picofixture.iteration.platform.LaunchActivity#90: w=2160 h=1280
+10-23 22:03:05.154  4296  4346 I PXR-HWUI: [###][###:518]: FirstFramePush WN=com.example.picofixture.iteration.debug/com.example.picofixture.iteration.platform.LaunchActivity#90 NC=9 FD=132 SZ=1277 FR=1
+10-23 22:03:05.154  4296  4346 W libc    : Access denied finding property "ro.debuggable"
+10-23 22:03:05.160  4296  4296 I LifeCycle: handleContainerStateChanged id=3, pkg=com.example.picofixture.iteration.debug, name=YourPlanarWindowContainer, v=true, f=true, t=window_group, c=none, life=foreground, size(2160, 1280, 1280), spatialApp=true, entityId=2387628154421343, contentId=2387628154421342, caller (0, pkg=null), local: id=3, pkg=com.example.picofixture.iteration.debug, name=YourPlanarWindowContainer, v=true, f=false, t=window_group, c=none, life=foreground, size(2160, 1280, 1280), spatialApp=true, entityId=2387628154421343, contentId=2387628154421342, caller (0, pkg=null)
+10-23 22:03:05.160  4296  4296 I LifeCycle: dispatch container info changed, 3, com.example.picofixture.iteration.debug, Changed info: , focus true
+10-23 22:03:05.160  4296  4296 I SpatialPack_SpatialContainer: [main] WindowContainer-YourPlanarWindowContainer onContainerFocusChanged: com.spatial.app.BaseWindowContainer@e1a4966 hasFocus: true
+10-23 22:03:06.057  4296  4296 I Choreographer: updateWindowContainerDivisor, containerId=3, divisor=1
+10-23 22:03:07.027  4296  4296 I InsetsController: hide(ime(), fromIme=false)
+10-23 22:03:07.027  4296  4296 I ImeTracker: com.example.picofixture.iteration.debug:a74f2442: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+10-23 22:03:07.027  4296  4296 I InputMethodManager: handleMessage: MSG_SET_ACTIVE true, was false
+10-23 22:03:07.060  4296  4336 I PXR-HWUI: [###][###:894]: FirstFrameRelease(Displayed) WN=com.example.picofixture.iteration.debug/com.example.picofixture.iteration.platform.LaunchActivity#90 NC=9 FD=132 SZ=1277 FR=1
+10-23 22:03:49.199  4296  4319 I iteration.debug: ProfileSaver: FullProfileSaver time 4.211ms new_methods=0
+10-23 22:04:49.802  4296  4319 I iteration.debug: ProfileSaver: LiteProfileSaver time 20.459us new_methods=0
+10-23 22:17:24.838  4296  4319 I iteration.debug: ProfileSaver: FullProfileSaver time 8.369ms new_methods=0
+10-23 22:17:25.036  4296  4346 I PXR-HWUI: [###][###:132]: #Uni-Render# processNodeMetrics: Activity: com.example.picofixture.iteration.debug/com.example.picofixture.iteration.platform.LaunchActivity#90, spatialNodeCount: 13, newNodeCount: 12, spatialNodeCount2: 9, newNodeCount2: 9, renderNodeCount2: 5, viewTreeCount: 0

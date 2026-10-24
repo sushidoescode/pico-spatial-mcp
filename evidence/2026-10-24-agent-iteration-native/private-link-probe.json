@@ -1,0 +1,11 @@
+{
+  "at": "2026-10-24T05:10:07.182Z",
+  "target": "files/agentbridge-diagnostics-ce15b3a6-7ebd-4a17-b426-37c1fb2fcb4a/probe.txt",
+  "command": "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'set -x; umask 077; mkdir \"$(dirname \"$1\")\" || exit 70; set -C; printf %s \"$2\" | base64 -d > \"$1.tmp\" || exit 75; ln \"$1.tmp\" \"$1\" || exit 76; printf published' 'pico-diagnose' 'files/agentbridge-diagnostics-ce15b3a6-7ebd-4a17-b426-37c1fb2fcb4a/probe.txt' 'e30='",
+  "code": 0,
+  "stdout": "+ umask 077\n+ dirname files/agentbridge-diagnostics-ce15b3a6-7ebd-4a17-b426-37c1fb2fcb4a/probe.txt\n+ mkdir files/agentbridge-diagnostics-ce15b3a6-7ebd-4a17-b426-37c1fb2fcb4a\n+ set -C\n+ printf %s 'e30='\n+ >files/agentbridge-diagnostics-ce15b3a6-7ebd-4a17-b426-37c1fb2fcb4a/probe.txt.tmp \n+ base64 -d\n+ ln files/agentbridge-diagnostics-ce15b3a6-7ebd-4a17-b426-37c1fb2fcb4a/probe.txt.tmp files/agentbridge-diagnostics-ce15b3a6-7ebd-4a17-b426-37c1fb2fcb4a/probe.txt\nln: cannot create hard link from 'files/agentbridge-diagnostics-ce15b3a6-7ebd-4a17-b426-37c1fb2fcb4a/probe.txt.tmp' to 'files/agentbridge-diagnostics-ce15b3a6-7ebd-4a17-b426-37c1fb2fcb4a/probe.txt': Permission denied\n+ exit 76\n",
+  "stderr": "",
+  "timedOut": false,
+  "stdoutBase64": "KyB1bWFzayAwNzcKKyBkaXJuYW1lIGZpbGVzL2FnZW50YnJpZGdlLWRpYWdub3N0aWNzLWNlMTViM2E2LTdlYmQtNGExNy1iNDI2LTM3YzFmYjJmY2I0YS9wcm9iZS50eHQKKyBta2RpciBmaWxlcy9hZ2VudGJyaWRnZS1kaWFnbm9zdGljcy1jZTE1YjNhNi03ZWJkLTRhMTctYjQyNi0zN2MxZmIyZmNiNGEKKyBzZXQgLUMKKyBwcmludGYgJXMgJ2UzMD0nCisgPmZpbGVzL2FnZW50YnJpZGdlLWRpYWdub3N0aWNzLWNlMTViM2E2LTdlYmQtNGExNy1iNDI2LTM3YzFmYjJmY2I0YS9wcm9iZS50eHQudG1wIAorIGJhc2U2NCAtZAorIGxuIGZpbGVzL2FnZW50YnJpZGdlLWRpYWdub3N0aWNzLWNlMTViM2E2LTdlYmQtNGExNy1iNDI2LTM3YzFmYjJmY2I0YS9wcm9iZS50eHQudG1wIGZpbGVzL2FnZW50YnJpZGdlLWRpYWdub3N0aWNzLWNlMTViM2E2LTdlYmQtNGExNy1iNDI2LTM3YzFmYjJmY2I0YS9wcm9iZS50eHQKbG46IGNhbm5vdCBjcmVhdGUgaGFyZCBsaW5rIGZyb20gJ2ZpbGVzL2FnZW50YnJpZGdlLWRpYWdub3N0aWNzLWNlMTViM2E2LTdlYmQtNGExNy1iNDI2LTM3YzFmYjJmY2I0YS9wcm9iZS50eHQudG1wJyB0byAnZmlsZXMvYWdlbnRicmlkZ2UtZGlhZ25vc3RpY3MtY2UxNWIzYTYtN2ViZC00YTE3LWI0MjYtMzdjMWZiMmZjYjRhL3Byb2JlLnR4dCc6IFBlcm1pc3Npb24gZGVuaWVkCisgZXhpdCA3Ngo=",
+  "purpose": "Private disposable file primitives; no action inbox and no action payload. Retain diagnostic files."
+}

@@ -1,0 +1,24 @@
+{
+  "at": "2026-10-24T05:33:55.107989+00:00",
+  "checks": "Parsed both JSON profiles and TOML; each disables CLI and retains MCP fixture-ADB sentinel",
+  "profiles": [
+    {
+      "path": "examples/agent-iteration-fixture/host-configs/claude.json",
+      "bytes": 338,
+      "sha256": "e338fd9280d16d796c2494a68dd54bf567d94a8f912a30f94b22015299085b97"
+    },
+    {
+      "path": "examples/agent-iteration-fixture/host-configs/codex.toml",
+      "bytes": 506,
+      "sha256": "da043600c8bc4e40f2d56d181d44f36b2d3053f006dcef55c93e20776edf19b4"
+    },
+    {
+      "path": "examples/agent-iteration-fixture/host-configs/gemini-settings.json",
+      "bytes": 444,
+      "sha256": "b464d853051be0487c96e5afc36ce2d333f4949af0fb385750ac9fe0376b1cab"
+    }
+  ],
+  "actualHostDiscovery": false,
+  "modelCalls": false,
+  "trustOrImageDisplayTested": false
+}

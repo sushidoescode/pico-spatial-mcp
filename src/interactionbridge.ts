@@ -156,11 +156,33 @@ export function createInteractionBridgeBackend(options: InteractionBridgeBackend
       const payload = Buffer.from(JSON.stringify(request)).toString("base64");
       if (payload.length > 16_384) throw new Error("request exceeds bounded bridge payload");
       attempted.add(request.requestId);
-      // Hard-link publication is atomic and refuses an existing command. Temp is private and unique.
-      const script = `${parentsGuard(relativePath)} && test ! -L "$1.tmp" || exit 73; test -d "$(dirname "$1")" || exit 74; set -C; umask 077; printf '%s' "$2" | base64 -d > "$1.tmp" || exit 75; ln "$1.tmp" "$1" || { rm -f "$1.tmp"; exit 76; }; rm -f "$1.tmp"; printf published`;
+      // Android run-as may refuse hard links. mkdir is the exclusive, persistent request claim;
+      // its staging file is never visible to the app's *.json inbox scan until atomic rename.
+      // Never remove the claim, including after errors or interruption: reconstruction cannot retry.
+      const stagedPath = `${relativePath}.claim/request.tmp`;
+      const script = [
+        `${parentsGuard(stagedPath)} && test ! -L "$1" && test ! -L "$1.tmp" || exit 73`,
+        'test -d "$(dirname "$1")" || exit 74',
+        'test ! -e "$1" && test ! -e "$1.tmp" || exit 76',
+        'umask 077',
+        'mkdir "$1.claim" || exit 76',
+        'test ! -L "$1.claim" || exit 73',
+        'set -C',
+        `printf '%s' "$2" | base64 -d > "$1.claim/request.tmp" || exit 75`,
+        `${parentsGuard(stagedPath)} && test ! -L "$1" || exit 73`,
+        'test ! -e "$1" || exit 76',
+        'mv -n -T "$1.claim/request.tmp" "$1" || exit 77',
+        'test ! -e "$1.claim/request.tmp" && test -f "$1" && test ! -L "$1" || exit 78',
+        'printf published',
+      ].join('; ');
       const result = await invoke(script, [relativePath, payload], timeoutMs);
       if (result.code !== 0 || result.timedOut || result.stdout.toString("utf8") !== "published") {
-        throw new Error(`in_doubt: bridge publication ${result.timedOut ? "timed out" : `failed (${result.code})`}; do not resend request ${request.requestId}`);
+        // exec-out can return adb exit zero while remote stderr is merged into stdout. Preserve
+        // bounded raw diagnostics without treating process exit zero as publication evidence.
+        const transport = { code: result.code, timedOut: result.timedOut,
+          stdoutBytes: result.stdout.length, stdoutBase64: result.stdout.subarray(0, 1024).toString("base64"),
+          stderr: result.stderr.slice(0, 256), truncated: result.stdout.length > 1024 || result.stderr.length > 256 };
+        throw new Error(`in_doubt: bridge publication ${result.timedOut ? "timed out" : `failed (${result.code})`}; do not resend request ${request.requestId}; transport=${JSON.stringify(transport)}`);
       }
     },
     async readAck(raw, timeoutMs) {

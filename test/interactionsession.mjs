@@ -24,6 +24,47 @@ test('scenario initial mismatch, invalid bound, or unapproved reset refuses with
     assert.equal(r.status,'refused');assert.equal(f.counts().sends,0);
   }
 });
+test('explicit capture settling consumes the same deadline and never claims rendered correctness',async()=>{
+  const f=await interactionFixture(),start=f.now();
+  const r=await session.runScenario({...scenario,limits:{...scenario.limits,actionTimeoutMs:5000,captureSettleMs:2000}},f.target,f.dependencies);
+  assert.equal(r.status,'completed');assert.equal(r.actions[0].captureSettleMs,2000);
+  assert.equal(r.actions[0].captureSettleMeasuredMs,2000);
+  assert.ok(Date.parse(r.actions[0].captureRequestedAt)>=start+2000);
+  assert.ok(f.now()-start>=2000);assert.equal(f.counts().sends,1);assert.equal(f.counts().captures,1);
+  assert.equal(r.lookPending,true);assert.equal(r.evidenceCeiling,'structural');
+});
+test('settle bounds refuse before send; cancellation or deadline during settle sends once and never captures',async()=>{
+  for(const captureSettleMs of [-1,3001,1.5,1000]){
+    const f=await interactionFixture();const r=await session.runScenario({...scenario,limits:{...scenario.limits,captureSettleMs}},f.target,f.dependencies);
+    assert.ok(['refused','failed'].includes(r.status));assert.equal(f.counts().sends,0);
+  }
+  for(const cancelled of [false,true]){
+    const f=await interactionFixture(),controller=new AbortController(),sleep=f.dependencies.sleep;
+    f.dependencies.signal=controller.signal;
+    f.dependencies.sleep=async ms=>{await sleep(ms);if(cancelled)controller.abort();else await sleep(100);};
+    const r=await session.runScenario({...scenario,limits:{...scenario.limits,actionTimeoutMs:250,captureSettleMs:200}},f.target,f.dependencies);
+    assert.equal(r.status,'in_doubt');assert.equal(f.counts().sends,1);assert.equal(f.counts().captures,0);
+    assert.equal(f.dependencies.fence.state,'in_doubt');assert.ok(r.actions[0].acknowledgement);
+  }
+});
+test('settling rejects target/state drift and a frame acquired before the post-wait request',async()=>{
+  for(const mode of ['target','state','old-frame']){
+    const f=await interactionFixture(),sleep=f.dependencies.sleep,capture=f.dependencies.capture,start=f.now();
+    f.dependencies.sleep=async ms=>{await sleep(ms);if(mode==='target')f.identity.pid++;if(mode==='state'){f.state.revision++;f.state.state.counter++;}};
+    if(mode==='old-frame')f.dependencies.capture=async(...args)=>({...await capture(...args),capturedAt:new Date(start+1).toISOString()});
+    const r=await session.runScenario({...scenario,limits:{...scenario.limits,captureSettleMs:200}},f.target,f.dependencies);
+    assert.equal(f.counts().sends,1);
+    if(mode==='old-frame'){assert.equal(r.status,'failed');assert.equal(r.actions[0].status,'completed');assert.equal(r.actions[0].evidence.status,'failed');}
+    else {assert.equal(r.status,'in_doubt');assert.equal(f.counts().captures,0);}
+  }
+});
+test('slow preflight refuses before send when the requested settle interval no longer fits',async()=>{
+  const f=await interactionFixture(),observe=f.dependencies.bridge.observe;
+  f.dependencies.bridge.observe=async()=>{await f.dependencies.sleep(600);return observe();};
+  const r=await session.runScenario({...scenario,limits:{...scenario.limits,captureSettleMs:500}},f.target,f.dependencies);
+  assert.equal(r.status,'failed');assert.match(r.reason,/settle cannot fit/);
+  assert.equal(f.counts().sends,0);assert.equal(f.counts().captures,0);assert.equal(f.dependencies.fence.state,'idle');
+});
 test('uncertain action stops scenario before the second action and never retries',async()=>{
   const f=await interactionFixture({lostAck:true});
   const r=await session.runScenario({...scenario,steps:[...scenario.steps,...scenario.steps]},f.target,f.dependencies);

@@ -13,7 +13,8 @@ export const scenarioSchema = z.object({
   initial:expectedState,
   steps:z.array(z.object({actionId:z.literal("panel.show"),args:z.object({panelId:z.literal("fixture.panel")}).strict(),expect:expectedState}).strict()).min(1).max(20),
   limits:z.object({maxSteps:z.number().int().min(1).max(20).default(20),timeoutMs:z.number().int().min(1).max(90_000).default(90_000),
-    actionTimeoutMs:z.number().int().min(1).max(60_000).default(10_000)}).strict().default({}),
+    actionTimeoutMs:z.number().int().min(1).max(60_000).default(10_000),
+    captureSettleMs:z.number().int().min(0).max(3000).default(0)}).strict().default({}),
 }).strict();
 export type ScenarioV1=z.infer<typeof scenarioSchema>;
 
@@ -53,7 +54,7 @@ export async function runScenario(raw:unknown,target:InteractionTargetV1,deps:In
       check();
       const action=await dispatchInteraction(target,{schemaVersion:1,requestId:crypto.randomUUID(),packageName:target.packageName,
         expectedGeneration:target.appGeneration,expectedRevision:state.revision,actionId:step.actionId,args:step.args,
-        deadlineEpochMs:Math.min(deadline,deps.now()+scenario.limits.actionTimeoutMs)},deps);
+        deadlineEpochMs:Math.min(deadline,deps.now()+scenario.limits.actionTimeoutMs)},deps,{captureSettleMs:scenario.limits.captureSettleMs});
       result.actions.push(action);
       if(action.status!=="completed") {
         result.status=action.status==="in_doubt"?"in_doubt":"failed";result.reason=action.reason;break;

@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import {runBinary} from '../../dist/util.js';
+const ev=path.dirname(fileURLToPath(import.meta.url));
+const adb='/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb';
+const quote=s=>"'"+s.replaceAll("'", "'\\''")+"'";
+const target='files/agentbridge-diagnostics-'+crypto.randomUUID()+'/probe.txt';
+const script='set -x; umask 077; mkdir "$(dirname "$1")" || exit 70; set -C; printf %s "$2" | base64 -d > "$1.tmp" || exit 75; ln "$1.tmp" "$1" || exit 76; printf published';
+const command=['run-as','com.example.picofixture.iteration.debug','sh','-c',script,'pico-diagnose',target,'e30='].map(quote).join(' ');
+const result=await runBinary(adb,['-s','emulator-5554','exec-out',command],{timeoutMs:5000,maxOutputBytes:65537});
+const record={at:new Date().toISOString(),target,command,...result,stdoutBase64:result.stdout.toString('base64'),stdout:result.stdout.toString('utf8'),purpose:'Private disposable file primitives; no action inbox and no action payload. Retain diagnostic files.'};
+fs.writeFileSync(path.join(ev,'private-link-probe.json'),JSON.stringify(record,null,2)+'\n',{flag:'wx'});
+console.log(JSON.stringify(record));

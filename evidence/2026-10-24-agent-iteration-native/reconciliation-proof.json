@@ -1,0 +1,438 @@
+{
+  "schemaVersion": 1,
+  "kind": "one-off-root-reconciliation",
+  "at": "2026-10-24T05:14:25.196Z",
+  "authority": {
+    "schemaVersion": 1,
+    "recordedAt": "2026-10-24 04:58:34 UTC",
+    "owner": "/root in this conversation",
+    "userConfirmation": "I can confirm the emulator is not being used by anything other than you. Go ahead and do what you need to do.",
+    "interpretation": "User confirms sole use and authorizes the previously requested existing-PICO_6.1 emulator and dedicated fixture native validation; recorded root acquisition.",
+    "scope": [
+      "explicit emulator identity",
+      "install/launch/relaunch com.example.picofixture.iteration.debug",
+      "acknowledged semantic action and independent readback",
+      "capture and rendered-frame LOOK",
+      "source-bound rebuild/reconnect/replay",
+      "routine source fixes/tests and local reviewed commits"
+    ],
+    "serialObserved": "emulator-5554",
+    "alreadyRunning": true,
+    "bootRequested": false,
+    "preservedRestrictions": [
+      "no physical device fallback",
+      "no SDK/setup/global configuration changes",
+      "no wipe/uninstall/data clear",
+      "no other app/native program-track work",
+      "no unrelated process termination",
+      "no merge/push/version release/installed host activation"
+    ],
+    "state": "acquired; bind current boot before mutation"
+  },
+  "attemptPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/e682ba58-24c2-4725-9cd4-3947779caa58/attempts/89fb3a53-4a09-4adb-89ac-35727280124c/result.json",
+  "attemptSha256": "28789cecbb050e3cdb31bcfd2a0e07ba6dbd79d899bc7d9f38e831acf222ebc4",
+  "ownerPath": "/Users/sushantsrikrish/.pico-mcp/interaction-fences/04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017.owner.json",
+  "ownerSha256": "e75244f15ea851918e2a9182304a5218b39f93f2b7a8dc029de06302c18118f4",
+  "ownerPin": {
+    "dev": 16777232,
+    "ino": 149681660,
+    "mode": 33152,
+    "size": 236,
+    "birthtimeMs": 1792818339612.4666,
+    "mtimeMs": 1792818339612.6636
+  },
+  "historyPath": "/Users/sushantsrikrish/.pico-mcp/interaction-fences/history/04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017-ca7b0327-cc11-46a9-9ba0-a46b4eb1f642.jsonl",
+  "historySha256": "afef0cc52fcc015f6671a7627146aee29312a7c3f5bd52b0f6f51489a2c47de7",
+  "historyPin": {
+    "dev": 16777232,
+    "ino": 149681661,
+    "mode": 33152,
+    "size": 2373,
+    "birthtimeMs": 1792818339612.8804,
+    "mtimeMs": 1792818341723.696
+  },
+  "owner": {
+    "createdAt": "2026-10-24T05:05:39.610Z",
+    "enforcementScope": "interaction-session-only",
+    "pid": 29883,
+    "processIdentity": "node:29883:1792818339302.97",
+    "schemaVersion": 1,
+    "serial": "emulator-5554",
+    "token": "ca7b0327-cc11-46a9-9ba0-a46b4eb1f642"
+  },
+  "archivePath": "/Users/sushantsrikrish/.pico-mcp/interaction-fences/history/04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017-ca7b0327-cc11-46a9-9ba0-a46b4eb1f642.reconciled-owner.json",
+  "retiredNonce": "04f69643-b23e-4f95-b3f4-87d26b002287",
+  "resendCount": 0,
+  "checked": [
+    {
+      "binding": {
+        "serial": "emulator-5554",
+        "packageName": "com.example.picofixture.iteration.debug",
+        "model": "swan_arm64",
+        "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+        "bootQemu": "1",
+        "bootId": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+        "apkSha256": "24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04",
+        "pid": 4296,
+        "pidStartTicks": "44574",
+        "appGeneration": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+        "schemaVersion": 1,
+        "bindingSha256": "c69a64e0562bec8ca6e9c0433655179963792fe48143393f88d757bb31860a66",
+        "observedAt": "2026-10-24T05:14:24.544Z",
+        "enforcementScope": "interaction-session-only"
+      },
+      "state": {
+        "schemaVersion": 1,
+        "kind": "pico.agent-bridge.semantic-state",
+        "packageName": "com.example.picofixture.iteration.debug",
+        "generation": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+        "revision": 0,
+        "observedAtEpochMs": 1792818864111,
+        "pid": 4296,
+        "pidStartTicks": "44574",
+        "state": {
+          "panel": {
+            "id": "fixture.panel",
+            "visible": false
+          },
+          "counter": 0
+        },
+        "actions": [
+          "panel.show"
+        ]
+      },
+      "ack": null,
+      "requestAndTemporary": "absent"
+    },
+    {
+      "binding": {
+        "serial": "emulator-5554",
+        "packageName": "com.example.picofixture.iteration.debug",
+        "model": "swan_arm64",
+        "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+        "bootQemu": "1",
+        "bootId": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+        "apkSha256": "24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04",
+        "pid": 4296,
+        "pidStartTicks": "44574",
+        "appGeneration": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+        "schemaVersion": 1,
+        "bindingSha256": "c69a64e0562bec8ca6e9c0433655179963792fe48143393f88d757bb31860a66",
+        "observedAt": "2026-10-24T05:14:25.040Z",
+        "enforcementScope": "interaction-session-only"
+      },
+      "state": {
+        "schemaVersion": 1,
+        "kind": "pico.agent-bridge.semantic-state",
+        "packageName": "com.example.picofixture.iteration.debug",
+        "generation": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+        "revision": 0,
+        "observedAtEpochMs": 1792818864622,
+        "pid": 4296,
+        "pidStartTicks": "44574",
+        "state": {
+          "panel": {
+            "id": "fixture.panel",
+            "visible": false
+          },
+          "counter": 0
+        },
+        "actions": [
+          "panel.show"
+        ]
+      },
+      "ack": null,
+      "requestAndTemporary": "absent"
+    }
+  ],
+  "calls": [
+    {
+      "argv": [
+        "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+        [
+          "-s",
+          "emulator-5554",
+          "shell",
+          "ps",
+          "-A",
+          "-o",
+          "PID,PPID,ARGS",
+          "-w"
+        ]
+      ],
+      "code": 0,
+      "stdout": "  PID  PPID ARGS                       \n    1     0 init second_stage\n    2     0 [kthreadd]\n    3     2 [pool_workqueue_release]\n    4     2 [kworker/R-kvfree_rcu_reclaim]\n    5     2 [kworker/R-rcu_gp]\n    6     2 [kworker/R-sync_wq]\n    7     2 [kworker/R-slub_flushwq]\n    8     2 [kworker/R-netns]\n   12     2 [kworker/u24:0-writeback]\n   13     2 [kworker/u24:1-ext4-rsv-conversion]\n   14     2 [kworker/R-mm_percpu_wq]\n   15     2 [rcu_tasks_kthread]\n   16     2 [rcu_tasks_trace_kthread]\n   17     2 [ksoftirqd/0]\n   18     2 [rcu_preempt]\n   19     2 [rcuog/0]\n   20     2 [rcuop/0]\n   21     2 [rcub/0]\n   22     2 [rcu_exp_par_gp_kthread_worker/0]\n   23     2 [rcu_exp_gp_kthread_worker]\n   24     2 [migration/0]\n   25     2 [idle_inject/0]\n   26     2 [cpuhp/0]\n   27     2 [cpuhp/1]\n   28     2 [idle_inject/1]\n   29     2 [migration/1]\n   30     2 [ksoftirqd/1]\n   32     2 [kworker/1:0H-events_highpri]\n   33     2 [rcuop/1]\n   34     2 [cpuhp/2]\n   35     2 [idle_inject/2]\n   36     2 [migration/2]\n   37     2 [ksoftirqd/2]\n   38     2 [kworker/2:0-mm_percpu_wq]\n   39     2 [kworker/2:0H-kblockd]\n   40     2 [rcuop/2]\n   41     2 [cpuhp/3]\n   42     2 [idle_inject/3]\n   43     2 [migration/3]\n   44     2 [ksoftirqd/3]\n   46     2 [kworker/3:0H-kblockd]\n   47     2 [rcuog/3]\n   48     2 [rcuop/3]\n   49     2 [cpuhp/4]\n   50     2 [idle_inject/4]\n   51     2 [migration/4]\n   52     2 [ksoftirqd/4]\n   55     2 [rcuop/4]\n   56     2 [cpuhp/5]\n   57     2 [idle_inject/5]\n   58     2 [migration/5]\n   59     2 [ksoftirqd/5]\n   60     2 [kworker/5:0-cgroup_bpf_destroy]\n   61     2 [kworker/5:0H-events_highpri]\n   62     2 [rcuop/5]\n   63     2 [kworker/R-inet_frag_wq]\n   64     2 [kauditd]\n   65     2 [khungtaskd]\n   66     2 [oom_reaper]\n   67     2 [kworker/R-writeback]\n   68     2 [kcompactd0]\n   69     2 [khugepaged]\n   70     2 [kworker/R-kblockd]\n   71     2 [kworker/R-edac-poller]\n   72     2 [kworker/R-devfreq_wq]\n   73     2 [watchdogd]\n   75     2 [kworker/R-quota_events_unbound]\n   77     2 [kworker/3:1-mm_percpu_wq]\n   78     2 [kswapd0]\n   79     2 [kworker/u25:0-fscrypt_read_queue]\n   80     2 [kworker/R-nvme-wq]\n   81     2 [kworker/R-nvme-reset-wq]\n   82     2 [kworker/R-nvme-delete-wq]\n   83     2 [kworker/R-vfio-irqfd-cleanup]\n   84     2 [kworker/R-uas]\n   85     2 [kworker/R-dm_bufio_cache]\n   86     2 [kworker/R-mld]\n   87     2 [kworker/R-ipv6_addrconf]\n   88     2 [kworker/R-kstrp]\n   90     2 [kworker/0:2-virtio_vsock]\n   93     2 [kworker/2:1-cgroup_bpf_destroy]\n   96     2 [hwrng]\n   98     2 [kworker/5:1H-kblockd]\n  102     2 [jbd2/vdd1-8]\n  103     2 [kworker/R-ext4-rsv-conversion]\n  104     2 [kworker/R-kdmflush/254:0]\n  105     2 [kworker/R-kdmflush/254:1]\n  106     2 [kworker/R-kdmflush/254:2]\n  107     2 [kworker/R-kdmflush/254:3]\n  108     2 [kworker/R-kdmflush/254:4]\n  109     2 [kworker/R-ext4-rsv-conversion]\n  110     2 [kworker/R-ext4-rsv-conversion]\n  111     2 [kworker/R-ext4-rsv-conversion]\n  112     2 [erofs_worker/0]\n  113     2 [erofs_worker/1]\n  114     2 [erofs_worker/2]\n  115     2 [erofs_worker/3]\n  116     2 [erofs_worker/4]\n  117     2 [erofs_worker/5]\n  118     2 [kworker/R-ext4-rsv-conversion]\n  121     1 init subcontext u:r:vendor_init:s0 16\n  122     2 [kworker/4:1H-kblockd]\n  123     1 ueventd\n  132     2 [kworker/2:1H-kverityd]\n  180     2 [kworker/R-kdmflush/254:5]\n  181     2 [kworker/R-kdmflush/254:6]\n  182     2 [kworker/R-kdmflush/254:7]\n  183     2 [kworker/R-kdmflush/254:8]\n  185     2 [kworker/R-kdmflush/254:10]\n  186     2 [kworker/R-kdmflush/254:11]\n  187     2 [kworker/R-kdmflush/254:12]\n  188     2 [kworker/R-kdmflush/254:13]\n  190     2 [kworker/R-kdmflush/254:15]\n  191     2 [kworker/R-kdmflush/254:16]\n  192     2 [kworker/R-kdmflush/254:17]\n  193     2 [kworker/R-kdmflush/254:18]\n  195     2 [kworker/R-kdmflush/254:20]\n  196     2 [kworker/R-kdmflush/254:21]\n  198     2 [kworker/R-kdmflush/254:23]\n  200     2 [kworker/R-kdmflush/254:25]\n  202     2 [kworker/R-kdmflush/254:27]\n  207     2 [kworker/R-kdmflush/254:32]\n  209     2 [kworker/R-kdmflush/254:34]\n  213     2 [kworker/R-kdmflush/254:38]\n  216     2 [kworker/R-kdmflush/254:41]\n  219     2 [kworker/R-kdmflush/254:44]\n  220     2 [kworker/R-kdmflush/254:45]\n  231     2 [kworker/R-ext4-rsv-conversion]\n  232     2 [kworker/R-ext4-rsv-conversion]\n  233     2 [kworker/R-ext4-rsv-conversion]\n  234     2 [kworker/R-ext4-rsv-conversion]\n  235     2 [kworker/R-ext4-rsv-conversion]\n  239     1 prng_seeder\n  241     2 [kworker/R-cfg80211]\n  242     1 logd\n  243     1 lmkd\n  244     2 [sugov:0]\n  245     2 [sugov:1]\n  246     2 [sugov:2]\n  247     2 [sugov:3]\n  248     2 [sugov:4]\n  249     2 [sugov:5]\n  250     1 servicemanager\n  251     1 hwservicemanager\n  252     1 qemu-props\n  253     2 [irq/33-goldfish_pipe_dprctd]\n  260     1 event_trackerd\n  262     1 vold --blkid_context=u:r:blkid:s0 --blkid_untrusted_context=u:r:blkid_untrusted:s0 --fsck_context=u:r:fsck:s0 --fsck_untrusted_context=u:r:fsck_untrusted:s0\n  264     1 stabd\n  266     2 [psimon]\n  270     2 [kworker/R-kdmflush/254:51]\n  278     2 [kworker/R-usbip_event]\n  280     2 [kworker/1:2-cgroup_release]\n  282     1 android.system.suspend-service\n  283     1 keystore2 /data/misc/keystore\n  284     1 android.hardware.security.keymint-service\n  285     1 android.hardware.gatekeeper-service.nonsecure\n  286     2 [kworker/R-update_hdmi_ctrls_wq]\n  287     2 [kworker/R-update_svid_ctrls_wq]\n  299     2 [kworker/R-blk_crypto_wq]\n  303     2 [kworker/u25:4-fscrypt_read_queue]\n  308     2 [jbd2/dm-51-8]\n  309     2 [kworker/R-ext4-rsv-conversion]\n  313     1 tombstoned\n  367     2 [kworker/R-kverityd]\n  368     2 [kworker/R-ext4-rsv-conversion]\n  369     2 [kworker/R-kverityd]\n  370     2 [kworker/R-kverityd]\n  371     2 [kworker/R-ext4-rsv-conversion]\n  372     2 [kworker/R-ext4-rsv-conversion]\n  373     2 [kworker/R-ext4-rsv-conversion]\n  374     2 [kworker/R-kverityd]\n  375     2 [kworker/R-ext4-rsv-conversion]\n  376     2 [kworker/R-kverityd]\n  377     2 [kworker/R-ext4-rsv-conversion]\n  378     2 [kworker/R-ext4-rsv-conversion]\n  379     2 [kworker/R-ext4-rsv-conversion]\n  380     2 [kworker/R-kverityd]\n  381     2 [kworker/R-kverityd]\n  382     2 [kworker/R-kverityd]\n  383     2 [kworker/R-kverityd]\n  384     2 [kworker/R-kverityd]\n  385     2 [kworker/R-kverityd]\n  387     2 [kworker/R-ext4-rsv-conversion]\n  388     2 [kworker/R-ext4-rsv-conversion]\n  389     2 [kworker/R-ext4-rsv-conversion]\n  390     2 [kworker/R-ext4-rsv-conversion]\n  391     2 [kworker/R-ext4-rsv-conversion]\n  392     2 [kworker/R-ext4-rsv-conversion]\n  393     2 [kworker/R-ext4-rsv-conversion]\n  394     2 [kworker/R-ext4-rsv-conversion]\n  395     2 [kworker/R-ext4-rsv-conversion]\n  396     2 [kworker/R-ext4-rsv-conversion]\n  397     2 [kworker/R-ext4-rsv-conversion]\n  398     2 [kworker/R-kverityd]\n  399     2 [kworker/R-kverityd]\n  400     2 [kworker/R-ext4-rsv-conversion]\n  401     2 [kworker/R-kverityd]\n  402     2 [kworker/R-kverityd]\n  403     2 [kworker/R-ext4-rsv-conversion]\n  404     2 [kworker/R-kverityd]\n  405     2 [kworker/R-kverityd]\n  406     2 [kworker/R-ext4-rsv-conversion]\n  407     2 [kworker/u24:4-events_unbound]\n  408     2 [kworker/R-kverityd]\n  409     2 [kworker/R-kverityd]\n  410     2 [kworker/R-kverityd]\n  411     2 [kworker/R-kverityd]\n  412     2 [kworker/R-kverityd]\n  413     2 [kworker/R-kverityd]\n  414     2 [kworker/R-ext4-rsv-conversion]\n  415     2 [kworker/R-ext4-rsv-conversion]\n  416     2 [kworker/R-ext4-rsv-conversion]\n  417     2 [kworker/R-ext4-rsv-conversion]\n  419     2 [kworker/1:2H-kblockd]\n  420     2 [kworker/R-ext4-rsv-conversion]\n  421     2 [kworker/R-ext4-rsv-conversion]\n  422     2 [kworker/R-ext4-rsv-conversion]\n  423     2 [kworker/R-ext4-rsv-conversion]\n  424     2 [kworker/4:2H-kverityd]\n  425     2 [kworker/R-ext4-rsv-conversion]\n  426     2 [kworker/R-ext4-rsv-conversion]\n  427     2 [kworker/R-ext4-rsv-conversion]\n  428     2 [kworker/R-ext4-rsv-conversion]\n  432     2 [kworker/3:3H-kverityd]\n  433     2 [kworker/R-ext4-rsv-conversion]\n  434     2 [kworker/R-ext4-rsv-conversion]\n  435     2 [kworker/R-ext4-rsv-conversion]\n  436     2 [kworker/R-ext4-rsv-conversion]\n  437     2 [kworker/R-ext4-rsv-conversion]\n  438     2 [kworker/R-ext4-rsv-conversion]\n  439     2 [kworker/R-ext4-rsv-conversion]\n  440     2 [kworker/R-ext4-rsv-conversion]\n  441     2 [kworker/R-ext4-rsv-conversion]\n  442     2 [kworker/R-ext4-rsv-conversion]\n  443     2 [kworker/R-ext4-rsv-conversion]\n  444     2 [kworker/R-ext4-rsv-conversion]\n  487     2 [kworker/4:2-cgroup_release]\n  488     1 netd\n  490     1 statsd\n  491     1 zygote64\n  494     1 android.hidl.allocator@1.0-service\n  497     1 android.hardware.audio.service\n  498     1 android.hardware.camera.provider.ranchu\n  501     1 android.hardware.camera.provider@2.7-service-google\n  502     1 android.hardware.graphics.allocator-service.ranchu\n  503     1 android.hardware.health-service.example\n  504     1 android.hardware.media.c2@1.0-service-goldfish\n  505     1 android.hardware.radio-service.ranchu\n  506     1 android.hardware.sensors-service.multihal\n  508     1 android.hardware.usb-service.example\n  510     1 android.hardware.wifi-service\n  511     1 android.hardware.bluetooth-service.default\n  512     1 android.hardware.graphics.composer3-service.ranchu\n  513     1 android.hardware.identity-service.example\n  514     1 android.hardware.lights-service.example\n  515     1 android.hardware.authsecret-service.example\n  516     1 android.hardware.cas-service.example\n  517     1 android.hardware.contexthub-service.example\n  520     1 android.hardware.neuralnetworks-service-sample-all\n  522     1 android.hardware.neuralnetworks-service-sample-limited\n  524     1 android.hardware.neuralnetworks-shim-service-sample\n  525   488 iptables-restore --noflush -w -v\n  528     1 android.hardware.power-service.example\n  529     1 android.hardware.power.stats-service.example\n  530     1 android.hardware.rebootescrow-service.default\n  533     1 android.hardware.thermal-service.example\n  534     1 android.hardware.threadnetwork-service spinel+hdlc+forkpty:///apex/com.android.hardware.threadnetwork/bin/ot-rcp?forkpty-arg=1\n  535     1 android.hardware.vibrator-service.example\n  537     1 audioserver\n  540     1 gpuservice\n  542     1 surfaceflinger\n  543     1 sysoptservice\n  545     1 VirtualCamera\n  546     1 EmulatorPipeService\n  547     1 pvrtrackingservice\n  548     1 pxrcaptureservice\n  549     1 pxrconfigurationservice\n  550     1 pxrcontrollerservice\n  551     1 pxreyetrackingservice\n  552     1 pxrhmdservice\n  553     1 pxrmemoryboxservice\n  555     1 pxrmrsystemservice\n  556     1 pxrnotificationservice\n  559     1 sensorproviderservice\n  564     1 adbd --root_seclabel=u:r:su:s0 --tim_seclabel=u:r:adbd_tradeinmode:s0\n  574     1 traced_probes\n  577     1 traced\n  588   488 ip6tables-restore --noflush -w -v\n  591     1 mdnsd\n  592     1 bt_vhci_forwarder -virtio_console_dev=/dev/bluetooth0\n  595     1 AntiAgingService\n  600     1 cameraserver\n  603     1 incidentd\n  604     1 installd\n  605     1 media.extractor aextractor\n  606     1 media.metrics diametrics\n  607     1 mediaserver\n  608     1 storaged\n  609     1 wificond\n  610     1 cypressmedia.metrics ssmediametrics\n  611     1 resmanagerserver\n  612     1 media.swcodec oid.media.swcodec/bin/mediaswcodec\n  613     1 gatekeeperd /data/misc/gatekeeper\n  677     2 [kworker/0:2H-fsverity_read_queue]\n  719     2 [kworker/0:3H-kblockd]\n  811   491 system_server\n  956     2 [vivid-000-tch-cap]\n 1049     1 android.hardware.biometrics.fingerprint-service.ranchu\n 1077     1 ot-daemon -I thread-wpan --auto-attach=0 threadnetwork_hal://binder?none\n 1084   534 ot-rcp 1\n 1088     1 wpa_supplicant -Dnl80211 -iwlan0 -c/vendor/etc/wifi/wpa_supplicant.conf -g@android:wpa_wlan0\n 1168   491 webview_zygote\n 1199   491 com.android.networkstack.process\n 1237   491 com.pico.xr.openxr_runtime\n 1254   491 com.pico.spatial.runtime\n 1268   491 com.picoxr.worldspace\n 1273   491 com.pico.spatial.resourceupdater\n 1288   491 com.picoxr.systemui\n 1310   491 os.teatracker\n 1311   491 com.pvr\n 1336   491 com.pico.xr.runtime.ext\n 1345   491 com.android.settings\n 1412   491 com.android.permissioncontroller\n 1614   491 com.pico.mrservice\n 1676     1 virtual_camera\n 1793   491 android.ext.services\n 1863   491 com.bytedance.pico.matrix\n 1864   491 com.android.picosdkoverlay\n 1877   491 com.android.providers.media.module\n 1896   491 com.pxr.scenarioprovider\n 1928   491 com.picoxr.launcher\n 1956   491 com.picovr.settings\n 1986   491 com.android.traceur\n 2006   491 android.process.media\n 2033   491 android.process.acore\n 2240   491 com.android.packageinstaller\n 2379   491 com.picoxr.systemui:decor\n 2547   491 com.android.rkpdapp\n 2621   491 com.android.shell\n 2748   491 com.android.localtransport\n 2834   491 com.android.keychain\n 2899   491 com.picoxr.coreservice\n 3031   491 com.android.externalstorage\n 3995   564 abb\n 4003     2 [kworker/0:0-virtio_vsock]\n 4027   491 com.picovr.iconservice\n 4296   491 com.example.picofixture.iteration.debug\n 4406     2 [kworker/3:2-cgroup_bpf_destroy]\n 4858     2 [kworker/0:4-virtio_vsock]\n 5049     2 [kworker/1:1-mm_percpu_wq]\n 5130     2 [kworker/4:1-mm_percpu_wq]\n 5249     2 [kworker/5:1-events]\n 5583     2 [kworker/2:2]\n 5634     2 [kworker/0:1-virtio_vsock]\n 5791     2 [kworker/1:0]\n 5969     2 [kworker/5:2-mm_percpu_wq]\n 6010     2 [kworker/3:0]\n 6068     2 [kworker/5:3]\n 6085     1 swap_quota_service\n 6086     2 [kworker/4:0-cgroup_bpf_destroy]\n 6087   564 ps -A -o PID,PPID,ARGS -w\n",
+      "stderr": "",
+      "timedOut": false,
+      "stdoutBase64": "ICBQSUQgIFBQSUQgQVJHUyAgICAgICAgICAgICAgICAgICAgICAgCiAgICAxICAgICAwIGluaXQgc2Vjb25kX3N0YWdlCiAgICAyICAgICAwIFtrdGhyZWFkZF0KICAgIDMgICAgIDIgW3Bvb2xfd29ya3F1ZXVlX3JlbGVhc2VdCiAgICA0ICAgICAyIFtrd29ya2VyL1Ita3ZmcmVlX3JjdV9yZWNsYWltXQogICAgNSAgICAgMiBba3dvcmtlci9SLXJjdV9ncF0KICAgIDYgICAgIDIgW2t3b3JrZXIvUi1zeW5jX3dxXQogICAgNyAgICAgMiBba3dvcmtlci9SLXNsdWJfZmx1c2h3cV0KICAgIDggICAgIDIgW2t3b3JrZXIvUi1uZXRuc10KICAgMTIgICAgIDIgW2t3b3JrZXIvdTI0OjAtd3JpdGViYWNrXQogICAxMyAgICAgMiBba3dvcmtlci91MjQ6MS1leHQ0LXJzdi1jb252ZXJzaW9uXQogICAxNCAgICAgMiBba3dvcmtlci9SLW1tX3BlcmNwdV93cV0KICAgMTUgICAgIDIgW3JjdV90YXNrc19rdGhyZWFkXQogICAxNiAgICAgMiBbcmN1X3Rhc2tzX3RyYWNlX2t0aHJlYWRdCiAgIDE3ICAgICAyIFtrc29mdGlycWQvMF0KICAgMTggICAgIDIgW3JjdV9wcmVlbXB0XQogICAxOSAgICAgMiBbcmN1b2cvMF0KICAgMjAgICAgIDIgW3JjdW9wLzBdCiAgIDIxICAgICAyIFtyY3ViLzBdCiAgIDIyICAgICAyIFtyY3VfZXhwX3Bhcl9ncF9rdGhyZWFkX3dvcmtlci8wXQogICAyMyAgICAgMiBbcmN1X2V4cF9ncF9rdGhyZWFkX3dvcmtlcl0KICAgMjQgICAgIDIgW21pZ3JhdGlvbi8wXQogICAyNSAgICAgMiBbaWRsZV9pbmplY3QvMF0KICAgMjYgICAgIDIgW2NwdWhwLzBdCiAgIDI3ICAgICAyIFtjcHVocC8xXQogICAyOCAgICAgMiBbaWRsZV9pbmplY3QvMV0KICAgMjkgICAgIDIgW21pZ3JhdGlvbi8xXQogICAzMCAgICAgMiBba3NvZnRpcnFkLzFdCiAgIDMyICAgICAyIFtrd29ya2VyLzE6MEgtZXZlbnRzX2hpZ2hwcmldCiAgIDMzICAgICAyIFtyY3VvcC8xXQogICAzNCAgICAgMiBbY3B1aHAvMl0KICAgMzUgICAgIDIgW2lkbGVfaW5qZWN0LzJdCiAgIDM2ICAgICAyIFttaWdyYXRpb24vMl0KICAgMzcgICAgIDIgW2tzb2Z0aXJxZC8yXQogICAzOCAgICAgMiBba3dvcmtlci8yOjAtbW1fcGVyY3B1X3dxXQogICAzOSAgICAgMiBba3dvcmtlci8yOjBILWtibG9ja2RdCiAgIDQwICAgICAyIFtyY3VvcC8yXQogICA0MSAgICAgMiBbY3B1aHAvM10KICAgNDIgICAgIDIgW2lkbGVfaW5qZWN0LzNdCiAgIDQzICAgICAyIFttaWdyYXRpb24vM10KICAgNDQgICAgIDIgW2tzb2Z0aXJxZC8zXQogICA0NiAgICAgMiBba3dvcmtlci8zOjBILWtibG9ja2RdCiAgIDQ3ICAgICAyIFtyY3VvZy8zXQogICA0OCAgICAgMiBbcmN1b3AvM10KICAgNDkgICAgIDIgW2NwdWhwLzRdCiAgIDUwICAgICAyIFtpZGxlX2luamVjdC80XQogICA1MSAgICAgMiBbbWlncmF0aW9uLzRdCiAgIDUyICAgICAyIFtrc29mdGlycWQvNF0KICAgNTUgICAgIDIgW3JjdW9wLzRdCiAgIDU2ICAgICAyIFtjcHVocC81XQogICA1NyAgICAgMiBbaWRsZV9pbmplY3QvNV0KICAgNTggICAgIDIgW21pZ3JhdGlvbi81XQogICA1OSAgICAgMiBba3NvZnRpcnFkLzVdCiAgIDYwICAgICAyIFtrd29ya2VyLzU6MC1jZ3JvdXBfYnBmX2Rlc3Ryb3ldCiAgIDYxICAgICAyIFtrd29ya2VyLzU6MEgtZXZlbnRzX2hpZ2hwcmldCiAgIDYyICAgICAyIFtyY3VvcC81XQogICA2MyAgICAgMiBba3dvcmtlci9SLWluZXRfZnJhZ193cV0KICAgNjQgICAgIDIgW2thdWRpdGRdCiAgIDY1ICAgICAyIFtraHVuZ3Rhc2tkXQogICA2NiAgICAgMiBbb29tX3JlYXBlcl0KICAgNjcgICAgIDIgW2t3b3JrZXIvUi13cml0ZWJhY2tdCiAgIDY4ICAgICAyIFtrY29tcGFjdGQwXQogICA2OSAgICAgMiBba2h1Z2VwYWdlZF0KICAgNzAgICAgIDIgW2t3b3JrZXIvUi1rYmxvY2tkXQogICA3MSAgICAgMiBba3dvcmtlci9SLWVkYWMtcG9sbGVyXQogICA3MiAgICAgMiBba3dvcmtlci9SLWRldmZyZXFfd3FdCiAgIDczICAgICAyIFt3YXRjaGRvZ2RdCiAgIDc1ICAgICAyIFtrd29ya2VyL1ItcXVvdGFfZXZlbnRzX3VuYm91bmRdCiAgIDc3ICAgICAyIFtrd29ya2VyLzM6MS1tbV9wZXJjcHVfd3FdCiAgIDc4ICAgICAyIFtrc3dhcGQwXQogICA3OSAgICAgMiBba3dvcmtlci91MjU6MC1mc2NyeXB0X3JlYWRfcXVldWVdCiAgIDgwICAgICAyIFtrd29ya2VyL1ItbnZtZS13cV0KICAgODEgICAgIDIgW2t3b3JrZXIvUi1udm1lLXJlc2V0LXdxXQogICA4MiAgICAgMiBba3dvcmtlci9SLW52bWUtZGVsZXRlLXdxXQogICA4MyAgICAgMiBba3dvcmtlci9SLXZmaW8taXJxZmQtY2xlYW51cF0KICAgODQgICAgIDIgW2t3b3JrZXIvUi11YXNdCiAgIDg1ICAgICAyIFtrd29ya2VyL1ItZG1fYnVmaW9fY2FjaGVdCiAgIDg2ICAgICAyIFtrd29ya2VyL1ItbWxkXQogICA4NyAgICAgMiBba3dvcmtlci9SLWlwdjZfYWRkcmNvbmZdCiAgIDg4ICAgICAyIFtrd29ya2VyL1Ita3N0cnBdCiAgIDkwICAgICAyIFtrd29ya2VyLzA6Mi12aXJ0aW9fdnNvY2tdCiAgIDkzICAgICAyIFtrd29ya2VyLzI6MS1jZ3JvdXBfYnBmX2Rlc3Ryb3ldCiAgIDk2ICAgICAyIFtod3JuZ10KICAgOTggICAgIDIgW2t3b3JrZXIvNToxSC1rYmxvY2tkXQogIDEwMiAgICAgMiBbamJkMi92ZGQxLThdCiAgMTAzICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICAxMDQgICAgIDIgW2t3b3JrZXIvUi1rZG1mbHVzaC8yNTQ6MF0KICAxMDUgICAgIDIgW2t3b3JrZXIvUi1rZG1mbHVzaC8yNTQ6MV0KICAxMDYgICAgIDIgW2t3b3JrZXIvUi1rZG1mbHVzaC8yNTQ6Ml0KICAxMDcgICAgIDIgW2t3b3JrZXIvUi1rZG1mbHVzaC8yNTQ6M10KICAxMDggICAgIDIgW2t3b3JrZXIvUi1rZG1mbHVzaC8yNTQ6NF0KICAxMDkgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDExMCAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgMTExICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICAxMTIgICAgIDIgW2Vyb2ZzX3dvcmtlci8wXQogIDExMyAgICAgMiBbZXJvZnNfd29ya2VyLzFdCiAgMTE0ICAgICAyIFtlcm9mc193b3JrZXIvMl0KICAxMTUgICAgIDIgW2Vyb2ZzX3dvcmtlci8zXQogIDExNiAgICAgMiBbZXJvZnNfd29ya2VyLzRdCiAgMTE3ICAgICAyIFtlcm9mc193b3JrZXIvNV0KICAxMTggICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDEyMSAgICAgMSBpbml0IHN1YmNvbnRleHQgdTpyOnZlbmRvcl9pbml0OnMwIDE2CiAgMTIyICAgICAyIFtrd29ya2VyLzQ6MUgta2Jsb2NrZF0KICAxMjMgICAgIDEgdWV2ZW50ZAogIDEzMiAgICAgMiBba3dvcmtlci8yOjFILWt2ZXJpdHlkXQogIDE4MCAgICAgMiBba3dvcmtlci9SLWtkbWZsdXNoLzI1NDo1XQogIDE4MSAgICAgMiBba3dvcmtlci9SLWtkbWZsdXNoLzI1NDo2XQogIDE4MiAgICAgMiBba3dvcmtlci9SLWtkbWZsdXNoLzI1NDo3XQogIDE4MyAgICAgMiBba3dvcmtlci9SLWtkbWZsdXNoLzI1NDo4XQogIDE4NSAgICAgMiBba3dvcmtlci9SLWtkbWZsdXNoLzI1NDoxMF0KICAxODYgICAgIDIgW2t3b3JrZXIvUi1rZG1mbHVzaC8yNTQ6MTFdCiAgMTg3ICAgICAyIFtrd29ya2VyL1Ita2RtZmx1c2gvMjU0OjEyXQogIDE4OCAgICAgMiBba3dvcmtlci9SLWtkbWZsdXNoLzI1NDoxM10KICAxOTAgICAgIDIgW2t3b3JrZXIvUi1rZG1mbHVzaC8yNTQ6MTVdCiAgMTkxICAgICAyIFtrd29ya2VyL1Ita2RtZmx1c2gvMjU0OjE2XQogIDE5MiAgICAgMiBba3dvcmtlci9SLWtkbWZsdXNoLzI1NDoxN10KICAxOTMgICAgIDIgW2t3b3JrZXIvUi1rZG1mbHVzaC8yNTQ6MThdCiAgMTk1ICAgICAyIFtrd29ya2VyL1Ita2RtZmx1c2gvMjU0OjIwXQogIDE5NiAgICAgMiBba3dvcmtlci9SLWtkbWZsdXNoLzI1NDoyMV0KICAxOTggICAgIDIgW2t3b3JrZXIvUi1rZG1mbHVzaC8yNTQ6MjNdCiAgMjAwICAgICAyIFtrd29ya2VyL1Ita2RtZmx1c2gvMjU0OjI1XQogIDIwMiAgICAgMiBba3dvcmtlci9SLWtkbWZsdXNoLzI1NDoyN10KICAyMDcgICAgIDIgW2t3b3JrZXIvUi1rZG1mbHVzaC8yNTQ6MzJdCiAgMjA5ICAgICAyIFtrd29ya2VyL1Ita2RtZmx1c2gvMjU0OjM0XQogIDIxMyAgICAgMiBba3dvcmtlci9SLWtkbWZsdXNoLzI1NDozOF0KICAyMTYgICAgIDIgW2t3b3JrZXIvUi1rZG1mbHVzaC8yNTQ6NDFdCiAgMjE5ICAgICAyIFtrd29ya2VyL1Ita2RtZmx1c2gvMjU0OjQ0XQogIDIyMCAgICAgMiBba3dvcmtlci9SLWtkbWZsdXNoLzI1NDo0NV0KICAyMzEgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDIzMiAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgMjMzICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICAyMzQgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDIzNSAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgMjM5ICAgICAxIHBybmdfc2VlZGVyCiAgMjQxICAgICAyIFtrd29ya2VyL1ItY2ZnODAyMTFdCiAgMjQyICAgICAxIGxvZ2QKICAyNDMgICAgIDEgbG1rZAogIDI0NCAgICAgMiBbc3Vnb3Y6MF0KICAyNDUgICAgIDIgW3N1Z292OjFdCiAgMjQ2ICAgICAyIFtzdWdvdjoyXQogIDI0NyAgICAgMiBbc3Vnb3Y6M10KICAyNDggICAgIDIgW3N1Z292OjRdCiAgMjQ5ICAgICAyIFtzdWdvdjo1XQogIDI1MCAgICAgMSBzZXJ2aWNlbWFuYWdlcgogIDI1MSAgICAgMSBod3NlcnZpY2VtYW5hZ2VyCiAgMjUyICAgICAxIHFlbXUtcHJvcHMKICAyNTMgICAgIDIgW2lycS8zMy1nb2xkZmlzaF9waXBlX2RwcmN0ZF0KICAyNjAgICAgIDEgZXZlbnRfdHJhY2tlcmQKICAyNjIgICAgIDEgdm9sZCAtLWJsa2lkX2NvbnRleHQ9dTpyOmJsa2lkOnMwIC0tYmxraWRfdW50cnVzdGVkX2NvbnRleHQ9dTpyOmJsa2lkX3VudHJ1c3RlZDpzMCAtLWZzY2tfY29udGV4dD11OnI6ZnNjazpzMCAtLWZzY2tfdW50cnVzdGVkX2NvbnRleHQ9dTpyOmZzY2tfdW50cnVzdGVkOnMwCiAgMjY0ICAgICAxIHN0YWJkCiAgMjY2ICAgICAyIFtwc2ltb25dCiAgMjcwICAgICAyIFtrd29ya2VyL1Ita2RtZmx1c2gvMjU0OjUxXQogIDI3OCAgICAgMiBba3dvcmtlci9SLXVzYmlwX2V2ZW50XQogIDI4MCAgICAgMiBba3dvcmtlci8xOjItY2dyb3VwX3JlbGVhc2VdCiAgMjgyICAgICAxIGFuZHJvaWQuc3lzdGVtLnN1c3BlbmQtc2VydmljZQogIDI4MyAgICAgMSBrZXlzdG9yZTIgL2RhdGEvbWlzYy9rZXlzdG9yZQogIDI4NCAgICAgMSBhbmRyb2lkLmhhcmR3YXJlLnNlY3VyaXR5LmtleW1pbnQtc2VydmljZQogIDI4NSAgICAgMSBhbmRyb2lkLmhhcmR3YXJlLmdhdGVrZWVwZXItc2VydmljZS5ub25zZWN1cmUKICAyODYgICAgIDIgW2t3b3JrZXIvUi11cGRhdGVfaGRtaV9jdHJsc193cV0KICAyODcgICAgIDIgW2t3b3JrZXIvUi11cGRhdGVfc3ZpZF9jdHJsc193cV0KICAyOTkgICAgIDIgW2t3b3JrZXIvUi1ibGtfY3J5cHRvX3dxXQogIDMwMyAgICAgMiBba3dvcmtlci91MjU6NC1mc2NyeXB0X3JlYWRfcXVldWVdCiAgMzA4ICAgICAyIFtqYmQyL2RtLTUxLThdCiAgMzA5ICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICAzMTMgICAgIDEgdG9tYnN0b25lZAogIDM2NyAgICAgMiBba3dvcmtlci9SLWt2ZXJpdHlkXQogIDM2OCAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgMzY5ICAgICAyIFtrd29ya2VyL1Ita3Zlcml0eWRdCiAgMzcwICAgICAyIFtrd29ya2VyL1Ita3Zlcml0eWRdCiAgMzcxICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICAzNzIgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDM3MyAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgMzc0ICAgICAyIFtrd29ya2VyL1Ita3Zlcml0eWRdCiAgMzc1ICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICAzNzYgICAgIDIgW2t3b3JrZXIvUi1rdmVyaXR5ZF0KICAzNzcgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDM3OCAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgMzc5ICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICAzODAgICAgIDIgW2t3b3JrZXIvUi1rdmVyaXR5ZF0KICAzODEgICAgIDIgW2t3b3JrZXIvUi1rdmVyaXR5ZF0KICAzODIgICAgIDIgW2t3b3JrZXIvUi1rdmVyaXR5ZF0KICAzODMgICAgIDIgW2t3b3JrZXIvUi1rdmVyaXR5ZF0KICAzODQgICAgIDIgW2t3b3JrZXIvUi1rdmVyaXR5ZF0KICAzODUgICAgIDIgW2t3b3JrZXIvUi1rdmVyaXR5ZF0KICAzODcgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDM4OCAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgMzg5ICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICAzOTAgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDM5MSAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgMzkyICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICAzOTMgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDM5NCAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgMzk1ICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICAzOTYgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDM5NyAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgMzk4ICAgICAyIFtrd29ya2VyL1Ita3Zlcml0eWRdCiAgMzk5ICAgICAyIFtrd29ya2VyL1Ita3Zlcml0eWRdCiAgNDAwICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICA0MDEgICAgIDIgW2t3b3JrZXIvUi1rdmVyaXR5ZF0KICA0MDIgICAgIDIgW2t3b3JrZXIvUi1rdmVyaXR5ZF0KICA0MDMgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDQwNCAgICAgMiBba3dvcmtlci9SLWt2ZXJpdHlkXQogIDQwNSAgICAgMiBba3dvcmtlci9SLWt2ZXJpdHlkXQogIDQwNiAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgNDA3ICAgICAyIFtrd29ya2VyL3UyNDo0LWV2ZW50c191bmJvdW5kXQogIDQwOCAgICAgMiBba3dvcmtlci9SLWt2ZXJpdHlkXQogIDQwOSAgICAgMiBba3dvcmtlci9SLWt2ZXJpdHlkXQogIDQxMCAgICAgMiBba3dvcmtlci9SLWt2ZXJpdHlkXQogIDQxMSAgICAgMiBba3dvcmtlci9SLWt2ZXJpdHlkXQogIDQxMiAgICAgMiBba3dvcmtlci9SLWt2ZXJpdHlkXQogIDQxMyAgICAgMiBba3dvcmtlci9SLWt2ZXJpdHlkXQogIDQxNCAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgNDE1ICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICA0MTYgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDQxNyAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgNDE5ICAgICAyIFtrd29ya2VyLzE6Mkgta2Jsb2NrZF0KICA0MjAgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDQyMSAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgNDIyICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICA0MjMgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDQyNCAgICAgMiBba3dvcmtlci80OjJILWt2ZXJpdHlkXQogIDQyNSAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgNDI2ICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICA0MjcgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDQyOCAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgNDMyICAgICAyIFtrd29ya2VyLzM6M0gta3Zlcml0eWRdCiAgNDMzICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICA0MzQgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDQzNSAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgNDM2ICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICA0MzcgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDQzOCAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgNDM5ICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICA0NDAgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDQ0MSAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgNDQyICAgICAyIFtrd29ya2VyL1ItZXh0NC1yc3YtY29udmVyc2lvbl0KICA0NDMgICAgIDIgW2t3b3JrZXIvUi1leHQ0LXJzdi1jb252ZXJzaW9uXQogIDQ0NCAgICAgMiBba3dvcmtlci9SLWV4dDQtcnN2LWNvbnZlcnNpb25dCiAgNDg3ICAgICAyIFtrd29ya2VyLzQ6Mi1jZ3JvdXBfcmVsZWFzZV0KICA0ODggICAgIDEgbmV0ZAogIDQ5MCAgICAgMSBzdGF0c2QKICA0OTEgICAgIDEgenlnb3RlNjQKICA0OTQgICAgIDEgYW5kcm9pZC5oaWRsLmFsbG9jYXRvckAxLjAtc2VydmljZQogIDQ5NyAgICAgMSBhbmRyb2lkLmhhcmR3YXJlLmF1ZGlvLnNlcnZpY2UKICA0OTggICAgIDEgYW5kcm9pZC5oYXJkd2FyZS5jYW1lcmEucHJvdmlkZXIucmFuY2h1CiAgNTAxICAgICAxIGFuZHJvaWQuaGFyZHdhcmUuY2FtZXJhLnByb3ZpZGVyQDIuNy1zZXJ2aWNlLWdvb2dsZQogIDUwMiAgICAgMSBhbmRyb2lkLmhhcmR3YXJlLmdyYXBoaWNzLmFsbG9jYXRvci1zZXJ2aWNlLnJhbmNodQogIDUwMyAgICAgMSBhbmRyb2lkLmhhcmR3YXJlLmhlYWx0aC1zZXJ2aWNlLmV4YW1wbGUKICA1MDQgICAgIDEgYW5kcm9pZC5oYXJkd2FyZS5tZWRpYS5jMkAxLjAtc2VydmljZS1nb2xkZmlzaAogIDUwNSAgICAgMSBhbmRyb2lkLmhhcmR3YXJlLnJhZGlvLXNlcnZpY2UucmFuY2h1CiAgNTA2ICAgICAxIGFuZHJvaWQuaGFyZHdhcmUuc2Vuc29ycy1zZXJ2aWNlLm11bHRpaGFsCiAgNTA4ICAgICAxIGFuZHJvaWQuaGFyZHdhcmUudXNiLXNlcnZpY2UuZXhhbXBsZQogIDUxMCAgICAgMSBhbmRyb2lkLmhhcmR3YXJlLndpZmktc2VydmljZQogIDUxMSAgICAgMSBhbmRyb2lkLmhhcmR3YXJlLmJsdWV0b290aC1zZXJ2aWNlLmRlZmF1bHQKICA1MTIgICAgIDEgYW5kcm9pZC5oYXJkd2FyZS5ncmFwaGljcy5jb21wb3NlcjMtc2VydmljZS5yYW5jaHUKICA1MTMgICAgIDEgYW5kcm9pZC5oYXJkd2FyZS5pZGVudGl0eS1zZXJ2aWNlLmV4YW1wbGUKICA1MTQgICAgIDEgYW5kcm9pZC5oYXJkd2FyZS5saWdodHMtc2VydmljZS5leGFtcGxlCiAgNTE1ICAgICAxIGFuZHJvaWQuaGFyZHdhcmUuYXV0aHNlY3JldC1zZXJ2aWNlLmV4YW1wbGUKICA1MTYgICAgIDEgYW5kcm9pZC5oYXJkd2FyZS5jYXMtc2VydmljZS5leGFtcGxlCiAgNTE3ICAgICAxIGFuZHJvaWQuaGFyZHdhcmUuY29udGV4dGh1Yi1zZXJ2aWNlLmV4YW1wbGUKICA1MjAgICAgIDEgYW5kcm9pZC5oYXJkd2FyZS5uZXVyYWxuZXR3b3Jrcy1zZXJ2aWNlLXNhbXBsZS1hbGwKICA1MjIgICAgIDEgYW5kcm9pZC5oYXJkd2FyZS5uZXVyYWxuZXR3b3Jrcy1zZXJ2aWNlLXNhbXBsZS1saW1pdGVkCiAgNTI0ICAgICAxIGFuZHJvaWQuaGFyZHdhcmUubmV1cmFsbmV0d29ya3Mtc2hpbS1zZXJ2aWNlLXNhbXBsZQogIDUyNSAgIDQ4OCBpcHRhYmxlcy1yZXN0b3JlIC0tbm9mbHVzaCAtdyAtdgogIDUyOCAgICAgMSBhbmRyb2lkLmhhcmR3YXJlLnBvd2VyLXNlcnZpY2UuZXhhbXBsZQogIDUyOSAgICAgMSBhbmRyb2lkLmhhcmR3YXJlLnBvd2VyLnN0YXRzLXNlcnZpY2UuZXhhbXBsZQogIDUzMCAgICAgMSBhbmRyb2lkLmhhcmR3YXJlLnJlYm9vdGVzY3Jvdy1zZXJ2aWNlLmRlZmF1bHQKICA1MzMgICAgIDEgYW5kcm9pZC5oYXJkd2FyZS50aGVybWFsLXNlcnZpY2UuZXhhbXBsZQogIDUzNCAgICAgMSBhbmRyb2lkLmhhcmR3YXJlLnRocmVhZG5ldHdvcmstc2VydmljZSBzcGluZWwraGRsYytmb3JrcHR5Oi8vL2FwZXgvY29tLmFuZHJvaWQuaGFyZHdhcmUudGhyZWFkbmV0d29yay9iaW4vb3QtcmNwP2ZvcmtwdHktYXJnPTEKICA1MzUgICAgIDEgYW5kcm9pZC5oYXJkd2FyZS52aWJyYXRvci1zZXJ2aWNlLmV4YW1wbGUKICA1MzcgICAgIDEgYXVkaW9zZXJ2ZXIKICA1NDAgICAgIDEgZ3B1c2VydmljZQogIDU0MiAgICAgMSBzdXJmYWNlZmxpbmdlcgogIDU0MyAgICAgMSBzeXNvcHRzZXJ2aWNlCiAgNTQ1ICAgICAxIFZpcnR1YWxDYW1lcmEKICA1NDYgICAgIDEgRW11bGF0b3JQaXBlU2VydmljZQogIDU0NyAgICAgMSBwdnJ0cmFja2luZ3NlcnZpY2UKICA1NDggICAgIDEgcHhyY2FwdHVyZXNlcnZpY2UKICA1NDkgICAgIDEgcHhyY29uZmlndXJhdGlvbnNlcnZpY2UKICA1NTAgICAgIDEgcHhyY29udHJvbGxlcnNlcnZpY2UKICA1NTEgICAgIDEgcHhyZXlldHJhY2tpbmdzZXJ2aWNlCiAgNTUyICAgICAxIHB4cmhtZHNlcnZpY2UKICA1NTMgICAgIDEgcHhybWVtb3J5Ym94c2VydmljZQogIDU1NSAgICAgMSBweHJtcnN5c3RlbXNlcnZpY2UKICA1NTYgICAgIDEgcHhybm90aWZpY2F0aW9uc2VydmljZQogIDU1OSAgICAgMSBzZW5zb3Jwcm92aWRlcnNlcnZpY2UKICA1NjQgICAgIDEgYWRiZCAtLXJvb3Rfc2VjbGFiZWw9dTpyOnN1OnMwIC0tdGltX3NlY2xhYmVsPXU6cjphZGJkX3RyYWRlaW5tb2RlOnMwCiAgNTc0ICAgICAxIHRyYWNlZF9wcm9iZXMKICA1NzcgICAgIDEgdHJhY2VkCiAgNTg4ICAgNDg4IGlwNnRhYmxlcy1yZXN0b3JlIC0tbm9mbHVzaCAtdyAtdgogIDU5MSAgICAgMSBtZG5zZAogIDU5MiAgICAgMSBidF92aGNpX2ZvcndhcmRlciAtdmlydGlvX2NvbnNvbGVfZGV2PS9kZXYvYmx1ZXRvb3RoMAogIDU5NSAgICAgMSBBbnRpQWdpbmdTZXJ2aWNlCiAgNjAwICAgICAxIGNhbWVyYXNlcnZlcgogIDYwMyAgICAgMSBpbmNpZGVudGQKICA2MDQgICAgIDEgaW5zdGFsbGQKICA2MDUgICAgIDEgbWVkaWEuZXh0cmFjdG9yIGFleHRyYWN0b3IKICA2MDYgICAgIDEgbWVkaWEubWV0cmljcyBkaWFtZXRyaWNzCiAgNjA3ICAgICAxIG1lZGlhc2VydmVyCiAgNjA4ICAgICAxIHN0b3JhZ2VkCiAgNjA5ICAgICAxIHdpZmljb25kCiAgNjEwICAgICAxIGN5cHJlc3NtZWRpYS5tZXRyaWNzIHNzbWVkaWFtZXRyaWNzCiAgNjExICAgICAxIHJlc21hbmFnZXJzZXJ2ZXIKICA2MTIgICAgIDEgbWVkaWEuc3djb2RlYyBvaWQubWVkaWEuc3djb2RlYy9iaW4vbWVkaWFzd2NvZGVjCiAgNjEzICAgICAxIGdhdGVrZWVwZXJkIC9kYXRhL21pc2MvZ2F0ZWtlZXBlcgogIDY3NyAgICAgMiBba3dvcmtlci8wOjJILWZzdmVyaXR5X3JlYWRfcXVldWVdCiAgNzE5ICAgICAyIFtrd29ya2VyLzA6M0gta2Jsb2NrZF0KICA4MTEgICA0OTEgc3lzdGVtX3NlcnZlcgogIDk1NiAgICAgMiBbdml2aWQtMDAwLXRjaC1jYXBdCiAxMDQ5ICAgICAxIGFuZHJvaWQuaGFyZHdhcmUuYmlvbWV0cmljcy5maW5nZXJwcmludC1zZXJ2aWNlLnJhbmNodQogMTA3NyAgICAgMSBvdC1kYWVtb24gLUkgdGhyZWFkLXdwYW4gLS1hdXRvLWF0dGFjaD0wIHRocmVhZG5ldHdvcmtfaGFsOi8vYmluZGVyP25vbmUKIDEwODQgICA1MzQgb3QtcmNwIDEKIDEwODggICAgIDEgd3BhX3N1cHBsaWNhbnQgLURubDgwMjExIC1pd2xhbjAgLWMvdmVuZG9yL2V0Yy93aWZpL3dwYV9zdXBwbGljYW50LmNvbmYgLWdAYW5kcm9pZDp3cGFfd2xhbjAKIDExNjggICA0OTEgd2Vidmlld196eWdvdGUKIDExOTkgICA0OTEgY29tLmFuZHJvaWQubmV0d29ya3N0YWNrLnByb2Nlc3MKIDEyMzcgICA0OTEgY29tLnBpY28ueHIub3BlbnhyX3J1bnRpbWUKIDEyNTQgICA0OTEgY29tLnBpY28uc3BhdGlhbC5ydW50aW1lCiAxMjY4ICAgNDkxIGNvbS5waWNveHIud29ybGRzcGFjZQogMTI3MyAgIDQ5MSBjb20ucGljby5zcGF0aWFsLnJlc291cmNldXBkYXRlcgogMTI4OCAgIDQ5MSBjb20ucGljb3hyLnN5c3RlbXVpCiAxMzEwICAgNDkxIG9zLnRlYXRyYWNrZXIKIDEzMTEgICA0OTEgY29tLnB2cgogMTMzNiAgIDQ5MSBjb20ucGljby54ci5ydW50aW1lLmV4dAogMTM0NSAgIDQ5MSBjb20uYW5kcm9pZC5zZXR0aW5ncwogMTQxMiAgIDQ5MSBjb20uYW5kcm9pZC5wZXJtaXNzaW9uY29udHJvbGxlcgogMTYxNCAgIDQ5MSBjb20ucGljby5tcnNlcnZpY2UKIDE2NzYgICAgIDEgdmlydHVhbF9jYW1lcmEKIDE3OTMgICA0OTEgYW5kcm9pZC5leHQuc2VydmljZXMKIDE4NjMgICA0OTEgY29tLmJ5dGVkYW5jZS5waWNvLm1hdHJpeAogMTg2NCAgIDQ5MSBjb20uYW5kcm9pZC5waWNvc2Rrb3ZlcmxheQogMTg3NyAgIDQ5MSBjb20uYW5kcm9pZC5wcm92aWRlcnMubWVkaWEubW9kdWxlCiAxODk2ICAgNDkxIGNvbS5weHIuc2NlbmFyaW9wcm92aWRlcgogMTkyOCAgIDQ5MSBjb20ucGljb3hyLmxhdW5jaGVyCiAxOTU2ICAgNDkxIGNvbS5waWNvdnIuc2V0dGluZ3MKIDE5ODYgICA0OTEgY29tLmFuZHJvaWQudHJhY2V1cgogMjAwNiAgIDQ5MSBhbmRyb2lkLnByb2Nlc3MubWVkaWEKIDIwMzMgICA0OTEgYW5kcm9pZC5wcm9jZXNzLmFjb3JlCiAyMjQwICAgNDkxIGNvbS5hbmRyb2lkLnBhY2thZ2VpbnN0YWxsZXIKIDIzNzkgICA0OTEgY29tLnBpY294ci5zeXN0ZW11aTpkZWNvcgogMjU0NyAgIDQ5MSBjb20uYW5kcm9pZC5ya3BkYXBwCiAyNjIxICAgNDkxIGNvbS5hbmRyb2lkLnNoZWxsCiAyNzQ4ICAgNDkxIGNvbS5hbmRyb2lkLmxvY2FsdHJhbnNwb3J0CiAyODM0ICAgNDkxIGNvbS5hbmRyb2lkLmtleWNoYWluCiAyODk5ICAgNDkxIGNvbS5waWNveHIuY29yZXNlcnZpY2UKIDMwMzEgICA0OTEgY29tLmFuZHJvaWQuZXh0ZXJuYWxzdG9yYWdlCiAzOTk1ICAgNTY0IGFiYgogNDAwMyAgICAgMiBba3dvcmtlci8wOjAtdmlydGlvX3Zzb2NrXQogNDAyNyAgIDQ5MSBjb20ucGljb3ZyLmljb25zZXJ2aWNlCiA0Mjk2ICAgNDkxIGNvbS5leGFtcGxlLnBpY29maXh0dXJlLml0ZXJhdGlvbi5kZWJ1ZwogNDQwNiAgICAgMiBba3dvcmtlci8zOjItY2dyb3VwX2JwZl9kZXN0cm95XQogNDg1OCAgICAgMiBba3dvcmtlci8wOjQtdmlydGlvX3Zzb2NrXQogNTA0OSAgICAgMiBba3dvcmtlci8xOjEtbW1fcGVyY3B1X3dxXQogNTEzMCAgICAgMiBba3dvcmtlci80OjEtbW1fcGVyY3B1X3dxXQogNTI0OSAgICAgMiBba3dvcmtlci81OjEtZXZlbnRzXQogNTU4MyAgICAgMiBba3dvcmtlci8yOjJdCiA1NjM0ICAgICAyIFtrd29ya2VyLzA6MS12aXJ0aW9fdnNvY2tdCiA1NzkxICAgICAyIFtrd29ya2VyLzE6MF0KIDU5NjkgICAgIDIgW2t3b3JrZXIvNToyLW1tX3BlcmNwdV93cV0KIDYwMTAgICAgIDIgW2t3b3JrZXIvMzowXQogNjA2OCAgICAgMiBba3dvcmtlci81OjNdCiA2MDg1ICAgICAxIHN3YXBfcXVvdGFfc2VydmljZQogNjA4NiAgICAgMiBba3dvcmtlci80OjAtY2dyb3VwX2JwZl9kZXN0cm95XQogNjA4NyAgIDU2NCBwcyAtQSAtbyBQSUQsUFBJRCxBUkdTIC13Cg=="
+    },
+    {
+      "argv": [
+        "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+        [
+          "-s",
+          "emulator-5554",
+          "exec-out",
+          "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'test ! -L '\\''files'\\'' && test ! -L '\\''files/agentbridge'\\'' && test ! -L '\\''files/agentbridge/interaction-v1'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/state.json'\\'' || exit 73; if test -f \"$1\"; then printf '\\''\\001'\\''; head -c 65537 \"$1\"; else printf '\\''\\000'\\''; fi' 'pico-mcp' 'files/agentbridge/interaction-v1/state.json'"
+        ]
+      ],
+      "code": 0,
+      "stdout": "\u0001{\"schemaVersion\":1,\"kind\":\"pico.agent-bridge.semantic-state\",\"packageName\":\"com.example.picofixture.iteration.debug\",\"generation\":\"971b186f-e529-4bd6-8bab-c3b57f57d015\",\"revision\":0,\"observedAtEpochMs\":1792818864007,\"pid\":4296,\"pidStartTicks\":\"44574\",\"state\":{\"panel\":{\"id\":\"fixture.panel\",\"visible\":false},\"counter\":0},\"actions\":[\"panel.show\"]}",
+      "stderr": "",
+      "timedOut": false,
+      "stdoutBase64": "AXsic2NoZW1hVmVyc2lvbiI6MSwia2luZCI6InBpY28uYWdlbnQtYnJpZGdlLnNlbWFudGljLXN0YXRlIiwicGFja2FnZU5hbWUiOiJjb20uZXhhbXBsZS5waWNvZml4dHVyZS5pdGVyYXRpb24uZGVidWciLCJnZW5lcmF0aW9uIjoiOTcxYjE4NmYtZTUyOS00YmQ2LThiYWItYzNiNTdmNTdkMDE1IiwicmV2aXNpb24iOjAsIm9ic2VydmVkQXRFcG9jaE1zIjoxNzkyODE4ODY0MDA3LCJwaWQiOjQyOTYsInBpZFN0YXJ0VGlja3MiOiI0NDU3NCIsInN0YXRlIjp7InBhbmVsIjp7ImlkIjoiZml4dHVyZS5wYW5lbCIsInZpc2libGUiOmZhbHNlfSwiY291bnRlciI6MH0sImFjdGlvbnMiOlsicGFuZWwuc2hvdyJdfQ=="
+    },
+    {
+      "argv": [
+        "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+        [
+          "-s",
+          "emulator-5554",
+          "exec-out",
+          "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'test ! -L '\\''files'\\'' && test ! -L '\\''files/agentbridge'\\'' && test ! -L '\\''files/agentbridge/interaction-v1'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/state.json'\\'' || exit 73; if test -f \"$1\"; then printf '\\''\\001'\\''; head -c 65537 \"$1\"; else printf '\\''\\000'\\''; fi' 'pico-mcp' 'files/agentbridge/interaction-v1/state.json'"
+        ]
+      ],
+      "code": 0,
+      "stdout": "\u0001{\"schemaVersion\":1,\"kind\":\"pico.agent-bridge.semantic-state\",\"packageName\":\"com.example.picofixture.iteration.debug\",\"generation\":\"971b186f-e529-4bd6-8bab-c3b57f57d015\",\"revision\":0,\"observedAtEpochMs\":1792818864111,\"pid\":4296,\"pidStartTicks\":\"44574\",\"state\":{\"panel\":{\"id\":\"fixture.panel\",\"visible\":false},\"counter\":0},\"actions\":[\"panel.show\"]}",
+      "stderr": "",
+      "timedOut": false,
+      "stdoutBase64": "AXsic2NoZW1hVmVyc2lvbiI6MSwia2luZCI6InBpY28uYWdlbnQtYnJpZGdlLnNlbWFudGljLXN0YXRlIiwicGFja2FnZU5hbWUiOiJjb20uZXhhbXBsZS5waWNvZml4dHVyZS5pdGVyYXRpb24uZGVidWciLCJnZW5lcmF0aW9uIjoiOTcxYjE4NmYtZTUyOS00YmQ2LThiYWItYzNiNTdmNTdkMDE1IiwicmV2aXNpb24iOjAsIm9ic2VydmVkQXRFcG9jaE1zIjoxNzkyODE4ODY0MTExLCJwaWQiOjQyOTYsInBpZFN0YXJ0VGlja3MiOiI0NDU3NCIsInN0YXRlIjp7InBhbmVsIjp7ImlkIjoiZml4dHVyZS5wYW5lbCIsInZpc2libGUiOmZhbHNlfSwiY291bnRlciI6MH0sImFjdGlvbnMiOlsicGFuZWwuc2hvdyJdfQ=="
+    },
+    {
+      "argv": [
+        "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+        [
+          "-s",
+          "emulator-5554",
+          "exec-out",
+          "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'test ! -L '\\''files'\\'' && test ! -L '\\''files/agentbridge'\\'' && test ! -L '\\''files/agentbridge/interaction-v1'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/acks'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/acks/04f69643-b23e-4f95-b3f4-87d26b002287.json'\\'' || exit 73; if test -f \"$1\"; then printf '\\''\\001'\\''; head -c 65537 \"$1\"; else printf '\\''\\000'\\''; fi' 'pico-mcp' 'files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/acks/04f69643-b23e-4f95-b3f4-87d26b002287.json'"
+        ]
+      ],
+      "code": 0,
+      "stdout": "\u0000",
+      "stderr": "",
+      "timedOut": false,
+      "stdoutBase64": "AA=="
+    },
+    {
+      "argv": [
+        "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+        [
+          "-s",
+          "emulator-5554",
+          "exec-out",
+          "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'test ! -e \"$1\" && test ! -L \"$1\" && test ! -e \"$1.tmp\" && test ! -L \"$1.tmp\" && printf absent' 'pico-reconcile' 'files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox/04f69643-b23e-4f95-b3f4-87d26b002287.json'"
+        ]
+      ],
+      "code": 0,
+      "stdout": "absent",
+      "stderr": "",
+      "timedOut": false,
+      "stdoutBase64": "YWJzZW50"
+    },
+    {
+      "argv": [
+        "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+        [
+          "-s",
+          "emulator-5554",
+          "exec-out",
+          "'run-as' 'com.example.picofixture.iteration.debug' 'ls' '-la' 'files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox' 'files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/acks'"
+        ]
+      ],
+      "code": 0,
+      "stdout": "files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/acks:\ntotal 16\ndrwx------ 2 u0_a101 u0_a101 4096 2026-10-23 22:03 .\ndrwx------ 4 u0_a101 u0_a101 4096 2026-10-23 22:03 ..\n\nfiles/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox:\ntotal 16\ndrwx------ 2 u0_a101 u0_a101 4096 2026-10-23 22:05 .\ndrwx------ 4 u0_a101 u0_a101 4096 2026-10-23 22:03 ..\n",
+      "stderr": "",
+      "timedOut": false,
+      "stdoutBase64": "ZmlsZXMvYWdlbnRicmlkZ2UvaW50ZXJhY3Rpb24tdjEvOTcxYjE4NmYtZTUyOS00YmQ2LThiYWItYzNiNTdmNTdkMDE1L2Fja3M6CnRvdGFsIDE2CmRyd3gtLS0tLS0gMiB1MF9hMTAxIHUwX2ExMDEgNDA5NiAyMDI2LTEwLTIzIDIyOjAzIC4KZHJ3eC0tLS0tLSA0IHUwX2ExMDEgdTBfYTEwMSA0MDk2IDIwMjYtMTAtMjMgMjI6MDMgLi4KCmZpbGVzL2FnZW50YnJpZGdlL2ludGVyYWN0aW9uLXYxLzk3MWIxODZmLWU1MjktNGJkNi04YmFiLWMzYjU3ZjU3ZDAxNS9pbmJveDoKdG90YWwgMTYKZHJ3eC0tLS0tLSAyIHUwX2ExMDEgdTBfYTEwMSA0MDk2IDIwMjYtMTAtMjMgMjI6MDUgLgpkcnd4LS0tLS0tIDQgdTBfYTEwMSB1MF9hMTAxIDQwOTYgMjAyNi0xMC0yMyAyMjowMyAuLgo="
+    },
+    {
+      "argv": [
+        "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+        [
+          "-s",
+          "emulator-5554",
+          "exec-out",
+          "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'test ! -L '\\''files'\\'' && test ! -L '\\''files/agentbridge'\\'' && test ! -L '\\''files/agentbridge/interaction-v1'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/state.json'\\'' || exit 73; if test -f \"$1\"; then printf '\\''\\001'\\''; head -c 65537 \"$1\"; else printf '\\''\\000'\\''; fi' 'pico-mcp' 'files/agentbridge/interaction-v1/state.json'"
+        ]
+      ],
+      "code": 0,
+      "stdout": "\u0001{\"schemaVersion\":1,\"kind\":\"pico.agent-bridge.semantic-state\",\"packageName\":\"com.example.picofixture.iteration.debug\",\"generation\":\"971b186f-e529-4bd6-8bab-c3b57f57d015\",\"revision\":0,\"observedAtEpochMs\":1792818864520,\"pid\":4296,\"pidStartTicks\":\"44574\",\"state\":{\"panel\":{\"id\":\"fixture.panel\",\"visible\":false},\"counter\":0},\"actions\":[\"panel.show\"]}",
+      "stderr": "",
+      "timedOut": false,
+      "stdoutBase64": "AXsic2NoZW1hVmVyc2lvbiI6MSwia2luZCI6InBpY28uYWdlbnQtYnJpZGdlLnNlbWFudGljLXN0YXRlIiwicGFja2FnZU5hbWUiOiJjb20uZXhhbXBsZS5waWNvZml4dHVyZS5pdGVyYXRpb24uZGVidWciLCJnZW5lcmF0aW9uIjoiOTcxYjE4NmYtZTUyOS00YmQ2LThiYWItYzNiNTdmNTdkMDE1IiwicmV2aXNpb24iOjAsIm9ic2VydmVkQXRFcG9jaE1zIjoxNzkyODE4ODY0NTIwLCJwaWQiOjQyOTYsInBpZFN0YXJ0VGlja3MiOiI0NDU3NCIsInN0YXRlIjp7InBhbmVsIjp7ImlkIjoiZml4dHVyZS5wYW5lbCIsInZpc2libGUiOmZhbHNlfSwiY291bnRlciI6MH0sImFjdGlvbnMiOlsicGFuZWwuc2hvdyJdfQ=="
+    },
+    {
+      "argv": [
+        "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+        [
+          "-s",
+          "emulator-5554",
+          "exec-out",
+          "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'test ! -L '\\''files'\\'' && test ! -L '\\''files/agentbridge'\\'' && test ! -L '\\''files/agentbridge/interaction-v1'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/state.json'\\'' || exit 73; if test -f \"$1\"; then printf '\\''\\001'\\''; head -c 65537 \"$1\"; else printf '\\''\\000'\\''; fi' 'pico-mcp' 'files/agentbridge/interaction-v1/state.json'"
+        ]
+      ],
+      "code": 0,
+      "stdout": "\u0001{\"schemaVersion\":1,\"kind\":\"pico.agent-bridge.semantic-state\",\"packageName\":\"com.example.picofixture.iteration.debug\",\"generation\":\"971b186f-e529-4bd6-8bab-c3b57f57d015\",\"revision\":0,\"observedAtEpochMs\":1792818864622,\"pid\":4296,\"pidStartTicks\":\"44574\",\"state\":{\"panel\":{\"id\":\"fixture.panel\",\"visible\":false},\"counter\":0},\"actions\":[\"panel.show\"]}",
+      "stderr": "",
+      "timedOut": false,
+      "stdoutBase64": "AXsic2NoZW1hVmVyc2lvbiI6MSwia2luZCI6InBpY28uYWdlbnQtYnJpZGdlLnNlbWFudGljLXN0YXRlIiwicGFja2FnZU5hbWUiOiJjb20uZXhhbXBsZS5waWNvZml4dHVyZS5pdGVyYXRpb24uZGVidWciLCJnZW5lcmF0aW9uIjoiOTcxYjE4NmYtZTUyOS00YmQ2LThiYWItYzNiNTdmNTdkMDE1IiwicmV2aXNpb24iOjAsIm9ic2VydmVkQXRFcG9jaE1zIjoxNzkyODE4ODY0NjIyLCJwaWQiOjQyOTYsInBpZFN0YXJ0VGlja3MiOiI0NDU3NCIsInN0YXRlIjp7InBhbmVsIjp7ImlkIjoiZml4dHVyZS5wYW5lbCIsInZpc2libGUiOmZhbHNlfSwiY291bnRlciI6MH0sImFjdGlvbnMiOlsicGFuZWwuc2hvdyJdfQ=="
+    },
+    {
+      "argv": [
+        "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+        [
+          "-s",
+          "emulator-5554",
+          "exec-out",
+          "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'test ! -L '\\''files'\\'' && test ! -L '\\''files/agentbridge'\\'' && test ! -L '\\''files/agentbridge/interaction-v1'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/acks'\\'' && test ! -L '\\''files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/acks/04f69643-b23e-4f95-b3f4-87d26b002287.json'\\'' || exit 73; if test -f \"$1\"; then printf '\\''\\001'\\''; head -c 65537 \"$1\"; else printf '\\''\\000'\\''; fi' 'pico-mcp' 'files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/acks/04f69643-b23e-4f95-b3f4-87d26b002287.json'"
+        ]
+      ],
+      "code": 0,
+      "stdout": "\u0000",
+      "stderr": "",
+      "timedOut": false,
+      "stdoutBase64": "AA=="
+    },
+    {
+      "argv": [
+        "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+        [
+          "-s",
+          "emulator-5554",
+          "exec-out",
+          "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'test ! -e \"$1\" && test ! -L \"$1\" && test ! -e \"$1.tmp\" && test ! -L \"$1.tmp\" && printf absent' 'pico-reconcile' 'files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox/04f69643-b23e-4f95-b3f4-87d26b002287.json'"
+        ]
+      ],
+      "code": 0,
+      "stdout": "absent",
+      "stderr": "",
+      "timedOut": false,
+      "stdoutBase64": "YWJzZW50"
+    },
+    {
+      "argv": [
+        "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+        [
+          "-s",
+          "emulator-5554",
+          "exec-out",
+          "'run-as' 'com.example.picofixture.iteration.debug' 'ls' '-la' 'files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox' 'files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/acks'"
+        ]
+      ],
+      "code": 0,
+      "stdout": "files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/acks:\ntotal 16\ndrwx------ 2 u0_a101 u0_a101 4096 2026-10-23 22:03 .\ndrwx------ 4 u0_a101 u0_a101 4096 2026-10-23 22:03 ..\n\nfiles/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox:\ntotal 16\ndrwx------ 2 u0_a101 u0_a101 4096 2026-10-23 22:05 .\ndrwx------ 4 u0_a101 u0_a101 4096 2026-10-23 22:03 ..\n",
+      "stderr": "",
+      "timedOut": false,
+      "stdoutBase64": "ZmlsZXMvYWdlbnRicmlkZ2UvaW50ZXJhY3Rpb24tdjEvOTcxYjE4NmYtZTUyOS00YmQ2LThiYWItYzNiNTdmNTdkMDE1L2Fja3M6CnRvdGFsIDE2CmRyd3gtLS0tLS0gMiB1MF9hMTAxIHUwX2ExMDEgNDA5NiAyMDI2LTEwLTIzIDIyOjAzIC4KZHJ3eC0tLS0tLSA0IHUwX2ExMDEgdTBfYTEwMSA0MDk2IDIwMjYtMTAtMjMgMjI6MDMgLi4KCmZpbGVzL2FnZW50YnJpZGdlL2ludGVyYWN0aW9uLXYxLzk3MWIxODZmLWU1MjktNGJkNi04YmFiLWMzYjU3ZjU3ZDAxNS9pbmJveDoKdG90YWwgMTYKZHJ3eC0tLS0tLSAyIHUwX2ExMDEgdTBfYTEwMSA0MDk2IDIwMjYtMTAtMjMgMjI6MDUgLgpkcnd4LS0tLS0tIDQgdTBfYTEwMSB1MF9hMTAxIDQwOTYgMjAyNi0xMC0yMyAyMjowMyAuLgo="
+    }
+  ],
+  "sourceBinding": {
+    "artifactsPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/ARTIFACTS.json",
+    "artifactsSha256": "9a834e0acf58bb37e9565aeb23c70814da1bd525aa9aa8d88543538348362167",
+    "originalBuild": {
+      "record": {
+        "path": "evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/build.json",
+        "bytes": 9028,
+        "sha256": "1d1c2e40e76b40403291518c12a30204add2f8b08201b6b4155b061d065dcc75"
+      },
+      "apk": {
+        "path": "evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/app-debug.apk",
+        "bytes": 32813306,
+        "sha256": "24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04"
+      },
+      "inputSha256": "2d6474e68187119bd8258aba0d67465792c41645888f685ebea4b2d94cd60617",
+      "sourceManifestSha256": "fed8230323f850918c9e68e7bb0c3a758b2dc3da29643ac87c3c97f433b1c1fe",
+      "resolvedInputCount": 12342,
+      "resolvedBefore": {
+        "path": "evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/resolved-inputs-before.json",
+        "bytes": 3364763,
+        "sha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4"
+      },
+      "resolvedAfter": {
+        "path": "evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/resolved-inputs.json",
+        "bytes": 3364763,
+        "sha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4"
+      },
+      "ownership": "released",
+      "package": "com.example.picofixture.iteration.debug",
+      "gradle": {
+        "path": "/Users/sushantsrikrish/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/bin/gradle",
+        "phases": [
+          {
+            "argv": [
+              ":app:writeIterationInputs",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792791088397,
+            "name": "pre-inputs",
+            "startedAt": 1792791078309
+          },
+          {
+            "argv": [
+              ":app:assembleDebug",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792791102692,
+            "name": "assemble",
+            "startedAt": 1792791090927
+          },
+          {
+            "argv": [
+              ":app:writeIterationInputs",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792791111054,
+            "name": "post-inputs",
+            "startedAt": 1792791103752
+          }
+        ],
+        "sha256": "5a7ae6e523747516cc026dea0314023a8e3ee9c89e6c4e975b75b5924b1e7a13"
+      },
+      "serverBuild": "final build7",
+      "nativeInstalled": false,
+      "replayed": false,
+      "renderedReview": false
+    },
+    "sourceChecks": [
+      {
+        "bytes": 7969,
+        "path": "app/src/debug/java/com/example/picofixture/iteration/AgentInteractionBridge.kt",
+        "sha256": "01a50fe1cdb4c95fcc284a980c939c950240a04e81d7cb665cd4b75526934931"
+      },
+      {
+        "bytes": 445,
+        "path": "app/src/main/java/com/example/picofixture/iteration/FixtureState.kt",
+        "sha256": "b64393a8eee800f4f4ae60f0dea1c2d08215e3e655da8614655ebd2ff397f52a"
+      }
+    ],
+    "argument": "Main-looper actions and heartbeats share one generation. panel.show monotonically sets visible and increments revision; no hide/reset route exists. Two advancing post-deadline heartbeats at revision0 establish no semantic effect and no blocked handler."
+  },
+  "outcome": "No state transition in the same bound monotonic fixture generation; no published request or ACK; original deadline expired. No action can still apply.",
+  "drainEvidence": {
+    "originalSend": "Returned without timeout. src/util.ts runBinary resolves after child close; exec-out exit code does not establish remote success.",
+    "runnerSourceSha256": "714439261877406d56c47095e7fb40dc842efba90a2a58a61b30b799b301af0b",
+    "script": "Original script contains only foreground commands; no asynchronous or background launch.",
+    "matchingHostProcesses": [],
+    "nativeProcessesContainOriginalNonce": false,
+    "originalClientAndServerAbsent": true,
+    "qualification": "Process absence and elapsed time alone are not the recovery basis; same-generation monotonic state establishes no effect."
+  },
+  "limitation": "Specific dedicated fixture only. Normal uncertain-session fence remains fail-closed; no stale owner recovery API added.",
+  "originalResultDisposition": "Original in_doubt result and journal remain unchanged; separate explicit root resolution."
+}

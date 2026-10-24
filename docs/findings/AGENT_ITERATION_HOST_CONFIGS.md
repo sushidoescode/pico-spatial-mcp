@@ -1,6 +1,6 @@
 # Agent iteration host configuration candidates
 
-These are discovery-only stdio templates for a built checkout. Replace the literal `REPO_PATH` with its absolute path; the placeholder is not a host expansion variable. The templates enable the opt-in `pico_interaction` tool on the doors surface and set `PICO_ADB=/fixture/no/such/adb`. This prevents device fallback during host conformance checks. It does not authorize or enable an emulator run.
+These are discovery-only stdio templates for a built checkout. Replace the literal `REPO_PATH` with its absolute path; the placeholder is not a host expansion variable. The templates enable the opt-in `pico_interaction` tool on the doors surface, disable CLI-backed operations with `PICO_MCP_CLI_POLICY=disabled`, and set `PICO_ADB=/fixture/no/such/adb`. The missing-file sentinel prevents fallback in the MCP's ADB resolver only. Official CLI 0.6.1 can ignore an inaccessible `ADB_PATH` and continue discovery, so a missing `ADB_PATH` is not an equivalent barrier. These profiles do not authorize or enable an emulator run.
 
 | Host observed on 2026-10-23 | Template | Configuration contract |
 | --- | --- | --- |
@@ -21,6 +21,10 @@ Normal trust and permission decisions still apply. This is an unexecuted launch 
 Codex's installed help supports `exec --ignore-user-config`, which omits the user `config.toml` but continues to use the existing authentication location. It supports TOML `-c key=value` overrides; it does not advertise an arbitrary `--config-file` flag. For a later isolated check, use an empty scratch workspace and translate the template table into invocation-only `-c` values. Project and organization policy must still be accounted for. The TOML server fields and timeouts are also documented by [OpenAI's MCP guide](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) and [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference). Parsing the template here does not prove Codex loaded it.
 
 For a later Gemini check, copy the template only into a new scratch workspace's `.gemini/settings.json`, then use `gemini --allowed-mcp-server-names pico_iteration_fixture` there. Normal workspace trust applies; the template does not set trusted-server behavior. This limits the candidate MCP server names, while other user or organization settings may still apply. No scratch workspace configuration was activated here.
+
+Local configuration or health listings do not complete host conformance. Claude's installed help says `mcp list/get` health-check approved servers. Gemini's installed implementation loads configured and extension servers, suppresses stdio in an untrusted folder, and otherwise connects and pings; that path does not discover tools or deliver images. Actual host sessions and model calls remain unrun.
+
+For separately authorized native examples, set `PICO_ADB=/absolute/existing/adb` and `ADB_PATH=/absolute/existing/adb` as environment assignments on each scenario/replay invocation. Both values must name the same existing executable compatible with the running ADB server: the MCP reads `PICO_ADB`, while CLI 0.6.1 reads `ADB_PATH`. Set them before CLI discovery or session creation because they participate in the selection identity. This needs no global configuration change or ADB server restart; each native command still requires its explicit emulator serial.
 
 | Evidence boundary | Result for this candidate |
 | --- | --- |
