@@ -1,0 +1,38 @@
+
+> pico-spatial-mcp@38.0.0 test:knowledge-lifecycle
+> node scripts/run-gate.mjs test:knowledge-lifecycle
+
+✔ KnowledgeBridge retires an inherited-stdio descendant and starts a fresh generation after timeout (850.785333ms)
+✔ KnowledgeBridge retires its exact root before restart when that root removed the ownership token (1296.29725ms)
+✔ KnowledgeBridge blocks replacement when retirement cannot prove the old generation ended (343.120125ms)
+✔ KnowledgeBridge never signals a reused root PID whose birth identity changed (218.469542ms)
+✔ KnowledgeBridge prevents SDK teardown from signalling a PID after root identity reuse (2471.618959ms)
+✔ KnowledgeBridge prevents SDK-internal startup cleanup from signalling a reused PID (2562.569208ms)
+✔ KnowledgeBridge refuses a reused root row when the exact child handle reports exit before capture (67.203333ms)
+✔ KnowledgeBridge snapshots a token-stripped descendant before requesting root EOF (280.537333ms)
+✔ KnowledgeBridge never signals a remembered descendant PID after birth-identity reuse (191.935208ms)
+✔ KnowledgeBridge requires the generation token before signalling a same-birth remembered descendant (90.92925ms)
+✔ KnowledgeBridge does not signal or replace when POSIX process identity is unavailable (89.369708ms)
+✔ KnowledgeBridge bounds a hung process-table provider and blocks replacement (340.451708ms)
+✔ KnowledgeBridge simulated Windows retirement fails closed without numeric-PID signals (97.2445ms)
+✔ KnowledgeBridge rechecks a retirement block before a managed identity transition can spawn (1372.827416ms)
+✔ KnowledgeBridge returns provenance and classification for managed startup drift (751.180166ms)
+✔ KnowledgeBridge returns provenance and classification for managed startup timeout (1310.547292ms)
+✔ KnowledgeBridge returns provenance and classification for managed call timeout (1202.456ms)
+✔ KnowledgeBridge returns provenance and classification for managed protocol failure (916.67725ms)
+✔ KnowledgeBridge retains managed execution guards through process retirement (1071.930417ms)
+✔ managed knowledge transport spawns only the capability-proven route for each CLI identity (4202.744625ms)
+✔ a managed startup failure never retries another knowledge alias (783.151125ms)
+✔ missing knowledge data and a transport startup failure stay distinct structured results (1899.196ms)
+✔ a knowledge server that stops at the environment gate returns the exact PICO_HOME remedy (813.81ms)
+✔ the canonical managed route keeps cold startup, concurrency, output caps and EOF retirement (3565.783709ms)
+✔ a started knowledge transport declares no graph API of its own (65.540291ms)
+✔ the exported legacy knowledge default is the 0.4.x route-table entry, not a second literal (1.409459ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 26900.278333

@@ -21,27 +21,56 @@ Evidence ranking: `structural` < `auto_judged` < `vision_verified` < `device_ver
 
 ## Gotchas — the expensive ones
 
-**Tests import `dist/`, and nothing rebuilds it.** 51 of 60 files in `test/` import `../dist/*.js`;
+**Tests import `dist/`, and nothing rebuilds it.** 71 of the 98 `test/*.mjs` files carry a
+static or dynamic import specifier starting `../dist/`
+(`grep -lE '(from|import\()[[:space:]]*"\.\./dist/' test/*.mjs | wc -l`);
 `dist/` is gitignored and there is no `pretest` hook. Edit `src/`, run a test, and you get
 byte-identical output because the test never saw your change. **Run `npm run build` first, every
-time.** Same trap in plugin form: `scripts/plugin-bootstrap.mjs` only builds when `dist/index.js`
-is *absent*, so a host serves a stale server forever across restarts.
+time.** The plugin form closes the same trap by itself: `scripts/plugin-bootstrap.mjs` decides
+from its build and dependency receipts — the identity of the sources and the lockfile the output
+was built from, not whether `dist/index.js` happens to exist — and rebuilds a host plugin cache
+whose source moved before it starts the server.
 
 **A release is a version bump — there is no `npm publish`.** No publish step and no release
 workflow exists. Hosts install from GitHub, and `/plugin update` keys off the version in the
 manifests, so bumping `package.json` and running `npm run sync:meta` *is* the release. Testers
 get a hand-built `.tgz`.
 
-**`npm run smoke` is not hermetic, and the better your machine is set up, the more it fails.**
-It hardcodes `~/AndroidStudioProjects/claimsight` with no existence guard. CI is green only
-because `gates.yml` sets `SMOKE_SDK_OPTIONAL=1`, which downgrades failures to SKIP *only* while
-the error text still matches "No spatialbundle binary / emulator payload found under". Once a
-real SDK is present that excuse expires and those checks become hard failures.
+**`npm run smoke` is hermetic on purpose, and the real-toolchain lane is a separate command.**
+Smoke builds the server's whole environment itself — an empty tools root, a fixture home, a PATH
+whose first entry holds a fake `adb` that serves only `fixture-serial`, a fake Gradle, and an `npm`
+that refuses every call — so it cannot select host tooling and its result is not a property of your
+machine. `test:smoke-isolation` holds two specific lines, and it is worth knowing which. It runs
+smoke twice — once under an empty home, once under a home stocked with tripwire SDK binaries and a
+`PICO_HOME` naming them — and asserts the check lists and outcomes match, that both runs pass, that
+no tripwire ran, and that the fixture log shows only `fixture-serial` and Gradle calls with no npm.
+It separately asserts, against the source, that `test/smoke.mjs` contains no `process.env`,
+`os.homedir()` or `AndroidStudioProjects`. A leak that changes an outcome (a host PATH, a host
+home) fails the first; a leak that changes only the tools root is caught by the second, because no
+retained check reads the toolchain. The tools that genuinely need an SDK live in
+`node test/sdk-integration.mjs run --project … --bundle … --output …` — three absolute paths,
+nothing discovered, deliberately not a gate, and its report says "no SDK evidence produced" unless
+every step really ran.
 
-**`test:runrevision` runs in no workflow, and the meta-gate that should catch that is itself
-red.** `test/distribution-adoption.mjs` asserts every `test:` script appears in `gates.yml`, and
-asserts script counts that no longer match reality — so the guard fails for its own reasons and
-people learn to ignore it. Four revision suites can regress invisibly.
+**One inventory owns every gate command and its CI lane.** `scripts/gate-inventory.mjs` holds
+`GATES`; each `test:*`/`smoke` script is only `node scripts/run-gate.mjs <name>`, and `run-gate`
+refuses a gate whose `dist/` is stale before spawning anything — except the two `native-contract`
+shell gates, which compile native sources and never load `dist/`. `run-gate` also spawns every
+`fixture`/`installed-artifact` gate child with `PICO_ADB=/fixture/no/such/adb` (`FIXTURE_NO_ADB`
+in the inventory), replacing whatever your shell inherited — a real adb, an empty string and
+whitespace are all discarded, never passed through; the one pass-through is `PICO_GATE_FIXTURE_ADB`
+naming an absolute executable fake, and anything else in that variable refuses the gate (exit 2)
+before a child exists — a real adb included: an override whose realpath is an adb found in a
+directory on the caller's PATH or up to three levels under `$PICO_HOME` or `~/Library/PICO` is
+refused the same way, by filesystem reads alone. `src/adb.ts` refuses an explicit adb that names no
+file — a blank `PICO_ADB` included — and probes nothing else, so a suite that still reaches adb
+fails loudly instead of touching a device. `gates.yml` keeps the same value at workflow level; it
+is the barrier only for the one raw `node --test` step (run-gate replaces it for every gate child).
+A direct `node --test test/<file>.mjs` gets neither, so export it yourself.
+`validateGateInventory` is what `test:lint` and `test:distribution-adoption` check, and the
+published counts are derived from it — so a gate that no lane runs (`test:runrevision` was exactly
+that, four revision suites regressing invisibly) now fails a gate instead of a doc. Adding one is
+three edits: an entry, a one-line script, a workflow step for its host lane.
 
 **The pico-cli policy block below is byte-pinned across six files.**
 `test/distribution-adoption.mjs` holds the canonical text inline and asserts an exact match in

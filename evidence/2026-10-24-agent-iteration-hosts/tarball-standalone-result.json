@@ -1,0 +1,26 @@
+{
+  "command": [
+    "npm",
+    "run",
+    "test:tarball"
+  ],
+  "exitCode": 0,
+  "artifact": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-hosts/artifacts/standalone/pico-spatial-mcp-38.1.0.tgz",
+    "sha256": "bb4671fe2c9f6f6a5d1df0485ce55590c9edcad833487a4cb46c589721fc0499",
+    "bytes": 2227950,
+    "sourceGateSha256": "bb4671fe2c9f6f6a5d1df0485ce55590c9edcad833487a4cb46c589721fc0499"
+  },
+  "temporaryRoot": "/private/tmp/pico-host-standalone-z_hdoaiw",
+  "noAncestorPackageOrNodeModules": true,
+  "scope": "standalone installed-artifact acceptance",
+  "checkoutManifestsUnchanged": true,
+  "checkoutManifestsBefore": {
+    "package.json": "40b3f560bb6f8c19880a904777abebf5c4d131d01c88f5dbcaf3d57220036f2c",
+    "package-lock.json": "1bac19bb1868d3ea1ea26f52e038a2b7c493d3d650a0d192997e631ef956fd8c"
+  },
+  "checkoutManifestsAfter": {
+    "package.json": "40b3f560bb6f8c19880a904777abebf5c4d131d01c88f5dbcaf3d57220036f2c",
+    "package-lock.json": "1bac19bb1868d3ea1ea26f52e038a2b7c493d3d650a0d192997e631ef956fd8c"
+  }
+}

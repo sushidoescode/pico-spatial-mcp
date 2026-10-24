@@ -1,0 +1,118 @@
+[
+  {
+    "name": "version",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "--version"
+    ],
+    "exitCode": 0,
+    "durationMs": 293,
+    "stdoutSha256": "a34fee349b94c1d499f3cdadd22e503b3cf7ab5437a0c925d6a9fbc1567970d8",
+    "stderrSha256": "7d685ee89366d31202dc6c6f88e3099d247d4683092b59e41bc8a35ce38e43b4",
+    "stdoutBytes": 51,
+    "stderrBytes": 163
+  },
+  {
+    "name": "doctor-help",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "doctor",
+      "--help"
+    ],
+    "exitCode": 0,
+    "durationMs": 317,
+    "stdoutSha256": "0d72f5803341639db14b0c4643584166868758402a202b3020f80c24676001c8",
+    "stderrSha256": "ce0843c8cf4c031b156b681a72cb020dbb04b8727856e4faff10f52da52a2374",
+    "stdoutBytes": 887,
+    "stderrBytes": 163
+  },
+  {
+    "name": "emulator-status-help",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "emulator",
+      "status",
+      "--help"
+    ],
+    "exitCode": 0,
+    "durationMs": 289,
+    "stdoutSha256": "8f99b6380191ef1d830fc61067b2caa4cfe2600ea9472bdb9abe8c5974b81b7a",
+    "stderrSha256": "64ca2a9cc1aee85012949298c412289ef7b26b02612c42e4bc16a007ea1513bf",
+    "stdoutBytes": 486,
+    "stderrBytes": 163
+  },
+  {
+    "name": "device-list-help",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "device",
+      "list",
+      "--help"
+    ],
+    "exitCode": 0,
+    "durationMs": 308,
+    "stdoutSha256": "96a976f15cc1920a2c53f7f78dbd4341e91109a9d2db228d61385deb47b8e658",
+    "stderrSha256": "9dd9fadd45198fe386fe56a88fd3555c8835561cfc44aa60a942fdc13f36a6dd",
+    "stdoutBytes": 306,
+    "stderrBytes": 163
+  },
+  {
+    "name": "shell-help",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "shell",
+      "--help"
+    ],
+    "exitCode": 0,
+    "durationMs": 303,
+    "stdoutSha256": "25023f7a63bb784c1995f8d71a3d759b6de29058fe9e7d02768b4e8e30026d50",
+    "stderrSha256": "638417a368e9032b7058c5013ad83790ed49359b89f757411dfb56443c14c6b8",
+    "stdoutBytes": 342,
+    "stderrBytes": 163
+  },
+  {
+    "name": "app-info-help",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "app",
+      "info",
+      "--help"
+    ],
+    "exitCode": 0,
+    "durationMs": 307,
+    "stdoutSha256": "1fc7a74d84017a18fbdf51195fa7d6de777825bfa24e777fc7d4b052c3310dff",
+    "stderrSha256": "5e349db0be8de70043c6adbe88d2b817389067d874abd4d706cffc47c2e60e65",
+    "stdoutBytes": 387,
+    "stderrBytes": 163
+  },
+  {
+    "name": "app-install-help",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "app",
+      "install",
+      "--help"
+    ],
+    "exitCode": 0,
+    "durationMs": 287,
+    "stdoutSha256": "2db41a03aae3efb3f24b4200e86368d6b23ba29501de0b92586b272713e14403",
+    "stderrSha256": "b12daf0d53b68dbbf6c868e530d32637cc86200b882976685c0c7b71a954264e",
+    "stdoutBytes": 640,
+    "stderrBytes": 163
+  },
+  {
+    "name": "app-launch-help",
+    "argv": [
+      "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "app",
+      "launch",
+      "--help"
+    ],
+    "exitCode": 0,
+    "durationMs": 291,
+    "stdoutSha256": "38a81ff34d2c1745aaa1ba7e8b2c48544cb1bd9a7686dc15de78a285678449eb",
+    "stderrSha256": "31e20cce9e5d4bdbdc5318404e811478dc0bd002739e8aa9255094035d6c7c3c",
+    "stdoutBytes": 510,
+    "stderrBytes": 163
+  }
+]

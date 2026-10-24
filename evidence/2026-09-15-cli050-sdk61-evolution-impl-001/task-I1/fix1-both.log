@@ -1,0 +1,42 @@
+✔ the canary verifies the packaged index and every referenced byte, resolving from packageRoot and never from the working directory (50.839542ms)
+✔ an empty reviewed mapping list is valid; a missing index is not (19.962791ms)
+✔ the relocated package loads its historical references through its own module URL, with no docs/ or test/ present (20.144292ms)
+✔ removing a required basis file makes the payload unavailable, and restoring its exact bytes recovers fresh loading in the same process (24.451042ms)
+✔ a previously accepted mapping does not survive a changed or missing packaged basis, and comes back only when the exact bytes do (28.864083ms)
+✔ a record whose basis the installed index does not declare at the same hash is refused, even when every indexed byte matches (20.281208ms)
+✔ a malformed or wrong-version installed index is refused rather than partially trusted (20.134416ms)
+✔ the canary reads only: it starts no process, opens no network, and never consults the working directory (0.219166ms)
+✔ the reviewed index is a fixed module-relative path and its packaged basis is byte-identical to the historical sources (1.546958ms)
+✔ no packaged compatibility file carries an absolute home path, and the loader refuses a malformed or misplaced derivedFrom (2.124958ms)
+✔ brief snippet: an unindexed caller record is never a candidate, the context stays unknown, and a missing vault is unavailable (0.920791ms)
+✔ a declaration identity is read from package.xml and the api-reference bytes, canonically sorted and root-relative (0.284ms)
+✔ identical declaration installations at different roots share a fingerprint and differ only in root (0.660917ms)
+✔ missing or malformed package metadata makes declaration authority unavailable, naming package.xml (0.843333ms)
+✔ absent roots, directory-only hints and unreadable declarations are unavailable (0.275375ms)
+✔ a symlink escaping the root, duplicate canonical entries and bytes changing during the read are all unavailable (0.594292ms)
+✔ a prose-only root is identified as prose and cannot authorize target declarations (0.688ms)
+✔ an indexed record is accepted only after every bound byte verifies, and its acceptance is bound to the current project (1.307459ms)
+✔ the signature derivation is pinned: symbol + verified declaration/artifact identity on each side (0.407ms)
+✔ every bound file mutated on its own is rejected with the code that names what changed (2.280708ms)
+✔ record schema: unknown versions, ranges, wildcards, project fields and compatibility booleans are refused (4.152958ms)
+✔ a basis outside the reviewed index and a caller path with reviewed bytes are both not-reviewed (1.019042ms)
+✔ context mismatch: wrong target BOM, an unexpected SDK module, a different source set — while unrelated app dependencies are ignored (1.435875ms)
+✔ a declared-only or unknown project identity is target-unresolved; a stale identity is refused until re-read (1.629792ms)
+✔ source 0.13.3 -> target 6.1.0 with no reviewed mapping stays unknown even though every version string is valid (0.663042ms)
+✔ brief snippet: two projects with identical resolved SDK artifacts reuse one record; a changed artifact or configuration is not carried over (1.362083ms)
+✔ only loader-branded evidence counts; a structurally identical plain object and a caller-built source are refused (0.577334ms)
+✔ no target is historical; conflicting applicable records are incompatible; disjoint scopes keep their own verdicts (1.571542ms)
+✔ the host artifact lookup answers only exact hashes inside the Gradle module cache and never runs anything (1.464042ms)
+✔ the module reads only; it never spawns a process, runs Gradle or the CLI, or writes to a project (5.755ms)
+✔ a multi-match lookup is headlined target-verified only when EVERY returned match is verified; a partial match stays unknown and names the verified ones (0.89875ms)
+✔ a missing or invalid packaged index is reported distinctly from an index that lists no records (1.760709ms)
+✔ combined fixture: selected tools 6.1, project BOM 6.0.0, vault revision 0.13.3 and a dynamic-BOM project are four independent facts (1.904875ms)
+✔ a fabricated CLI version/fingerprint hint never becomes authority: only the local bytes decide, and an unsupported transport stays unavailable (0.685416ms)
+ℹ tests 34
+ℹ suites 0
+ℹ pass 34
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 274.895291

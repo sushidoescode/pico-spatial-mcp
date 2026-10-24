@@ -1,0 +1,10 @@
+Usage:
+  $ pico-cli app install <path>
+
+Options:
+  -d, --device <device>    Target device id (overrides automatic selection) 
+  -r, --replace            Replace an existing application 
+  --downgrade              Allow version code downgrade (adb install -d) 
+  -t, --test               Allow test packages 
+  -g, --grant-permissions  Grant runtime permissions on install 
+  -h, --help               Display this message 

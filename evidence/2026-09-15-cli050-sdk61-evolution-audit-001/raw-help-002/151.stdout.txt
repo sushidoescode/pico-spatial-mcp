@@ -1,0 +1,14 @@
+Description:
+Assess SpatialML SDK onboarding and route to the owning SDK workflow
+
+Usage:
+  $ pico-cli spatialml onboard [--project <path>] [--format plain|json]
+
+Options:
+  --project <path>   Native OpenXR, Unity, or Kotlin Spatial SDK project directory (default: .)
+  --format <format>  Output format (plain | json) (default: plain)
+  -h, --help         Display this message
+
+Examples:
+  $ pico-cli spatialml onboard
+  $ pico-cli spatialml onboard --project apps/demo --format json

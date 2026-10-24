@@ -1,0 +1,3526 @@
+
+> pico-spatial-mcp@38.1.0 test:emulator-restart
+> node scripts/run-gate.mjs test:emulator-restart
+
+(node:41586) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:41589) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: emulator child env derives Android roots from the selected payload without mutating its parent
+ok 1 - emulator child env derives Android roots from the selected payload without mutating its parent
+  ---
+  duration_ms: 1.276583
+  ...
+# Subtest: discovery records expose the qemu PID and adb serial while malformed records fail closed
+ok 2 - discovery records expose the qemu PID and adb serial while malformed records fail closed
+  ---
+  duration_ms: 1.338792
+  ...
+# Subtest: discovery directory races and non-file ini entries are ignored per record
+ok 3 - discovery directory races and non-file ini entries are ignored per record
+  ---
+  duration_ms: 1.270459
+  ...
+# Subtest: emulator boot defaults cold starts to a 600-second overridable timeout
+ok 4 - emulator boot defaults cold starts to a 600-second overridable timeout
+  ---
+  duration_ms: 0.91875
+  ...
+# Subtest: a zero-exit launcher hands off to the discovered qemu process without leaking Android roots
+ok 5 - a zero-exit launcher hands off to the discovered qemu process without leaking Android roots
+  ---
+  duration_ms: 3208.376083
+  ...
+# Subtest: a replaced stale discovery pathname is recognized as the new qemu record
+ok 6 - a replaced stale discovery pathname is recognized as the new qemu record
+  ---
+  duration_ms: 3142.167916
+  ...
+# Subtest: a boot timeout reports the qemu PID discovered after launcher handoff
+ok 7 - a boot timeout reports the qemu PID discovered after launcher handoff
+  ---
+  duration_ms: 3124.457958
+  ...
+# Subtest: a nonzero launcher exit remains an immediate boot failure
+ok 8 - a nonzero launcher exit remains an immediate boot failure
+  ---
+  duration_ms: 3119.126166
+  ...
+# Subtest: a signaled launcher remains an immediate boot failure
+ok 9 - a signaled launcher remains an immediate boot failure
+  ---
+  duration_ms: 3116.091083
+  ...
+# (node:41590) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: route preserves grouped waypoint and action order through injected action, capture, and allocation dependencies
+ok 10 - route preserves grouped waypoint and action order through injected action, capture, and allocation dependencies
+  ---
+  duration_ms: 3.387458
+  ...
+# Subtest: route catches an async controller that is not awaited before allocation and exposes its remaining deadline
+ok 11 - route catches an async controller that is not awaited before allocation and exposes its remaining deadline
+  ---
+  duration_ms: 0.63575
+  ...
+# Subtest: route catches an async controller rejection without allocating or applying input
+ok 12 - route catches an async controller rejection without allocating or applying input
+  ---
+  duration_ms: 0.26175
+  ...
+# Subtest: compatibility route returns at its deadline when a controller promise never settles
+ok 13 - compatibility route returns at its deadline when a controller promise never settles
+  ---
+  duration_ms: 5.102333
+  ...
+# Subtest: a late compatibility decision cannot schedule route work after the deadline result
+ok 14 - a late compatibility decision cannot schedule route work after the deadline result
+  ---
+  duration_ms: 32.275042
+  ...
+# Subtest: persistent route execution carries its original budgets, sequence, paths, and adopted settled baseline across continuations
+ok 15 - persistent route execution carries its original budgets, sequence, paths, and adopted settled baseline across continuations
+  ---
+  duration_ms: 1.378666
+  ...
+# Subtest: paired route step restores an applied outbound exactly once through the paid recovery lane after active time is consumed
+ok 16 - paired route step restores an applied outbound exactly once through the paid recovery lane after active time is consumed
+  ---
+  duration_ms: 0.924625
+  ...
+# Subtest: paired route attempt ledger retains an applied outbound capture failure before its successful inverse
+ok 17 - paired route attempt ledger retains an applied outbound capture failure before its successful inverse
+  ---
+  duration_ms: 2.293583
+  ...
+# Subtest: paired route attempt ledger retains the outbound and a failed inverse without overwriting either
+ok 18 - paired route attempt ledger retains the outbound and a failed inverse without overwriting either
+  ---
+  duration_ms: 2.393083
+  ...
+# Subtest: route attempt ledger classifies applied receipts with invalid binding evidence as failed terminal attempts
+ok 19 - route attempt ledger classifies applied receipts with invalid binding evidence as failed terminal attempts
+  ---
+  duration_ms: 1.620667
+  ...
+# Subtest: paired route step refuses before outbound when the exact inverse cannot fit the recovery reserve
+ok 20 - paired route step refuses before outbound when the exact inverse cannot fit the recovery reserve
+  ---
+  duration_ms: 0.388834
+  ...
+# Subtest: each action group waits once for rendered motion and passes the exact prior capture hash into settlement
+ok 21 - each action group waits once for rendered motion and passes the exact prior capture hash into settlement
+  ---
+  duration_ms: 0.49075
+  ...
+# Subtest: route rejects a dependency that falsely settles on the exact prior capture
+ok 22 - route rejects a dependency that falsely settles on the exact prior capture
+  ---
+  duration_ms: 0.43
+  ...
+# Subtest: a failed post-action render dwell stops before capture or later movement
+ok 23 - a failed post-action render dwell stops before capture or later movement
+  ---
+  duration_ms: 0.284625
+  ...
+# Subtest: bound action execution is ordered, exact-serial, and stops at the first failed receipt
+ok 24 - bound action execution is ordered, exact-serial, and stops at the first failed receipt
+  ---
+  duration_ms: 0.086042
+  ...
+# Subtest: bound action receipts must retain exact gRPC and host-window binding evidence before later input
+ok 25 - bound action receipts must retain exact gRPC and host-window binding evidence before later input
+  ---
+  duration_ms: 0.402042
+  ...
+# Subtest: bound action core retains the exact proven no-input discovery failure and stops before later input
+ok 26 - bound action core retains the exact proven no-input discovery failure and stops before later input
+  ---
+  duration_ms: 0.091916
+  ...
+# Subtest: no-gRPC receipts are rejected if input was attempted, uncertain, applied, release-uncertain, or not the exact producer shape
+ok 27 - no-gRPC receipts are rejected if input was attempted, uncertain, applied, release-uncertain, or not the exact producer shape
+  ---
+  duration_ms: 0.223917
+  ...
+# Subtest: bound action core validates every action before invoking the adapter
+ok 28 - bound action core validates every action before invoking the adapter
+  ---
+  duration_ms: 0.483208
+  ...
+# Subtest: bound action core validates complete binding and dependency shape before invoking the adapter
+ok 29 - bound action core validates complete binding and dependency shape before invoking the adapter
+  ---
+  duration_ms: 0.381333
+  ...
+# Subtest: selector-qualified single-window fallbacks retain null or mismatched discovery PID provenance
+ok 30 - selector-qualified single-window fallbacks retain null or mismatched discovery PID provenance
+  ---
+  duration_ms: 1.237792
+  ...
+# Subtest: qemu binding catches geometry or backing-scale drift while legacy id/pid receipts remain accepted
+ok 31 - qemu binding catches geometry or backing-scale drift while legacy id/pid receipts remain accepted
+  ---
+  duration_ms: 0.326834
+  ...
+# Subtest: bound action adapter freshly revalidates every endpoint and exact window field before each input
+ok 32 - bound action adapter freshly revalidates every endpoint and exact window field before each input
+  ---
+  duration_ms: 152.807959
+  ...
+# Subtest: bound action failures retain prior receipts and the terminal attempt
+ok 33 - bound action failures retain prior receipts and the terminal attempt
+  ---
+  duration_ms: 0.343875
+  ...
+# Subtest: per-action hold and drag caps reject the whole waypoint before input
+ok 34 - per-action hold and drag caps reject the whole waypoint before input
+  ---
+  duration_ms: 0.512417
+  ...
+# Subtest: cumulative hold, drag, and action caps reject a later group before partial application
+ok 35 - cumulative hold, drag, and action caps reject a later group before partial application
+  ---
+  duration_ms: 1.15925
+  ...
+# Subtest: waypoint cap stops before allocating or moving a second waypoint
+ok 36 - waypoint cap stops before allocating or moving a second waypoint
+  ---
+  duration_ms: 0.471625
+  ...
+# Subtest: conservative duration preflight reserves capture attempts, intervals, and recovery before movement
+ok 37 - conservative duration preflight reserves capture attempts, intervals, and recovery before movement
+  ---
+  duration_ms: 0.293542
+  ...
+# Subtest: a look drag is admitted only when the duration budget covers fresh focus verification and CGEvent delivery
+ok 38 - a look drag is admitted only when the duration budget covers fresh focus verification and CGEvent delivery
+  ---
+  duration_ms: 0.469666
+  ...
+# Subtest: a four-action outer-gate group is admitted only at its exact conservative live-duration bound
+ok 39 - a four-action outer-gate group is admitted only at its exact conservative live-duration bound
+  ---
+  duration_ms: 1.186667
+  ...
+# Subtest: controller stop returns without sampling, input, allocation, or capture
+ok 40 - controller stop returns without sampling, input, allocation, or capture
+  ---
+  duration_ms: 0.223417
+  ...
+# Subtest: uncertain paired release stops before settlement and no later recovery-like action runs
+ok 41 - uncertain paired release stops before settlement and no later recovery-like action runs
+  ---
+  duration_ms: 0.31375
+  ...
+# Subtest: an unsettled capture is retained in the trace but stops every later action
+ok 42 - an unsettled capture is retained in the trace but stops every later action
+  ---
+  duration_ms: 0.275625
+  ...
+# Subtest: required continuity fails closed when missing, mismatched before input, or lost after settlement
+ok 43 - required continuity fails closed when missing, mismatched before input, or lost after settlement
+  ---
+  duration_ms: 0.511625
+  ...
+# Subtest: route rechecks its elapsed deadline after pre-action continuity and refuses late input
+ok 44 - route rechecks its elapsed deadline after pre-action continuity and refuses late input
+  ---
+  duration_ms: 0.316291
+  ...
+# Subtest: route rechecks its elapsed deadline after the render dwell and refuses a late capture
+ok 45 - route rechecks its elapsed deadline after the render dwell and refuses a late capture
+  ---
+  duration_ms: 0.224375
+  ...
+# Subtest: route rechecks its elapsed deadline after capture and preserves post-capture reserves
+ok 46 - route rechecks its elapsed deadline after capture and preserves post-capture reserves
+  ---
+  duration_ms: 0.184042
+  ...
+# Subtest: route rechecks its elapsed deadline after final continuity before accepting the waypoint
+ok 47 - route rechecks its elapsed deadline after final continuity before accepting the waypoint
+  ---
+  duration_ms: 0.232542
+  ...
+# Subtest: malformed prior capture, numeric budgets, capture policies, holds, and drags fail closed before dependencies
+ok 48 - malformed prior capture, numeric budgets, capture policies, holds, and drags fail closed before dependencies
+  ---
+  duration_ms: 0.82525
+  ...
+# Subtest: application-aware route requires a numeric discovery PID before dependencies
+ok 49 - application-aware route requires a numeric discovery PID before dependencies
+  ---
+  duration_ms: 0.100334
+  ...
+# Subtest: compatibility fallback provenance cannot downgrade strict route PID-window validation
+ok 50 - compatibility fallback provenance cannot downgrade strict route PID-window validation
+  ---
+  duration_ms: 0.068459
+  ...
+# Subtest: an empty action group is rejected rather than silently becoming controller stop
+ok 51 - an empty action group is rejected rather than silently becoming controller stop
+  ---
+  duration_ms: 0.174041
+  ...
+# Subtest: a non-monotonic injected clock fails closed before movement
+ok 52 - a non-monotonic injected clock fails closed before movement
+  ---
+  duration_ms: 0.319417
+  ...
+# Subtest: not_requested continuity never invokes an injected sampler during a real waypoint
+ok 53 - not_requested continuity never invokes an injected sampler during a real waypoint
+  ---
+  duration_ms: 0.452875
+  ...
+# Subtest: required continuity rejects a sampler that changes its exact allowed-component contract
+ok 54 - required continuity rejects a sampler that changes its exact allowed-component contract
+  ---
+  duration_ms: 0.487541
+  ...
+# Subtest: waypoint allocation is single-call and must return the canonical path below the reserved root
+ok 55 - waypoint allocation is single-call and must return the canonical path below the reserved root
+  ---
+  duration_ms: 0.551334
+  ...
+# Subtest: symlinked session roots and nearest existing ancestors resolving into the repository fail before continuity or input
+ok 56 - symlinked session roots and nearest existing ancestors resolving into the repository fail before continuity or input
+  ---
+  duration_ms: 1.887416
+  ...
+# Subtest: a canonical allocated filename that resolves through a symlink into the repository fails before continuity or input
+ok 57 - a canonical allocated filename that resolves through a symlink into the repository fails before continuity or input
+  ---
+  duration_ms: 6.137667
+  ...
+# Subtest: an artifact session rooted inside the repository is rejected before movement
+ok 58 - an artifact session rooted inside the repository is rejected before movement
+  ---
+  duration_ms: 0.295083
+  ...
+# Subtest: an artifact root that contains the repository is rejected before allocation or movement
+ok 59 - an artifact root that contains the repository is rejected before allocation or movement
+  ---
+  duration_ms: 0.150708
+  ...
+# Subtest: an allocated waypoint inside the repository is rejected independently of the session root
+ok 60 - an allocated waypoint inside the repository is rejected independently of the session root
+  ---
+  duration_ms: 0.220625
+  ...
+# Subtest: settled receipt path, serial, capture reference, and boot binding must match the allocated waypoint
+ok 61 - settled receipt path, serial, capture reference, and boot binding must match the allocated waypoint
+  ---
+  duration_ms: 0.864167
+  ...
+# Subtest: controller and dependency exceptions fail closed without any later action
+ok 62 - controller and dependency exceptions fail closed without any later action
+  ---
+  duration_ms: 0.616
+  ...
+# Subtest: route accounts for every attempted action and exposes retained evidence on a mid-group failure
+ok 63 - route accounts for every attempted action and exposes retained evidence on a mid-group failure
+  ---
+  duration_ms: 0.527542
+  ...
+# Subtest: route retains an applied key and the terminal focus-refused drag receipt from a mixed group
+ok 64 - route retains an applied key and the terminal focus-refused drag receipt from a mixed group
+  ---
+  duration_ms: 152.837
+  ...
+# Subtest: bound action execution rejects serial and action-kind receipt mismatches
+ok 65 - bound action execution rejects serial and action-kind receipt mismatches
+  ---
+  duration_ms: 0.19925
+  ...
+# (node:41591) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: measureTwoColorGuide catches a union that drops the outer nested-corners bbox
+ok 66 - measureTwoColorGuide catches a union that drops the outer nested-corners bbox
+  ---
+  duration_ms: 3.647875
+  ...
+# Subtest: measureTwoColorGuide catches a center error calculated from the inner color only
+ok 67 - measureTwoColorGuide catches a center error calculated from the inner color only
+  ---
+  duration_ms: 0.15525
+  ...
+# Subtest: measureTwoColorGuide catches missing, duplicate, non-nested, equal, and neutral guide keys
+ok 68 - measureTwoColorGuide catches missing, duplicate, non-nested, equal, and neutral guide keys
+  ---
+  duration_ms: 0.255709
+  ...
+# Subtest: measureTwoColorGuide catches stale detector availability and contradictory expected/found maps
+ok 69 - measureTwoColorGuide catches stale detector availability and contradictory expected/found maps
+  ---
+  duration_ms: 0.08275
+  ...
+# Subtest: fitThroughOrigin catches an intercept-based drag fit and preserves literal residual evidence
+ok 70 - fitThroughOrigin catches an intercept-based drag fit and preserves literal residual evidence
+  ---
+  duration_ms: 0.31075
+  ...
+# Subtest: calibrationQuality catches residual and explained-variance gates
+ok 71 - calibrationQuality catches residual and explained-variance gates
+  ---
+  duration_ms: 0.308334
+  ...
+# Subtest: calibrationContextKey catches identity changes while ignoring path and timestamp noise
+ok 72 - calibrationContextKey catches identity changes while ignoring path and timestamp noise
+  ---
+  duration_ms: 0.545167
+  ...
+# Subtest: validateNavigationCalibration catches stale identity, unsigned drags, backward motion, and forged fit quality
+ok 73 - validateNavigationCalibration catches stale identity, unsigned drags, backward motion, and forged fit quality
+  ---
+  duration_ms: 0.509333
+  ...
+# Subtest: decideNavigationStep catches an acquisition search that includes a vertical drag
+ok 74 - decideNavigationStep catches an acquisition search that includes a vertical drag
+  ---
+  duration_ms: 0.368833
+  ...
+# Subtest: decideNavigationStep catches a search drag that exceeds the remaining cumulative drag budget
+ok 75 - decideNavigationStep catches a search drag that exceeds the remaining cumulative drag budget
+  ---
+  duration_ms: 0.2965
+  ...
+# Subtest: decideNavigationStep catches a fractional drag remainder that cannot form a route-valid action
+ok 76 - decideNavigationStep catches a fractional drag remainder that cannot form a route-valid action
+  ---
+  duration_ms: 0.114417
+  ...
+# Subtest: decideNavigationStep catches a center-band target that fails to retain target_centered
+ok 77 - decideNavigationStep catches a center-band target that fails to retain target_centered
+  ---
+  duration_ms: 0.063791
+  ...
+# Subtest: decideNavigationStep catches unclamped yaw and pitch centering
+ok 78 - decideNavigationStep catches unclamped yaw and pitch centering
+  ---
+  duration_ms: 0.042041
+  ...
+# Subtest: decideNavigationStep catches an overshoot that does not reduce centering gain
+ok 79 - decideNavigationStep catches an overshoot that does not reduce centering gain
+  ---
+  duration_ms: 0.0445
+  ...
+# Subtest: decideNavigationStep catches a pitch-guard violation that issues forward hold
+ok 80 - decideNavigationStep catches a pitch-guard violation that issues forward hold
+  ---
+  duration_ms: 0.0355
+  ...
+# Subtest: decideNavigationStep catches a growing guide that does not approach forward
+ok 81 - decideNavigationStep catches a growing guide that does not approach forward
+  ---
+  duration_ms: 0.041208
+  ...
+# Subtest: decideNavigationStep catches a forward hold that exceeds the remaining cumulative hold budget
+ok 82 - decideNavigationStep catches a forward hold that exceeds the remaining cumulative hold budget
+  ---
+  duration_ms: 0.03175
+  ...
+# Subtest: decideNavigationStep catches a fractional hold remainder that cannot form a route-valid action
+ok 83 - decideNavigationStep catches a fractional hold remainder that cannot form a route-valid action
+  ---
+  duration_ms: 0.0355
+  ...
+# Subtest: decideNavigationStep catches two shrinking observations that continue approach
+ok 84 - decideNavigationStep catches two shrinking observations that continue approach
+  ---
+  duration_ms: 0.041042
+  ...
+# Subtest: decideNavigationStep catches a disappeared approach guide that keeps searching
+ok 85 - decideNavigationStep catches a disappeared approach guide that keeps searching
+  ---
+  duration_ms: 0.029375
+  ...
+# Subtest: decideNavigationStep catches target-area completion, action/time exhaustion, scene drift, and cleanup status
+ok 86 - decideNavigationStep catches target-area completion, action/time exhaustion, scene drift, and cleanup status
+  ---
+  duration_ms: 0.238459
+  ...
+# Subtest: navigation-guide transport catches a broadcast that omits an identity or fiducial field
+ok 87 - navigation-guide transport catches a broadcast that omits an identity or fiducial field
+  ---
+  duration_ms: 2.8365
+  ...
+# Subtest: navigation-guide transport accepts an exact hide acknowledgement
+ok 88 - navigation-guide transport accepts an exact hide acknowledgement
+  ---
+  duration_ms: 0.676709
+  ...
+# Subtest: navigation-guide transport accepts an acknowledgement that appears after the old three-poll window
+ok 89 - navigation-guide transport accepts an acknowledgement that appears after the old three-poll window
+  ---
+  duration_ms: 0.630375
+  ...
+# Subtest: navigation-guide transport rejects unsupported producer inputs before broadcast
+    # Subtest: pattern
+    ok 1 - pattern
+      ---
+      duration_ms: 0.1275
+      ...
+    # Subtest: projection model
+    ok 2 - projection model
+      ---
+      duration_ms: 0.041375
+      ...
+    # Subtest: palette
+    ok 3 - palette
+      ---
+      duration_ms: 0.036958
+      ...
+    # Subtest: width
+    ok 4 - width
+      ---
+      duration_ms: 0.030542
+      ...
+    # Subtest: height
+    ok 5 - height
+      ---
+      duration_ms: 0.029583
+      ...
+    # Subtest: ack read timeout
+    ok 6 - ack read timeout
+      ---
+      duration_ms: 0.103542
+      ...
+    1..6
+ok 90 - navigation-guide transport rejects unsupported producer inputs before broadcast
+  ---
+  duration_ms: 0.659042
+  ...
+# Subtest: navigation-guide transport catches malformed, stale, contradictory, partial, or substituted terminal acks
+    # Subtest: malformed JSON
+    ok 1 - malformed JSON
+      ---
+      duration_ms: 0.788292
+      ...
+    # Subtest: extra field
+    ok 2 - extra field
+      ---
+      duration_ms: 1.436958
+      ...
+    # Subtest: wrong kind
+    ok 3 - wrong kind
+      ---
+      duration_ms: 0.625208
+      ...
+    # Subtest: wrong schema
+    ok 4 - wrong schema
+      ---
+      duration_ms: 0.529917
+      ...
+    # Subtest: wrong revision
+    ok 5 - wrong revision
+      ---
+      duration_ms: 0.245708
+      ...
+    # Subtest: wrong request
+    ok 6 - wrong request
+      ---
+      duration_ms: 0.282167
+      ...
+    # Subtest: wrong package
+    ok 7 - wrong package
+      ---
+      duration_ms: 0.411042
+      ...
+    # Subtest: wrong mode
+    ok 8 - wrong mode
+      ---
+      duration_ms: 0.35325
+      ...
+    # Subtest: stale snapshot
+    ok 9 - stale snapshot
+      ---
+      duration_ms: 0.316625
+      ...
+    # Subtest: wrong trace
+    ok 10 - wrong trace
+      ---
+      duration_ms: 0.198417
+      ...
+    # Subtest: wrong runtime UUID
+    ok 11 - wrong runtime UUID
+      ---
+      duration_ms: 0.175292
+      ...
+    # Subtest: wrong pattern
+    ok 12 - wrong pattern
+      ---
+      duration_ms: 0.255083
+      ...
+    # Subtest: wrong projection model
+    ok 13 - wrong projection model
+      ---
+      duration_ms: 0.699042
+      ...
+    # Subtest: wrong color order
+    ok 14 - wrong color order
+      ---
+      duration_ms: 0.733542
+      ...
+    # Subtest: wrong width
+    ok 15 - wrong width
+      ---
+      duration_ms: 0.254375
+      ...
+    # Subtest: wrong height
+    ok 16 - wrong height
+      ---
+      duration_ms: 0.236625
+      ...
+    # Subtest: contradictory shown state
+    ok 17 - contradictory shown state
+      ---
+      duration_ms: 0.329917
+      ...
+    # Subtest: partial
+    ok 18 - partial
+      ---
+      duration_ms: 0.240709
+      ...
+    1..18
+ok 91 - navigation-guide transport catches malformed, stale, contradictory, partial, or substituted terminal acks
+  ---
+  duration_ms: 9.178958
+  ...
+# Subtest: navigation-guide transport catches guest rejection and host cleanup loss without erasing evidence
+ok 92 - navigation-guide transport catches guest rejection and host cleanup loss without erasing evidence
+  ---
+  duration_ms: 0.553208
+  ...
+# Subtest: navigation-guide transport orders a newer hide after a delayed show timeout and sweeps its late ack
+ok 93 - navigation-guide transport orders a newer hide after a delayed show timeout and sweeps its late ack
+  ---
+  duration_ms: 0.781958
+  ...
+# Subtest: generated guest drops a SHOW that first reaches the mutex after HIDE acknowledgement and host sweep
+ok 94 - generated guest drops a SHOW that first reaches the mutex after HIDE acknowledgement and host sweep
+  ---
+  duration_ms: 1.59725
+  ...
+# Subtest: navigation-guide transport keeps invalidation ack cleanup failure terminal
+ok 95 - navigation-guide transport keeps invalidation ack cleanup failure terminal
+  ---
+  duration_ms: 0.816542
+  ...
+# Subtest: navigation-guide transport catches an unbounded poll or logcat-shaped fallback
+ok 96 - navigation-guide transport catches an unbounded poll or logcat-shaped fallback
+  ---
+  duration_ms: 0.315541
+  ...
+# Subtest: navigate waits through the measured seven-retry scene population delay by default
+ok 97 - navigate waits through the measured seven-retry scene population delay by default
+  ---
+  duration_ms: 8.438459
+  ...
+# Subtest: navigate reports scene_not_ready when the caller-bounded scene readiness budget expires
+ok 98 - navigate reports scene_not_ready when the caller-bounded scene readiness budget expires
+  ---
+  duration_ms: 1.547583
+  ...
+# Subtest: navigate accepts the camera-proof principal point under the off-center default camera
+ok 99 - navigate accepts the camera-proof principal point under the off-center default camera
+  ---
+  duration_ms: 3.232459
+  ...
+# Subtest: navigate keeps the centered-camera orchestration fixture as a secondary principal-point case
+ok 100 - navigate keeps the centered-camera orchestration fixture as a secondary principal-point case
+  ---
+  duration_ms: 4.626
+  ...
+# Subtest: navigation-guide capability preflight refuses a legacy bridge before capture or camera input
+ok 101 - navigation-guide capability preflight refuses a legacy bridge before capture or camera input
+  ---
+  duration_ms: 1.177042
+  ...
+# Subtest: navigate orchestration catches normalized largest-horizontal ambiguity before qemu, guide, capture, or input
+ok 102 - navigate orchestration catches normalized largest-horizontal ambiguity before qemu, guide, capture, or input
+  ---
+  duration_ms: 1.82875
+  ...
+# Subtest: largest-horizontal ambiguity uses the exact bounds product without decimal rounding
+ok 103 - largest-horizontal ambiguity uses the exact bounds product without decimal rounding
+  ---
+  duration_ms: 1.531167
+  ...
+# Subtest: largest-horizontal selection rejects a sole zero-area candidate before qemu or guide work
+ok 104 - largest-horizontal selection rejects a sole zero-area candidate before qemu or guide work
+  ---
+  duration_ms: 1.922
+  ...
+# Subtest: navigate orchestration catches a row-major non-horizontal target before qemu or guide work
+ok 105 - navigate orchestration catches a row-major non-horizontal target before qemu or guide work
+  ---
+  duration_ms: 1.530375
+  ...
+# Subtest: navigate orchestration catches geometryRef byte or SHA substitution before selector-dependent side effects
+ok 106 - navigate orchestration catches geometryRef byte or SHA substitution before selector-dependent side effects
+  ---
+  duration_ms: 0.809833
+  ...
+# Subtest: navigate orchestration catches missing exact qemu geometry before reserving, guide work, capture, or input
+ok 107 - navigate orchestration catches missing exact qemu geometry before reserving, guide work, capture, or input
+  ---
+  duration_ms: 0.856334
+  ...
+# Subtest: navigate orchestration catches missing exact-context calibration before W while retaining visible/centered claims and cleanup
+ok 108 - navigate orchestration catches missing exact-context calibration before W while retaining visible/centered claims and cleanup
+  ---
+  duration_ms: 2.1545
+  ...
+# Subtest: navigate orchestration catches stale exact-context calibration before W while retaining visible/centered claims and cleanup
+ok 109 - navigate orchestration catches stale exact-context calibration before W while retaining visible/centered claims and cleanup
+  ---
+  duration_ms: 2.292666
+  ...
+# Subtest: navigate consumes only a strict receipt-linked exact-context calibration and re-reads it immediately before W
+ok 110 - navigate consumes only a strict receipt-linked exact-context calibration and re-reads it immediately before W
+  ---
+  duration_ms: 7.916959
+  ...
+# Subtest: navigate catches a receipt changed after initial validation immediately before W
+ok 111 - navigate catches a receipt changed after initial validation immediately before W
+  ---
+  duration_ms: 7.336959
+  ...
+# Subtest: navigate rejects missing, tampered, orphaned, weakened-policy, tiny-slope, and normalized-closure calibration receipts before W
+ok 112 - navigate rejects missing, tampered, orphaned, weakened-policy, tiny-slope, and normalized-closure calibration receipts before W
+  ---
+  duration_ms: 12.29875
+  ...
+# Subtest: navigate converts fresh angular guide error through accepted yaw and pitch fits
+ok 113 - navigate converts fresh angular guide error through accepted yaw and pitch fits
+  ---
+  duration_ms: 2.004417
+  ...
+# Subtest: navigate orchestration never forwards an initial in-band free-camera claim without an acknowledged W plus growing projection trend
+ok 114 - navigate orchestration never forwards an initial in-band free-camera claim without an acknowledged W plus growing projection trend
+  ---
+  duration_ms: 8.057
+  ...
+# Subtest: byte-identical absent guide-off/on frames run a bounded horizontal acquisition series and then repeat the same-view delta
+ok 115 - byte-identical absent guide-off/on frames run a bounded horizontal acquisition series and then repeat the same-view delta
+  ---
+  duration_ms: 5.216459
+  ...
+# Subtest: a timed-out repeated SHOW is drained before result cleanup and cannot mutate guide or input afterward
+ok 116 - a timed-out repeated SHOW is drained before result cleanup and cannot mutate guide or input afterward
+  ---
+  duration_ms: 46.754625
+  ...
+# Subtest: navigate orchestration catches reordered capture/input/cleanup and retains independent achieved claims
+ok 117 - navigate orchestration catches reordered capture/input/cleanup and retains independent achieved claims
+  ---
+  duration_ms: 3.96975
+  ...
+# Subtest: navigate orchestration catches detector bytes mutated during path-based analysis and still performs bounded cleanup
+ok 118 - navigate orchestration catches detector bytes mutated during path-based analysis and still performs bounded cleanup
+  ---
+  duration_ms: 1.296416
+  ...
+# Subtest: navigate orchestration retains an unsettled guide-on receipt and still hides then settles clean
+ok 119 - navigate orchestration retains an unsettled guide-on receipt and still hides then settles clean
+  ---
+  duration_ms: 0.89825
+  ...
+# Subtest: navigate orchestration catches input failure without erasing pre-action claims or terminal receipt evidence
+ok 120 - navigate orchestration catches input failure without erasing pre-action claims or terminal receipt evidence
+  ---
+  duration_ms: 2.982459
+  ...
+# Subtest: navigate orchestration re-queries after a settled waypoint and catches cross-query scene drift
+ok 121 - navigate orchestration re-queries after a settled waypoint and catches cross-query scene drift
+  ---
+  duration_ms: 3.43875
+  ...
+# Subtest: navigate orchestration catches action exhaustion without claiming an unadmitted waypoint
+ok 122 - navigate orchestration catches action exhaustion without claiming an unadmitted waypoint
+  ---
+  duration_ms: 3.363833
+  ...
+# Subtest: navigate refuses an impossible 180-second schedule before reserve, capture, SHOW, or camera input
+ok 123 - navigate refuses an impossible 180-second schedule before reserve, capture, SHOW, or camera input
+  ---
+  duration_ms: 1.140917
+  ...
+# Subtest: navigate reserves the bounded 30-poll guide transactions before any camera or guide mutation
+ok 124 - navigate reserves the bounded 30-poll guide transactions before any camera or guide mutation
+  ---
+  duration_ms: 1.27125
+  ...
+# Subtest: navigate orchestration re-queries a guide lost after approach and never compounds W input
+ok 125 - navigate orchestration re-queries a guide lost after approach and never compounds W input
+  ---
+  duration_ms: 3.763
+  ...
+# Subtest: stable scene geometry classifies shrinking or excessive guide projection as projection_divergence
+ok 126 - stable scene geometry classifies shrinking or excessive guide projection as projection_divergence
+  ---
+  duration_ms: 9.432583
+  ...
+# Subtest: calibration refuses a 24-action or 180-second budget before the first motion and writes no valid registry
+ok 127 - calibration refuses a 24-action or 180-second budget before the first motion and writes no valid registry
+  ---
+  duration_ms: 1.83675
+  ...
+# Subtest: calibration catches missing signed magnitudes, restore settlement, projection gates, or premature registry publication
+ok 128 - calibration catches missing signed magnitudes, restore settlement, projection gates, or premature registry publication
+  ---
+  duration_ms: 15.918333
+  ...
+# Subtest: calibration rejects inconsistent viewer-facing depth/aspect or restore closure without publishing a record
+ok 129 - calibration rejects inconsistent viewer-facing depth/aspect or restore closure without publishing a record
+  ---
+  duration_ms: 56.909834
+  ...
+# Subtest: low-slope calibration rejects a no-op restore while accepting the exact inverse
+    # Subtest: no-op restore is rejected
+    ok 1 - no-op restore is rejected
+      ---
+      duration_ms: 13.795625
+      ...
+    # Subtest: exact restore is accepted
+    ok 2 - exact restore is accepted
+      ---
+      duration_ms: 11.951125
+      ...
+    1..2
+ok 130 - low-slope calibration rejects a no-op restore while accepting the exact inverse
+  ---
+  duration_ms: 26.014375
+  ...
+# Subtest: navigate rejects a version-1 calibration receipt with an explicit policy-version reason
+ok 131 - navigate rejects a version-1 calibration receipt with an explicit policy-version reason
+  ---
+  duration_ms: 1.409625
+  ...
+# Subtest: calibration restores an applied outbound once through recovery after an active-deadline clock jump
+ok 132 - calibration restores an applied outbound once through recovery after an active-deadline clock jump
+  ---
+  duration_ms: 2.016416
+  ...
+# Subtest: calibration retains ordered outbound-settle failure and successful inverse attempts with identity-bound audits
+ok 133 - calibration retains ordered outbound-settle failure and successful inverse attempts with identity-bound audits
+  ---
+  duration_ms: 2.038625
+  ...
+# Subtest: calibration exposes nullable action-receipt evidence for a thrown inverse without losing its audit identity
+ok 134 - calibration exposes nullable action-receipt evidence for a thrown inverse without losing its audit identity
+  ---
+  duration_ms: 1.666958
+  ...
+# Subtest: calibration retains ordered outbound and failed inverse attempts without positional audit reassignment
+ok 135 - calibration retains ordered outbound and failed inverse attempts without positional audit reassignment
+  ---
+  duration_ms: 2.219459
+  ...
+# Subtest: calibration rejects individually acceptable restore residuals that accumulate against the original pose
+ok 136 - calibration rejects individually acceptable restore residuals that accumulate against the original pose
+  ---
+  duration_ms: 13.680541
+  ...
+# Subtest: calibration reacquisition repeats a same-view guide off/on delta before all 24 trials
+ok 137 - calibration reacquisition repeats a same-view guide off/on delta before all 24 trials
+  ---
+  duration_ms: 15.86425
+  ...
+# Subtest: an applied invalidation broadcast without a validated hidden ack still requires one explicit cleanup HIDE
+ok 138 - an applied invalidation broadcast without a validated hidden ack still requires one explicit cleanup HIDE
+  ---
+  duration_ms: 1.169792
+  ...
+# Subtest: orchestration sends one explicit HIDE after an uncompensated SHOW failure and retains final-clean evidence
+ok 139 - orchestration sends one explicit HIDE after an uncompensated SHOW failure and retains final-clean evidence
+  ---
+  duration_ms: 3.050084
+  ...
+# Subtest: cleanup failure remains terminal without erasing achieved claims, final diagnostic, or the clean-settle attempt
+ok 140 - cleanup failure remains terminal without erasing achieved claims, final diagnostic, or the clean-settle attempt
+  ---
+  duration_ms: 2.5505
+  ...
+# Subtest: unexpected orchestration errors remain executionStatus:error and retain their primary error through cleanup failure
+ok 141 - unexpected orchestration errors remain executionStatus:error and retain their primary error through cleanup failure
+  ---
+  duration_ms: 1.458541
+  ...
+# Subtest: navigation outputs use only the authoritative stop enum and structural non-pose claim surface
+ok 142 - navigation outputs use only the authoritative stop enum and structural non-pose claim surface
+  ---
+  duration_ms: 7.800334
+  ...
+# Subtest: fresh camera-calibration proof catches stale boots and hashes exact bytes rather than a path assertion
+ok 143 - fresh camera-calibration proof catches stale boots and hashes exact bytes rather than a path assertion
+  ---
+  duration_ms: 2.248375
+  ...
+# Subtest: navigation calibration receipt proof reads exact regular-file bytes and rejects symlinks or substitution
+ok 144 - navigation calibration receipt proof reads exact regular-file bytes and rejects symlinks or substitution
+  ---
+  duration_ms: 15.479542
+  ...
+# Subtest: registerNavigationTargetTools registers one strict discriminated full-surface contract
+ok 145 - registerNavigationTargetTools registers one strict discriminated full-surface contract
+  ---
+  duration_ms: 1.080875
+  ...
+# Subtest: registered navigate_to_scene_target publishes the bounded scene readiness contract in tools/list
+ok 146 - registered navigate_to_scene_target publishes the bounded scene readiness contract in tools/list
+  ---
+  duration_ms: 93.426083
+  ...
+# (node:41592) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: captureSettledFrames defaults to stable mode and records its byte-exact trace
+ok 147 - captureSettledFrames defaults to stable mode and records its byte-exact trace
+  ---
+  duration_ms: 1.643833
+  ...
+# Subtest: captureSettledFrames rejects explicit transition mode without a prior SHA before capture
+ok 148 - captureSettledFrames rejects explicit transition mode without a prior SHA before capture
+  ---
+  duration_ms: 0.215333
+  ...
+# Subtest: captureSettledFrames requires a changed frame followed by its identical successor
+ok 149 - captureSettledFrames requires a changed frame followed by its identical successor
+  ---
+  duration_ms: 0.241375
+  ...
+# Subtest: captureSettledFrames clears a changed candidate when pixels return to the prior frame
+ok 150 - captureSettledFrames clears a changed candidate when pixels return to the prior frame
+  ---
+  duration_ms: 0.244792
+  ...
+# Subtest: captureSettledFrames distinguishes stability exhaustion from transition exhaustion
+ok 151 - captureSettledFrames distinguishes stability exhaustion from transition exhaustion
+  ---
+  duration_ms: 0.233791
+  ...
+# Subtest: captureSettledFrames stops at its monotonic deadline before another capture
+ok 152 - captureSettledFrames stops at its monotonic deadline before another capture
+  ---
+  duration_ms: 0.114042
+  ...
+# Subtest: captureSettledFrames classifies a capture that returns after its deadline as a stability timeout
+ok 153 - captureSettledFrames classifies a capture that returns after its deadline as a stability timeout
+  ---
+  duration_ms: 1.015833
+  ...
+# Subtest: captureSettledFrames classifies a capture failure after its deadline in the stability phase
+ok 154 - captureSettledFrames classifies a capture failure after its deadline in the stability phase
+  ---
+  duration_ms: 0.361541
+  ...
+# Subtest: captureSettledFrames counts a first capture rejection at its deadline without adding a frame trace
+ok 155 - captureSettledFrames counts a first capture rejection at its deadline without adding a frame trace
+  ---
+  duration_ms: 0.361791
+  ...
+# Subtest: captureSettledFrames returns a closed result for a fractional deadline
+ok 156 - captureSettledFrames returns a closed result for a fractional deadline
+  ---
+  duration_ms: 0.441417
+  ...
+# Subtest: captureSettledFrames clamps every capture timeout to its remaining deadline
+ok 157 - captureSettledFrames clamps every capture timeout to its remaining deadline
+  ---
+  duration_ms: 0.274666
+  ...
+# Subtest: captureSettledFrames succeeds on the first identical pair
+ok 158 - captureSettledFrames succeeds on the first identical pair
+  ---
+  duration_ms: 0.1445
+  ...
+# Subtest: captureSettledFrames waits through changed frames and stops at a delayed identical pair
+ok 159 - captureSettledFrames waits through changed frames and stops at a delayed identical pair
+  ---
+  duration_ms: 0.071041
+  ...
+# Subtest: captureSettledFrames ignores a stable stale pair matching the required prior SHA
+ok 160 - captureSettledFrames ignores a stable stale pair matching the required prior SHA
+  ---
+  duration_ms: 0.087833
+  ...
+# Subtest: captureSettledFrames times out and retains the last frame when every stable pair matches the required prior SHA
+ok 161 - captureSettledFrames times out and retains the last frame when every stable pair matches the required prior SHA
+  ---
+  duration_ms: 0.092209
+  ...
+# Subtest: captureSettledFrames fails closed before capture for a malformed required prior SHA
+ok 162 - captureSettledFrames fails closed before capture for a malformed required prior SHA
+  ---
+  duration_ms: 0.077709
+  ...
+# Subtest: captureSettledFrames timeout retains the last valid frame without a stable pair
+ok 163 - captureSettledFrames timeout retains the last valid frame without a stable pair
+  ---
+  duration_ms: 0.069333
+  ...
+# Subtest: captureSettledFrames capture failure retains an earlier valid frame
+ok 164 - captureSettledFrames capture failure retains an earlier valid frame
+  ---
+  duration_ms: 0.078125
+  ...
+# Subtest: executeCaptureSettled returns every settled contract field and external capture provenance
+ok 165 - executeCaptureSettled returns every settled contract field and external capture provenance
+  ---
+  duration_ms: 2.519542
+  ...
+# Subtest: executeLiveCaptureSettled catches an internal caller that forks the public settled-capture implementation
+ok 166 - executeLiveCaptureSettled catches an internal caller that forks the public settled-capture implementation
+  ---
+  duration_ms: 2.137334
+  ...
+# Subtest: executeLiveCaptureSettled uses one explicitly injected monotonic clock for its complete runtime and settlement
+ok 167 - executeLiveCaptureSettled uses one explicitly injected monotonic clock for its complete runtime and settlement
+  ---
+  duration_ms: 1.755791
+  ...
+# Subtest: executeCaptureSettled threads the required prior SHA into internal settlement
+ok 168 - executeCaptureSettled threads the required prior SHA into internal settlement
+  ---
+  duration_ms: 1.24725
+  ...
+# Subtest: executeCaptureSettled returns transition timeout evidence and the diagnostic last frame
+ok 169 - executeCaptureSettled returns transition timeout evidence and the diagnostic last frame
+  ---
+  duration_ms: 1.991166
+  ...
+# Subtest: executeCaptureSettled returns stability timeout evidence after the transition
+ok 170 - executeCaptureSettled returns stability timeout evidence after the transition
+  ---
+  duration_ms: 1.923833
+  ...
+# Subtest: executeCaptureSettled preserves explicit transition validation evidence without a frame
+ok 171 - executeCaptureSettled preserves explicit transition validation evidence without a frame
+  ---
+  duration_ms: 0.872167
+  ...
+# Subtest: executeCaptureSettled preserves a pre-capture deadline timeout receipt
+ok 172 - executeCaptureSettled preserves a pre-capture deadline timeout receipt
+  ---
+  duration_ms: 1.065083
+  ...
+# Subtest: executeCaptureSettled describes an all-prior timeout without denying the observed stable pairs
+ok 173 - executeCaptureSettled describes an all-prior timeout without denying the observed stable pairs
+  ---
+  duration_ms: 1.515167
+  ...
+# Subtest: executeCaptureSettled timeout persists and returns only the last valid frame
+ok 174 - executeCaptureSettled timeout persists and returns only the last valid frame
+  ---
+  duration_ms: 2.117291
+  ...
+# Subtest: executeCaptureSettled reports a first-attempt capture failure without inventing an artifact
+ok 175 - executeCaptureSettled reports a first-attempt capture failure without inventing an artifact
+  ---
+  duration_ms: 1.001833
+  ...
+# Subtest: executeCaptureSettled atomically replaces a symlink without following its target
+ok 176 - executeCaptureSettled atomically replaces a symlink without following its target
+  ---
+  duration_ms: 2.166625
+  ...
+# Subtest: executeCaptureSettled atomically replaces a hard link without truncating its inode
+ok 177 - executeCaptureSettled atomically replaces a hard link without truncating its inode
+  ---
+  duration_ms: 2.870375
+  ...
+# Subtest: executeCaptureSettled refuses a writer whose staged bytes do not match the capture
+ok 178 - executeCaptureSettled refuses a writer whose staged bytes do not match the capture
+  ---
+  duration_ms: 2.430666
+  ...
+# Subtest: executeCaptureSettled fails closed when live identity changes across the capture
+ok 179 - executeCaptureSettled fails closed when live identity changes across the capture
+  ---
+  duration_ms: 1.650541
+  ...
+# Subtest: executeCaptureSettled refuses an unbound serial before any capture
+ok 180 - executeCaptureSettled refuses an unbound serial before any capture
+  ---
+  duration_ms: 0.803583
+  ...
+# Subtest: executeCaptureSettled refuses UNVERIFIED byte-exact hardware settlement
+ok 181 - executeCaptureSettled refuses UNVERIFIED byte-exact hardware settlement
+  ---
+  duration_ms: 0.726834
+  ...
+# Subtest: gRPC endpoint binding is exact and retains only token presence plus fingerprint
+ok 182 - gRPC endpoint binding is exact and retains only token presence plus fingerprint
+  ---
+  duration_ms: 0.298541
+  ...
+# Subtest: gRPC endpoint binding accepts a token-absent discovered endpoint
+ok 183 - gRPC endpoint binding accepts a token-absent discovered endpoint
+  ---
+  duration_ms: 0.125125
+  ...
+# Subtest: gRPC endpoint binding refuses missing, mismatched, duplicate, and unqualified multi-endpoint discovery
+ok 184 - gRPC endpoint binding refuses missing, mismatched, duplicate, and unqualified multi-endpoint discovery
+  ---
+  duration_ms: 0.219709
+  ...
+# Subtest: gRPC endpoint binding refuses malformed matching discovery instead of discarding it
+ok 185 - gRPC endpoint binding refuses malformed matching discovery instead of discarding it
+  ---
+  duration_ms: 0.138833
+  ...
+# Subtest: qemu window binding uses a discovery PID match and the strict single-window fallback
+ok 186 - qemu window binding uses a discovery PID match and the strict single-window fallback
+  ---
+  duration_ms: 0.406416
+  ...
+# Subtest: qemu window binding refuses ambiguous windows and a headless second emulator fallback
+ok 187 - qemu window binding refuses ambiguous windows and a headless second emulator fallback
+  ---
+  duration_ms: 0.075833
+  ...
+# Subtest: keyHold re-reads discovery with the exact serial before input when initial discovery fails
+ok 188 - keyHold re-reads discovery with the exact serial before input when initial discovery fails
+  ---
+  duration_ms: 0.656333
+  ...
+# Subtest: keyHold reports the bounded no-input diagnostic when initial discovery and reconnect both fail
+ok 189 - keyHold reports the bounded no-input diagnostic when initial discovery and reconnect both fail
+  ---
+  duration_ms: 0.183291
+  ...
+# Subtest: keyHold never replays keydown after an ambiguous transport failure
+ok 190 - keyHold never replays keydown after an ambiguous transport failure
+  ---
+  duration_ms: 0.122958
+  ...
+# Subtest: keyHold retries only keyup when the exact discovery binding is unchanged
+ok 191 - keyHold retries only keyup when the exact discovery binding is unchanged
+  ---
+  duration_ms: 0.11025
+  ...
+# Subtest: keyHold reports uncertain release and never repeats an accepted keydown
+ok 192 - keyHold reports uncertain release and never repeats an accepted keydown
+  ---
+  duration_ms: 0.094666
+  ...
+# Subtest: host focus is required only for CGEvent look actions, not exact-bound gRPC keys
+ok 193 - host focus is required only for CGEvent look actions, not exact-bound gRPC keys
+  ---
+  duration_ms: 0.097375
+  ...
+# Subtest: bound action receipts distinguish focus-independent gRPC keys from acknowledged CGEvent focus
+ok 194 - bound action receipts distinguish focus-independent gRPC keys from acknowledged CGEvent focus
+  ---
+  duration_ms: 152.485375
+  ...
+# Subtest: frontmostQemu refuses a successful focus request when fresh frontmost-PID readback disagrees
+ok 195 - frontmostQemu refuses a successful focus request when fresh frontmost-PID readback disagrees
+  ---
+  duration_ms: 199.386708
+  ...
+# Subtest: frontmostQemu returns null without command execution off Darwin
+ok 196 - frontmostQemu returns null without command execution off Darwin # SKIP
+  ---
+  duration_ms: 0.040792
+  ...
+# (node:41593) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: dry-run preserves the default emulator argv and performs no lifecycle work
+ok 197 - dry-run preserves the default emulator argv and performs no lifecycle work
+  ---
+  duration_ms: 24.133375
+  ...
+# Subtest: an empty camera-back value is the unchanged default
+ok 198 - an empty camera-back value is the unchanged default
+  ---
+  duration_ms: 17.163958
+  ...
+# Subtest: webcam0 appends exactly two argv elements
+ok 199 - webcam0 appends exactly two argv elements
+  ---
+  duration_ms: 21.4365
+  ...
+# Subtest: every supported backend changes only the final camera-back pair
+ok 200 - every supported backend changes only the final camera-back pair
+  ---
+  duration_ms: 145.303458
+  ...
+# Subtest: unsafe or unsupported camera-back values fail before lifecycle work
+ok 201 - unsafe or unsupported camera-back values fail before lifecycle work
+  ---
+  duration_ms: 59.014417
+  ...
+# Subtest: wait-for-device is scoped explicitly to emulator-5554
+ok 202 - wait-for-device is scoped explicitly to emulator-5554
+  ---
+  duration_ms: 593.58725
+  ...
+# Subtest: fallback termination resolves only the emulator-5554 discovery record
+ok 203 - fallback termination resolves only the emulator-5554 discovery record
+  ---
+  duration_ms: 265.225584
+  ...
+# Subtest: forty empty boot polls fail without claiming the emulator is ready
+ok 204 - forty empty boot polls fail without claiming the emulator is ready
+  ---
+  duration_ms: 1611.501792
+  ...
+# Subtest: a hung wait-for-device is bounded and fails honestly
+ok 205 - a hung wait-for-device is bounded and fails honestly
+  ---
+  duration_ms: 1245.863875
+  ...
+# Subtest: a hung getprop poll is bounded and the next poll can observe ready
+ok 206 - a hung getprop poll is bounded and the next poll can observe ready
+  ---
+  duration_ms: 1315.8985
+  ...
+# Subtest: output from a timed-out getprop poll is discarded
+ok 207 - output from a timed-out getprop poll is discarded
+  ---
+  duration_ms: 1258.602
+  ...
+# Subtest: a timed-out getprop cannot turn partial output into success by trapping TERM
+ok 208 - a timed-out getprop cannot turn partial output into success by trapping TERM
+  ---
+  duration_ms: 1309.9405
+  ...
+# Subtest: a getprop that ignores TERM is killed within the watchdog bound
+ok 209 - a getprop that ignores TERM is killed within the watchdog bound
+  ---
+  duration_ms: 2302.01325
+  ...
+# Subtest: a child cannot publish late output after its successful parent exits
+ok 210 - a child cannot publish late output after its successful parent exits
+  ---
+  duration_ms: 300.257792
+  ...
+# Subtest: a TERM-ignoring child cannot hold the output channel open
+ok 211 - a TERM-ignoring child cannot hold the output channel open
+  ---
+  duration_ms: 306.294542
+  ...
+# Subtest: a child racing parent reaping cannot publish a false ready value
+ok 212 - a child racing parent reaping cannot publish a false ready value
+  ---
+  duration_ms: 2891.313958
+  ...
+# (node:41595) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: BoundaryProbe V1 formats and parses every event kind through one exact compact wire prefix
+ok 213 - BoundaryProbe V1 formats and parses every event kind through one exact compact wire prefix
+  ---
+  duration_ms: 1.916708
+  ...
+# Subtest: BoundaryProbe parser preserves absent, malformed, truncated, unknown-field, and overlong raw markers
+ok 214 - BoundaryProbe parser preserves absent, malformed, truncated, unknown-field, and overlong raw markers
+  ---
+  duration_ms: 0.341333
+  ...
+# Subtest: BoundaryProbe raw-record authentication requires the exact tag and currently observed app PID
+ok 215 - BoundaryProbe raw-record authentication requires the exact tag and currently observed app PID
+  ---
+  duration_ms: 0.25375
+  ...
+# Subtest: BoundaryProbe sequence classification exposes complete, gaps, duplicates, expectation drift, and prior-seq state
+ok 216 - BoundaryProbe sequence classification exposes complete, gaps, duplicates, expectation drift, and prior-seq state
+  ---
+  duration_ms: 0.216792
+  ...
+# Subtest: SpatialRuntimeService watchdog parser classifies only exact raw candidates
+ok 217 - SpatialRuntimeService watchdog parser classifies only exact raw candidates
+  ---
+  duration_ms: 0.750667
+  ...
+# Subtest: foreground classification honors pre-bound components and only the OS 6 co-resumed shell exception
+ok 218 - foreground classification honors pre-bound components and only the OS 6 co-resumed shell exception
+  ---
+  duration_ms: 0.52525
+  ...
+# Subtest: application continuity sample binds exact serial, boot, APK, PID/start, pre-bound foreground, probe, and watchdog
+ok 219 - application continuity sample binds exact serial, boot, APK, PID/start, pre-bound foreground, probe, and watchdog
+  ---
+  duration_ms: 1.679167
+  ...
+# Subtest: application continuity reports PID restart, missing process, boot drift, and same-package foreground drift without rebinding
+ok 220 - application continuity reports PID restart, missing process, boot drift, and same-package foreground drift without rebinding
+  ---
+  duration_ms: 1.408708
+  ...
+# Subtest: application continuity keeps every probe/watchdog no-signal class explicit and source-authenticated
+    # Subtest: absent probe and watchdog
+    ok 1 - absent probe and watchdog
+      ---
+      duration_ms: 0.36725
+      ...
+    # Subtest: malformed probe and unparsed watchdog
+    ok 2 - malformed probe and unparsed watchdog
+      ---
+      duration_ms: 0.497875
+      ...
+    # Subtest: truncated probe
+    ok 3 - truncated probe
+      ---
+      duration_ms: 0.444375
+      ...
+    # Subtest: sequence gap
+    ok 4 - sequence gap
+      ---
+      duration_ms: 0.26425
+      ...
+    # Subtest: wrong session
+    ok 5 - wrong session
+      ---
+      duration_ms: 0.185458
+      ...
+    # Subtest: wrong generation
+    ok 6 - wrong generation
+      ---
+      duration_ms: 0.418708
+      ...
+    # Subtest: wrong tag is not trusted
+    ok 7 - wrong tag is not trusted
+      ---
+      duration_ms: 0.3235
+      ...
+    # Subtest: wrong source PID is not trusted
+    ok 8 - wrong source PID is not trusted
+      ---
+      duration_ms: 0.147583
+      ...
+    1..8
+ok 221 - application continuity keeps every probe/watchdog no-signal class explicit and source-authenticated
+  ---
+  duration_ms: 3.580459
+  ...
+# Subtest: application continuity bounds log normalization to a 65,536-line safe prefix
+ok 222 - application continuity bounds log normalization to a 65,536-line safe prefix
+  ---
+  duration_ms: 9.515666
+  ...
+# Subtest: application continuity applies the 64-MiB limit in UTF-8 bytes before parsing logs
+ok 223 - application continuity applies the 64-MiB limit in UTF-8 bytes before parsing logs
+  ---
+  duration_ms: 17.687875
+  ...
+# Subtest: application continuity shares the 10-second route reserve and starts independent probes concurrently in two bounded waves
+ok 224 - application continuity shares the 10-second route reserve and starts independent probes concurrently in two bounded waves
+  ---
+  duration_ms: 0.520916
+  ...
+# Subtest: application continuity caps a hung log reader and the whole sampler below the shared route reserve
+ok 225 - application continuity caps a hung log reader and the whole sampler below the shared route reserve
+  ---
+  duration_ms: 0.333875
+  ...
+# Subtest: application continuity overall timeout prevents late wave one from scheduling digest or stat probes
+ok 226 - application continuity overall timeout prevents late wave one from scheduling digest or stat probes
+  ---
+  duration_ms: 6.612125
+  ...
+# Subtest: application continuity clears a timer handle returned after a synchronous timeout callback
+ok 227 - application continuity clears a timer handle returned after a synchronous timeout callback
+  ---
+  duration_ms: 1.006208
+  ...
+# Subtest: application continuity does not inspect late logs after timing out during wave two
+ok 228 - application continuity does not inspect late logs after timing out during wave two
+  ---
+  duration_ms: 0.563458
+  ...
+# Subtest: runtime-health scan is marker-bound, exact-package attributed, and fail-closed on ambiguous evidence
+ok 229 - runtime-health scan is marker-bound, exact-package attributed, and fail-closed on ambiguous evidence
+  ---
+  duration_ms: 12.924042
+  ...
+# Subtest: runtime-health scans every line in a complete 64-MiB-bounded artifact
+ok 230 - runtime-health scans every line in a complete 64-MiB-bounded artifact
+  ---
+  duration_ms: 103.020125
+  ...
+# Subtest: runtime-health bounds retained candidates and fails closed when the full scan overflows
+ok 231 - runtime-health bounds retained candidates and fails closed when the full scan overflows
+  ---
+  duration_ms: 10.617875
+  ...
+# Subtest: log collector owns one exact adb child, ends it gracefully at the time cap, and atomically publishes mode-0600 bytes
+ok 232 - log collector owns one exact adb child, ends it gracefully at the time cap, and atomically publishes mode-0600 bytes
+  ---
+  duration_ms: 30.315833
+  ...
+# Subtest: log collector exposes a synchronous owned-child start barrier and caller-controlled stop receipt
+ok 233 - log collector exposes a synchronous owned-child start barrier and caller-controlled stop receipt
+  ---
+  duration_ms: 10.563375
+  ...
+# Subtest: log publisher neither reads nor unlinks a target replacement swapped in after hard-link publication
+ok 234 - log publisher neither reads nor unlinks a target replacement swapped in after hard-link publication
+  ---
+  duration_ms: 7.573625
+  ...
+# Subtest: log publisher rejects a receipt when its temporary hard link cannot be removed
+ok 235 - log publisher rejects a receipt when its temporary hard link cannot be removed
+  ---
+  duration_ms: 6.046208
+  ...
+# Subtest: log publisher rejects same-inode special mode bits instead of masking them to 0600
+ok 236 - log publisher rejects same-inode special mode bits instead of masking them to 0600
+  ---
+  duration_ms: 6.158084
+  ...
+# Subtest: log collector retains the exact byte-cap prefix and escalates only its own TERM-ignoring child to KILL
+ok 237 - log collector retains the exact byte-cap prefix and escalates only its own TERM-ignoring child to KILL
+  ---
+  duration_ms: 17.397834
+  ...
+# Subtest: log collector rejects repository paths before spawning and preserves natural early child exit
+ok 238 - log collector rejects repository paths before spawning and preserves natural early child exit
+  ---
+  duration_ms: 7.9435
+  ...
+# Subtest: log collector publishes partial evidence when its exact owned child remains unconfirmed after KILL
+ok 239 - log collector publishes partial evidence when its exact owned child remains unconfirmed after KILL
+  ---
+  duration_ms: 30.042209
+  ...
+# Subtest: log collector fails closed on an invalid child PID and retains asynchronous spawn-error bytes
+ok 240 - log collector fails closed on an invalid child PID and retains asynchronous spawn-error bytes
+  ---
+  duration_ms: 16.706833
+  ...
+# Subtest: missing-PID ownership dominates unconfirmed teardown while retaining the partial artifact
+ok 241 - missing-PID ownership dominates unconfirmed teardown while retaining the partial artifact
+  ---
+  duration_ms: 19.592667
+  ...
+# Subtest: log collector removes private staging if its initial monotonic sample is invalid
+ok 242 - log collector removes private staging if its initial monotonic sample is invalid
+  ---
+  duration_ms: 3.909875
+  ...
+# (node:41596) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: in-app locomotion schema exposes exactly prepare, step, restore, and adjudicate strict arms
+ok 243 - in-app locomotion schema exposes exactly prepare, step, restore, and adjudicate strict arms
+  ---
+  duration_ms: 6.862584
+  ...
+# Subtest: prepare schema pins a Full stage, absolute finite contiguous route, zero restore, and exact policy literals
+ok 244 - prepare schema pins a Full stage, absolute finite contiguous route, zero restore, and exact policy literals
+  ---
+  duration_ms: 4.051667
+  ...
+# Subtest: non-Full and unknown-key prepare requests fail before any injected dependency is read
+ok 245 - non-Full and unknown-key prepare requests fail before any injected dependency is read
+  ---
+  duration_ms: 3.677459
+  ...
+# Subtest: prepare binds the receipt/runtime in order, proves 60-second health, and returns one structural baseline review
+ok 246 - prepare binds the receipt/runtime in order, proves 60-second health, and returns one structural baseline review
+  ---
+  duration_ms: 156.372125
+  ...
+# Subtest: prepare rejects any capture receipt that is not exact evidence for the requested stable frame
+    # Subtest: resolved mode
+    ok 1 - resolved mode
+      ---
+      duration_ms: 113.724625
+      ...
+    # Subtest: stable pair
+    ok 2 - stable pair
+      ---
+      duration_ms: 98.208833
+      ...
+    # Subtest: receipt path
+    ok 3 - receipt path
+      ---
+      duration_ms: 99.501291
+      ...
+    # Subtest: receipt serial
+    ok 4 - receipt serial
+      ---
+      duration_ms: 84.945125
+      ...
+    # Subtest: capture-ref path
+    ok 5 - capture-ref path
+      ---
+      duration_ms: 99.22525
+      ...
+    # Subtest: capture-ref source serial
+    ok 6 - capture-ref source serial
+      ---
+      duration_ms: 98.795334
+      ...
+    # Subtest: capture-ref byte count
+    ok 7 - capture-ref byte count
+      ---
+      duration_ms: 137.964041
+      ...
+    # Subtest: capture-ref dimensions
+    ok 8 - capture-ref dimensions
+      ---
+      duration_ms: 92.04475
+      ...
+    # Subtest: runtime serial
+    ok 9 - runtime serial
+      ---
+      duration_ms: 87.454291
+      ...
+    # Subtest: runtime live serial
+    ok 10 - runtime live serial
+      ---
+      duration_ms: 84.373833
+      ...
+    # Subtest: runtime model
+    ok 11 - runtime model
+      ---
+      duration_ms: 89.652084
+      ...
+    # Subtest: runtime fingerprint
+    ok 12 - runtime fingerprint
+      ---
+      duration_ms: 103.512083
+      ...
+    # Subtest: runtime boot-qemu
+    ok 13 - runtime boot-qemu
+      ---
+      duration_ms: 89.940167
+      ...
+    # Subtest: runtime boot ID
+    ok 14 - runtime boot ID
+      ---
+      duration_ms: 86.919625
+      ...
+    # Subtest: runtime capture source
+    ok 15 - runtime capture source
+      ---
+      duration_ms: 93.311958
+      ...
+    # Subtest: replayed same-boot runtime interval
+    ok 16 - replayed same-boot runtime interval
+      ---
+      duration_ms: 87.783041
+      ...
+    # Subtest: future same-boot runtime interval
+    ok 17 - future same-boot runtime interval
+      ---
+      duration_ms: 89.738875
+      ...
+    # Subtest: settle start before runtime binding
+    ok 18 - settle start before runtime binding
+      ---
+      duration_ms: 106.7865
+      ...
+    # Subtest: runtime interval
+    ok 19 - runtime interval
+      ---
+      duration_ms: 91.435625
+      ...
+    # Subtest: trace length
+    ok 20 - trace length
+      ---
+      duration_ms: 88.432709
+      ...
+    # Subtest: attempts exceed request maximum
+    ok 21 - attempts exceed request maximum
+      ---
+      duration_ms: 87.671041
+      ...
+    # Subtest: trace sequence
+    ok 22 - trace sequence
+      ---
+      duration_ms: 88.315875
+      ...
+    # Subtest: trace relation vocabulary
+    ok 23 - trace relation vocabulary
+      ---
+      duration_ms: 84.300167
+      ...
+    # Subtest: trace monotonic order
+    ok 24 - trace monotonic order
+      ---
+      duration_ms: 94.257125
+      ...
+    # Subtest: early stable relation
+    ok 25 - early stable relation
+      ---
+      duration_ms: 88.502708
+      ...
+    # Subtest: trace outside runtime binding
+    ok 26 - trace outside runtime binding
+      ---
+      duration_ms: 99.890084
+      ...
+    # Subtest: trace final relation
+    ok 27 - trace final relation
+      ---
+      duration_ms: 101.258166
+      ...
+    # Subtest: settle deadline duration
+    ok 28 - settle deadline duration
+      ---
+      duration_ms: 100.823709
+      ...
+    # Subtest: attempt timeout duration
+    ok 29 - attempt timeout duration
+      ---
+      duration_ms: 111.359708
+      ...
+    # Subtest: settle deadline outside phase
+    ok 30 - settle deadline outside phase
+      ---
+      duration_ms: 88.743375
+      ...
+    # Subtest: settled timeout residue
+    ok 31 - settled timeout residue
+      ---
+      duration_ms: 98.173417
+      ...
+    # Subtest: settled error residue
+    ok 32 - settled error residue
+      ---
+      duration_ms: 85.5565
+      ...
+    # Subtest: returned frame bytes
+    ok 33 - returned frame bytes
+      ---
+      duration_ms: 87.856792
+      ...
+    1..33
+ok 247 - prepare rejects any capture receipt that is not exact evidence for the requested stable frame
+  ---
+  duration_ms: 3146.338917
+  ...
+# Subtest: prepare rechecks exact application and root continuity after the baseline capture before publishing state
+    # Subtest: target exited
+    ok 1 - target exited
+      ---
+      duration_ms: 117.19575
+      ...
+    # Subtest: target restarted
+    ok 2 - target restarted
+      ---
+      duration_ms: 88.846833
+      ...
+    # Subtest: root re-registered in the same process
+    ok 3 - root re-registered in the same process
+      ---
+      duration_ms: 80.771792
+      ...
+    1..3
+ok 248 - prepare rechecks exact application and root continuity after the baseline capture before publishing state
+  ---
+  duration_ms: 287.303125
+  ...
+# Subtest: prepare brackets and retains launch-handoff boundary evidence without applying the step zero-signal gate
+ok 249 - prepare brackets and retains launch-handoff boundary evidence without applying the step zero-signal gate
+  ---
+  duration_ms: 84.347
+  ...
+# Subtest: receipt-bound non-Full effective specs stop before foreground inspection or any live mutation
+ok 250 - receipt-bound non-Full effective specs stop before foreground inspection or any live mutation
+  ---
+  duration_ms: 52.580417
+  ...
+# Subtest: legacy capability fails as capability_unavailable before route mutation and cleans only the launched target
+ok 251 - legacy capability fails as capability_unavailable before route mutation and cleans only the launched target
+  ---
+  duration_ms: 81.659416
+  ...
+# Subtest: prepare retains bridge acknowledgement cleanup failure separately from its primary preflight failure
+ok 252 - prepare retains bridge acknowledgement cleanup failure separately from its primary preflight failure
+  ---
+  duration_ms: 77.919541
+  ...
+# Subtest: binding, safety, dialog, and runtime-health failures all stop before route mutation
+    # Subtest: binding
+    ok 1 - binding
+      ---
+      duration_ms: 87.178584
+      ...
+    # Subtest: safety
+    ok 2 - safety
+      ---
+      duration_ms: 85.061291
+      ...
+    # Subtest: dialog
+    ok 3 - dialog
+      ---
+      duration_ms: 111.880917
+      ...
+    # Subtest: health
+    ok 4 - health
+      ---
+      duration_ms: 81.081167
+      ...
+    1..4
+ok 253 - binding, safety, dialog, and runtime-health failures all stop before route mutation
+  ---
+  duration_ms: 366.031541
+  ...
+# Subtest: step follows the exact BEGIN-to-END evidence order and consumes one selected absolute waypoint
+ok 254 - step follows the exact BEGIN-to-END evidence order and consumes one selected absolute waypoint
+  ---
+  duration_ms: 101.3385
+  ...
+# Subtest: step rejects a settled pair whose final SHA never transitioned from the exact prior frame
+ok 255 - step rejects a settled pair whose final SHA never transitioned from the exact prior frame
+  ---
+  duration_ms: 141.796334
+  ...
+# Subtest: step refuses a wrong or byte-changed reviewed SHA before BEGIN or locomotion
+ok 256 - step refuses a wrong or byte-changed reviewed SHA before BEGIN or locomotion
+  ---
+  duration_ms: 186.079167
+  ...
+# Subtest: step binds the caller-supplied exact next waypoint before every dependency and rejects stale selection
+    # Subtest: wrong sequence
+    ok 1 - wrong sequence
+      ---
+      duration_ms: 88.665625
+      ...
+    # Subtest: wrong target
+    ok 2 - wrong target
+      ---
+      duration_ms: 99.327083
+      ...
+    1..2
+ok 257 - step binds the caller-supplied exact next waypoint before every dependency and rejects stale selection
+  ---
+  duration_ms: 394.359125
+  ...
+# Subtest: a returned waypoint SHA must be explicitly reviewed before the next route mutation
+ok 258 - a returned waypoint SHA must be explicitly reviewed before the next route mutation
+  ---
+  duration_ms: 128.242125
+  ...
+# Subtest: cleanup-only completed step adopts direct/replacement readback, captures evidence, and restores from the new generation
+    # Subtest: direct
+    ok 1 - direct
+      ---
+      duration_ms: 127.863042
+      ...
+    # Subtest: replacement
+    ok 2 - replacement
+      ---
+      duration_ms: 120.892833
+      ...
+    1..2
+ok 259 - cleanup-only completed step adopts direct/replacement readback, captures evidence, and restores from the new generation
+  ---
+  duration_ms: 249.161667
+  ...
+# Subtest: cleanup-only completed restore keeps primary null while adopting replacement generation and capture
+ok 260 - cleanup-only completed restore keeps primary null while adopting replacement generation and capture
+  ---
+  duration_ms: 121.301792
+  ...
+# Subtest: step failures stop structurally, retain usage, and never try another mechanism or physical route
+    # Subtest: root readback
+    ok 1 - root readback
+      ---
+      duration_ms: 111.266875
+      ...
+    # Subtest: transition timeout
+    ok 2 - transition timeout
+      ---
+      duration_ms: 114.098375
+      ...
+    # Subtest: stability timeout
+    ok 3 - stability timeout
+      ---
+      duration_ms: 113.390125
+      ...
+    1..3
+ok 261 - step failures stop structurally, retain usage, and never try another mechanism or physical route
+  ---
+  duration_ms: 339.3395
+  ...
+# Subtest: one verified boundary phrase inside a step bracket structurally stops the route
+ok 262 - one verified boundary phrase inside a step bracket structurally stops the route
+  ---
+  duration_ms: 116.794291
+  ...
+# Subtest: prepare retries stale HMD ages with unique nonces and retains acquisition evidence
+ok 263 - prepare retries stale HMD ages with unique nonces and retains acquisition evidence
+  ---
+  duration_ms: 82.208625
+  ...
+# Subtest: step HMD retries preserve strict baseline-to-pre-to-post advancement and action evidence
+ok 264 - step HMD retries preserve strict baseline-to-pre-to-post advancement and action evidence
+  ---
+  duration_ms: 95.939167
+  ...
+# Subtest: HMD acquisition does not retry malformed, unbound, or failed transport results
+    # Subtest: nonfinite
+    ok 1 - nonfinite
+      ---
+      duration_ms: 71.971167
+      ...
+    # Subtest: root changed
+    ok 2 - root changed
+      ---
+      duration_ms: 82.330209
+      ...
+    # Subtest: bridge failure
+    ok 3 - bridge failure
+      ---
+      duration_ms: 77.423958
+      ...
+    # Subtest: stale with cleanup failure
+    ok 4 - stale with cleanup failure
+      ---
+      duration_ms: 75.50475
+      ...
+    1..4
+ok 265 - HMD acquisition does not retry malformed, unbound, or failed transport results
+  ---
+  duration_ms: 307.888625
+  ...
+# Subtest: persistent stale HMD retries stop under the phase deadline and retain failed acquisition evidence
+ok 266 - persistent stale HMD retries stop under the phase deadline and retain failed acquisition evidence
+  ---
+  duration_ms: 79.727125
+  ...
+# Subtest: HMD acquisition spans a full callback interval and retains bridge cleanup evidence
+ok 267 - HMD acquisition spans a full callback interval and retains bridge cleanup evidence
+  ---
+  duration_ms: 89.204666
+  ...
+# Subtest: HMD acquisition never retries temporal regression, incoherent advancement, or changed duplicate poses
+    # Subtest: read before observation
+    ok 1 - read before observation
+      ---
+      duration_ms: 108.265292
+      ...
+    # Subtest: observation only advances
+    ok 2 - observation only advances
+      ---
+      duration_ms: 115.503333
+      ...
+    # Subtest: sequence only advances
+    ok 3 - sequence only advances
+      ---
+      duration_ms: 115.03325
+      ...
+    # Subtest: aged regression
+    ok 4 - aged regression
+      ---
+      duration_ms: 114.284542
+      ...
+    # Subtest: duplicate changes pose
+    ok 5 - duplicate changes pose
+      ---
+      duration_ms: 116.341416
+      ...
+    1..5
+ok 268 - HMD acquisition never retries temporal regression, incoherent advancement, or changed duplicate poses
+  ---
+  duration_ms: 570.212875
+  ...
+# Subtest: prepare and route admission reserve bounded HMD acquisition plus downstream evidence work
+ok 269 - prepare and route admission reserve bounded HMD acquisition plus downstream evidence work
+  ---
+  duration_ms: 1.949208
+  ...
+# Subtest: HMD acquisition rejects rollback from an aged candidate without promoting that candidate to the accepted floor
+ok 270 - HMD acquisition rejects rollback from an aged candidate without promoting that candidate to the accepted floor
+  ---
+  duration_ms: 121.731583
+  ...
+# Subtest: step cannot complete when valid END or log evidence finishes after its fixed deadline
+    # Subtest: END priorFailure=false
+    ok 1 - END priorFailure=false
+      ---
+      duration_ms: 121.452208
+      ...
+    # Subtest: logs priorFailure=false
+    ok 2 - logs priorFailure=false
+      ---
+      duration_ms: 148.325916
+      ...
+    # Subtest: logs priorFailure=true
+    ok 3 - logs priorFailure=true
+      ---
+      duration_ms: 128.275375
+      ...
+    1..3
+ok 271 - step cannot complete when valid END or log evidence finishes after its fixed deadline
+  ---
+  duration_ms: 398.61
+  ...
+# Subtest: step subdeadlines preserve every post-mutation proof when each stage consumes its admitted window
+ok 272 - step subdeadlines preserve every post-mutation proof when each stage consumes its admitted window
+  ---
+  duration_ms: 108.163208
+  ...
+# Subtest: pre-step continuity completing at its exact boundary starts no HMD read or movement
+ok 273 - pre-step continuity completing at its exact boundary starts no HMD read or movement
+  ---
+  duration_ms: 111.190917
+  ...
+# Subtest: an operation completing exactly at its subdeadline cannot consume the next proof window
+ok 274 - an operation completing exactly at its subdeadline cannot consume the next proof window
+  ---
+  duration_ms: 107.354875
+  ...
+# Subtest: step action publication cannot consume the protected restoration handoff
+ok 275 - step action publication cannot consume the protected restoration handoff
+  ---
+  duration_ms: 116.446083
+  ...
+# Subtest: completed step and restore defer every post-commit maintenance hook off their deadline handoffs
+ok 276 - completed step and restore defer every post-commit maintenance hook off their deadline handoffs
+  ---
+  duration_ms: 117.983833
+  ...
+# Subtest: minimum restoration reserve preserves every mandatory stage under boundary consumption
+ok 277 - minimum restoration reserve preserves every mandatory stage under boundary consumption
+  ---
+  duration_ms: 123.467792
+  ...
+# Subtest: the minimum restoration reserve retains both live and post-stop nonce windows
+ok 278 - the minimum restoration reserve retains both live and post-stop nonce windows
+  ---
+  duration_ms: 105.122958
+  ...
+# Subtest: restore cannot complete when final safety reaches its exact subdeadline
+ok 279 - restore cannot complete when final safety reaches its exact subdeadline
+  ---
+  duration_ms: 138.849708
+  ...
+# Subtest: restore action cannot commit at its exact deadline and a fresh re-entrant attempt converges
+ok 280 - restore action cannot commit at its exact deadline and a fresh re-entrant attempt converges
+  ---
+  duration_ms: 133.753292
+  ...
+# Subtest: a semantic action link completing at its deadline is retained but reported as publication-unproven
+    # Subtest: completed step
+    ok 1 - completed step
+      ---
+      duration_ms: 131.718583
+      ...
+    # Subtest: completed restore
+    ok 2 - completed restore
+      ---
+      duration_ms: 122.976333
+      ...
+    # Subtest: post-link clock unavailable
+    ok 3 - post-link clock unavailable
+      ---
+      duration_ms: 123.144209
+      ...
+    1..3
+ok 281 - a semantic action link completing at its deadline is retained but reported as publication-unproven
+  ---
+  duration_ms: 378.421083
+  ...
+# Subtest: failed step and restore audit records remain inside their fixed publication fences
+    # Subtest: failed step
+    ok 1 - failed step
+      ---
+      duration_ms: 110.07
+      ...
+    # Subtest: failed restore
+    ok 2 - failed restore
+      ---
+      duration_ms: 104.624833
+      ...
+    1..2
+ok 282 - failed step and restore audit records remain inside their fixed publication fences
+  ---
+  duration_ms: 215.122208
+  ...
+# Subtest: prepare rejects an HMD listener sample older than the experiment freshness threshold
+ok 283 - prepare rejects an HMD listener sample older than the experiment freshness threshold
+  ---
+  duration_ms: 82.660291
+  ...
+# Subtest: step gates safety, continuity, fresh finite HMD telemetry, 0.02m Euclidean drift, and route budget
+    # Subtest: safety
+    ok 1 - safety
+      ---
+      duration_ms: 117.161292
+      ...
+    # Subtest: continuity
+    ok 2 - continuity
+      ---
+      duration_ms: 104.277334
+      ...
+    # Subtest: nonfinite HMD
+    ok 3 - nonfinite HMD
+      ---
+      duration_ms: 111.354333
+      ...
+    # Subtest: stale HMD
+    ok 4 - stale HMD
+      ---
+      duration_ms: 113.966875
+      ...
+    # Subtest: stale post HMD
+    ok 5 - stale post HMD
+      ---
+      duration_ms: 117.492792
+      ...
+    # Subtest: identical HMD timestamps
+    ok 6 - identical HMD timestamps
+      ---
+      duration_ms: 113.568958
+      ...
+    # Subtest: aged HMD
+    ok 7 - aged HMD
+      ---
+      duration_ms: 115.266167
+      ...
+    # Subtest: translation drift
+    ok 8 - translation drift
+      ---
+      duration_ms: 127.712583
+      ...
+    # Subtest: budget
+    ok 9 - budget
+      ---
+      duration_ms: 100.994417
+      ...
+    1..9
+ok 284 - step gates safety, continuity, fresh finite HMD telemetry, 0.02m Euclidean drift, and route budget
+  ---
+  duration_ms: 1023.095
+  ...
+# Subtest: concurrent step mutation is rejected while the first selected locomotion is in flight
+ok 285 - concurrent step mutation is rejected while the first selected locomotion is in flight
+  ---
+  duration_ms: 103.506
+  ...
+# Subtest: restore is available from prepared, stepped, and stopped and selects capture mode from the reviewed frame
+    # Subtest: prepared
+    ok 1 - prepared
+      ---
+      duration_ms: 109.529333
+      ...
+    # Subtest: stepped
+    ok 2 - stepped
+      ---
+      duration_ms: 129.296
+      ...
+    # Subtest: stopped
+    ok 3 - stopped
+      ---
+      duration_ms: 150.068917
+      ...
+    1..3
+ok 286 - restore is available from prepared, stepped, and stopped and selects capture mode from the reviewed frame
+  ---
+  duration_ms: 389.4485
+  ...
+# Subtest: restore rechecks exact application and root continuity after recovery capture before adopting or stopping
+    # Subtest: target exited
+    ok 1 - target exited
+      ---
+      duration_ms: 112.792375
+      ...
+    # Subtest: target restarted
+    ok 2 - target restarted
+      ---
+      duration_ms: 123.693375
+      ...
+    # Subtest: root re-registered in the same process
+    ok 3 - root re-registered in the same process
+      ---
+      duration_ms: 110.15125
+      ...
+    1..3
+ok 287 - restore rechecks exact application and root continuity after recovery capture before adopting or stopping
+  ---
+  duration_ms: 347.464292
+  ...
+# Subtest: a stopped retry cannot relabel a moved frame as zero after an unbound recovery capture
+ok 288 - a stopped retry cannot relabel a moved frame as zero after an unbound recovery capture
+  ---
+  duration_ms: 176.704334
+  ...
+# Subtest: restore rejects a wrong caller SHA without effects and retries after the exact expected image is repaired
+ok 289 - restore rejects a wrong caller SHA without effects and retries after the exact expected image is repaired
+  ---
+  duration_ms: 358.39075
+  ...
+# Subtest: restore withholds a receipt-bound prior and records exact known-stale provenance
+ok 290 - restore withholds a receipt-bound prior and records exact known-stale provenance
+  ---
+  duration_ms: 99.770458
+  ...
+# Subtest: restore may relaunch one explicitly declared non-receipt-bound prior component and records disposition
+ok 291 - restore may relaunch one explicitly declared non-receipt-bound prior component and records disposition
+  ---
+  duration_ms: 102.484083
+  ...
+# Subtest: restore retains the primary restoration failure separately from exactly-once cleanup failures
+ok 292 - restore retains the primary restoration failure separately from exactly-once cleanup failures
+  ---
+  duration_ms: 110.1095
+  ...
+# Subtest: restore retries a transient owned-target stop failure and converges on an idempotent result
+ok 293 - restore retries a transient owned-target stop failure and converges on an idempotent result
+  ---
+  duration_ms: 127.005459
+  ...
+# Subtest: restore retry accepts the validated zero-offset recovery frame after a transient final-proof failure
+ok 294 - restore retry accepts the validated zero-offset recovery frame after a transient final-proof failure
+  ---
+  duration_ms: 143.482375
+  ...
+# Subtest: cleanup-only restore retries receive a fresh bounded recovery deadline after the original run deadline
+ok 295 - cleanup-only restore retries receive a fresh bounded recovery deadline after the original run deadline
+  ---
+  duration_ms: 124.398625
+  ...
+# Subtest: a first restore whose original run deadline expired receives a fresh recovery envelope
+ok 296 - a first restore whose original run deadline expired receives a fresh recovery envelope
+  ---
+  duration_ms: 98.098583
+  ...
+# Subtest: restore entry validation owns a fixed window and expired cleanup stages still execute cleanup-only
+    # Subtest: entry boundary
+    ok 1 - entry boundary
+      ---
+      duration_ms: 114.586083
+      ...
+    # Subtest: all cleanup subdeadlines
+    ok 2 - all cleanup subdeadlines
+      ---
+      duration_ms: 96.845291
+      ...
+    1..2
+ok 297 - restore entry validation owns a fixed window and expired cleanup stages still execute cleanup-only
+  ---
+  duration_ms: 212.046542
+  ...
+# Subtest: restore never relaunches a non-receipt prior until target shutdown is proven
+ok 298 - restore never relaunches a non-receipt prior until target shutdown is proven
+  ---
+  duration_ms: 130.2925
+  ...
+# Subtest: target absence cannot supersede a failed stop barrier and a retry converges
+ok 299 - target absence cannot supersede a failed stop barrier and a retry converges
+  ---
+  duration_ms: 134.120667
+  ...
+# Subtest: a stop receipt completing at its exact subdeadline cannot authorize shutdown cleanup
+ok 300 - a stop receipt completing at its exact subdeadline cannot authorize shutdown cleanup
+  ---
+  duration_ms: 133.72175
+  ...
+# Subtest: authoritative prior activity supersedes a failed relaunch transport after target absence is proven
+ok 301 - authoritative prior activity supersedes a failed relaunch transport after target absence is proven
+  ---
+  duration_ms: 104.102584
+  ...
+# Subtest: restore preserves final-state proof provenance across a later safety retry
+ok 302 - restore preserves final-state proof provenance across a later safety retry
+  ---
+  duration_ms: 133.621167
+  ...
+# Subtest: restore retries a prior relaunch when authoritative final proof contradicts its immediate receipt
+ok 303 - restore retries a prior relaunch when authoritative final proof contradicts its immediate receipt
+  ---
+  duration_ms: 134.166375
+  ...
+# Subtest: proven nonce absence with an rm warning does not quarantine an otherwise complete restore
+ok 304 - proven nonce absence with an rm warning does not quarantine an otherwise complete restore
+  ---
+  duration_ms: 101.585833
+  ...
+# Subtest: a resolved failed target-stop receipt never proves prepare clearance or emergency quiescence
+ok 305 - a resolved failed target-stop receipt never proves prepare clearance or emergency quiescence
+  ---
+  duration_ms: 245.913042
+  ...
+# Subtest: adjudicate requires completed restore and a complete unique exact capture-hash set
+ok 306 - adjudicate requires completed restore and a complete unique exact capture-hash set
+  ---
+  duration_ms: 202.699834
+  ...
+# Subtest: adjudicate re-hashes every retained PNG and rejects any immutable-byte change
+ok 307 - adjudicate re-hashes every retained PNG and rejects any immutable-byte change
+  ---
+  duration_ms: 158.332167
+  ...
+# Subtest: adjudicate emits immutable structural-only aggregation with external-vision eligibility wording
+ok 308 - adjudicate emits immutable structural-only aggregation with external-vision eligibility wording
+  ---
+  duration_ms: 160.493375
+  ...
+# Subtest: registration adds one named tool and executes entirely through supplied fake dependencies
+ok 309 - registration adds one named tool and executes entirely through supplied fake dependencies
+  ---
+  duration_ms: 90.744542
+  ...
+# Subtest: immutable run manifests are revalidated before a reviewed route mutation
+ok 310 - immutable run manifests are revalidated before a reviewed route mutation
+  ---
+  duration_ms: 97.472708
+  ...
+# Subtest: step and restore re-read authoritative receipt/AppSpec bytes before any command
+ok 311 - step and restore re-read authoritative receipt/AppSpec bytes before any command
+  ---
+  duration_ms: 190.966167
+  ...
+# Subtest: a substituted still-valid receipt object cannot change the cached prepare binding
+ok 312 - a substituted still-valid receipt object cannot change the cached prepare binding
+  ---
+  duration_ms: 101.135291
+  ...
+# Subtest: retained bounded step logs are re-hashed before a later restoration mutation
+ok 313 - retained bounded step logs are re-hashed before a later restoration mutation
+  ---
+  duration_ms: 132.545375
+  ...
+# Subtest: concurrent mutations on one exact serial are rejected even across distinct artifact roots
+ok 314 - concurrent mutations on one exact serial are rejected even across distinct artifact roots
+  ---
+  duration_ms: 87.5605
+  ...
+# Subtest: a terminal post-capture step makes its returned frame the exact stopped-state restore review
+ok 315 - a terminal post-capture step makes its returned frame the exact stopped-state restore review
+  ---
+  duration_ms: 134.053083
+  ...
+# Subtest: a target launch attempt is cleanup-owned even when the launch dependency throws
+ok 316 - a target launch attempt is cleanup-owned even when the launch dependency throws
+  ---
+  duration_ms: 85.194084
+  ...
+# Subtest: step rejects an additional mutation once every planned waypoint has been consumed
+ok 317 - step rejects an additional mutation once every planned waypoint has been consumed
+  ---
+  duration_ms: 129.748542
+  ...
+# Subtest: prepare preflight rejects Float32 overflow and impossible total budget without reading dependencies
+ok 318 - prepare preflight rejects Float32 overflow and impossible total budget without reading dependencies
+  ---
+  duration_ms: 2.1405
+  ...
+# Subtest: route and restoration admission reserve the full direct glide before any dependency read
+ok 319 - route and restoration admission reserve the full direct glide before any dependency read
+  ---
+  duration_ms: 1.820875
+  ...
+# Subtest: route schema shares the exact rev-1 locomotion cancellation and finalization envelope
+ok 320 - route schema shares the exact rev-1 locomotion cancellation and finalization envelope
+  ---
+  duration_ms: 0.512916
+  ...
+# Subtest: the minimum schema-admitted route reserve remains executable after the entry clock re-read
+ok 321 - the minimum schema-admitted route reserve remains executable after the entry clock re-read
+  ---
+  duration_ms: 99.122833
+  ...
+# Subtest: a maximum direct glide still completes all post-step evidence and the reviewed restore path
+ok 322 - a maximum direct glide still completes all post-step evidence and the reviewed restore path
+  ---
+  duration_ms: 119.442084
+  ...
+# Subtest: ConfigurationService parser accepts embedded keyName/keyValue JSON and rejects ambiguity
+ok 323 - ConfigurationService parser accepts embedded keyName/keyValue JSON and rejects ambiguity
+  ---
+  duration_ms: 1.403708
+  ...
+# Subtest: bracket parser recognizes the verified L0 phrases and app pause/ejection variants
+ok 324 - bracket parser recognizes the verified L0 phrases and app pause/ejection variants
+  ---
+  duration_ms: 0.234334
+  ...
+# Subtest: prior relaunch command is explicit MAIN, LAUNCHER, NEW_TASK, exact serial and component
+ok 325 - prior relaunch command is explicit MAIN, LAUNCHER, NEW_TASK, exact serial and component
+  ---
+  duration_ms: 0.094958
+  ...
+# Subtest: one serial remains owned after prepare and is released only by a safely completed restore
+ok 326 - one serial remains owned after prepare and is released only by a safely completed restore
+  ---
+  duration_ms: 137.581666
+  ...
+# Subtest: an idempotent completed restore repairs audit maintenance without device effects and rejects later artifact damage
+ok 327 - an idempotent completed restore repairs audit maintenance without device effects and rejects later artifact damage
+  ---
+  duration_ms: 117.319
+  ...
+# Subtest: a substituted derived action view is rebuilt from the immutable committed record
+ok 328 - a substituted derived action view is rebuilt from the immutable committed record
+  ---
+  duration_ms: 161.467625
+  ...
+# Subtest: prepare publishes its success audit before state and contains failure-audit errors
+ok 329 - prepare publishes its success audit before state and contains failure-audit errors
+  ---
+  duration_ms: 182.906208
+  ...
+# Subtest: prepare success and failure audit publication cannot cross their fixed phase deadlines
+    # Subtest: completed prepare pre-link deadline
+    ok 1 - completed prepare pre-link deadline
+      ---
+      duration_ms: 140.167792
+      ...
+    # Subtest: completed prepare post-link deadline
+    ok 2 - completed prepare post-link deadline
+      ---
+      duration_ms: 163.527416
+      ...
+    # Subtest: failed prepare audit deadline
+    ok 3 - failed prepare audit deadline
+      ---
+      duration_ms: 68.626125
+      ...
+    # Subtest: failed prepare audit post-link deadline
+    ok 4 - failed prepare audit post-link deadline
+      ---
+      duration_ms: 79.300083
+      ...
+    1..4
+ok 330 - prepare success and failure audit publication cannot cross their fixed phase deadlines
+  ---
+  duration_ms: 452.418375
+  ...
+# Subtest: step and restore audit failures return honest stopped state and retain serial ownership
+ok 331 - step and restore audit failures return honest stopped state and retain serial ownership
+  ---
+  duration_ms: 207.230542
+  ...
+# Subtest: adjudication audit failure removes its staged artifact and remains retryable
+ok 332 - adjudication audit failure removes its staged artifact and remains retryable
+  ---
+  duration_ms: 191.63425
+  ...
+# Subtest: prepare failure restores one explicitly non-receipt prior after target cleanup at every post-stop failure stage
+    # Subtest: launch
+    ok 1 - launch
+      ---
+      duration_ms: 81.690583
+      ...
+    # Subtest: capability
+    ok 2 - capability
+      ---
+      duration_ms: 80.193791
+      ...
+    # Subtest: monitor
+    ok 3 - monitor
+      ---
+      duration_ms: 97.469375
+      ...
+    # Subtest: capture
+    ok 4 - capture
+      ---
+      duration_ms: 83.565666
+      ...
+    1..4
+ok 333 - prepare failure restores one explicitly non-receipt prior after target cleanup at every post-stop failure stage
+  ---
+  duration_ms: 343.51425
+  ...
+# Subtest: prepare failure never relaunches a receipt-bound prior and records known-stale withholding
+ok 334 - prepare failure never relaunches a receipt-bound prior and records known-stale withholding
+  ---
+  duration_ms: 76.137709
+  ...
+# Subtest: an exact final resumed-component proof can supersede an invalid prior relaunch acknowledgement
+ok 335 - an exact final resumed-component proof can supersede an invalid prior relaunch acknowledgement
+  ---
+  duration_ms: 106.311542
+  ...
+# Subtest: final global safety accepts clean Full-to-Mixed stop state with no prior foreground
+ok 336 - final global safety accepts clean Full-to-Mixed stop state with no prior foreground
+  ---
+  duration_ms: 114.66175
+  ...
+# Subtest: final safeguard-center drift blocks terminal safe release and quarantines the serial
+ok 337 - final safeguard-center drift blocks terminal safe release and quarantines the serial
+  ---
+  duration_ms: 138.186583
+  ...
+# Subtest: prepare uses one fixed phase deadline, clamps baseline capture, and stops before capture after overrun
+ok 338 - prepare uses one fixed phase deadline, clamps baseline capture, and stops before capture after overrun
+  ---
+  duration_ms: 170.796333
+  ...
+# Subtest: restoration reserve is one fixed absolute deadline and does not reset after locomotion
+ok 339 - restoration reserve is one fixed absolute deadline and does not reset after locomotion
+  ---
+  duration_ms: 121.400917
+  ...
+# Subtest: fresh-launch raw health logs are retained and re-hashed before mutation and adjudication
+ok 340 - fresh-launch raw health logs are retained and re-hashed before mutation and adjudication
+  ---
+  duration_ms: 239.570584
+  ...
+# Subtest: prepare rejects duplicate raw health-log references before publishing run state
+ok 341 - prepare rejects duplicate raw health-log references before publishing run state
+  ---
+  duration_ms: 90.226917
+  ...
+# Subtest: failed prepare compensation owns or releases the serial only after auditable proof
+    # Subtest: target cleanup failure quarantines sequential prepare
+    ok 1 - target cleanup failure quarantines sequential prepare
+      ---
+      duration_ms: 84.687625
+      ...
+    # Subtest: required prior relaunch failure quarantines sequential prepare
+    ok 2 - required prior relaunch failure quarantines sequential prepare
+      ---
+      duration_ms: 81.1195
+      ...
+    # Subtest: failure audit fault quarantines even after otherwise successful compensation
+    ok 3 - failure audit fault quarantines even after otherwise successful compensation
+      ---
+      duration_ms: 67.470958
+      ...
+    # Subtest: bracket failure records compensation and releases only after complete proof
+    ok 4 - bracket failure records compensation and releases only after complete proof
+      ---
+      duration_ms: 126.117042
+      ...
+    1..4
+ok 342 - failed prepare compensation owns or releases the serial only after auditable proof
+  ---
+  duration_ms: 360.012333
+  ...
+# Subtest: prepare failure cleanup spends the reserved recovery envelope instead of an expired prepare deadline
+ok 343 - prepare failure cleanup spends the reserved recovery envelope instead of an expired prepare deadline
+  ---
+  duration_ms: 73.303917
+  ...
+# Subtest: restore revalidates live continuity and capability before any zero-offset mutation
+    # Subtest: boot
+    ok 1 - boot
+      ---
+      duration_ms: 107.59575
+      ...
+    # Subtest: PID start
+    ok 2 - PID start
+      ---
+      duration_ms: 101.88625
+      ...
+    # Subtest: foreground
+    ok 3 - foreground
+      ---
+      duration_ms: 111.129583
+      ...
+    1..3
+ok 344 - restore revalidates live continuity and capability before any zero-offset mutation
+  ---
+  duration_ms: 321.204333
+  ...
+# Subtest: a same-generation replacement process/root incarnation is rejected in step and restore
+ok 345 - a same-generation replacement process/root incarnation is rejected in step and restore
+  ---
+  duration_ms: 215.364458
+  ...
+# Subtest: fresh-launch evidence uses PREPARE_BEGIN and binds every raw health/window artifact
+ok 346 - fresh-launch evidence uses PREPARE_BEGIN and binds every raw health/window artifact
+  ---
+  duration_ms: 87.036667
+  ...
+# Subtest: fresh-launch source substitution and later raw-window tampering fail before mutation
+ok 347 - fresh-launch source substitution and later raw-window tampering fail before mutation
+  ---
+  duration_ms: 182.889833
+  ...
+# Subtest: universal final process/activity proof blocks lease release after false-success stop
+    # Subtest: none
+    ok 1 - none
+      ---
+      duration_ms: 133.871917
+      ...
+    # Subtest: receipt-bound
+    ok 2 - receipt-bound
+      ---
+      duration_ms: 124.883833
+      ...
+    # Subtest: non-receipt
+    ok 3 - non-receipt
+      ---
+      duration_ms: 136.631667
+      ...
+    1..3
+ok 348 - universal final process/activity proof blocks lease release after false-success stop
+  ---
+  duration_ms: 396.115
+  ...
+# Subtest: clock faults do not consume waypoints, mask primary errors, or bypass restore cleanup
+    # Subtest: step start clock is retryable without consuming the waypoint
+    ok 1 - step start clock is retryable without consuming the waypoint
+      ---
+      duration_ms: 114.022333
+      ...
+    # Subtest: step end clock retains the earlier safety primary and refuses an unfenced ledger entry
+    ok 2 - step end clock retains the earlier safety primary and refuses an unfenced ledger entry
+      ---
+      duration_ms: 107.099542
+      ...
+    # Subtest: restore entry clock fault leaves retryable cleanup ownership
+    ok 3 - restore entry clock fault leaves retryable cleanup ownership
+      ---
+      duration_ms: 123.739041
+      ...
+    # Subtest: restore clock fault after transaction start performs cleanup but refuses an unfenced ledger
+    ok 4 - restore clock fault after transaction start performs cleanup but refuses an unfenced ledger
+      ---
+      duration_ms: 102.228125
+      ...
+    1..4
+ok 349 - clock faults do not consume waypoints, mask primary errors, or bypass restore cleanup
+  ---
+  duration_ms: 447.8035
+  ...
+# Subtest: a successful receipt-bound incumbent stop is recorded stale before a post-await clock fault
+ok 350 - a successful receipt-bound incumbent stop is recorded stale before a post-await clock fault
+  ---
+  duration_ms: 78.435541
+  ...
+# Subtest: fixed phase deadline rejects an operation that completes exactly one nanosecond late
+ok 351 - fixed phase deadline rejects an operation that completes exactly one nanosecond late
+  ---
+  duration_ms: 75.23925
+  ...
+# Subtest: capture completion one nanosecond past its route phase retains the returned receipt and fence but cannot publish it
+ok 352 - capture completion one nanosecond past its route phase retains the returned receipt and fence but cannot publish it
+  ---
+  duration_ms: 89.999167
+  ...
+# Subtest: action ledger staging failures are atomic and cannot strand movement cleanup
+    # Subtest: partial write
+    ok 1 - partial write
+      ---
+      duration_ms: 119.921791
+      ...
+    # Subtest: fsync
+    ok 2 - fsync
+      ---
+      duration_ms: 109.220917
+      ...
+    1..2
+ok 353 - action ledger staging failures are atomic and cannot strand movement cleanup
+  ---
+  duration_ms: 229.593333
+  ...
+# Subtest: shared artifact identity rejects a pathname swap after descriptor bytes were read
+ok 354 - shared artifact identity rejects a pathname swap after descriptor bytes were read
+  ---
+  duration_ms: 90.987042
+  ...
+# Subtest: a post-stage derived-view pathname swap is atomically repaired without reversing the committed step
+ok 355 - a post-stage derived-view pathname swap is atomically repaired without reversing the committed step
+  ---
+  duration_ms: 161.684625
+  ...
+# Subtest: expected moved-frame corruption cannot be relabeled restored after cleanup stops the target
+    # Subtest: direct corrupt
+    ok 1 - direct corrupt
+      ---
+      duration_ms: 163.533958
+      ...
+    # Subtest: replacement delete
+    ok 2 - replacement delete
+      ---
+      duration_ms: 163.704083
+      ...
+    1..2
+ok 356 - expected moved-frame corruption cannot be relabeled restored after cleanup stops the target
+  ---
+  duration_ms: 327.738042
+  ...
+# Subtest: post-launch window evidence is captured before runtime probes and rejects a transient dialog
+ok 357 - post-launch window evidence is captured before runtime probes and rejects a transient dialog
+  ---
+  duration_ms: 78.352667
+  ...
+# Subtest: fresh-launch health claims are reproduced from exact descriptor bytes
+    # Subtest: attributed crash
+    ok 1 - attributed crash
+      ---
+      duration_ms: 84.396042
+      ...
+    # Subtest: duplicate marker
+    ok 2 - duplicate marker
+      ---
+      duration_ms: 86.172167
+      ...
+    1..2
+ok 358 - fresh-launch health claims are reproduced from exact descriptor bytes
+  ---
+  duration_ms: 171.047833
+  ...
+# Subtest: step bracket counters and boundary claims are reproduced from retained bytes
+ok 359 - step bracket counters and boundary claims are reproduced from retained bytes
+  ---
+  duration_ms: 115.372083
+  ...
+# Subtest: descriptor evidence resampling rejects same-inode same-length rewrites before mutation
+    # Subtest: run manifest
+    ok 1 - run manifest
+      ---
+      duration_ms: 92.407458
+      ...
+    # Subtest: fresh-launch runtime-health log 1
+    ok 2 - fresh-launch runtime-health log 1
+      ---
+      duration_ms: 90.919875
+      ...
+    1..2
+ok 360 - descriptor evidence resampling rejects same-inode same-length rewrites before mutation
+  ---
+  duration_ms: 183.735334
+  ...
+# Subtest: same-inode derived-view rewrite is reported, repaired, and keeps committed movement reachable
+ok 361 - same-inode derived-view rewrite is reported, repaired, and keeps committed movement reachable
+  ---
+  duration_ms: 173.056542
+  ...
+# Subtest: an emergency stop command defers nonce cleanup until restore proves target absence
+ok 362 - an emergency stop command defers nonce cleanup until restore proves target absence
+  ---
+  duration_ms: 135.225959
+  ...
+# Subtest: a moved emergency stop converges to an idempotent safe release without claiming zero restoration
+ok 363 - a moved emergency stop converges to an idempotent safe release without claiming zero restoration
+  ---
+  duration_ms: 205.948208
+  ...
+# Subtest: pre-link safe-release audit failure keeps the serial quarantined until a fenced retry
+ok 364 - pre-link safe-release audit failure keeps the serial quarantined until a fenced retry
+  ---
+  duration_ms: 193.369542
+  ...
+# Subtest: post-link safe-release publication failure cannot release before a later fenced action
+ok 365 - post-link safe-release publication failure cannot release before a later fenced action
+  ---
+  duration_ms: 213.538833
+  ...
+# Subtest: persistent restore clock failure reaches the production cleanup-only force-stop runner
+ok 366 - persistent restore clock failure reaches the production cleanup-only force-stop runner
+  ---
+  duration_ms: 100.726
+  ...
+# Subtest: the live final PID probe accepts only clean pidof exit 1 as target absence
+ok 367 - the live final PID probe accepts only clean pidof exit 1 as target absence
+  ---
+  duration_ms: 11.349667
+  ...
+# Subtest: live target launch retries only kept-for-user before starting the accepted-launch observer
+ok 368 - live target launch retries only kept-for-user before starting the accepted-launch observer
+  ---
+  duration_ms: 100.864
+  ...
+# Subtest: live target launch leaves accepted, ambiguous, and failing acknowledgements unretried
+    # Subtest: accepted
+    ok 1 - accepted
+      ---
+      duration_ms: 0.572
+      ...
+    # Subtest: other ignored
+    ok 2 - other ignored
+      ---
+      duration_ms: 0.125625
+      ...
+    # Subtest: nonzero
+    ok 3 - nonzero
+      ---
+      duration_ms: 0.1675
+      ...
+    # Subtest: timeout
+    ok 4 - timeout
+      ---
+      duration_ms: 0.05425
+      ...
+    # Subtest: stderr
+    ok 5 - stderr
+      ---
+      duration_ms: 0.043042
+      ...
+    # Subtest: missing status
+    ok 6 - missing status
+      ---
+      duration_ms: 0.03375
+      ...
+    # Subtest: conflicting error
+    ok 7 - conflicting error
+      ---
+      duration_ms: 0.083541
+      ...
+    # Subtest: conflicting status
+    ok 8 - conflicting status
+      ---
+      duration_ms: 0.0435
+      ...
+    # Subtest: conflicting launch state
+    ok 9 - conflicting launch state
+      ---
+      duration_ms: 0.117959
+      ...
+    # Subtest: duplicate warning
+    ok 10 - duplicate warning
+      ---
+      duration_ms: 0.046209
+      ...
+    1..10
+ok 369 - live target launch leaves accepted, ambiguous, and failing acknowledgements unretried
+  ---
+  duration_ms: 1.838417
+  ...
+# Subtest: persistent kept-for-user launch stops at its deadline and preserves preparation cleanup
+ok 370 - persistent kept-for-user launch stops at its deadline and preserves preparation cleanup
+  ---
+  duration_ms: 81.810125
+  ...
+# Subtest: live prepare safety waits for exact Full readiness while the launch observer covers the transition
+ok 371 - live prepare safety waits for exact Full readiness while the launch observer covers the transition
+  ---
+  duration_ms: 94.176625
+  ...
+# Subtest: live prepare safety readiness remains deadline bounded and later safety samples never wait
+    # Subtest: persistent non-Full state
+    ok 1 - persistent non-Full state
+      ---
+      duration_ms: 1.067916
+      ...
+    # Subtest: unsafe Guardian baseline
+    ok 2 - unsafe Guardian baseline
+      ---
+      duration_ms: 0.132959
+      ...
+    # Subtest: unsafe VST component baseline
+    ok 3 - unsafe VST component baseline
+      ---
+      duration_ms: 0.165916
+      ...
+    # Subtest: unsafe VST debug baseline
+    ok 4 - unsafe VST debug baseline
+      ---
+      duration_ms: 0.313917
+      ...
+    # Subtest: monitor drift
+    ok 5 - monitor drift
+      ---
+      duration_ms: 0.251625
+      ...
+    # Subtest: route drift
+    ok 6 - route drift
+      ---
+      duration_ms: 0.235791
+      ...
+    1..6
+ok 372 - live prepare safety readiness remains deadline bounded and later safety samples never wait
+  ---
+  duration_ms: 2.90175
+  ...
+# Subtest: live log brackets and fresh-launch health retain the complete current device window
+ok 373 - live log brackets and fresh-launch health retain the complete current device window
+  ---
+  duration_ms: 56.849416
+  ...
+# Subtest: live log cursor ambiguity and failed snapshots never become complete evidence
+    # Subtest: missing-marker
+    ok 1 - missing-marker
+      ---
+      duration_ms: 1.296916
+      ...
+    # Subtest: duplicate-marker
+    ok 2 - duplicate-marker
+      ---
+      duration_ms: 1.115
+      ...
+    # Subtest: invalid-cursor
+    ok 3 - invalid-cursor
+      ---
+      duration_ms: 0.884375
+      ...
+    # Subtest: failed-window
+    ok 4 - failed-window
+      ---
+      duration_ms: 0.962458
+      ...
+    1..4
+ok 374 - live log cursor ambiguity and failed snapshots never become complete evidence
+  ---
+  duration_ms: 4.723459
+  ...
+# Subtest: live log bracket extraction can reach BEGIN beyond historical ring output
+ok 375 - live log bracket extraction can reach BEGIN beyond historical ring output
+  ---
+  duration_ms: 5.681834
+  ...
+# Subtest: live log marker cursors select an explicit base format despite ambient logcat preferences
+ok 376 - live log marker cursors select an explicit base format despite ambient logcat preferences
+  ---
+  duration_ms: 5.7635
+  ...
+# Subtest: live log snapshots reject exact output-cap bytes even with exit zero and complete markers
+ok 377 - live log snapshots reject exact output-cap bytes even with exit zero and complete markers
+  ---
+  duration_ms: 13.460417
+  ...
+# Subtest: live continuity permits only the existing exact spatial-shell companion beside allowed target activities
+    # Subtest: target alone
+    ok 1 - target alone
+      ---
+      duration_ms: 1.04275
+      ...
+    # Subtest: target and exact shell
+    ok 2 - target and exact shell
+      ---
+      duration_ms: 0.834209
+      ...
+    # Subtest: unlisted target beside shell
+    ok 3 - unlisted target beside shell
+      ---
+      duration_ms: 0.986917
+      ...
+    # Subtest: shell without target
+    ok 4 - shell without target
+      ---
+      duration_ms: 1.281125
+      ...
+    # Subtest: another shell component
+    ok 5 - another shell component
+      ---
+      duration_ms: 1.275667
+      ...
+    # Subtest: unrelated resumed app
+    ok 6 - unrelated resumed app
+      ---
+      duration_ms: 5.847084
+      ...
+    # Subtest: unrelated system activity
+    ok 7 - unrelated system activity
+      ---
+      duration_ms: 6.370208
+      ...
+    # Subtest: no resumed activity
+    ok 8 - no resumed activity
+      ---
+      duration_ms: 4.681375
+      ...
+    1..8
+ok 378 - live continuity permits only the existing exact spatial-shell companion beside allowed target activities
+  ---
+  duration_ms: 23.166542
+  ...
+# Subtest: live fresh-launch monitor retains exact target continuity with the spatial shell resumed
+ok 379 - live fresh-launch monitor retains exact target continuity with the spatial shell resumed
+  ---
+  duration_ms: 57.395291
+  ...
+# Subtest: live prepare clearance waits for both exact process and foreground absence before launch
+    # Subtest: same-package prior is rejected before live clearance
+    ok 1 - same-package prior is rejected before live clearance
+      ---
+      duration_ms: 47.396291
+      ...
+    # Subtest: com.test.incumbent
+    ok 2 - com.test.incumbent
+      ---
+      duration_ms: 99.314834
+      ...
+    1..2
+ok 380 - live prepare clearance waits for both exact process and foreground absence before launch
+  ---
+  duration_ms: 147.197667
+  ...
+# Subtest: live prepare clearance rejects uncertain PID probes and obeys the absolute deadline
+    # Subtest: offline
+    ok 1 - offline
+      ---
+      duration_ms: 0.356791
+      ...
+    # Subtest: empty-success
+    ok 2 - empty-success
+      ---
+      duration_ms: 0.222083
+      ...
+    # Subtest: whitespace-stdout
+    ok 3 - whitespace-stdout
+      ---
+      duration_ms: 0.183916
+      ...
+    # Subtest: whitespace-stderr
+    ok 4 - whitespace-stderr
+      ---
+      duration_ms: 0.067083
+      ...
+    # Subtest: malformed
+    ok 5 - malformed
+      ---
+      duration_ms: 0.072583
+      ...
+    # Subtest: still-running
+    ok 6 - still-running
+      ---
+      duration_ms: 0.130042
+      ...
+    1..6
+ok 381 - live prepare clearance rejects uncertain PID probes and obeys the absolute deadline
+  ---
+  duration_ms: 1.54225
+  ...
+# Subtest: prepare requires a separately receipted clean PID absence before declaring an incumbent stale
+ok 382 - prepare requires a separately receipted clean PID absence before declaring an incumbent stale
+  ---
+  duration_ms: 86.933709
+  ...
+# Subtest: prepare rejects malformed PID-absence receipts without promoting freshness
+    # Subtest: serial
+    ok 1 - serial
+      ---
+      duration_ms: 82.445125
+      ...
+    # Subtest: package
+    ok 2 - package
+      ---
+      duration_ms: 93.255333
+      ...
+    # Subtest: exit
+    ok 3 - exit
+      ---
+      duration_ms: 86.778125
+      ...
+    # Subtest: timeout
+    ok 4 - timeout
+      ---
+      duration_ms: 90.141792
+      ...
+    # Subtest: stdout
+    ok 5 - stdout
+      ---
+      duration_ms: 82.509125
+      ...
+    # Subtest: stderr
+    ok 6 - stderr
+      ---
+      duration_ms: 83.062833
+      ...
+    # Subtest: extra key
+    ok 7 - extra key
+      ---
+      duration_ms: 78.306833
+      ...
+    1..7
+ok 383 - prepare rejects malformed PID-absence receipts without promoting freshness
+  ---
+  duration_ms: 597.622875
+  ...
+# Subtest: typed partial clearance retains exact stop evidence when its PID proof is malformed
+ok 384 - typed partial clearance retains exact stop evidence when its PID proof is malformed
+  ---
+  duration_ms: 80.630333
+  ...
+# Subtest: receipt-bound stop failure before command completion remains explicit unknown for either incumbent layout
+    # Subtest: com.test.fullworld
+    ok 1 - com.test.fullworld
+      ---
+      duration_ms: 82.9065
+      ...
+    # Subtest: com.test.incumbent
+    ok 2 - com.test.incumbent
+      ---
+      duration_ms: 93.772417
+      ...
+    1..2
+ok 385 - receipt-bound stop failure before command completion remains explicit unknown for either incumbent layout
+  ---
+  duration_ms: 176.988583
+  ...
+# Subtest: separate receipt-bound incumbent stays not-evaluated when target clearance fails first
+ok 386 - separate receipt-bound incumbent stays not-evaluated when target clearance fails first
+  ---
+  duration_ms: 82.384333
+  ...
+# Subtest: normal prepare clearance persists exact PID-absence evidence for either incumbent layout
+    # Subtest: com.test.fullworld
+    ok 1 - com.test.fullworld
+      ---
+      duration_ms: 83.146541
+      ...
+    # Subtest: com.test.incumbent
+    ok 2 - com.test.incumbent
+      ---
+      duration_ms: 82.318459
+      ...
+    1..2
+ok 387 - normal prepare clearance persists exact PID-absence evidence for either incumbent layout
+  ---
+  duration_ms: 165.805792
+  ...
+# Subtest: receipt-bound prepare failure records known stale when PID absence preceded an activity-probe failure
+    # Subtest: com.test.fullworld
+    ok 1 - com.test.fullworld
+      ---
+      duration_ms: 88.845958
+      ...
+    # Subtest: com.test.incumbent
+    ok 2 - com.test.incumbent
+      ---
+      duration_ms: 74.63675
+      ...
+    1..2
+ok 388 - receipt-bound prepare failure records known stale when PID absence preceded an activity-probe failure
+  ---
+  duration_ms: 163.855375
+  ...
+# Subtest: receipt-bound prepare failure records explicit unknown freshness after a completed stop with uncertain PID state
+    # Subtest: com.test.fullworld
+    ok 1 - com.test.fullworld
+      ---
+      duration_ms: 75.254291
+      ...
+    # Subtest: com.test.incumbent
+    ok 2 - com.test.incumbent
+      ---
+      duration_ms: 89.189209
+      ...
+    1..2
+ok 389 - receipt-bound prepare failure records explicit unknown freshness after a completed stop with uncertain PID state
+  ---
+  duration_ms: 164.88275
+  ...
+# Subtest: non-prepare live stops retain the unchanged exact four-key receipt
+ok 390 - non-prepare live stops retain the unchanged exact four-key receipt
+  ---
+  duration_ms: 0.313875
+  ...
+# Subtest: revision-1 capability, HMD, and locomotion successes return portable action receipts
+ok 391 - revision-1 capability, HMD, and locomotion successes return portable action receipts
+  ---
+  duration_ms: 3.05775
+  ...
+# Subtest: revision-1 failed action receipts retain concrete errors without making sibling receipts nonportable
+ok 392 - revision-1 failed action receipts retain concrete errors without making sibling receipts nonportable
+  ---
+  duration_ms: 4.400208
+  ...
+# Subtest: maximum direct glide remains inside the terminal host window and transfers nonce cleanup
+ok 393 - maximum direct glide remains inside the terminal host window and transfers nonce cleanup
+  ---
+  duration_ms: 0.911375
+  ...
+# Subtest: locomotion timeout obtains a guest cancel barrier before transferring nonce cleanup
+ok 394 - locomotion timeout obtains a guest cancel barrier before transferring nonce cleanup
+  ---
+  duration_ms: 0.564625
+  ...
+# Subtest: AgentBridge clock failure after guest-visible execute starts no strict effect and defers stop-first cleanup
+ok 395 - AgentBridge clock failure after guest-visible execute starts no strict effect and defers stop-first cleanup
+  ---
+  duration_ms: 0.351
+  ...
+# Subtest: AgentBridge clock failure after non-mutating broadcast starts no pull or acknowledgement cleanup
+ok 396 - AgentBridge clock failure after non-mutating broadcast starts no pull or acknowledgement cleanup
+  ---
+  duration_ms: 0.450792
+  ...
+# Subtest: AgentBridge deadline admission clock failure is transport-free
+ok 397 - AgentBridge deadline admission clock failure is transport-free
+  ---
+  duration_ms: 0.209958
+  ...
+# Subtest: legacy commands acknowledgement without capability revision is capability_unavailable and cleaned
+ok 398 - legacy commands acknowledgement without capability revision is capability_unavailable and cleaned
+  ---
+  duration_ms: 0.286083
+  ...
+# Subtest: a substituted revisionless commands file is invalid rather than treated as a legacy capability
+ok 399 - a substituted revisionless commands file is invalid rather than treated as a legacy capability
+  ---
+  duration_ms: 0.549834
+  ...
+# Subtest: broadcast acceptance without a stable exact-file acknowledgement is never success and is cleaned
+ok 400 - broadcast acceptance without a stable exact-file acknowledgement is never success and is cleaned
+  ---
+  duration_ms: 0.222
+  ...
+# Subtest: malformed acknowledgement fails closed and preserves cleanup evidence
+ok 401 - malformed acknowledgement fails closed and preserves cleanup evidence
+  ---
+  duration_ms: 0.157917
+  ...
+# Subtest: commands capability success is nonce/package/operation/root bound and uses exact transport metadata
+ok 402 - commands capability success is nonce/package/operation/root bound and uses exact transport metadata
+  ---
+  duration_ms: 0.247
+  ...
+# Subtest: one present acknowledgement read is insufficient for stability and still cleans
+ok 403 - one present acknowledgement read is insufficient for stability and still cleans
+  ---
+  duration_ms: 0.129542
+  ...
+# Subtest: changed acknowledgement bytes reset stability before an identical pair succeeds
+ok 404 - changed acknowledgement bytes reset stability before an identical pair succeeds
+  ---
+  duration_ms: 0.290291
+  ...
+# Subtest: stable stale or malformed acknowledgement bytes never outrun a later exact stable pair
+ok 405 - stable stale or malformed acknowledgement bytes never outrun a later exact stable pair
+  ---
+  duration_ms: 0.615125
+  ...
+# Subtest: broadcast failure retains the primary error and attempts exact cleanup once
+ok 406 - broadcast failure retains the primary error and attempts exact cleanup once
+  ---
+  duration_ms: 0.211459
+  ...
+# Subtest: HMD success requires finite position/quaternion and exact root generation
+ok 407 - HMD success requires finite position/quaternion and exact root generation
+  ---
+  duration_ms: 0.230625
+  ...
+# Subtest: HMD acknowledgement requires listener-derived sequence and ordered guest freshness clocks
+ok 408 - HMD acknowledgement requires listener-derived sequence and ordered guest freshness clocks
+  ---
+  duration_ms: 0.933458
+  ...
+# Subtest: locomotion success binds mode, absolute target, glide budget, and root-generation transition
+ok 409 - locomotion success binds mode, absolute target, glide budget, and root-generation transition
+  ---
+  duration_ms: 0.292666
+  ...
+# Subtest: locomotion requires an explicit route-owned nonce disposition before any transport
+ok 410 - locomotion requires an explicit route-owned nonce disposition before any transport
+  ---
+  duration_ms: 0.292417
+  ...
+# Subtest: locomotion canonicalizes a finite JavaScript target to its exact Float32 transport value
+ok 411 - locomotion canonicalizes a finite JavaScript target to its exact Float32 transport value
+  ---
+  duration_ms: 0.531917
+  ...
+# Subtest: locomotion acknowledgement binding compares exact Float32 values and normalizes signed zero
+ok 412 - locomotion acknowledgement binding compares exact Float32 values and normalizes signed zero
+  ---
+  duration_ms: 0.545084
+  ...
+# Subtest: replacement success requires the next root generation and never accepts direct readback
+ok 413 - replacement success requires the next root generation and never accepts direct readback
+  ---
+  duration_ms: 0.278625
+  ...
+# Subtest: locomotion rejects substituted or stale request nonce acknowledgement and defers its cleanup
+ok 414 - locomotion rejects substituted or stale request nonce acknowledgement and defers its cleanup
+  ---
+  duration_ms: 0.352917
+  ...
+# Subtest: locomotion rejects substituted or stale package acknowledgement and defers its cleanup
+ok 415 - locomotion rejects substituted or stale package acknowledgement and defers its cleanup
+  ---
+  duration_ms: 0.368708
+  ...
+# Subtest: locomotion rejects substituted or stale operation acknowledgement and defers its cleanup
+ok 416 - locomotion rejects substituted or stale operation acknowledgement and defers its cleanup
+  ---
+  duration_ms: 0.362917
+  ...
+# Subtest: locomotion rejects substituted or stale mode acknowledgement and defers its cleanup
+ok 417 - locomotion rejects substituted or stale mode acknowledgement and defers its cleanup
+  ---
+  duration_ms: 0.258708
+  ...
+# Subtest: locomotion rejects substituted or stale target acknowledgement and defers its cleanup
+ok 418 - locomotion rejects substituted or stale target acknowledgement and defers its cleanup
+  ---
+  duration_ms: 0.209709
+  ...
+# Subtest: locomotion rejects substituted or stale prior root generation acknowledgement and defers its cleanup
+ok 419 - locomotion rejects substituted or stale prior root generation acknowledgement and defers its cleanup
+  ---
+  duration_ms: 0.143167
+  ...
+# Subtest: locomotion rejects substituted or stale direct result generation acknowledgement and defers its cleanup
+ok 420 - locomotion rejects substituted or stale direct result generation acknowledgement and defers its cleanup
+  ---
+  duration_ms: 0.127083
+  ...
+# Subtest: a rejected guest result retains its primary failure and transfers nonce cleanup
+ok 421 - a rejected guest result retains its primary failure and transfers nonce cleanup
+  ---
+  duration_ms: 0.136916
+  ...
+# Subtest: guest cleanup failure remains visible while nonce cleanup stays route-owned
+ok 422 - guest cleanup failure remains visible while nonce cleanup stays route-owned
+  ---
+  duration_ms: 0.173708
+  ...
+# Subtest: failed HMD and locomotion acknowledgements carrying success payloads are invalid
+ok 423 - failed HMD and locomotion acknowledgements carrying success payloads are invalid
+  ---
+  duration_ms: 0.30175
+  ...
+# Subtest: cleanup-only host failure has no invented primary failure
+ok 424 - cleanup-only host failure has no invented primary failure
+  ---
+  duration_ms: 0.174208
+  ...
+# Subtest: locomotion rejects incomplete, non-finite, implicit-mode, or physical-walk input before broadcast
+ok 425 - locomotion rejects incomplete, non-finite, implicit-mode, or physical-walk input before broadcast
+  ---
+  duration_ms: 0.206625
+  ...
+# Subtest: finite doubles outside the Float32 transport domain are refused with route-owned cleanup before broadcast
+ok 426 - finite doubles outside the Float32 transport domain are refused with route-owned cleanup before broadcast
+  ---
+  duration_ms: 0.136209
+  ...
+# Subtest: unsafe serial, package, or nonce remains fully transport-free
+ok 427 - unsafe serial, package, or nonce remains fully transport-free
+  ---
+  duration_ms: 0.071958
+  ...
+# Subtest: locomotion revision 1 binds one exact producer incarnation across capability, HMD, and locomotion
+ok 428 - locomotion revision 1 binds one exact producer incarnation across capability, HMD, and locomotion
+  ---
+  duration_ms: 0.529583
+  ...
+# Subtest: HMD rejects a non-v4 producer identity before broadcast
+ok 429 - HMD rejects a non-v4 producer identity before broadcast
+  ---
+  duration_ms: 0.184666
+  ...
+# Subtest: HMD and locomotion reject a same-generation acknowledgement from another producer incarnation
+ok 430 - HMD and locomotion reject a same-generation acknowledgement from another producer incarnation
+  ---
+  duration_ms: 0.426041
+  ...
+# Subtest: AgentBridge transaction deadline reserves valid cleanup and starts no later non-cleanup effect
+ok 431 - AgentBridge transaction deadline reserves valid cleanup and starts no later non-cleanup effect
+  ---
+  duration_ms: 0.23575
+  ...
+# Subtest: AgentBridge refuses an impossible deadline envelope before broadcast and never uses a 15s invalid fallback
+ok 432 - AgentBridge refuses an impossible deadline envelope before broadcast and never uses a 15s invalid fallback
+  ---
+  duration_ms: 0.1875
+  ...
+# Subtest: production locomotion composites recompute one injected absolute deadline before every spawn and sleep
+ok 433 - production locomotion composites recompute one injected absolute deadline before every spawn and sleep
+  ---
+  duration_ms: 0.824084
+  ...
+# Subtest: every deferred locomote result must transfer the exact nonce disposition before route progress
+    # Subtest: omitted
+    ok 1 - omitted
+      ---
+      duration_ms: 155.268875
+      ...
+    # Subtest: wrong status
+    ok 2 - wrong status
+      ---
+      duration_ms: 159.485583
+      ...
+    # Subtest: wrong request
+    ok 3 - wrong request
+      ---
+      duration_ms: 164.572625
+      ...
+    # Subtest: wrong path
+    ok 4 - wrong path
+      ---
+      duration_ms: 151.055792
+      ...
+    # Subtest: wrong attempts
+    ok 5 - wrong attempts
+      ---
+      duration_ms: 139.484792
+      ...
+    # Subtest: unexpected finalization
+    ok 6 - unexpected finalization
+      ---
+      duration_ms: 143.626417
+      ...
+    # Subtest: unexpected removal warning
+    ok 7 - unexpected removal warning
+      ---
+      duration_ms: 141.119916
+      ...
+    1..7
+ok 434 - every deferred locomote result must transfer the exact nonce disposition before route progress
+  ---
+  duration_ms: 1055.486541
+  ...
+# Subtest: an unquiesced deferred disposition cannot claim finalization or removal
+    # Subtest: finalization
+    ok 1 - finalization
+      ---
+      duration_ms: 149.990417
+      ...
+    # Subtest: removal
+    ok 2 - removal
+      ---
+      duration_ms: 145.407208
+      ...
+    1..2
+ok 435 - an unquiesced deferred disposition cannot claim finalization or removal
+  ---
+  duration_ms: 295.842875
+  ...
+# Subtest: live nonce cleanup must prove exact one-removal absence and finalization before pending ownership clears
+    # Subtest: wrong status
+    ok 1 - wrong status
+      ---
+      duration_ms: 147.234125
+      ...
+    # Subtest: wrong request
+    ok 2 - wrong request
+      ---
+      duration_ms: 155.448792
+      ...
+    # Subtest: wrong path
+    ok 3 - wrong path
+      ---
+      duration_ms: 142.630666
+      ...
+    # Subtest: zero attempts
+    ok 4 - zero attempts
+      ---
+      duration_ms: 224.88175
+      ...
+    # Subtest: two attempts
+    ok 5 - two attempts
+      ---
+      duration_ms: 425.908709
+      ...
+    # Subtest: missing finalization
+    ok 6 - missing finalization
+      ---
+      duration_ms: 425.543708
+      ...
+    # Subtest: non-lowercase finalization
+    ok 7 - non-lowercase finalization
+      ---
+      duration_ms: 424.14725
+      ...
+    1..7
+ok 436 - live nonce cleanup must prove exact one-removal absence and finalization before pending ownership clears
+  ---
+  duration_ms: 1946.919375
+  ...
+# Subtest: restore retains nonce ownership when its deferred disposition is omitted
+ok 437 - restore retains nonce ownership when its deferred disposition is omitted
+  ---
+  duration_ms: 294.803458
+  ...
+# Subtest: restore keeps malformed live cleanup owned and recovers only by a post-stop absence probe
+ok 438 - restore keeps malformed live cleanup owned and recovers only by a post-stop absence probe
+  ---
+  duration_ms: 338.850291
+  ...
+# Subtest: stopped-process cleanup forbids finalization evidence and converges through probe-only recovery
+ok 439 - stopped-process cleanup forbids finalization evidence and converges through probe-only recovery
+  ---
+  duration_ms: 385.115083
+  ...
+# Subtest: removed-and-absent cleanup retains an rm warning without reopening nonce ownership
+ok 440 - removed-and-absent cleanup retains an rm warning without reopening nonce ownership
+  ---
+  duration_ms: 294.013542
+  ...
+# Subtest: launch-handoff observation owns every blocking preflight and the HMD-to-monitor-sample-zero handoff
+    # Subtest: runtime
+    ok 1 - runtime
+      ---
+      duration_ms: 195.664792
+      ...
+    # Subtest: capability
+    ok 2 - capability
+      ---
+      duration_ms: 301.816625
+      ...
+    # Subtest: monitor_handoff
+    ok 3 - monitor_handoff
+      ---
+      duration_ms: 337.940875
+      ...
+    1..3
+ok 441 - launch-handoff observation owns every blocking preflight and the HMD-to-monitor-sample-zero handoff
+  ---
+  duration_ms: 836.067333
+  ...
+# Subtest: launch-handoff cadence is reproduced from monotonic sample timestamps, not a claimed elapsed counter
+ok 442 - launch-handoff cadence is reproduced from monotonic sample timestamps, not a claimed elapsed counter
+  ---
+  duration_ms: 275.712792
+  ...
+# Subtest: post-request deadline failure defers nonce cleanup until restore proves target absence
+ok 443 - post-request deadline failure defers nonce cleanup until restore proves target absence
+  ---
+  duration_ms: 284.779167
+  ...
+# Subtest: post-request clock failure retains a terminal but not-yet-finalized nonce for restore
+ok 444 - post-request clock failure retains a terminal but not-yet-finalized nonce for restore
+  ---
+  duration_ms: 341.182625
+  ...
+# Subtest: a pre-removal finalization failure defers the sole removal until restore proves target absence
+ok 445 - a pre-removal finalization failure defers the sole removal until restore proves target absence
+  ---
+  duration_ms: 383.758083
+  ...
+# Subtest: a started removal with an unproven absence gets probe-only recovery and never a second rm
+ok 446 - a started removal with an unproven absence gets probe-only recovery and never a second rm
+  ---
+  duration_ms: 429.41475
+  ...
+# Subtest: a spoofed cleanup error cannot authorize a second removal
+ok 447 - a spoofed cleanup error cannot authorize a second removal
+  ---
+  duration_ms: 412.329125
+  ...
+# Subtest: nonce cleanup disposition is retained inside the deadline callback before a post-await clock fault
+ok 448 - nonce cleanup disposition is retained inside the deadline callback before a post-await clock fault
+  ---
+  duration_ms: 341.723583
+  ...
+# Subtest: failed emergency stop persists unquiesced ownership and restore is cleanup-only
+ok 449 - failed emergency stop persists unquiesced ownership and restore is cleanup-only
+  ---
+  duration_ms: 371.019709
+  ...
+# Subtest: restore owns cleanup before a permanently failing entry clock
+ok 450 - restore owns cleanup before a permanently failing entry clock
+  ---
+  duration_ms: 353.762125
+  ...
+# Subtest: exact zero-baseline image corruption remains retryable after cleanup
+ok 451 - exact zero-baseline image corruption remains retryable after cleanup
+  ---
+  duration_ms: 300.74125
+  ...
+# Subtest: cancel polling ignores stable stale execute bytes until an exact cancel barrier
+ok 452 - cancel polling ignores stable stale execute bytes until an exact cancel barrier
+  ---
+  duration_ms: 0.50125
+  ...
+# Subtest: locomotion request transfers the nonce without finalizing or removing it
+ok 453 - locomotion request transfers the nonce without finalizing or removing it
+  ---
+  duration_ms: 0.126459
+  ...
+# Subtest: unproven cancellation defers final nonce removal until an owned stop
+ok 454 - unproven cancellation defers final nonce removal until an owned stop
+  ---
+  duration_ms: 0.097791
+  ...
+# Subtest: route-owned locomotion never removes an unquiesced nonce ahead of a delayed cancel writer
+ok 455 - route-owned locomotion never removes an unquiesced nonce ahead of a delayed cancel writer
+  ---
+  duration_ms: 0.083084
+  ...
+# Subtest: a deferred locomote preflight failure remains route-owned and transport-free
+ok 456 - a deferred locomote preflight failure remains route-owned and transport-free
+  ---
+  duration_ms: 0.056125
+  ...
+# Subtest: exact locomotion nonce cleanup finalizes the original tuple before one removal and absence proof
+ok 457 - exact locomotion nonce cleanup finalizes the original tuple before one removal and absence proof
+  ---
+  duration_ms: 0.459334
+  ...
+# Subtest: a failed sole removal still performs and retains the authoritative absence proof
+ok 458 - a failed sole removal still performs and retains the authoritative absence proof
+  ---
+  duration_ms: 0.13125
+  ...
+# Subtest: strict nonce cleanup starts no removal when its deadline cannot also reserve an absence probe
+ok 459 - strict nonce cleanup starts no removal when its deadline cannot also reserve an absence probe
+  ---
+  duration_ms: 0.166
+  ...
+# Subtest: cleanup-only nonce recovery requires a proven process stop before any transport
+ok 460 - cleanup-only nonce recovery requires a proven process stop before any transport
+  ---
+  duration_ms: 0.072792
+  ...
+# Subtest: worst-case cancellation and final cleanup never start an effect at or after their absolute deadlines
+ok 461 - worst-case cancellation and final cleanup never start an effect at or after their absolute deadlines
+  ---
+  duration_ms: 0.249084
+  ...
+# Subtest: immutable action records form the authoritative hash chain behind the JSONL view
+ok 462 - immutable action records form the authoritative hash chain behind the JSONL view
+  ---
+  duration_ms: 274.315917
+  ...
+# Subtest: an O_EXCL action-record commit conflict cannot erase an intervening writer and movement cleanup stays reachable
+ok 463 - an O_EXCL action-record commit conflict cannot erase an intervening writer and movement cleanup stays reachable
+  ---
+  duration_ms: 329.882334
+  ...
+# Subtest: every post-link ledger maintenance fault preserves the one committed prepare outcome and reachable restore
+    # Subtest: afterActionRecordLink
+    ok 1 - afterActionRecordLink
+      ---
+      duration_ms: 339.562208
+      ...
+    # Subtest: afterActionFirstDirectoryFsync
+    ok 2 - afterActionFirstDirectoryFsync
+      ---
+      duration_ms: 384.024042
+      ...
+    # Subtest: afterActionStageUnlink
+    ok 3 - afterActionStageUnlink
+      ---
+      duration_ms: 417.8825
+      ...
+    # Subtest: afterActionRecordAdoption
+    ok 4 - afterActionRecordAdoption
+      ---
+      duration_ms: 403.476875
+      ...
+    # Subtest: afterActionViewMaterialization
+    ok 5 - afterActionViewMaterialization
+      ---
+      duration_ms: 358.878125
+      ...
+    1..5
+ok 464 - every post-link ledger maintenance fault preserves the one committed prepare outcome and reachable restore
+  ---
+  duration_ms: 1904.493333
+  ...
+# Subtest: a real post-link staging unlink failure is bound and repaired on the next authoritative replay
+ok 465 - a real post-link staging unlink failure is bound and repaired on the next authoritative replay
+  ---
+  duration_ms: 435.223459
+  ...
+# Subtest: action replay repairs only bound owned stages and still rejects a foreign staging entry
+ok 466 - action replay repairs only bound owned stages and still rejects a foreign staging entry
+  ---
+  duration_ms: 245.950041
+  ...
+# Subtest: monitor sample zero must be descriptor-retained and cross-bound to the launch observer handoff
+    # Subtest: callback before retention
+    ok 1 - callback before retention
+      ---
+      duration_ms: 262.597959
+      ...
+    # Subtest: forged callback descriptor
+    ok 2 - forged callback descriptor
+      ---
+      duration_ms: 234.932166
+      ...
+    # Subtest: forged callback timing
+    ok 3 - forged callback timing
+      ---
+      duration_ms: 150.27475
+      ...
+    1..3
+ok 467 - monitor sample zero must be descriptor-retained and cross-bound to the launch observer handoff
+  ---
+  duration_ms: 648.255792
+  ...
+1..467
+# tests 690
+# suites 0
+# pass 689
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 38533.576458

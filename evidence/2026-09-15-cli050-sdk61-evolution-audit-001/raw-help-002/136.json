@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 knowledge server --help",
+  "argv": [
+    "knowledge",
+    "server",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:06.539Z",
+  "endedAt": "2026-09-15T09:12:06.642Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "95956385ff8dbc5a563d3720feec198eb24551724daa6cfe6977b6a8e716537b",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

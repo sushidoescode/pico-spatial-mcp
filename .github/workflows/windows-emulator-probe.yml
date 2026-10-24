@@ -9,7 +9,7 @@ permissions:
 jobs:
   probe:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,16 +22,33 @@ jobs:
       - run: npm run build
       - name: Verify the probe contract
         run: node --test test/windows-emulator-probe.mjs
-      - name: Probe the official emulator install channel
+      - name: Resolve the exact managed CLI through the MCP boundary
+        # ensurePicoCli (dist/picocli.js) resolves the registry version and provisions it into the
+        # runner's MCP-owned store. Nothing is installed globally and PATH is untouched; the probe
+        # below receives the validated absolute path plus the recorded identity and refuses any
+        # other executable.
+        id: resolve
+        shell: pwsh
         env:
-          PICO_WINDOWS_PROBE_OUT: ${{ runner.temp }}\windows-emulator-probe.json
+          PICO_WINDOWS_PROBE_IDENTITY: ${{ runner.temp }}\managed-pico-cli-identity-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: |
+          node scripts/probe-windows-emulator.mjs resolve --identity-out "$env:PICO_WINDOWS_PROBE_IDENTITY"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $identity = Get-Content -Raw "$env:PICO_WINDOWS_PROBE_IDENTITY" | ConvertFrom-Json
+          "cli=$($identity.executablePath)" >> $env:GITHUB_OUTPUT
+          "identity=$env:PICO_WINDOWS_PROBE_IDENTITY" >> $env:GITHUB_OUTPUT
+      - name: Probe the official emulator install channel with the validated executable
+        env:
+          PICO_WINDOWS_PROBE_OUT: ${{ runner.temp }}\windows-emulator-probe-${{ github.run_id }}-${{ github.run_attempt }}.json
           PICO_WINDOWS_PROBE_SHA: ${{ github.sha }}
-        run: node scripts/probe-windows-emulator.mjs
+        run: node scripts/probe-windows-emulator.mjs probe --cli "${{ steps.resolve.outputs.cli }}" --identity "${{ steps.resolve.outputs.identity }}"
       - name: Upload the bounded evidence record
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: windows-emulator-probe
-          path: ${{ runner.temp }}\windows-emulator-probe.json
+          path: |
+            ${{ runner.temp }}\windows-emulator-probe-${{ github.run_id }}-${{ github.run_attempt }}.json
+            ${{ runner.temp }}\managed-pico-cli-identity-${{ github.run_id }}-${{ github.run_attempt }}.json
           retention-days: 30
-          if-no-files-found: error
+          if-no-files-found: warn

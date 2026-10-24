@@ -1,0 +1,204 @@
+{
+  "root": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15",
+  "startedAt": "2026-09-15T20:22:53.412Z",
+  "head": "23a075c312d9fef6191508906ff6de80c4a8ead6",
+  "node": "v25.8.1",
+  "suites": [
+    {
+      "name": "test:lint",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1349,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/release-merge-suites/test_lint.log",
+      "stdoutBytes": 7364,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 1071.103625"
+      ]
+    },
+    {
+      "name": "test:distribution-adoption",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 22163,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/release-merge-suites/test_distribution-adoption.log",
+      "stdoutBytes": 4253,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 22016.13175"
+      ]
+    },
+    {
+      "name": "test:docsmeta",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 441,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/release-merge-suites/test_docsmeta.log",
+      "stdoutBytes": 3404,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 202.924084"
+      ]
+    },
+    {
+      "name": "test:buildfreshness",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 786,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/release-merge-suites/test_buildfreshness.log",
+      "stdoutBytes": 2381,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 642.040458"
+      ]
+    },
+    {
+      "name": "test:plugin-bootstrap-freshness",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 787,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/release-merge-suites/test_plugin-bootstrap-freshness.log",
+      "stdoutBytes": 2713,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 642.156542"
+      ]
+    },
+    {
+      "name": "test:smoke-isolation",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 2305,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/release-merge-suites/test_smoke-isolation.log",
+      "stdoutBytes": 426,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 2161.77425"
+      ]
+    },
+    {
+      "name": "test:sdk-integration",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 187,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/release-merge-suites/test_sdk-integration.log",
+      "stdoutBytes": 784,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 41.236708"
+      ]
+    },
+    {
+      "name": "smoke",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1175,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/release-merge-suites/smoke.log",
+      "stdoutBytes": 7791,
+      "stderrBytes": 62,
+      "tail": [
+        "=== no npm invocation [ok] ===",
+        "SMOKE_SUMMARY {\"checks\":[{\"name\":\"tool registration\",\"status\":\"ok\"},{\"name\":\"typed outputSchema\",\"status\":\"ok\"},{\"name\":\"preflight_env structuredContent\",\"status\":\"ok\"},{\"name\":\"diagnose structuredContent\",\"status\":\"ok\"},{\"name\":\"capability_report structuredContent\",\"status\":\"ok\"},{\"name\":\"capability_report rejects caller-forged producer tiers\",\"status\":\"ok\"},{\"name\":\"verify structuredContent success path\",\"status\":\"ok\"},{\"name\":\"build_and_run structuredContent success path\",\"status\":\"ok\"},{\"name\":\"fixture invocation log targets only the fixture\",\"status\":\"ok\"},{\"name\":\"no npm invocation\",\"status\":\"ok\"}],\"failures\":0,\"fixture\":{\"calls\":[{\"kind\":\"fixture-gradle\",\"serial\":null,\"argv\":[\"assembleDebug\",\"--console=plain\"]},{\"kind\":\"fixture-adb\",\"serial\":\"fixture-serial\",\"argv\":[\"-s\",\"fixture-serial\",\"install\",\"-r\",\"/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-smoke-27OkeG/project/app/build/outputs/apk/debug/app-debug.apk\"]},{\"kind\":\"fixture-adb\",\"serial\":\"fixture-serial\",\"argv\":[\"-s\",\"fixture-serial\",\"shell\",\"am\",\"force-stop\",\"com.example.contractfixture\"]},{\"kind\":\"fixture-adb\",\"serial\":\"fixture-serial\",\"argv\":[\"-s\",\"fixture-serial\",\"logcat\",\"-c\"]},{\"kind\":\"fixture-adb\",\"serial\":\"fixture-serial\",\"argv\":[\"-s\",\"fixture-serial\",\"shell\",\"monkey\",\"-p\",\"com.example.contractfixture\",\"-c\",\"android.intent.category.LAUNCHER\",\"1\"]},{\"kind\":\"fixture-adb\",\"serial\":\"fixture-serial\",\"argv\":[\"-s\",\"fixture-serial\",\"shell\",\"pidof\",\"com.example.contractfixture\"]},{\"kind\":\"fixture-adb\",\"serial\":\"fixture-serial\",\"argv\":[\"-s\",\"fixture-serial\",\"logcat\",\"-d\"]},{\"kind\":\"fixture-adb\",\"serial\":\"fixture-serial\",\"argv\":[\"-s\",\"fixture-serial\",\"logcat\",\"--pid\",\"4242\",\"-d\"]},{\"kind\":\"fixture-adb\",\"serial\":\"fixture-serial\",\"argv\":[\"-s\",\"fixture-serial\",\"shell\",\"pidof\",\"com.example.contractfixture\"]},{\"kind\":\"fixture-adb\",\"serial\":\"fixture-serial\",\"argv\":[\"-s\",\"fixture-serial\",\"exec-out\",\"screencap\",\"-p\"]}],\"probes\":[{\"kind\":\"fixture-adb-probe\",\"serial\":null,\"argv\":[\"version\"]}],\"refused\":[{\"kind\":\"fixture-adb-refused\",\"serial\":null,\"argv\":[\"devices\"]}],\"npmCalls\":[]}}",
+        "Smoke test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:prompts",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 784,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/release-merge-suites/test_prompts.log",
+      "stdoutBytes": 432,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 633.317875"
+      ]
+    },
+    {
+      "name": "test:preflight",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1533,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/release-merge-suites/test_preflight.log",
+      "stdoutBytes": 5163,
+      "stderrBytes": 186,
+      "tail": [
+        "  ok   emulator-status consumer: managed integrity rejection => warn",
+        "  ok   PARTIAL/4 keeps the expected degraded warning and the envelope's remediation",
+        "Preflight test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:doors",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 15766,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/release-merge-suites/test_doors.log",
+      "stdoutBytes": 5664,
+      "stderrBytes": 186,
+      "tail": [
+        "  ok   verify_pico_apk reports the full-space rejection as a structured launch error",
+        "  ok   verify_pico_apk force-stops the full-space incumbent and relaunches once (recovery recorded)",
+        "Doors test done. Failures: 0"
+      ]
+    },
+    {
+      "name": "test:picocli-win",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 93461,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/release-merge-suites/test_picocli-win.log",
+      "stdoutBytes": 12768,
+      "stderrBytes": 0,
+      "tail": [
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 93314.197958"
+      ]
+    },
+    {
+      "name": "test:tarball",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 11796,
+      "log": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/merge-checks/release-merge-suites/test_tarball.log",
+      "stdoutBytes": 4141,
+      "stderrBytes": 124,
+      "tail": [
+        "  ok   PICO_MCP_SURFACE unset serves the 18-tool doors surface (full stays explicit opt-in)",
+        "  ok   packed dist/build-receipt.json binds the payload to source afdeea9b2616 / output ac8729b2a9de",
+        "Tarball verification done. Failures: 1"
+      ]
+    }
+  ],
+  "finishedAt": "2026-09-15T20:25:25.971Z"
+}

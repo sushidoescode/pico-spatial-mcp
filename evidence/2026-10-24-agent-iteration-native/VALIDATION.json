@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "serverInputSha256": "582931b34ae81d120cbebef26caf371fc113474a589bb21cca3129c5cf51fe3c",
+  "serverOutputSha256": "03de2991ae22bfd5cf9d045fb59f553c6e272b0d6ab258c517c4329219627249",
+  "checks": [
+    {
+      "gate": "test:interaction",
+      "passed": 82,
+      "failed": 0,
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-native/tests/final-interaction.stdout.txt",
+        "bytes": 19217,
+        "sha256": "8188c83f77db0f3495e6c3fe84414620a278734552479648031bf326e5ff10a9"
+      },
+      "stderr": {
+        "path": "evidence/2026-10-24-agent-iteration-native/tests/final-interaction.stderr.txt",
+        "bytes": 164,
+        "sha256": "fc832da89fdf24e3b38396a19b6a02b33e26d0e0e93a6bb1b06fe91d230a237e"
+      },
+      "distBuiltFirst": true,
+      "adbIsolation": "inventory runner enforces fixture ADB sentinel"
+    },
+    {
+      "gate": "test:observation",
+      "passed": 83,
+      "failed": 0,
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-native/tests/final-observation.stdout.txt",
+        "bytes": 19166,
+        "sha256": "e052e24bdd1c1efbdd2c503d6720fed837a727e49643b21c47359e306e69efc4"
+      },
+      "stderr": {
+        "path": "evidence/2026-10-24-agent-iteration-native/tests/final-observation.stderr.txt",
+        "bytes": 164,
+        "sha256": "e3520c45ad8f6688c82e6b0128690f2c64e4703779b687e011c44fac5a84296f"
+      },
+      "distBuiltFirst": true,
+      "adbIsolation": "inventory runner enforces fixture ADB sentinel"
+    },
+    {
+      "gate": "test:lint",
+      "passed": 63,
+      "failed": 0,
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-native/tests/final-lint.stdout.txt",
+        "bytes": 16773,
+        "sha256": "817479bb21f89d425f33ffe797c140869abd67d23058714775da582db8daec2f"
+      },
+      "stderr": {
+        "path": "evidence/2026-10-24-agent-iteration-native/tests/final-lint.stderr.txt",
+        "bytes": 164,
+        "sha256": "9ea6488990814027adcd03ee99cd6a15dd31045f1e6982f843adf15abc2db354"
+      },
+      "distBuiltFirst": true,
+      "adbIsolation": "inventory runner enforces fixture ADB sentinel"
+    },
+    {
+      "gate": "test:docsmeta",
+      "passed": 26,
+      "failed": 0,
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-native/tests/final-docsmeta.stdout.txt",
+        "bytes": 6688,
+        "sha256": "41c6d5ecb9e0f1f335f81457efbf359507f22637b0e2948f011194c1b2b85edb"
+      },
+      "stderr": {
+        "path": "evidence/2026-10-24-agent-iteration-native/tests/final-docsmeta.stderr.txt",
+        "bytes": 164,
+        "sha256": "901ed27ee3bcb25457f6030ddff860373cbd0eb3150ce3df4593572da5b5f4e3"
+      },
+      "distBuiltFirst": true,
+      "adbIsolation": "inventory runner enforces fixture ADB sentinel"
+    },
+    {
+      "gate": "test:tarball",
+      "passed": true,
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-native/tests/final-tarball.stdout.txt",
+        "bytes": 6406,
+        "sha256": "07a0d8bf442ef99cbd467b95155dccf39c0df9219a6653baf660b835a2bb0dfd"
+      },
+      "stderr": {
+        "path": "evidence/2026-10-24-agent-iteration-native/tests/final-tarball.stderr.txt",
+        "bytes": 1888,
+        "sha256": "17c285b02aea8f21606e50442c64a56281fd8ec275db3661027d08e8f71c8faa"
+      },
+      "distBuiltFirst": true,
+      "adbIsolation": "inventory-enforced fixture ADB; installed native calls use fake executable",
+      "artifactSha256": "9265d1e35152f31869cc0ff1be590a156d9642ae907fbd54d9b4a2fac08cbdbb"
+    }
+  ],
+  "nativeCommands": [
+    {
+      "example": "scenario",
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-native/scenario-3.stdout.txt",
+        "bytes": 7941,
+        "sha256": "1e83678e4bf2a347ea1f2faecc9fb761255731f7fd3f89a3e53aec7eee858b18"
+      },
+      "exitCode": 0,
+      "semantic": "completed",
+      "immediateLook": "failed; later read-only capture passed"
+    },
+    {
+      "example": "replay",
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-native/replay-1.stdout.txt",
+        "bytes": 31349,
+        "sha256": "5e2862699fe7aab12c4b49f811a7f118d4f3b51b291f7b78c8c77d42543ae6f7"
+      },
+      "exitCode": 0,
+      "semantic": "completed after source-bound rebuild",
+      "immediateLook": "failed; later public MCP recapture passed"
+    },
+    {
+      "example": "capture",
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-native/public-recapture.stdout.txt",
+        "bytes": 8888,
+        "sha256": "a6a7ffc4bf45e484fe55744260513cb227f86fbcf15d61909d1cd2bd81ac1e58"
+      },
+      "exitCode": 0,
+      "actionSent": false,
+      "look": "passed"
+    }
+  ],
+  "redGreenEvidence": "tests/publication-red-summary.json and tests/publication-focused-green-summary.json are explicitly labeled transcriptions, not original raw logs; full gate logs are raw.",
+  "historicalValidation": "../2026-10-23-agent-iteration/VALIDATION.json",
+  "unchangedBroaderFailures": [
+    "CLI detached-child cap: baseline reproduced",
+    "knowledge lifecycle timeouts: baseline reproduced",
+    "distribution retirement timeouts: common cause inferred, exact baseline cases not rerun"
+  ],
+  "fullBatteryRun": false,
+  "handoffDocsRecheck": {
+    "path": "evidence/2026-10-24-agent-iteration-native/tests/handoff-docsmeta.stdout.txt",
+    "sha256": "b53e506adb00f174fb9b4f7b8f8dcd885f63f0cbe9e0c6941313eb70b0f73a09",
+    "passed": 26,
+    "failed": 0,
+    "reason": "New native report/artifact links added after initial docs gate"
+  }
+}

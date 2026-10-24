@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+    [
+      "-s",
+      "emulator-5554",
+      "exec-out",
+      "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'printf published' 'pico-mcp'"
+    ]
+  ],
+  "code": 0,
+  "stdoutBase64": "cHVibGlzaGVk",
+  "stderr": "",
+  "timedOut": false,
+  "readOnly": true,
+  "noFileWrites": true
+}

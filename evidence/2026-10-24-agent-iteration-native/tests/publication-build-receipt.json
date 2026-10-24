@@ -1,0 +1,11 @@
+{
+  "capture": "successful build output transcribed from tool output",
+  "command": [
+    "npm",
+    "run",
+    "build"
+  ],
+  "source": "cefc5daca343",
+  "exitCode": 0,
+  "publishedFiles": 201
+}

@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-23T21:34:19.360331+00:00",
+  "baseline": "1157f33",
+  "candidateBroadTestBuild": 6,
+  "sharedDistOrMainChangedByTriage": false,
+  "fixtureAdb": "/fixture/no/such/adb",
+  "knowledgeFailures": {
+    "candidateTestNumbers": [
+      1,
+      2,
+      16,
+      24
+    ],
+    "directBaselineReproduction": true,
+    "baselineTests": 4,
+    "baselinePass": 0,
+    "baselineFail": 4,
+    "note": "Exact same assertion and reason families reproduced after compiling five baseline modules into isolated baseline-lifecycle/dist; all fixture finally blocks executed; own stuck test worker then terminated after assertions."
+  },
+  "distributionFailures": {
+    "candidateTestNumbers": [
+      20,
+      21,
+      24
+    ],
+    "directBaselineSuiteReproduction": false,
+    "classification": "Same unchanged process-table timeout failure mechanism as directly reproduced baseline knowledge lifecycle failures",
+    "basis": [
+      "Tests20/21 inject custom command and do not use new CLI identity guard",
+      "Test24 refuses replacement because unchanged process-table provider times out; not CLI selection drift",
+      "Exact distribution test file is byte-identical to baseline",
+      "Tests20/21 lack assertion-protecting finally cleanup, so targeted rerun would add known hanging fixtures"
+    ],
+    "testFileByteIdentical": true
+  },
+  "unchangedProductionSections": [
+    {
+      "section": "async function productionPosixProcessTable(",
+      "byteIdentical": true,
+      "baselineSha256": "9664cda6007c160e90cfc4df849d21360e8d68d0748c16e505edfe7908329406",
+      "candidateSha256": "9664cda6007c160e90cfc4df849d21360e8d68d0748c16e505edfe7908329406"
+    },
+    {
+      "section": "async function readProcessTable(",
+      "byteIdentical": true,
+      "baselineSha256": "cc25b7525d4bf5bd58601f3dbae3332b957e21b49ac212d85c9d1ff62acc42d2",
+      "candidateSha256": "cc25b7525d4bf5bd58601f3dbae3332b957e21b49ac212d85c9d1ff62acc42d2"
+    },
+    {
+      "section": "async function captureRootIdentity(",
+      "byteIdentical": true,
+      "baselineSha256": "408947aa62e0a1705172434a0205046c603f650e334852ee2320a7b0edb75a43",
+      "candidateSha256": "408947aa62e0a1705172434a0205046c603f650e334852ee2320a7b0edb75a43"
+    }
+  ],
+  "scanFinding": "Exact production ps argv times out under250ms in both baseline and candidate runner; observed wall settling529/528ms and2.6-2.7MiB returned. Earlier sweep ownership scan independently hit4MiB ENOBUFS. Do not conflate these observations.",
+  "safetyBehavior": "Provider uncertainty quarantines knowledge generation and refuses replacement. No fallback or weaker ownership check introduced.",
+  "cleanup": {
+    "finalGateFixturePids": [
+      41261,
+      41461
+    ],
+    "finalGateWorkerSignalled": 39136,
+    "distributionWorkerExitedNaturally": 39635,
+    "baselineWorkerSignalled": 47861,
+    "signals": "SIGTERM only after fresh exact identity and applicable token checks; no group/ancestor/unrelated signals",
+    "finalFixtureLogCopies": "cli/final-gate-fixtures/"
+  },
+  "artifacts": [
+    {
+      "path": "tests/final-knowledge-lifecycle.log",
+      "bytes": 12532,
+      "sha256": "010df4cf58cf2c190ce41d4ab362dbd6fc219b998b9898885b773ff6c96b2eef",
+      "tapCounts": {
+        "tests": 27,
+        "pass": 23,
+        "fail": 4
+      }
+    },
+    {
+      "path": "tests/final-distribution-adoption.log",
+      "bytes": 15180,
+      "sha256": "703853d6997b38fbf19da800d07eb61c220a12e329fe76cdfc0981dd1fcefdce",
+      "tapCounts": {
+        "tests": 43,
+        "pass": 40,
+        "fail": 3
+      }
+    },
+    {
+      "path": "cli/BASELINE-LIFECYCLE-build.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "cli/BASELINE-LIFECYCLE-targeted.tap",
+      "bytes": 7344,
+      "sha256": "06691a411860c2b6c691a7af93d055c3842731d6f56e6148c73d0a2dbd3dbce3",
+      "tapCounts": {
+        "tests": 4,
+        "pass": 0,
+        "fail": 4
+      }
+    },
+    {
+      "path": "cli/LIFECYCLE_SCAN_DIAGNOSIS.json",
+      "bytes": 710,
+      "sha256": "e7669487e5f3358c4a3ee1d6ad363a5ac8ff2779c77284d0781191e4175e941f"
+    },
+    {
+      "path": "cli/FINAL_GATE_CLEANUP.json",
+      "bytes": 944,
+      "sha256": "f0df6e7a6347f59c8037700477fbca5ab9152eefdd0ce847303dc3e2d042971e"
+    },
+    {
+      "path": "cli/BASELINE-LIFECYCLE-cleanup.json",
+      "bytes": 1204,
+      "sha256": "6bdd7b40877d974fe4f9c2b70d5c6b0bf046650a03b9182c8e9f8f3759f07fa4"
+    }
+  ]
+}

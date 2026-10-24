@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "command": [
+    "/Users/sushantsrikrish/.codex-account-b/plugins/cache/pico-xr/pico-spatial-agentic-tools/0.6.0/skills/spatial-ui-design-style/scripts/verify-design-style.sh",
+    "app/src",
+    "--no-design-colors"
+  ],
+  "exitCode": 0,
+  "errors": 0,
+  "warnings": 0,
+  "nativeOperation": false,
+  "renderedReview": false,
+  "design": "Dedicated single panel/counter, native theme roles, system glass, no app-authored colors or backgrounds"
+}

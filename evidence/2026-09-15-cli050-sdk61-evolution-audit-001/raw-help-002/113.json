@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 editor sync --help",
+  "argv": [
+    "editor",
+    "sync",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:04.100Z",
+  "endedAt": "2026-09-15T09:12:04.198Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "632008433d23f8094e0734d610d02fe7e0709282488c7311d68a851fe0b9d9aa",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

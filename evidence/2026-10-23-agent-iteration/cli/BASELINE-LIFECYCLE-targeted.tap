@@ -1,0 +1,103 @@
+(node:47848) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:47861) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: KnowledgeBridge retires an inherited-stdio descendant and starts a fresh generation after timeout
+not ok 1 - KnowledgeBridge retires an inherited-stdio descendant and starts a fresh generation after timeout
+  ---
+  duration_ms: 572.187833
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/cli/baseline-lifecycle/test/knowledge-lifecycle.mjs:284:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    {"status":"unavailable","action":"graph_stats","error":"MCP error -32001: Request timed out","lifecycleWarning":"spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the generation is quarantined and replacement is blocked"}
+    [32m+ actual[39m [31m- expected[39m
+    
+    [32m+[39m 'spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the generation is quarantined and replacement is blocked'
+    [31m- [39mundefined
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  actual: 'spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the generation is quarantined and replacement is blocked'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/cli/baseline-lifecycle/test/knowledge-lifecycle.mjs:309:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: KnowledgeBridge retires its exact root before restart when that root removed the ownership token
+not ok 2 - KnowledgeBridge retires its exact root before restart when that root removed the ownership token
+  ---
+  duration_ms: 383.237166
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/cli/baseline-lifecycle/test/knowledge-lifecycle.mjs:331:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    token-stripped root 47878 did not exercise the SIGTERM-resistant fixture path
+    
+    false !== true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/cli/baseline-lifecycle/test/knowledge-lifecycle.mjs:364:12)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: KnowledgeBridge returns provenance and classification for managed startup timeout
+not ok 3 - KnowledgeBridge returns provenance and classification for managed startup timeout
+  ---
+  duration_ms: 20011.401917
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/cli/baseline-lifecycle/test/knowledge-lifecycle.mjs:906:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    {"status":"unavailable","action":"graph_stats","error":"post-spawn managed pico-cli validation failed: managed pico-cli publication identity could not be revalidated: managed publication identity check exhausted its deadline","failureClass":"runtime","picoCli":{"source":"managed","policy":"managed-latest","path":"/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico managed runtime tVis3n/home/.pico-mcp/cli/versions/0.4.2/node_modules/.bin/pico-cli","version":"0.4.2","latestVersion":"0.4.2","checkedAt":"2026-10-23T21:31:14.130Z","freshness":"latest","action":"installed"},"lifecycleWarning":"spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 198ms; the exact generation root did not exit during the bounded EOF grace period; the generation is quarantined and replacement is blocked"}
+    
+    null !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: ~
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/cli/baseline-lifecycle/test/knowledge-lifecycle.mjs:936:14)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+  ...
+# Subtest: the canonical managed route keeps cold startup, concurrency, output caps and EOF retirement
+not ok 4 - the canonical managed route keeps cold startup, concurrency, output caps and EOF retirement
+  ---
+  duration_ms: 3518.43625
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/cli/baseline-lifecycle/test/knowledge-lifecycle.mjs:1353:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    {"status":"unavailable","action":"graph_stats","error":"spatial-knowledge replacement is blocked: spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the generation is quarantined and replacement is blocked","failureClass":"runtime","picoCli":{"source":"managed","policy":"managed-latest","path":"/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico managed runtime 37g9OL/home/.pico-mcp/cli/versions/0.5.0/node_modules/.bin/pico-cli","version":"0.5.0","latestVersion":"0.5.0","checkedAt":"2026-10-23T21:31:34.153Z","freshness":"latest","action":"present"},"lifecycleWarning":"spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the generation is quarantined and replacement is blocked"}
+    [32mactual[39m [31mexpected[39m
+    
+    [39m'[39m[32mu[39m[32mn[39m[32ma[39m[32mv[39m[32ma[39m[32mi[39m[32ml[39m[32ma[39m[32mb[39m[32ml[39m[32me[39m[31mo[39m[31mk[39m[39m'[39m
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'ok'
+  actual: 'unavailable'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/cli/baseline-lifecycle/test/knowledge-lifecycle.mjs:1394:12)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 0
+# fail 4
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 125529.831875

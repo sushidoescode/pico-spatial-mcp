@@ -1,0 +1,9 @@
+{"type": "control_request", "request_id": "initialize-1", "request": {"subtype": "initialize"}}
+{"type": "user", "message": {"role": "user", "content": "Use only the configured MCP host_probe tool. Call mode identity, then mode wait exactly once. The harness will interrupt the wait. Do not retry it, call other tools, read files or delegate."}, "parent_tool_use_id": null, "session_id": ""}
+{"type": "control_response", "response": {"subtype": "success", "request_id": "5cca72ee-819f-46eb-813b-da32bb276ec3", "response": {"behavior": "allow", "updatedInput": {"mode": "identity"}}}}
+{"type": "control_response", "response": {"subtype": "success", "request_id": "e8cf7cd8-1fe9-4205-bb50-e2df1ef33655", "response": {"behavior": "allow", "updatedInput": {"mode": "wait"}}}}
+{"type": "control_request", "request_id": "interrupt-1", "request": {"subtype": "interrupt"}}
+{"type": "control_request", "request_id": "reconnect-1", "request": {"subtype": "mcp_reconnect", "serverName": "pico_iteration_fixture"}}
+{"type": "user", "message": {"role": "user", "content": "The host reconnected the MCP adapter. Call host_probe mode identity and pico_interaction action describe, then report the new connection identity. Do not call wait again, read files or use other tools."}, "parent_tool_use_id": null, "session_id": ""}
+{"type": "control_response", "response": {"subtype": "success", "request_id": "4c72ac88-8b09-4e90-96d9-a88e540daf6f", "response": {"behavior": "allow", "updatedInput": {"mode": "identity"}}}}
+{"type": "control_response", "response": {"subtype": "success", "request_id": "05b70389-6b36-4475-8c0a-2fdfbd05ee3d", "response": {"behavior": "allow", "updatedInput": {"action": "describe"}}}}

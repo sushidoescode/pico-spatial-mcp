@@ -1,10 +1,10 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { okJson } from "./util.js";
-import { loadVaultIndex, type VaultIndex, type VaultType } from "./vault.js";
+import { expandHome, okJson } from "./util.js";
+import { loadVaultIndex, vaultRootForVersion, vaultSdkBase, type VaultIndex, type VaultType } from "./vault.js";
+import { parsePackageRevision, readDeclarationIdentity } from "./declarationcontext.js";
 
 /**
  * vaultdiff.ts — v26 THE MULTI-VERSION VAULT: workspaces + drift reports + migration hints.
@@ -18,9 +18,23 @@ import { loadVaultIndex, type VaultIndex, type VaultType } from "./vault.js";
  * HONESTY: a drift report only speaks for what BOTH vaults declare. Only 0.13 is materialized
  * locally today — the diff engine is proven against a fixture drift pair in CI, clearly labeled
  * as fixtures, never presented as real SDK data.
+ *
+ * Task S5: workspace enumeration, the default root and explicit-version resolution all derive
+ * from the one selected tools root (vault.ts `vaultSdkBase`). A workspace's `version` is the
+ * DIRECTORY LABEL; its `packageRevision` is what package.xml declares — separate facts, reported
+ * separately. A version argument is bounded to a numeric token; an explicit root is an explicitly
+ * identified SOURCE; and a drift report between two declaration sets is never evidence that either
+ * set is compatible with any project's target SDK.
  */
 
-export interface VaultWorkspace { version: string; root: string; mdFiles: number }
+export interface VaultWorkspace {
+  /** The directory label under the tools root — NOT a declared revision. */
+  version: string;
+  root: string;
+  mdFiles: number;
+  /** What `<root>/package.xml` declares, or null when it declares nothing readable. */
+  packageRevision: string | null;
+}
 
 const MANAGED_SETUP_GUIDANCE = "Call ensure_pico_cli, then manually run its returned absolute path with args [\"setup\"]; the MCP never runs setup.";
 
@@ -34,8 +48,16 @@ export function vaultWorkspaceNote(workspaces: readonly VaultWorkspace[]): strin
   return "diff any pair with vault_diff {from, to}.";
 }
 
+function declaredRevision(root: string): string | null {
+  try {
+    return parsePackageRevision(fs.readFileSync(path.join(root, "package.xml"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
 export function listVaultWorkspaces(sdkBase?: string): VaultWorkspace[] {
-  const base = sdkBase ?? path.join(os.homedir(), "Library", "PICO", "sdk");
+  const base = sdkBase ?? vaultSdkBase();
   const out: VaultWorkspace[] = [];
   let entries: string[] = [];
   try {
@@ -56,7 +78,7 @@ export function listVaultWorkspaces(sdkBase?: string): VaultWorkspace[] {
       };
       walk(path.join(root, "knowledge", "api-reference"));
     } catch { /* count stays partial */ }
-    out.push({ version: v, root, mdFiles });
+    out.push({ version: v, root, mdFiles, packageRevision: declaredRevision(root) });
   }
   return out;
 }
@@ -131,10 +153,37 @@ export function diffVaultIndexes(from: VaultIndex, to: VaultIndex): VaultDrift {
   return { typesAdded, typesRemoved, typesChanged, migrationHints: hints, fromTypes: a.size, toTypes: b.size };
 }
 
-function resolveRoot(spec: string): string {
-  // a version like "0.13" resolves under the SDK base; anything with a path separator is a root
-  if (spec.includes("/") || spec.includes(path.sep)) return spec.replace(/^~\//, `${os.homedir()}/`);
-  return path.join(os.homedir(), "Library", "PICO", "sdk", spec, "agent-vault");
+export type VaultDiffRoot = { status: "ok"; root: string; source: "explicit" | "version" } | { status: "error"; error: string };
+
+/**
+ * A spec with a path separator is an explicit vault root (an explicitly identified source);
+ * anything else must be a NUMERIC version label under the selected tools root. `..`, labels with
+ * separators smuggled in, or free text are refused rather than joined into a path.
+ */
+export function resolveVaultDiffRoot(spec: string): VaultDiffRoot {
+  if (spec.includes("/") || spec.includes(path.sep)) {
+    // An explicit root must stand on its own: a relative spec would resolve against whatever the
+    // server's working directory happens to be, which is a location nobody named.
+    const expanded = expandHome(spec);
+    if (!path.isAbsolute(expanded)) {
+      return { status: "error", error: `${JSON.stringify(spec)} is neither a numeric SDK version label (0.13, 6.1.0) under ${vaultSdkBase()} nor an absolute agent-vault root path (relative roots are not resolved)` };
+    }
+    return { status: "ok", root: path.resolve(expanded), source: "explicit" };
+  }
+  // Not trimmed: whitespace is a rejected character in a version label (the toolchain resolver's rule), never something to tidy away.
+  const root = vaultRootForVersion(spec);
+  if (!root) {
+    return { status: "error", error: `${JSON.stringify(spec)} is neither a numeric SDK version label (0.13, 6.1.0) under ${vaultSdkBase()} nor an absolute agent-vault root path` };
+  }
+  return { status: "ok", root, source: "version" };
+}
+
+/** The identity summary a drift endpoint reports per side: what the bytes declare, labeled historical. */
+function identitySummary(root: string) {
+  const read = readDeclarationIdentity(root);
+  return read.status === "ok"
+    ? { status: "ok" as const, packageRevision: read.identity.packageRevision, authority: read.identity.authority, fingerprint: read.identity.fingerprint, sourceCount: read.identity.sources.length }
+    : { status: "unavailable" as const, code: read.code, detail: read.detail };
 }
 
 export function registerVaultDiffTools(server: McpServer) {
@@ -146,8 +195,11 @@ export function registerVaultDiffTools(server: McpServer) {
       const ws = listVaultWorkspaces();
       return okJson({
         status: "ok",
+        base: vaultSdkBase(),
         workspaces: ws,
         note: vaultWorkspaceNote(ws),
+        authority: "historical",
+        authorityNote: "`version` is the directory label under the tools root; `packageRevision` is what each workspace's package.xml declares. Neither is evidence about any project's target SDK.",
       });
     },
   );
@@ -161,8 +213,12 @@ export function registerVaultDiffTools(server: McpServer) {
       maxHints: z.number().int().min(1).max(200).default(60),
     },
     async ({ from, to, maxHints }) => {
-      const fromRoot = resolveRoot(from);
-      const toRoot = resolveRoot(to);
+      const fromSel = resolveVaultDiffRoot(from);
+      if (fromSel.status !== "ok") return okJson({ status: "error", error: `from: ${fromSel.error}` });
+      const toSel = resolveVaultDiffRoot(to);
+      if (toSel.status !== "ok") return okJson({ status: "error", error: `to: ${toSel.error}` });
+      const fromRoot = fromSel.root;
+      const toRoot = toSel.root;
       const a = loadVaultIndex(fromRoot);
       if (!a) return okJson({ status: "error", error: `no loadable vault at ${fromRoot} — see vault_workspaces for what's materialized.` });
       const b = loadVaultIndex(toRoot);
@@ -170,8 +226,10 @@ export function registerVaultDiffTools(server: McpServer) {
       const d = diffVaultIndexes(a, b);
       return okJson({
         status: "ok",
-        from: { root: fromRoot, sdkVersion: a.sdkVersion, types: d.fromTypes },
-        to: { root: toRoot, sdkVersion: b.sdkVersion, types: d.toTypes },
+        authority: "historical",
+        authorityNote: "A drift report compares what two declaration sets declare. It is not evidence that either set is compatible with any project's target SDK; that requires a reviewed compatibility record (vault_api with projectRoot).",
+        from: { root: fromRoot, source: fromSel.source, sdkVersion: a.sdkVersion, types: d.fromTypes, identity: identitySummary(fromRoot) },
+        to: { root: toRoot, source: toSel.source, sdkVersion: b.sdkVersion, types: d.toTypes, identity: identitySummary(toRoot) },
         summary: { typesAdded: d.typesAdded.length, typesRemoved: d.typesRemoved.length, typesChanged: d.typesChanged.length, hints: d.migrationHints.length },
         typesAdded: d.typesAdded.slice(0, 100),
         typesRemoved: d.typesRemoved.slice(0, 100),

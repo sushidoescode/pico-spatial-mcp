@@ -1,0 +1,34 @@
+✔ publicMarkdownFiles keeps tracked root and docs Markdown, and drops everything else (1.804291ms)
+✔ nested tracked Markdown outside docs/ is not public documentation (1.149417ms)
+✔ selection is ordered by code unit, not by locale, and deduplicated (1.097917ms)
+✔ selection never reads the filesystem, so an untracked note cannot join the set (3.034584ms)
+✔ a path that climbs out of the checkout is never public documentation (0.754917ms)
+✔ publicMarkdownFiles refuses a caller that supplies no tracked paths (1.222875ms)
+✔ parseTrackedPaths reads NUL-separated git output, including a trailing separator (0.077167ms)
+✔ parsePackagedInventory accepts an explicit list and refuses anything vaguer (0.131125ms)
+✔ relativeLinkFailures reports a tracked broken link (0.922667ms)
+✔ a broken link carries the file, the target as authored, and a known reason (1.014875ms)
+✔ percent-encoded targets are decoded before they are resolved (0.970709ms)
+✔ a malformed percent escape is a failure, not a crash (0.735708ms)
+✔ a symlink that leaves the checkout fails even though the target exists (0.921542ms)
+✔ a selected document that is itself a symlink out of the checkout is refused, unread (0.737208ms)
+✔ a packaged inventory cannot smuggle in a document that resolves outside the checkout (0.928459ms)
+✔ a relative path that climbs out of the checkout fails even though the target exists (0.760083ms)
+✔ a relative path inside the checkout that climbs and comes back is fine (0.90175ms)
+✔ http, mailto, other schemes, protocol-relative, fragment-only and autolink targets are not checked (0.812292ms)
+✔ a fragment is stripped before the target is resolved (1.025334ms)
+✔ fenced blocks and inline code carry example paths, not links (0.851958ms)
+✔ image links and link titles are handled like the gate always handled them (0.892458ms)
+✔ a selected file that cannot be read is a failure, not a thrown gate (0.604708ms)
+✔ relativeLinkReport counts every relative link it checked across every file (1.15325ms)
+✔ git ls-files feeds selection: staged docs are in, ignored local notes are out (114.352291ms)
+✔ test/docsmeta.mjs selects through git ls-files and refuses to guess without it (0.260208ms)
+✔ the docs gate runs this suite (0.451625ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 175.18675

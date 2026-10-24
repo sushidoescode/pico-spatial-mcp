@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 spatialml onboard --help",
+  "argv": [
+    "spatialml",
+    "onboard",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:08.118Z",
+  "endedAt": "2026-09-15T09:12:08.222Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "467d1b24effd75e456fb07c410ce8758c8ff1f4f31ce99eecebb8e2c2f4752a0",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

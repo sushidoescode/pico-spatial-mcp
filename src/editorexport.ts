@@ -1,9 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, okJson, fail, expandHome, tail } from "./util.js";
+import {
+  prepareOperationToolchain,
+  toolchainProvenance,
+  toolchainProvenanceLine,
+  type OperationToolchain,
+} from "./toolchain.js";
 
 /**
  * editor_export_bundle — editor-parity bake: pack a scene dir to a .bundle via `spatialbundle` (the
@@ -16,10 +21,14 @@ import { run, okJson, fail, expandHome, tail } from "./util.js";
  * (assert_scene), and appearance is a capture_frame/verify check — not proven by the bake alone.
  */
 
-function resolveSpatialbundle(): string | null {
-  const c = [process.env.PICO_SPATIALBUNDLE, path.join(os.homedir(), "Library/PICO/sdk/0.13/editor/spatialbundle/spatialbundle")].filter(Boolean) as string[];
-  for (const x of c) if (fs.existsSync(x)) return x;
-  return null;
+/**
+ * One selection for the whole bake. This used to try $PICO_SPATIALBUNDLE and then a hardcoded
+ * 0.13 path — a version nothing else in the server selects, so a host running 6.x would either
+ * report "not found" or silently bake with a stale packer. The override still wins when it is
+ * set, but it is now identified by its bytes rather than trusted by filename.
+ */
+async function packerToolchain(): Promise<OperationToolchain | { error: string }> {
+  return prepareOperationToolchain({ required: ["packer"], primary: "packer", allowBinaryOverride: true });
 }
 
 export function registerEditorExportTools(server: McpServer) {
@@ -38,8 +47,9 @@ export function registerEditorExportTools(server: McpServer) {
       },
     },
     async ({ sceneDir, outBundle, projectDir, formats, compressTextures, assertPhysics }) => {
-      const sb = resolveSpatialbundle();
-      if (!sb) return fail("spatialbundle not found (set PICO_SPATIALBUNDLE).");
+      const ctx = await packerToolchain();
+      if ("error" in ctx) return fail(`editor_export_bundle: ${ctx.error}`);
+      const sb = ctx.bin;
       const src = expandHome(sceneDir);
       const out = expandHome(outBundle);
       if (!fs.existsSync(src)) return fail(`sceneDir not found: ${src}`);
@@ -48,7 +58,9 @@ export function registerEditorExportTools(server: McpServer) {
       const packArgs = ["pack", "-s", src, "-o", out, "--formats", ...(formats ?? ["usda"]), "--override-output", "--force-build", "--compress-textures", compressTextures ?? "astc6x6"];
       if (projectDir) packArgs.push("-p", expandHome(projectDir));
       const pack = await run(sb, packArgs, { timeoutMs: 600_000 });
-      if (pack.code !== 0 || !fs.existsSync(out)) return fail(`editor_export_bundle: pack failed.\n${tail(pack.stdout + pack.stderr, 40)}`);
+      if (pack.code !== 0 || !fs.existsSync(out)) {
+        return fail(`editor_export_bundle: pack failed with ${toolchainProvenanceLine(ctx)}.\n${tail(pack.stdout + pack.stderr, 40)}`);
+      }
 
       const info = await run(sb, ["info", "-i", out], { timeoutMs: 60_000 });
       const byType: Record<string, number> = {};
@@ -58,7 +70,7 @@ export function registerEditorExportTools(server: McpServer) {
       const physicsCooked = (byType["collisionshape"] ?? 0) > 0;
 
       if (assertPhysics && !physicsCooked) {
-        return fail(`editor_export_bundle: assertPhysics=true but NO cooked collisionshape in ${out}. Does the scene have a 'def SpatialComponent \"CollisionComponent\"' (author_editor_component collision_box)? cooked types: ${JSON.stringify(byType)}`);
+        return fail(`editor_export_bundle: assertPhysics=true but NO cooked collisionshape in ${out} (baked with ${toolchainProvenanceLine(ctx)}). Does the scene have a 'def SpatialComponent \"CollisionComponent\"' (author_editor_component collision_box)? cooked types: ${JSON.stringify(byType)}`);
       }
       const sizeMB = Number((fs.statSync(out).size / 1024 / 1024).toFixed(2));
       return okJson({
@@ -71,6 +83,8 @@ export function registerEditorExportTools(server: McpServer) {
         physicsCooked,
         physicsMaterialCooked: (byType["physicsmaterial"] ?? 0) > 0,
         timelineCooked: (byType["timeline"] ?? 0) > 0,
+        ...toolchainProvenance(ctx),
+        packedWith: toolchainProvenanceLine(ctx),
         note: "Editor-parity bake via spatialbundle. Cooked physics (collisionshape+physicsmaterial) is decode-verified — it's what raw USD lacks at runtime. Confirm rayCast HIT via assert_scene/logcat, and appearance via capture_frame/verify. Bundle md5 is non-deterministic; use bundle_content_diff for content changes.",
       });
     },

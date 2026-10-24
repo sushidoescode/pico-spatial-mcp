@@ -1,0 +1,21 @@
+[1mDescription[22m:
+Manage the PICO Emulator lifecycle, setup, and diagnostics
+
+[1mUsage[22m:
+  $ [1mpico-cli emulator[22m <command> [options]
+
+[1mCommands[22m:
+  [1mcreate[22m                   Create a PICO emulator AVD without starting it
+  [1mdelete[22m                   Delete CLI-created PICO emulator AVDs from the local host
+  [1mdelete-image[22m             Delete downloaded PICO emulator bundles and download cache from the host
+  [1mdoctor[22m                   Check required environment for PICO Emulator development
+  [1mdump-logs[22m                Export emulator log files for troubleshooting
+  [1minstall [bundleVersion][22m  Download or update the PICO emulator bundle without creating an AVD
+  [1mlist[22m                     List available Android emulators (AVDs) from the Android SDK
+  [1msetup[22m                    Diagnose PICO Emulator prerequisites and print repair guidance
+  [1mstart[22m                    Start a PICO emulator and wait for adb readiness
+  [1mstatus[22m                   Detect emulator status via process and adb
+  [1mstop[22m                     Stop the running emulator
+
+[1mOptions[22m:
+  [1m-h, --help[22m  Show this message and exit.

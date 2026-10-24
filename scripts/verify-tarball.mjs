@@ -15,9 +15,24 @@
  *   [M4] leak scan required a trailing slash and only read 8 extensions -> now byte-scans everything.
  *   [M5] the gate verified a tarball it packed, never the one that ships -> --publish makes the
  *        shipped artifact BE the verified artifact, by construction.
+ *   [M9] --publish DELETED every .tgz already in the destination before copying -> publishing a new
+ *        version destroyed the earlier artifacts testers were still installing from. Publication is
+ *        now scripts/publish-tarball.mjs: an exclusive, non-replacing primitive that adds one file
+ *        and can reach no other. --publish now names the destination FILE, not a directory to prune.
+ *  [M10] dist/ shipped without data/sdk-compatibility/ -> the installed server's declaration
+ *        authority degraded silently to index-missing. The INSTALLED payload canary now runs
+ *        against the extracted package, so a dropped files[] entry fails the gate loudly.
+ *  [M11] the doors surface was only ever exercised on its success path -> a failed inner capture
+ *        could be laundered into {status:"ok"}, and concurrent first calls could each spawn their
+ *        own inner child. Both are now asserted against the INSTALLED artifact, hermetically.
  *
  * Run:  npm run test:tarball
- *       npm run test:tarball -- --publish ~/.pico-mcp/dist
+ *       npm run test:tarball -- --publish ~/releases/<date>/pico-spatial-mcp-<version>.tgz
+ *
+ * --publish <file>  Publish the verified tarball at exactly this path, and write its publication
+ *                   receipt to <file>.receipt.json. Both refuse to replace anything that is already
+ *                   there. The flag took a DIRECTORY before this change and pruned it; a directory
+ *                   is now an error that names the file form to use instead.
  */
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
@@ -25,15 +40,80 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileDigest, publishVerifiedTarball, receiptPathFor, writePublicationReceipt } from "./publish-tarball.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let failures = 0;
-const ok = (m) => console.log(`  ok   ${m}`);
-const fail = (m) => { console.log(`  FAIL ${m}`); failures += 1; };
+/** Every check this run performed, in order, with the classification the receipt publishes. */
+const checks = [];
+const ok = (m) => { checks.push({ name: m, status: "pass" }); console.log(`  ok   ${m}`); };
+const fail = (m) => { checks.push({ name: m, status: "fail" }); console.log(`  FAIL ${m}`); failures += 1; };
+const skip = (m) => { checks.push({ name: m, status: "skip" }); console.log(`  skip ${m}`); };
 const sha256File = (filePath) => crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+/** Honest boundaries of what an installed-artifact run can prove. The receipt publishes these. */
+const limitations = [
+  `installed-artifact checks ran on ${process.platform}/${process.arch} only; no other platform was exercised`,
+  "no host-plugin discovery: the host plugin manifests were not loaded or registered by any host",
+  "no emulator, device or visual claim: nothing here is vision_verified or device_verified",
+];
 
 const publishIdx = process.argv.indexOf("--publish");
-const publishDir = publishIdx > -1 ? process.argv[publishIdx + 1] : null;
+
+/**
+ * [M9] The destination is an exact FILE path. A directory — the old meaning — is refused by name so
+ * nobody re-learns the pruning behaviour by accident.
+ */
+function resolvePublishTarget(raw) {
+  if (typeof raw !== "string" || raw.trim() === "" || raw.startsWith("--")) {
+    throw new Error("--publish needs a destination file path, e.g. --publish ~/releases/<date>/<name>-<version>.tgz");
+  }
+  const target = path.resolve(raw.replace(/^~(?=$|[/\\])/, os.homedir()));
+  const expected = () => `<dir>/${JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")).name}-<version>.tgz`;
+  if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
+    throw new Error(`--publish now names the destination FILE, not a directory: ${target} is a directory. Use ${expected()}`);
+  }
+  if (!target.endsWith(".tgz")) {
+    throw new Error(`--publish needs a .tgz destination file path, not ${target}. Use ${expected()}`);
+  }
+  return target;
+}
+
+/** The build binding carried INSIDE the packed payload — the identity of what actually ships. */
+function packedBuildIdentity(installedDir) {
+  try {
+    const receipt = JSON.parse(fs.readFileSync(path.join(installedDir, "dist", "build-receipt.json"), "utf8"));
+    return {
+      schemaVersion: receipt.schemaVersion ?? null,
+      input: { sha256: receipt.input?.sha256 ?? null, files: receipt.input?.files?.length ?? null },
+      output: { sha256: receipt.output?.sha256 ?? null, files: receipt.output?.files?.length ?? null },
+      typescript: receipt.typescript ?? null,
+      nodeMajor: receipt.nodeMajor ?? null,
+    };
+  } catch (error) {
+    return { unavailable: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Name and version as PACKED, so the receipt cannot describe a later checkout state. */
+function packedPackageIdentity(installedDir) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(installedDir, "package.json"), "utf8"));
+    return { name: pkg.name ?? null, version: pkg.version ?? null };
+  } catch (error) {
+    return { unavailable: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+let publishTarget = null;
+if (publishIdx > -1) {
+  try {
+    publishTarget = resolvePublishTarget(process.argv[publishIdx + 1]);
+  } catch (error) {
+    fail(error.message);
+    console.log(`\nTarball verification done. Failures: ${failures}`);
+    process.exit(1);
+  }
+}
 
 // [M3] Anchors: a count alone cannot see a rename, and a floor cannot see a whole lane vanishing.
 const EXPECTED_TOOLS = 255; // + run_in_app_locomotion_route; macOS has the three-tool host-GUI delta
@@ -101,11 +181,20 @@ try {
   const tarball = fs.readdirSync(sandbox).find((f) => f.endsWith(".tgz"));
   if (!tarball) { fail("npm pack produced no .tgz"); process.exit(1); }
   verifiedTarball = path.join(sandbox, tarball);
-  ok(`packed ${tarball} (${(fs.statSync(verifiedTarball).size / 1024).toFixed(0)} kB)`);
+  // [M5/M9] Taken once, here, BEFORE any check runs. Publication re-derives it independently, so a
+  // tarball that changed under us between verification and publication cannot be published.
+  const verifiedDigest = fileDigest(verifiedTarball);
+  ok(`packed ${tarball} (${(verifiedDigest.bytes / 1024).toFixed(0)} kB, sha256 ${verifiedDigest.sha256})`);
 
-  const install = spawnSync("npm", ["install", "--omit=dev", "--no-audit", "--no-fund", verifiedTarball], {
+  // An inherited TMPDIR can be inside a checkout. Without an explicit prefix,
+  // npm walks to an ancestor package root and installs into that working tree.
+  const checkoutPackageInputs = ["package.json", "package-lock.json"].map(name => ({name, ...fileDigest(path.join(repoRoot, name))}));
+  const install = spawnSync("npm", ["install", "--prefix", sandbox, "--omit=dev", "--no-audit", "--no-fund", verifiedTarball], {
     cwd: sandbox, encoding: "utf8", timeout: 900_000,
   });
+  checkoutPackageInputs.every(input => fileDigest(path.join(repoRoot, input.name)).sha256 === input.sha256)
+    ? ok("isolated install preserves checkout package.json and package-lock.json")
+    : fail("tarball install changed checkout dependency metadata");
   if (install.status !== 0) { fail(`npm install failed: ${install.stderr?.slice(-800)}`); process.exit(1); }
   ok("installed into a clean directory with --omit=dev");
 
@@ -236,6 +325,25 @@ try {
     fs.existsSync(path.join(installed, d)) ? ok(`payload present: ${d}/`) : fail(`payload MISSING: ${d}/ — the built code resolves it`);
   }
 
+  // [M10] The reviewed SDK-compatibility payload must ship intact: dist/declarationcontext.js
+  //       resolves data/sdk-compatibility/ from its own module URL, so a tarball missing it
+  //       installs a server whose declaration authority silently degrades to index-missing — every
+  //       lookup stays historical and nothing in the build output says why. The INSTALLED copy of
+  //       the canary is imported, from the installed root, so this proves the script shipped too.
+  //       (S6's handoff called this [M6]; that number was already taken by the hostile-path
+  //       sandbox and the doors round-trip, so it landed as the next free marker.)
+  try {
+    const { verifySdkCompatibilityPayload } = await import(
+      pathToFileURL(path.join(installed, "scripts", "verify-sdk-compatibility-payload.mjs")).href
+    );
+    const payload = verifySdkCompatibilityPayload(installed);
+    payload.ok
+      ? ok(`reviewed SDK-compatibility payload verified (${payload.checked.length} files, index + every referenced record/basis)`)
+      : fail(`reviewed SDK-compatibility payload missing or altered: ${payload.errors.slice(0, 3).join("; ")}`);
+  } catch (error) {
+    fail(`SDK-compatibility payload canary could not run against the installed package: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
   // [M2] Content, not just a directory.
   const briefDir = path.join(installed, "briefs");
   if (fs.existsSync(briefDir)) {
@@ -247,6 +355,10 @@ try {
       try { JSON.parse(fs.readFileSync(p, "utf8")); ok(`brief canary parses: ${c}`); }
       catch (e) { fail(`brief canary is not valid JSON: ${c} (${e.message})`); }
     }
+  } else {
+    // The [M1] payload check above already failed for the missing directory; record the content
+    // checks as not run rather than letting them vanish from the receipt without explanation.
+    skip("briefs/ content and canary checks: the installed package has no briefs/ directory");
   }
 
   // [M4] Byte-scan EVERY shipped file. The old version required a trailing slash after the
@@ -380,9 +492,111 @@ try {
   const sdk = await doorsClient.callTool({ name: "pico_sdk", arguments: { symbol: "Entity" } });
   const sdkBody = JSON.parse(sdk.content[0].text);
   if (sdkBody.status === "ok") ok("a door tool completed its inner self-client spawn from a path containing a space");
-  else if (sdkBody.status === "unavailable") ok("spaced-path inner spawn proven (vault absent on this machine; the unavailable answer still round-tripped through the spawned server)");
+  else if (sdkBody.status === "unavailable") {
+    ok("spaced-path inner spawn proven (vault absent on this machine; the unavailable answer still round-tripped through the spawned server)");
+    limitations.push("the doors self-client round-trip ran with the vault absent, so no vault-backed answer was exercised");
+  }
   else fail(`door tool failed in a spaced path: ${JSON.stringify(sdkBody).slice(0, 200)} — module-relative resolution is broken`);
   await doorsClient.close();
+
+  // [M11] The doors surface, on its FAILURE and CONCURRENCY paths, against the installed artifact.
+  //       [M6] above only ever proves the happy path, and two regressions hide behind that:
+  //         (a) a failed inner capture rewrapped as {status:"ok"} — an agent then "verifies" an
+  //             app from a screencap that never happened;
+  //         (b) concurrent FIRST door calls each spawning their own inner full-surface child,
+  //             which is invisible until the machine is loaded enough for it to matter.
+  //       Hermetic by construction, exactly like test/doors.mjs's end-to-end case: a fixture HOME,
+  //       a PATH holding only a recording `node` proxy and a refusing `npm`, CLI operations off,
+  //       and $PICO_ADB pointed at an exit-1 stub that records its argv. Nothing here can reach a
+  //       real adb, a device, an emulator or a registry. The fixture lives INSIDE the sandbox, so
+  //       the one rmSync this script is allowed to own already cleans it up.
+  if (process.platform === "win32") {
+    skip("installed doors isError/single-flight checks: their stub fixture is POSIX-only (test:tarball is a Linux gate)");
+  } else {
+    const fixtureRoot = path.join(sandbox, "doors fixture");
+    const fixtureHome = path.join(fixtureRoot, "home");
+    const fixtureBin = path.join(fixtureRoot, "bin");
+    const nodeSpawnLog = path.join(fixtureRoot, "node-spawns.log");
+    const adbLog = path.join(fixtureRoot, "adb-invocations.log");
+    fs.mkdirSync(fixtureHome, { recursive: true });
+    fs.mkdirSync(fixtureBin, { recursive: true });
+    const shQuote = (value) => `'${String(value).replaceAll("'", `'"'"'`)}'`;
+    // doors.ts spawns its inner child as `node <here>/index.js` — resolved through PATH — so one
+    // recorded line ending in dist/index.js IS one inner child. The proxy then becomes real node.
+    fs.writeFileSync(
+      path.join(fixtureBin, "node"),
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> ${shQuote(nodeSpawnLog)}\nexec ${shQuote(process.execPath)} "$@"\n`,
+      { mode: 0o755 },
+    );
+    fs.writeFileSync(
+      path.join(fixtureBin, "npm"),
+      `#!/bin/sh\nprintf 'fixture npm refuses every call: %s\\n' "$*" >&2\nexit 2\n`,
+      { mode: 0o755 },
+    );
+    // capture resolves $PICO_ADB by EXISTENCE first and falls through to a real adb when it is
+    // missing, so the stub records every argv it receives and is re-checked immediately before use.
+    const adbStub = path.join(fixtureBin, "adb");
+    fs.writeFileSync(adbStub, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${shQuote(adbLog)}\nexit 1\n`, { mode: 0o755 });
+    const coldEnv = {
+      ...process.env,
+      HOME: fixtureHome,
+      USERPROFILE: fixtureHome,
+      PATH: [fixtureBin, path.dirname(process.execPath)].join(path.delimiter),
+      PICO_HOME: path.join(fixtureRoot, "absent-pico-home"),
+      PICO_ADB: adbStub,
+      PICO_MCP_SURFACE: "doors",
+      PICO_MCP_CLI_POLICY: "disabled",
+    };
+    delete coldEnv.PICO_MCP_OUTER_SURFACE;
+    delete coldEnv.PICO_MCP_CLI_PATH;
+    delete coldEnv.PICO_MCP_AUTOINSTALL_CLI;
+    delete coldEnv.PICO_MCP_AUTOUPDATE_CLI;
+    const innerChildren = () => (fs.existsSync(nodeSpawnLog)
+      ? fs.readFileSync(nodeSpawnLog, "utf8").split("\n").filter((line) => /dist\/index\.js$/.test(line.trim()))
+      : []).length;
+    const statusOf = (result) => {
+      const text = result?.content?.[0]?.text ?? "";
+      try { return JSON.parse(text).status ?? "<no status field>"; }
+      catch { return `<unparseable: ${String(text).slice(0, 60)}>`; }
+    };
+    const coldTransport = new StdioClientTransport({
+      command: process.execPath, args: [entry], cwd: sandbox, env: coldEnv,
+    });
+    const coldClient = new Client({ name: "tarball-verifier-doors-cold", version: "0.0.0" });
+    try {
+      await coldClient.connect(coldTransport);
+      const settled = await Promise.allSettled(
+        Array.from({ length: 20 }, () => coldClient.callTool({ name: "pico_sdk", arguments: { symbol: "Entity" } })),
+      );
+      const statuses = settled.map((outcome) => outcome.status === "fulfilled"
+        ? statusOf(outcome.value)
+        : `<rejected: ${outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}>`);
+      const spawnedByBurst = innerChildren();
+      spawnedByBurst === 1 && statuses.every((s) => s === statuses[0] && s !== "error")
+        ? ok(`20 concurrent first door calls on the installed artifact started exactly one inner server (all ${statuses[0]})`)
+        : fail(`installed doors surface started ${spawnedByBurst} inner servers for a 20-way first-call burst (statuses: ${[...new Set(statuses)].join(", ")})`);
+
+      const stubUsable = (() => {
+        try { fs.accessSync(adbStub, fs.constants.X_OK); return fs.statSync(adbStub).isFile(); }
+        catch { return false; }
+      })();
+      if (!stubUsable) {
+        fail(`the installed-doors adb stub is missing or not executable immediately before pico_look (${adbStub}); the call was NOT made`);
+      } else {
+        const look = await coldClient.callTool({ name: "pico_look", arguments: {} });
+        const lookText = look?.content?.[0]?.text ?? "";
+        const adbCalls = fs.existsSync(adbLog) ? fs.readFileSync(adbLog, "utf8").split("\n").filter(Boolean) : [];
+        look?.isError === true && /screencap failed/.test(lookText) && !/"status":\s*"ok"/.test(lookText)
+          && innerChildren() === 1 && adbCalls.some((line) => /exec-out screencap/.test(line))
+          ? ok(`installed pico_look forwards the inner screencap failure as isError, never as status ok (stub adb ran: ${adbCalls.length} invocation(s), screencap argv recorded)`)
+          : fail(`installed pico_look laundered, re-spawned, or bypassed the stub: ${JSON.stringify({ isError: look?.isError ?? null, text: lookText.slice(0, 200), innerChildren: innerChildren(), adbCalls }).slice(0, 500)}`);
+      }
+    } catch (error) {
+      fail(`installed doors failure/concurrency checks could not run: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      await coldClient.close().catch(() => {});
+    }
+  }
 
   // [M7] The CODED default (v36.3): env unset must serve the doors surface from the installed
   //      artifact. Docs always said doors; until v36.3 the code said full, so one missed env var
@@ -403,16 +617,79 @@ try {
     : fail(`env-unset default listed ${defaultTools.tools.length} tools, expected the 18-tool doors surface`);
   await defaultClient.close();
 
+  // The opt-in interaction tool resolves this policy beside dist. Check the exact packed bytes
+  // and both real stdio surfaces without selecting a CLI or allowing any device operation.
+  const iterationPolicy = path.join(installed, "data", "iteration-fixture", "build-policy.json");
+  const sourceIterationPolicy = path.join(repoRoot, "data", "iteration-fixture", "build-policy.json");
+  fs.existsSync(iterationPolicy) && sha256File(iterationPolicy) === sha256File(sourceIterationPolicy)
+    ? ok("dedicated iteration fixture policy ships with exact reviewed bytes")
+    : fail("dedicated iteration fixture policy is missing or differs in the installed package");
+  for (const surface of ["doors", "full"]) {
+    const iterationTransport = new StdioClientTransport({
+      command: process.execPath, args: [entry], cwd: sandbox,
+      env: { ...process.env, PICO_MCP_SURFACE: surface, PICO_MCP_INTERACTION: "1",
+        PICO_MCP_CLI_POLICY: "disabled", PICO_ADB: "/fixture/no/such/adb" },
+    });
+    const iterationClient = new Client({ name: "tarball-verifier-interaction", version: "0.0.0" });
+    try {
+      await iterationClient.connect(iterationTransport);
+      const listed = await iterationClient.listTools();
+      const expected = surface === "doors" ? 19 : EXPECTED_PLATFORM_TOOLS + 1;
+      const described = await iterationClient.callTool({ name: "pico_interaction", arguments: { action: "describe" } });
+      listed.tools.length === expected && listed.tools.some((tool) => tool.name === "pico_interaction")
+        && !described.isError && described.structuredContent?.offlineDiscovery === true
+        && described.structuredContent?.humanInputVerified === false
+        ? ok(`installed ${surface} opt-in discovery lists ${expected} tools and describes semantic actions offline`)
+        : fail(`installed ${surface} opt-in interaction discovery has an unexpected count or contract`);
+    } catch (error) {
+      fail(`installed ${surface} opt-in interaction check failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      await iterationClient.close().catch(() => {});
+      await iterationTransport.close().catch(() => {});
+    }
+  }
+
+  // [M9] The publication receipt names the build that produced THIS payload, read out of the packed
+  //      copy — not out of whatever the checkout happens to hold afterwards. Assert it here, as a
+  //      check, so a payload with no build binding fails the gate instead of yielding a holed receipt.
+  const packedBuild = packedBuildIdentity(installed);
+  packedBuild.input?.sha256 && packedBuild.output?.sha256
+    ? ok(`packed dist/build-receipt.json binds the payload to source ${packedBuild.input.sha256.slice(0, 12)} / output ${packedBuild.output.sha256.slice(0, 12)}`)
+    : fail(`packed dist/build-receipt.json is missing or unreadable (${packedBuild.unavailable}) — nothing can name the build that produced this payload`);
+
   // [M5] Publish only what passed, so the shipped artifact IS the verified artifact.
-  if (publishDir && failures === 0) {
-    const dest = path.resolve(publishDir.replace(/^~/, os.homedir()));
-    fs.mkdirSync(dest, { recursive: true });
-    for (const old of fs.readdirSync(dest).filter((f) => f.endsWith(".tgz"))) fs.rmSync(path.join(dest, old));
-    const out = path.join(dest, path.basename(verifiedTarball));
-    fs.copyFileSync(verifiedTarball, out);
-    ok(`published the VERIFIED tarball to ${out}`);
-  } else if (publishDir) {
-    fail("not publishing: verification failed");
+  // [M9] ...and only ever ADD. This branch used to rmSync every .tgz in the destination first.
+  if (publishTarget && failures === 0) {
+    const gatingChecks = checks.map((check) => ({ ...check }));
+    try {
+      const published = publishVerifiedTarball({
+        source: verifiedTarball,
+        destination: publishTarget,
+        expectedSha256: verifiedDigest.sha256,
+      });
+      ok(`published the VERIFIED tarball to ${published.path} (${published.bytes} bytes, sha256 ${published.sha256})`);
+      const receipt = writePublicationReceipt({
+        destination: published.path,
+        receipt: {
+          schemaVersion: 1,
+          artifact: { path: published.path, name: path.basename(published.path), sha256: published.sha256, bytes: published.bytes },
+          package: packedPackageIdentity(installed),
+          build: packedBuild,
+          platform: { os: process.platform, arch: process.arch, node: process.version },
+          command: { argv: ["node", path.relative(repoRoot, fileURLToPath(import.meta.url)), ...process.argv.slice(2)] },
+          checks: gatingChecks,
+          limitations,
+        },
+      });
+      ok(`wrote the publication receipt to ${receipt.path}`);
+    } catch (error) {
+      // A refusal is the designed outcome when the destination or its receipt is already taken, and
+      // also when the destination filesystem cannot hard-link — publication has no replacing
+      // fallback, so an unlandable artifact is reported here rather than landed unsafely.
+      fail(`publication refused: ${error.message}`);
+    }
+  } else if (publishTarget) {
+    fail(`not publishing: verification failed; ${publishTarget} and ${receiptPathFor(publishTarget)} were left untouched`);
   }
 } finally {
   fs.rmSync(sandbox, { recursive: true, force: true });

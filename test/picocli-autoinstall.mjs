@@ -14,20 +14,24 @@ import {
   classifyPicoCliProvisionFailure,
   executableCandidates,
   picoCliFromEnsure,
+  picoCliOperationCapability,
   PICO_CLI_INSTALL_TIMEOUT_MS,
   runPicoCli,
   runPicoCliCommand,
 } from "../dist/picocli.js";
+import { capabilityNeedsFreshDiscovery, describeIdentityDrift, sameCliCapabilityIdentity } from "../dist/clicapabilities.js";
 import {
   createManagedConvergenceWorker,
   createHarness,
   createManagedIO,
   createManagedRuntimeHarness,
   launchManagedConvergenceWorker,
+  managedRuntimeEnvironment,
   publishManagedFixtureVersion,
   restoreEnvironment,
   saveEnvironment,
   tempRoots,
+  writeCommand,
 } from "./helpers/picocli-managed-fixture.mjs";
 import {
   inspectManagedPicoCli,
@@ -36,6 +40,8 @@ import {
   PICO_CLI_PATH_ENV,
   PICO_CLI_POLICY_ENV,
   managedContentIdentityForFixture,
+  cliSelectionIdentity,
+  fsyncDirectoryWhereSupported,
 } from "../dist/picoclimanaged.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -96,6 +102,112 @@ async function waitForProcessExit(pid, timeoutMs = 2_000) {
 }
 
 saveEnvironment();
+
+test("runtime fixture Windows environment overrides inherited SDK PATH without mixed-case duplicates", () => {
+  const inherited = { Path: "old-fixture-bin", UserProfile: "old-fixture-home", FAKE_LATEST_VERSION: "0.4.2" };
+  const overrides = { PATH: "new-fixture-bin", USERPROFILE: "new-fixture-home" };
+  const env = managedRuntimeEnvironment(inherited, overrides, "win32");
+  const sdkMerged = { PATH: "old-fixture-bin", USERPROFILE: "old-fixture-home", ...env };
+  assert.deepEqual(Object.keys(sdkMerged).filter((key) => key.toUpperCase() === "PATH"), ["PATH"]);
+  assert.deepEqual(Object.keys(sdkMerged).filter((key) => key.toUpperCase() === "USERPROFILE"), ["USERPROFILE"]);
+  assert.equal(sdkMerged.PATH, "new-fixture-bin");
+  assert.equal(sdkMerged.USERPROFILE, "new-fixture-home");
+  assert.deepEqual(managedRuntimeEnvironment({ Path: "case-sensitive-value" }, { PATH: "fixture-bin" }, "linux"),
+    { Path: "case-sensitive-value", PATH: "fixture-bin" });
+});
+
+test("retained CLI help transcripts match their original byte hashes on every checkout", () => {
+  const directory = path.join(repoRoot, "test", "fixtures", "picocli", "help");
+  const index = JSON.parse(fs.readFileSync(path.join(directory, "index.json"), "utf8"));
+  for (const entry of index.entries) {
+    for (const stream of ["stdout", "stderr"]) {
+      const file = path.join(directory, entry.files[`${stream}.txt`]);
+      const actual = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+      assert.equal(actual, entry[`${stream}Sha256`], `byte-pinned transcript changed: ${file}`);
+    }
+  }
+});
+
+test("managed directory sync distinguishes unsupported metadata durability from real failures", { concurrency: false }, async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pico directory sync "));
+  tempRoots.push(directory);
+
+  for (const { platform, code, expected } of [
+    { platform: "win32", code: "EPERM", expected: "unsupported" },
+    { platform: "linux", code: "EPERM", expected: "throw" },
+    { platform: "darwin", code: "EPERM", expected: "throw" },
+    { platform: "win32", code: "EIO", expected: "throw" },
+    { platform: "linux", code: "EIO", expected: "throw" },
+    { platform: "win32", code: "EACCES", expected: "throw" },
+    { platform: "linux", code: "EINVAL", expected: "unsupported" },
+    { platform: "win32", code: null, expected: "synced" },
+  ]) {
+    await t.test(`${platform} directory fsync ${code ?? "success"} is ${expected}`, (subtest) => {
+      let openedDescriptor;
+      const failure = Object.assign(new Error(`fixture fsync ${code}`), { code });
+      subtest.mock.method(fs, "fsyncSync", (descriptor) => {
+        assert.equal(fs.fstatSync(descriptor).isDirectory(), true);
+        openedDescriptor = descriptor;
+        if (code) throw failure;
+      });
+      if (expected === "throw") {
+        assert.throws(() => fsyncDirectoryWhereSupported(directory, platform), (error) => error === failure);
+      } else {
+        assert.deepEqual(fsyncDirectoryWhereSupported(directory, platform), expected === "synced"
+          ? { status: "synced" }
+          : { status: "unsupported", operation: "fsync", code });
+      }
+      assert.notEqual(openedDescriptor, undefined, "the fixture must reach fsync on an opened directory");
+      assert.throws(() => fs.fstatSync(openedDescriptor), { code: "EBADF" }, "every result closes the descriptor");
+    });
+  }
+
+  for (const method of ["openSync", "fstatSync"]) {
+    await t.test(`Windows EPERM from ${method} still throws`, (subtest) => {
+      const failure = Object.assign(new Error(`fixture ${method} EPERM`), { code: "EPERM" });
+      subtest.mock.method(fs, method, () => { throw failure; });
+      assert.throws(() => fsyncDirectoryWhereSupported(directory, "win32"), (error) => error === failure);
+    });
+  }
+
+  await t.test("the directory-only fallback refuses an opened regular file", (subtest) => {
+    const file = path.join(directory, "regular-file");
+    fs.writeFileSync(file, "fixture");
+    let syncCalls = 0;
+    subtest.mock.method(fs, "fsyncSync", () => { syncCalls += 1; });
+    assert.throws(() => fsyncDirectoryWhereSupported(file, "win32"), { code: "ENOTDIR" });
+    assert.equal(syncCalls, 0, "a regular file never reaches the directory-specific fallback");
+  });
+
+  await t.test("a directory close failure remains an error", (subtest) => {
+    const close = fs.closeSync;
+    const failure = Object.assign(new Error("fixture close EIO"), { code: "EIO" });
+    subtest.mock.method(fs, "fsyncSync", () => {});
+    subtest.mock.method(fs, "closeSync", (descriptor) => { close(descriptor); throw failure; });
+    assert.throws(() => fsyncDirectoryWhereSupported(directory, "win32"), (error) => error === failure);
+  });
+});
+
+test("managed publication still refuses regular-file fsync EPERM", { concurrency: false }, async (t) => {
+  const harness = createHarness({ latestVersion: "0.4.2" });
+  const managedRoot = path.join(harness.root, "managed");
+  const originalSync = fs.fsyncSync;
+  let refusedFiles = 0;
+  t.mock.method(fs, "fsyncSync", (descriptor) => {
+    if (fs.fstatSync(descriptor).isFile()) {
+      refusedFiles += 1;
+      throw Object.assign(new Error("fixture regular-file fsync EPERM"), { code: "EPERM" });
+    }
+    return originalSync(descriptor);
+  });
+  const result = await resolveManagedPicoCli({ managedRoot, forceRefresh: true }, createManagedIO(harness));
+  assert.equal(refusedFiles, 1, "the staging owner file must be synchronously flushed before npm can run");
+  assert.equal(result.status, "unavailable", JSON.stringify(result));
+  assert.match(result.note ?? "", /regular-file fsync EPERM/);
+  assert.equal(fs.existsSync(path.join(managedRoot, "versions", "0.4.2")), false);
+  assert.equal(fs.existsSync(path.join(managedRoot, "versions", ".0.4.2.publish")), false);
+  assert.equal(harness.calls().some((call) => call.role === "npm" && call.args[0] === "install"), false);
+});
 
 test("bounded runner compatibility helpers remain covered without ambient CLI access", () => {
   assert.equal(PICO_CLI_INSTALL_TIMEOUT_MS, 120_000);
@@ -403,8 +515,8 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
     }
   });
 
-  function managedFixture() {
-    const harness = createHarness({ latestVersion: "0.4.2" });
+  function managedFixture({ tempParent } = {}) {
+    const harness = createHarness({ latestVersion: "0.4.2", tempParent });
     const root = harness.root;
     const managedRoot = path.join(harness.root, "managed");
     const calls = [];
@@ -435,7 +547,7 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
     };
     const baseIo = createManagedIO(harness);
     const io = (env = {}) => ({
-      env,
+      get env() { return { ...baseIo.env, ...env }; },
       platform: process.platform,
       homeDir: path.join(root, "unused-home"),
       now: () => 0,
@@ -466,20 +578,24 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
     const newestShim = await fixture.publish("0.4.2");
     const beforeInspection = fixture.publishedFiles();
     const result = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, fixture.io());
-    const { compatibility, ...summary } = result;
+    const { compatibility, capabilities, ...summary } = result;
     assert.deepEqual(summary, {
       status: "ok", source: "managed", policy: "managed-latest", action: "cached", path: newestShim,
       version: "0.4.2", raw: "pico-cli/0.4.2 (managed fixture)", latestVersion: null, checkedAt: null,
       freshness: "cached", deprecatedAliases: [],
     });
-    assert.equal(compatibility?.length, 9);
+    assert.equal(compatibility, undefined, "fresh installs carry no legacy canary report");
+    assert.ok(capabilities, "inspection surfaces the verified report discovered when the version was provisioned");
+    assert.equal(capabilities.identity.executablePath, newestShim);
     assert.deepEqual(fixture.calls, [{ command: newestShim, args: ["-v"] }]);
     assert.deepEqual(fixture.publishedFiles(), beforeInspection, "inspection must not alter published files");
     assert.equal(fs.existsSync(path.join(fixture.managedRoot, "versions", "0.4.3")), false);
   });
 
   await t.test("a relative managedRoot resolves the published immutable version", async () => {
-    const fixture = managedFixture();
+    // A Windows runner may put its repository on D: and os.tmpdir() on C:. Create this fixture
+    // beside cwd so path.relative exercises an actual relative path on every supported host.
+    const fixture = managedFixture({ tempParent: process.cwd() });
     const newestShim = await fixture.publish("0.4.2");
     const relativeManagedRoot = path.relative(process.cwd(), fixture.managedRoot);
     assert.equal(path.isAbsolute(relativeManagedRoot), false);
@@ -646,8 +762,8 @@ test("cold managed and stale managed exact provisioning", { concurrency: false, 
     assert.ok(io.commands.some((call) => call.command === updated.path && call.args.length === 1 && call.args[0] === "-v"), JSON.stringify(io.commands));
   });
 
-  await t.test("cold managed help canaries remain bounded diagnostics when one command drifts", async () => {
-    const harness = createHarness({ latestVersion: "0.4.2", canaryFailure: "perf trace decode" });
+  await t.test("cold managed install writes no legacy canary report and classifies non-help replies honestly", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2" });
     const managedRoot = path.join(harness.root, "managed");
     const io = createManagedIO(harness);
     const result = await resolveManagedPicoCli({
@@ -659,33 +775,34 @@ test("cold managed and stale managed exact provisioning", { concurrency: false, 
     }, io);
     assert.equal(result.status, "ok", JSON.stringify(result));
     assert.equal(result.action, "installed");
+    assert.equal(result.compatibility, undefined);
+    assert.equal(fs.existsSync(path.join(managedRoot, "versions", "0.4.2", "compatibility.json")), false);
 
-    const expectedArgv = [
-      ["perf", "monitor", "run", "--help"],
+    // The fixture answers every --help with "fixture help: ..." (no usage section): that is not
+    // evidence of support, so every routed operation is unknown and the aggregate is partial.
+    assert.ok(result.capabilities, "capabilities report missing");
+    assert.equal(result.capabilities.coverage, "partial");
+    for (const operation of result.capabilities.operations) {
+      if (operation.operation === "perf-live") {
+        assert.equal(operation.state, "unavailable");
+        assert.match(operation.reason, /^no-route:/);
+      } else {
+        assert.equal(operation.state, "unknown", JSON.stringify(operation));
+        assert.match(operation.reason, /^malformed-help:/);
+      }
+    }
+    const helpCalls = io.commands.filter((call) => call.args.at(-1) === "--help");
+    assert.deepEqual(helpCalls.map((call) => call.args), [
+      ["mcp", "dev-knowledge", "--help"],
+      ["app", "watch-crash", "--help"],
+      ["capture", "record", "--help"],
       ["perf", "trace", "record", "--help"],
       ["perf", "trace", "decode", "--help"],
       ["perf", "trace", "load", "--help"],
       ["perf", "trace", "query", "--help"],
-      ["app", "watch-crash", "--help"],
-      ["capture", "record", "--help"],
-      ["mcp", "dev-knowledge", "--help"],
-      ["emulator", "status", "--help"],
-    ];
-    assert.deepEqual(result.compatibility?.map((item) => item.argv), expectedArgv);
-    assert.ok(result.compatibility?.every((item) => item.argv.at(-1) === "--help"));
-    assert.ok(result.compatibility?.every((item) => item.timedOut === false && item.outputTruncated === false));
-    const decode = result.compatibility?.find((item) => item.argv.join(" ") === "perf trace decode --help");
-    assert.equal(decode?.exitCode, 7);
-    assert.equal(decode?.helpSha256, crypto.createHash("sha256").update("fixture incompatible: perf trace decode --help\n").digest("hex"));
-    const monitor = result.compatibility?.find((item) => item.argv.join(" ") === "perf monitor run --help");
-    assert.equal(monitor?.exitCode, 0);
-    assert.equal(monitor?.helpSha256, crypto.createHash("sha256").update("fixture help: perf monitor run --help\n").digest("hex"));
-
-    const canaryCalls = io.commands.filter((call) => call.args.at(-1) === "--help");
-    assert.deepEqual(canaryCalls.map((call) => call.args), expectedArgv);
-    assert.ok(canaryCalls.every((call) => call.options.timeoutMs === 2_000 && call.options.killGraceMs === 25), JSON.stringify(canaryCalls));
-    const stored = JSON.parse(fs.readFileSync(path.join(managedRoot, "versions", "0.4.2", "compatibility.json"), "utf8"));
-    assert.deepEqual(stored, { schemaVersion: 1, version: "0.4.2", diagnostics: result.compatibility });
+    ]);
+    assert.ok(helpCalls.every((call) => call.options.timeoutMs === 2_000 && call.options.killGraceMs === 25), JSON.stringify(helpCalls));
+    assert.equal(io.commands.some((call) => call.args.includes("monitor") || call.args.includes("setup")), false);
   });
 });
 
@@ -1100,15 +1217,17 @@ test("managed winner completeness fix round", { concurrency: false, timeout: 30_
     assert.equal(result.status, "ok", JSON.stringify(result));
     assert.equal(result.version, "0.4.2");
     assert.equal(result.path, path.join(target, "node_modules", ".bin", process.platform === "win32" ? "pico-cli.cmd" : "pico-cli"));
-    assert.equal(result.compatibility?.length, 9);
+    assert.equal(result.compatibility, undefined, "activation no longer depends on a legacy canary report");
+    assert.ok(result.capabilities, "the reused winner still gets per-operation discovery");
+    assert.equal(result.capabilities.identity.executablePath, result.path);
   });
 
-  await t.test("a collision winner without compatibility diagnostics is rejected and preserved", async () => {
+  await t.test("a legacy compatibility report injected into a collision winner is rejected by content binding", async () => {
     const { result, target } = await raceWithWinner((winner) => {
-      fs.unlinkSync(path.join(winner, "compatibility.json"));
+      fs.writeFileSync(path.join(winner, "compatibility.json"), JSON.stringify({ schemaVersion: 1, version: "0.4.2", diagnostics: [] }));
     });
     assert.equal(result.status, "unavailable", JSON.stringify(result));
-    assert.equal(fs.existsSync(path.join(target, "compatibility.json")), false);
+    assert.equal(fs.existsSync(path.join(target, "compatibility.json")), true, "the rejected winner is preserved, not repaired");
     assert.equal(JSON.parse(fs.readFileSync(path.join(target, "install.json"), "utf8")).registryIntegrity, "sha512-fixture");
   });
 
@@ -1120,7 +1239,6 @@ test("managed winner completeness fix round", { concurrency: false, timeout: 30_
     });
     assert.equal(result.status, "unavailable", JSON.stringify(result));
     assert.equal(JSON.parse(fs.readFileSync(path.join(target, "install.json"), "utf8")).registryIntegrity, "sha512-other");
-    assert.equal(JSON.parse(fs.readFileSync(path.join(target, "compatibility.json"), "utf8")).diagnostics.length, 9);
   });
 });
 
@@ -1789,13 +1907,15 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
       assert.equal(result.status, "ok", JSON.stringify(result));
       assert.equal(result.version, "0.4.2");
       assert.equal(result.path, expectedPath);
-      assert.equal(result.compatibility?.length, 9, JSON.stringify(result));
+      assert.equal(result.compatibility, undefined, JSON.stringify(result));
+      assert.ok(result.capabilities, "every converged worker binds per-operation capability evidence");
+      assert.equal(result.capabilities.identity.executablePath, expectedPath);
     }
     assert.equal(new Set(results.map((result) => result.path)).size, 1);
     const versionsRoot = path.join(managedRoot, "versions");
     assert.deepEqual(fs.readdirSync(versionsRoot), [".0.4.2.publish", "0.4.2"]);
     assert.equal(JSON.parse(fs.readFileSync(path.join(versionsRoot, "0.4.2", "install.json"), "utf8")).version, "0.4.2");
-    assert.equal(JSON.parse(fs.readFileSync(path.join(versionsRoot, "0.4.2", "compatibility.json"), "utf8")).diagnostics.length, 9);
+    assert.equal(fs.existsSync(path.join(versionsRoot, "0.4.2", "compatibility.json")), false, "no legacy canary report is staged");
     const claimPath = path.join(versionsRoot, ".0.4.2.publish");
     const publicationPath = path.join(versionsRoot, "0.4.2", "publication.json");
     assert.equal(JSON.parse(fs.readFileSync(publicationPath, "utf8")).version, "0.4.2");
@@ -1956,7 +2076,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
     await withServer(harness, "full", async (client) => {
       const invoke = async () => JSON.parse((await client.callTool({
         name: "watch_crash",
-        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+        arguments: { packageName: "com.example.fixture", durationSec: 5, device: "fixture-serial" },
       })).content[0].text);
       const installed = await invoke();
       const present = await invoke();
@@ -1983,7 +2103,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
       const missingArtifactPath = path.join(harness.root, "recording-that-fixture-does-not-create.mp4");
       const artifactFailure = JSON.parse((await client.callTool({
         name: "capture_record",
-        arguments: { durationSec: 1, outputPath: missingArtifactPath },
+        arguments: { durationSec: 1, outputPath: missingArtifactPath, device: "fixture-record-0001" },
       })).content[0].text);
 
       const missingTracePath = path.join(harness.root, "trace-that-fixture-does-not-create.perfetto-trace");
@@ -2038,7 +2158,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
       const capturePath = path.join(harness.root, "empty-capture.mp4");
       const capture = JSON.parse((await client.callTool({
         name: "capture_record",
-        arguments: { durationSec: 1, outputPath: capturePath },
+        arguments: { durationSec: 1, outputPath: capturePath, device: "fixture-record-0001" },
       })).content[0].text);
 
       const tracePath = path.join(harness.root, "empty-trace.perfetto-trace");
@@ -2088,7 +2208,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
     await withServer(harness, "full", async (client) => {
       const capture = JSON.parse((await client.callTool({
         name: "capture_record",
-        arguments: { durationSec: 1, outputPath: path.join(harness.root, "capture-directory") },
+        arguments: { durationSec: 1, outputPath: path.join(harness.root, "capture-directory"), device: "fixture-record-0001" },
       })).content[0].text);
       const trace = JSON.parse((await client.callTool({
         name: "perf_trace",
@@ -2127,7 +2247,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
     await withServer(healthyHarness, "full", async (client) => {
       const healthy = JSON.parse((await client.callTool({
         name: "watch_crash",
-        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+        arguments: { packageName: "com.example.fixture", durationSec: 5, device: "fixture-serial" },
       })).content[0].text);
       assert.equal(healthy.status, "ok", JSON.stringify(healthy));
       assert.match(healthy.endedBy ?? "", /^duration-cap/);
@@ -2145,7 +2265,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
     await withServer(driftHarness, "full", async (client) => {
       const rejected = JSON.parse((await client.callTool({
         name: "watch_crash",
-        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+        arguments: { packageName: "com.example.fixture", durationSec: 5, device: "fixture-serial" },
       })).content[0].text);
       assert.equal(rejected.status, "failed", JSON.stringify(rejected));
       assert.equal(rejected.failureClass, "runtime", JSON.stringify(rejected));
@@ -2160,7 +2280,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
     await withServer(harness, "full", async (client) => {
       const out = JSON.parse((await client.callTool({
         name: "watch_crash",
-        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+        arguments: { packageName: "com.example.fixture", durationSec: 5, device: "fixture-serial" },
       })).content[0].text);
       assert.equal(out.status, "unavailable", JSON.stringify(out));
       assert.equal(out.failureClass, "latest-unknown");
@@ -2175,7 +2295,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
     await withServer(harness, "full", async (client) => {
       const out = JSON.parse((await client.callTool({
         name: "watch_crash",
-        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+        arguments: { packageName: "com.example.fixture", durationSec: 5, device: "fixture-serial" },
       })).content[0].text);
       assert.equal(out.status, "failed", JSON.stringify(out));
       assert.equal(out.failureClass, "setup-required");
@@ -2239,6 +2359,494 @@ process.stdout.write(JSON.stringify({ strengthResults, sharedResults, distinctRe
     assert.ok([...output.strengthResults, ...output.sharedResults, ...output.distinctResults].every((entry) => entry.status === "ok"), result.stdout);
     assert.equal(harness.calls().filter((call) => call.role === "npm" && call.args[0] === "view").length, 5, JSON.stringify(harness.calls()));
     for (const root of roots) assert.equal(fs.existsSync(path.join(root, "versions", "0.4.2")), true, root);
+  });
+});
+
+test("per-operation capability discovery bound to package identity", { concurrency: false, timeout: 120_000 }, async (t) => {
+  // Every help reply below is a byte-for-byte retained observation (test/fixtures/picocli/help)
+  // replayed by a real fake child process; classification is therefore exercised on real bytes.
+  const helpFixtureRoot = path.join(repoRoot, "test", "fixtures", "picocli", "help");
+  const helpIndex = JSON.parse(fs.readFileSync(path.join(helpFixtureRoot, "index.json"), "utf8"));
+  const helpEntry = (version, invocation) => {
+    const entry = helpIndex.entries.find((item) => item.version === version && item.invocation === invocation);
+    assert.ok(entry, `missing help fixture ${version}/${invocation}`);
+    return entry;
+  };
+  const replay = (version, invocation) => {
+    const entry = helpEntry(version, invocation);
+    return {
+      stdoutFile: path.join(helpFixtureRoot, entry.files["stdout.txt"]),
+      stderrFile: path.join(helpFixtureRoot, entry.files["stderr.txt"]),
+      code: entry.code,
+    };
+  };
+  const helpMaps = {
+    "0.4.4": {
+      "": replay("0.4.4", "002"),
+      "mcp dev-knowledge": replay("0.4.4", "062"),
+      "app watch-crash": replay("0.4.4", "025"),
+      "capture record": replay("0.4.4", "026"),
+      // Source-inspected (PERF_ENV044): every 0.4.4 perf argv fails in the utilities gate before
+      // delegation; invocation 012 (perf --help, exit 1) supplies the exact bytes.
+      "perf trace record": replay("0.4.4", "012"),
+      "perf trace decode": replay("0.4.4", "012"),
+      "perf trace load": replay("0.4.4", "012"),
+      "perf trace query": replay("0.4.4", "012"),
+    },
+    "0.5.0": {
+      "": replay("0.5.0", "072"),
+      "knowledge server": replay("0.5.0", "136"),
+      "app watch-crash": replay("0.5.0", "096"),
+      "capture record": replay("0.5.0", "097"),
+      // Source-inspected (PERF_ROUTER050/PERF_ENV050): child help reaches the utilities gate
+      // first; invocations 139 (perf live) and 141 (perf trace) are the exact exit-3 bytes.
+      "perf live run": replay("0.5.0", "139"),
+      "perf trace record": replay("0.5.0", "141"),
+      "perf trace decode": replay("0.5.0", "141"),
+      "perf trace load": replay("0.5.0", "141"),
+      "perf trace query": replay("0.5.0", "141"),
+    },
+  };
+  const withHelpMap = (harness, version) => {
+    const file = path.join(harness.root, `help-map-${version}-${crypto.randomUUID()}.json`);
+    fs.writeFileSync(file, JSON.stringify(helpMaps[version]));
+    process.env.FAKE_PICO_HELP_MAP = file;
+  };
+  const sha256File = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  const byOperation = (report) => Object.fromEntries(report.operations.map((operation) => [operation.operation, operation]));
+  const resolveOptions = (managedRoot, overrides = {}) => ({
+    managedRoot, forceRefresh: true, installTimeoutMs: 2_000, updateCheckTimeoutMs: 2_000, killGraceMs: 25, ...overrides,
+  });
+  const helpCallsOf = (io, from = 0) => io.commands.slice(from).filter((call) => call.args.at(-1) === "--help");
+  const runDirectories = (managedRoot, version) => {
+    const root = path.join(managedRoot, "capabilities", version);
+    if (!fs.existsSync(root)) return [];
+    return fs.readdirSync(root).flatMap((key) => fs.readdirSync(path.join(root, key)).map((run) => path.join(root, key, run)));
+  };
+
+  await t.test("cold managed 0.4.4 install discovers operations from retained help bytes and persists an immutable report", async () => {
+    const harness = createHarness({ latestVersion: "0.4.4" });
+    withHelpMap(harness, "0.4.4");
+    try {
+      const managedRoot = path.join(harness.root, "managed");
+      const io = createManagedIO(harness);
+      const result = await resolveManagedPicoCli(resolveOptions(managedRoot), io);
+      assert.equal(result.status, "ok", JSON.stringify(result));
+      assert.equal(result.compatibility, undefined, "new installs never write the legacy canary report");
+      const report = result.capabilities;
+      assert.ok(report, "capabilities missing");
+      assert.equal(report.schemaVersion, 2);
+      assert.equal(report.coverage, "complete");
+      assert.match(report.checkedAt, /^\d{4}-\d{2}-\d{2}T/);
+      const versionRoot = path.join(managedRoot, "versions", "0.4.4");
+      const install = JSON.parse(fs.readFileSync(path.join(versionRoot, "install.json"), "utf8"));
+      assert.deepEqual(report.identity, {
+        version: "0.4.4",
+        executablePath: result.path,
+        packageJsonSha256: sha256File(path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json")),
+        executionTreeSha256: install.contentManifestSha256,
+        executionScope: "package-tree",
+        selectionSchemaVersion: 1,
+        selectionSha256: cliSelectionIdentity(io).sha256,
+      });
+      const ops = byOperation(report);
+      assert.deepEqual(Object.keys(ops).sort(), [
+        "capture-record", "knowledge-server", "perf-live", "trace-decode", "trace-load", "trace-query", "trace-record", "watch-crash",
+      ]);
+      assert.equal(ops["knowledge-server"].state, "supported", JSON.stringify(ops["knowledge-server"]));
+      assert.deepEqual(ops["knowledge-server"].argvPrefix, ["mcp", "dev-knowledge"]);
+      assert.equal(ops["watch-crash"].state, "supported", JSON.stringify(ops["watch-crash"]));
+      assert.equal(ops["capture-record"].state, "supported", JSON.stringify(ops["capture-record"]));
+      assert.equal(ops["perf-live"].state, "unavailable");
+      assert.equal(ops["perf-live"].argvPrefix, null);
+      assert.deepEqual(ops["perf-live"].evidence, []);
+      assert.match(ops["perf-live"].reason, /^no-route:/);
+      for (const operation of ["trace-record", "trace-decode", "trace-load", "trace-query"]) {
+        assert.equal(ops[operation].state, "unavailable", operation);
+        assert.match(ops[operation].reason, /^utilities-not-installed:/, operation);
+        assert.equal(ops[operation].evidence.length, 1, operation);
+        assert.equal(ops[operation].evidence[0].exitCode, 1, operation);
+        assert.equal(ops[operation].evidence[0].stderrSha256, helpEntry("0.4.4", "012").stderrSha256, operation);
+        assert.deepEqual(ops[operation].evidence[0].argv, ["perf", "trace", operation.slice("trace-".length), "--help"]);
+      }
+      for (const operation of Object.values(ops)) {
+        for (const evidence of operation.evidence) {
+          assert.ok(evidence.stdoutPath.startsWith(path.join(managedRoot, "capabilities", "0.4.4") + path.sep), evidence.stdoutPath);
+          assert.equal(sha256File(evidence.stdoutPath), evidence.stdoutSha256);
+          assert.equal(sha256File(evidence.stderrPath), evidence.stderrSha256);
+          assert.equal(evidence.timedOut, false);
+          assert.equal(evidence.outputTruncated, false);
+        }
+      }
+      assert.ok(fs.existsSync(report.reportPath), report.reportPath);
+      assert.equal(path.dirname(path.dirname(path.dirname(report.reportPath))), path.join(managedRoot, "capabilities", "0.4.4"));
+      const stored = JSON.parse(fs.readFileSync(report.reportPath, "utf8"));
+      const { reportPath, ...inMemory } = report;
+      assert.deepEqual(stored, inMemory, "the persisted report is the in-memory report");
+      assert.equal(fs.existsSync(path.join(versionRoot, "compatibility.json")), false);
+
+      const helpCalls = helpCallsOf(io);
+      assert.deepEqual(helpCalls.map((call) => call.args), [
+        ["mcp", "dev-knowledge", "--help"],
+        ["app", "watch-crash", "--help"],
+        ["capture", "record", "--help"],
+        ["perf", "trace", "record", "--help"],
+        ["perf", "trace", "decode", "--help"],
+        ["perf", "trace", "load", "--help"],
+        ["perf", "trace", "query", "--help"],
+      ]);
+      for (const call of helpCalls) {
+        assert.equal(call.command, result.path);
+        assert.equal(call.options.timeoutMs, 2_000);
+        assert.equal(call.options.killGraceMs, 25);
+        assert.equal(call.options.maxOutputBytes, 64 * 1024);
+        assert.equal(typeof call.options.beforeSpawn, "function", "discovery must run under the managed execution guard");
+        assert.equal(typeof call.options.afterSpawn, "function");
+      }
+      assert.deepEqual(report.limits, { timeoutMs: 2_000, maxOutputBytes: 64 * 1024, maxProbes: 8 });
+      const ledger = io.commands.map((call) => call.args.join(" "));
+      assert.equal(ledger.some((argv) => /(^|\s)setup(\s|$)/.test(argv) || /update\s+--check/.test(argv) || /\bmonitor\b/.test(argv)), false, JSON.stringify(ledger));
+
+      // Reuse: a non-forced resolution matches the identity and runs no new help calls.
+      const before = io.commands.length;
+      const again = await resolveManagedPicoCli(resolveOptions(managedRoot, { forceRefresh: false }), io);
+      assert.equal(again.status, "ok", JSON.stringify(again));
+      assert.equal(again.capabilities?.reportPath, report.reportPath);
+      assert.equal(helpCallsOf(io, before).length, 0, "matching evidence must be reused without new probes");
+
+      // Force refresh (ensure_pico_cli path): a fresh immutable run; the first report is untouched.
+      const firstBytes = fs.readFileSync(report.reportPath);
+      const forced = await resolveManagedPicoCli(resolveOptions(managedRoot), io);
+      assert.equal(forced.status, "ok", JSON.stringify(forced));
+      assert.notEqual(forced.capabilities?.reportPath, report.reportPath);
+      assert.ok(fs.existsSync(forced.capabilities.reportPath));
+      assert.deepEqual(fs.readFileSync(report.reportPath), firstBytes);
+      assert.equal(runDirectories(managedRoot, "0.4.4").length, 2);
+    } finally {
+      delete process.env.FAKE_PICO_HELP_MAP;
+    }
+  });
+
+  await t.test("the 0.5.0 line routes knowledge server and classifies gated perf routes from the real exit-3 bytes", async () => {
+    const harness = createHarness({ latestVersion: "0.5.0" });
+    withHelpMap(harness, "0.5.0");
+    try {
+      const managedRoot = path.join(harness.root, "managed");
+      const io = createManagedIO(harness);
+      const result = await resolveManagedPicoCli(resolveOptions(managedRoot), io);
+      assert.equal(result.status, "ok", JSON.stringify(result));
+      const ops = byOperation(result.capabilities);
+      assert.equal(result.capabilities.coverage, "complete");
+      assert.equal(ops["knowledge-server"].state, "supported", JSON.stringify(ops["knowledge-server"]));
+      assert.deepEqual(ops["knowledge-server"].argvPrefix, ["knowledge", "server"]);
+      assert.equal(ops["watch-crash"].state, "supported");
+      assert.equal(ops["capture-record"].state, "supported");
+      assert.equal(ops["perf-live"].state, "unavailable");
+      assert.deepEqual(ops["perf-live"].argvPrefix, ["perf", "live", "run"]);
+      assert.match(ops["perf-live"].reason, /^utilities-not-installed:/);
+      assert.equal(ops["perf-live"].evidence[0].exitCode, 3);
+      assert.equal(ops["perf-live"].evidence[0].stderrSha256, helpEntry("0.5.0", "139").stderrSha256);
+      for (const operation of ["trace-record", "trace-decode", "trace-load", "trace-query"]) {
+        assert.equal(ops[operation].state, "unavailable", operation);
+        assert.match(ops[operation].reason, /^utilities-not-installed:/, operation);
+        assert.equal(ops[operation].evidence[0].exitCode, 3, operation);
+        assert.equal(ops[operation].evidence[0].stderrSha256, helpEntry("0.5.0", "141").stderrSha256, operation);
+      }
+      const ledger = io.commands.map((call) => call.args.join(" "));
+      assert.equal(ledger.some((argv) => argv.startsWith("mcp ") || /\bmonitor\b/.test(argv) || /:/.test(argv.split(" ")[0] ?? "")), false, JSON.stringify(ledger));
+      assert.equal(helpCallsOf(io).length, 8);
+    } finally {
+      delete process.env.FAKE_PICO_HELP_MAP;
+    }
+  });
+
+  await t.test("a timed-out probe leaves that operation unknown and the report partial, without invalidating activation", async () => {
+    const harness = createHarness({ latestVersion: "0.5.0" });
+    withHelpMap(harness, "0.5.0");
+    try {
+      const hangingMap = { ...helpMaps["0.5.0"], "knowledge server": { hang: true } };
+      const hangingFile = path.join(harness.root, `help-map-hang-${crypto.randomUUID()}.json`);
+      fs.writeFileSync(hangingFile, JSON.stringify(hangingMap));
+      process.env.FAKE_PICO_HELP_MAP = hangingFile;
+      const managedRoot = path.join(harness.root, "managed");
+      const io = createManagedIO(harness);
+      const result = await resolveManagedPicoCli(resolveOptions(managedRoot, { updateCheckTimeoutMs: 300 }), io);
+      assert.equal(result.status, "ok", JSON.stringify(result));
+      assert.equal(result.capabilities?.coverage, "partial");
+      const knowledge = byOperation(result.capabilities)["knowledge-server"];
+      assert.equal(knowledge.state, "unknown", JSON.stringify(knowledge));
+      assert.match(knowledge.reason, /^timed-out:/);
+      assert.equal(knowledge.evidence[0].timedOut, true);
+      assert.equal(JSON.parse(fs.readFileSync(result.capabilities.reportPath, "utf8")).coverage, "partial");
+    } finally {
+      delete process.env.FAKE_PICO_HELP_MAP;
+    }
+  });
+
+  await t.test("a selected CLI version change never reuses the previous version's capabilities", async () => {
+    const harness = createHarness({ latestVersion: "0.4.4" });
+    withHelpMap(harness, "0.4.4");
+    try {
+      const managedRoot = path.join(harness.root, "managed");
+      const io = createManagedIO(harness);
+      const first = await resolveManagedPicoCli(resolveOptions(managedRoot), io);
+      assert.equal(first.status, "ok", JSON.stringify(first));
+      process.env.FAKE_LATEST_VERSION = "0.5.0";
+      withHelpMap(harness, "0.5.0");
+      const second = await resolveManagedPicoCli(resolveOptions(managedRoot), io);
+      assert.equal(second.status, "ok", JSON.stringify(second));
+      assert.equal(second.action, "updated");
+      assert.equal(second.capabilities?.identity.version, "0.5.0");
+      assert.deepEqual(byOperation(second.capabilities)["knowledge-server"].argvPrefix, ["knowledge", "server"]);
+      assert.notEqual(second.capabilities.reportPath, first.capabilities.reportPath);
+      assert.ok(second.capabilities.reportPath.startsWith(path.join(managedRoot, "capabilities", "0.5.0") + path.sep));
+      assert.ok(fs.existsSync(first.capabilities.reportPath), "the previous version's report is retained, not reused");
+      assert.equal(sameCliCapabilityIdentity(first.capabilities.identity, second.capabilities.identity), false);
+      assert.match(describeIdentityDrift(first.capabilities.identity, second.capabilities.identity) ?? "", /version/);
+    } finally {
+      delete process.env.FAKE_PICO_HELP_MAP;
+    }
+  });
+
+  await t.test("same-version package byte replacement rejects the package before any capability is applied", async () => {
+    const harness = createHarness({ latestVersion: "0.4.4" });
+    withHelpMap(harness, "0.4.4");
+    try {
+      const managedRoot = path.join(harness.root, "managed");
+      const io = createManagedIO(harness);
+      const first = await resolveManagedPicoCli(resolveOptions(managedRoot), io);
+      assert.equal(first.status, "ok", JSON.stringify(first));
+      const versionRoot = path.join(managedRoot, "versions", "0.4.4");
+      const packagePath = path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json");
+      fs.writeFileSync(packagePath, `${fs.readFileSync(packagePath, "utf8")} `);
+      const runsBefore = runDirectories(managedRoot, "0.4.4").length;
+      const callsBefore = io.commands.length;
+      const second = await resolveManagedPicoCli(resolveOptions(managedRoot), io);
+      assert.equal(second.status, "unavailable", JSON.stringify(second));
+      assert.match(second.note, /content-bound immutable-store validation/);
+      assert.equal(runDirectories(managedRoot, "0.4.4").length, runsBefore, "no capability run may be written for a rejected package");
+      assert.equal(helpCallsOf(io, callsBefore).length, 0, "no probe may run against a rejected package");
+      const drifted = { ...first.capabilities.identity, executionTreeSha256: managedContentIdentityForFixture(versionRoot).digest };
+      assert.equal(sameCliCapabilityIdentity(first.capabilities.identity, drifted), false);
+      assert.match(describeIdentityDrift(first.capabilities.identity, drifted) ?? "", /executionTreeSha256/);
+    } finally {
+      delete process.env.FAKE_PICO_HELP_MAP;
+    }
+  });
+
+  await t.test("an external executable replacement produces a new identity and fresh discovery", async () => {
+    const harness = createHarness({ latestVersion: "0.5.0" });
+    withHelpMap(harness, "0.5.0");
+    try {
+      const externalDir = path.join(harness.root, "external");
+      fs.mkdirSync(externalDir);
+      const externalPath = writeCommand(externalDir, "pico-cli", harness.driverPath, "managed-cli", ["0.5.0"]);
+      const managedRoot = path.join(harness.root, "managed");
+      const io = createManagedIO(harness, { env: { [PICO_CLI_POLICY_ENV]: "external", [PICO_CLI_PATH_ENV]: externalPath } });
+      const first = await resolveManagedPicoCli(resolveOptions(managedRoot), io);
+      assert.equal(first.status, "ok", JSON.stringify(first));
+      assert.equal(first.source, "external");
+      assert.ok(first.capabilities, "external targets get bounded discovery on first real use");
+      assert.equal(first.capabilities.identity.version, "0.5.0");
+      assert.equal(first.capabilities.identity.executablePath, fs.realpathSync(externalPath));
+      assert.equal(first.capabilities.identity.packageJsonSha256, crypto.createHash("sha256").update("").digest("hex"), "no adjacent package.json");
+      assert.equal(byOperation(first.capabilities)["knowledge-server"].state, "supported");
+      assert.equal(io.commands.filter((call) => call.command === "npm").length, 0);
+
+      fs.appendFileSync(externalPath, process.platform === "win32" ? "\r\nrem replaced\r\n" : "\n# replaced\n");
+      const callsBefore = io.commands.length;
+      const second = await resolveManagedPicoCli(resolveOptions(managedRoot, { forceRefresh: false }), io);
+      assert.equal(second.status, "ok", JSON.stringify(second));
+      assert.notEqual(second.capabilities?.identity.executionTreeSha256, first.capabilities.identity.executionTreeSha256);
+      assert.notEqual(second.capabilities.reportPath, first.capabilities.reportPath);
+      assert.ok(helpCallsOf(io, callsBefore).length > 0, "a replaced executable must be rediscovered");
+      assert.equal(sameCliCapabilityIdentity(first.capabilities.identity, second.capabilities.identity), false);
+
+      const staleTarget = picoCliFromEnsure(first);
+      const stale = picoCliOperationCapability(staleTarget, "knowledge-server");
+      assert.equal(stale.state, "unknown", JSON.stringify(stale));
+      assert.match(stale.reason, /^stale-identity:/);
+    } finally {
+      delete process.env.FAKE_PICO_HELP_MAP;
+    }
+  });
+
+  await t.test("missing evidence bytes degrade the record to unknown and trigger fresh discovery", async () => {
+    const harness = createHarness({ latestVersion: "0.4.4" });
+    withHelpMap(harness, "0.4.4");
+    try {
+      const managedRoot = path.join(harness.root, "managed");
+      const io = createManagedIO(harness);
+      const first = await resolveManagedPicoCli(resolveOptions(managedRoot), io);
+      assert.equal(first.status, "ok", JSON.stringify(first));
+      const target = picoCliFromEnsure(first);
+      assert.equal(picoCliOperationCapability(target, "knowledge-server").state, "supported");
+      fs.unlinkSync(byOperation(first.capabilities)["knowledge-server"].evidence[0].stdoutPath);
+      const missing = picoCliOperationCapability(target, "knowledge-server");
+      assert.equal(missing.state, "unknown", JSON.stringify(missing));
+      assert.match(missing.reason, /^evidence-missing:/);
+      const callsBefore = io.commands.length;
+      const second = await resolveManagedPicoCli(resolveOptions(managedRoot, { forceRefresh: false }), io);
+      assert.equal(second.status, "ok", JSON.stringify(second));
+      assert.notEqual(second.capabilities?.reportPath, first.capabilities.reportPath);
+      assert.ok(helpCallsOf(io, callsBefore).length > 0, "a report with missing evidence must not be reused");
+    } finally {
+      delete process.env.FAKE_PICO_HELP_MAP;
+    }
+  });
+
+  await t.test("picoCliOperationCapability serves verified records and refuses targets without discovery evidence", async () => {
+    const harness = createHarness({ latestVersion: "0.4.4" });
+    withHelpMap(harness, "0.4.4");
+    try {
+      const managedRoot = path.join(harness.root, "managed");
+      const io = createManagedIO(harness);
+      const result = await resolveManagedPicoCli(resolveOptions(managedRoot), io);
+      assert.equal(result.status, "ok", JSON.stringify(result));
+      const target = picoCliFromEnsure(result);
+      const knowledge = picoCliOperationCapability(target, "knowledge-server");
+      assert.equal(knowledge.state, "supported");
+      assert.deepEqual(knowledge.argvPrefix, ["mcp", "dev-knowledge"]);
+      const live = picoCliOperationCapability(target, "perf-live");
+      assert.equal(live.state, "unavailable");
+      assert.match(live.reason, /^no-route:/);
+      const trace = picoCliOperationCapability(target, "trace-record");
+      assert.equal(trace.state, "unavailable");
+      assert.match(trace.reason, /^utilities-not-installed:/);
+
+      const undiscovered = picoCliFromEnsure({
+        status: "ok", source: "external", policy: "external", action: "external", path: harness.driverPath,
+        version: "0.5.0", raw: "pico-cli/0.5.0", latestVersion: null, checkedAt: null, freshness: "external", deprecatedAliases: [],
+      });
+      const none = picoCliOperationCapability(undiscovered, "knowledge-server");
+      assert.equal(none.state, "unknown", JSON.stringify(none));
+      assert.match(none.reason, /^no-discovery:/);
+    } finally {
+      delete process.env.FAKE_PICO_HELP_MAP;
+    }
+  });
+
+  await t.test("the knowledge consumer contract: per-line argv, cross-line refusal, and the fresh-discovery rule", async () => {
+    const harness050 = createHarness({ latestVersion: "0.5.0" });
+    withHelpMap(harness050, "0.5.0");
+    let target050;
+    try {
+      const managedRoot = path.join(harness050.root, "managed");
+      const io = createManagedIO(harness050);
+      const resolved = await resolveManagedPicoCli(resolveOptions(managedRoot), io);
+      assert.equal(resolved.status, "ok", JSON.stringify(resolved));
+      target050 = picoCliFromEnsure(resolved);
+      const knowledge = picoCliOperationCapability(target050, "knowledge-server");
+      assert.equal(knowledge.state, "supported", JSON.stringify(knowledge));
+      assert.deepEqual(knowledge.argvPrefix, ["knowledge", "server"]);
+      assert.ok(knowledge.evidence.length >= 1, JSON.stringify(knowledge));
+      assert.deepEqual(knowledge.evidence[0].argv, ["knowledge", "server", "--help"]);
+    } finally {
+      delete process.env.FAKE_PICO_HELP_MAP;
+    }
+
+    // A 0.4.4 package resolved into the same process never inherits the 0.5.0 answer, and vice
+    // versa: the capability identity has to match the target that is about to be dispatched.
+    const harness044 = createHarness({ latestVersion: "0.4.4" });
+    withHelpMap(harness044, "0.4.4");
+    try {
+      const managedRoot = path.join(harness044.root, "managed");
+      const resolved = await resolveManagedPicoCli(resolveOptions(managedRoot), createManagedIO(harness044));
+      assert.equal(resolved.status, "ok", JSON.stringify(resolved));
+      const target044 = picoCliFromEnsure(resolved);
+      assert.deepEqual(picoCliOperationCapability(target044, "knowledge-server").argvPrefix, ["mcp", "dev-knowledge"]);
+      assert.equal(picoCliOperationCapability(target050, "knowledge-server").state, "unknown", "a different harness PATH invalidates the earlier selection");
+
+      // The report is bound to its own target, so pointing a 0.4.4 report at a 0.5.0 identity is
+      // a stale identity, not a usable route.
+      const crossed = picoCliFromEnsure({
+        status: "ok", source: "external", policy: "external", action: "external",
+        path: resolved.path, version: "0.5.0", raw: "pico-cli/0.5.0",
+        latestVersion: null, checkedAt: null, freshness: "external", deprecatedAliases: [],
+        capabilities: resolved.capabilities,
+      });
+      const refused = picoCliOperationCapability(crossed, "knowledge-server");
+      assert.equal(refused.state, "unknown", JSON.stringify(refused));
+      assert.match(refused.reason, /^stale-identity:/);
+      assert.match(refused.reason, /version changed/);
+    } finally {
+      delete process.env.FAKE_PICO_HELP_MAP;
+    }
+
+    // Only "no usable evidence is bound to this target" justifies one fresh bounded discovery; a
+    // classified observation is evidence and must not be re-probed by every consumer call.
+    for (const reason of [
+      "no-discovery: no bounded discovery evidence is bound to this execution target; call ensure_pico_cli for fresh bounded discovery",
+      "stale-identity: the recorded capability identity does not match the resolved execution target (version changed)",
+      "evidence-missing: knowledge-server evidence bytes at /gone could not be read",
+      "evidence-mismatch: knowledge-server stdout bytes at /x no longer hash to the recorded value",
+      "report-inconsistent: knowledge-server is stored as supported but its retained bytes classify as unknown",
+    ]) {
+      assert.equal(capabilityNeedsFreshDiscovery(reason), true, reason);
+    }
+    for (const reason of [
+      "timed-out: `knowledge server --help` exceeded 300 ms",
+      "malformed-help: `knowledge server --help` exited 0 but printed no usage section",
+      "output-truncated: `knowledge server --help` exceeded the 65536-byte capture cap",
+      "incomplete: the bounded `knowledge server --help` probe did not complete",
+      "bounded: the 8-probe discovery budget was exhausted",
+      "generic-parent-help: no pico-cli usage line names `knowledge server`",
+    ]) {
+      assert.equal(capabilityNeedsFreshDiscovery(reason), false, reason);
+    }
+  });
+
+  await t.test("read-only inspection never discovers, and reuses a report only after a real CLI-backed resolution", async () => {
+    const harness = createHarness({ latestVersion: "0.4.4" });
+    withHelpMap(harness, "0.4.4");
+    try {
+      const managedRoot = path.join(harness.root, "managed");
+      publishManagedFixtureVersion(harness, managedRoot, "0.4.4");
+      const io = createManagedIO(harness);
+      const inspected = await inspectManagedPicoCli({ managedRoot }, io);
+      assert.equal(inspected.status, "ok", JSON.stringify(inspected));
+      assert.equal(inspected.capabilities, undefined);
+      assert.deepEqual(io.commands.map((call) => call.args), [["-v"]]);
+      assert.equal(fs.existsSync(path.join(managedRoot, "capabilities")), false, "inspection must not write the managed store");
+
+      const cachedIo = createManagedIO(harness, { env: { [PICO_CLI_POLICY_ENV]: "managed-cached" } });
+      const resolved = await resolveManagedPicoCli({ managedRoot, forceRefresh: true, installTimeoutMs: 2_000, updateCheckTimeoutMs: 2_000, killGraceMs: 25 }, cachedIo);
+      assert.equal(resolved.status, "ok", JSON.stringify(resolved));
+      assert.equal(resolved.policy, "managed-cached");
+      assert.ok(resolved.capabilities, "managed-cached resolution discovers on first real use");
+      assert.equal(cachedIo.commands.filter((call) => call.command === "npm").length, 0, "managed-cached never touches npm");
+      assert.equal(byOperation(resolved.capabilities)["knowledge-server"].state, "supported");
+
+      const again = createManagedIO(harness);
+      const inspectedAgain = await inspectManagedPicoCli({ managedRoot }, again);
+      assert.equal(inspectedAgain.status, "ok", JSON.stringify(inspectedAgain));
+      assert.equal(inspectedAgain.capabilities?.reportPath, resolved.capabilities.reportPath);
+      assert.deepEqual(again.commands.map((call) => call.args), [["-v"]], "inspection reads the report without probing");
+    } finally {
+      delete process.env.FAKE_PICO_HELP_MAP;
+    }
+  });
+
+  await t.test("legacy schema-1 compatibility diagnostics remain readable through the versioned reader", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2" });
+    const managedRoot = path.join(harness.root, "managed");
+    const diagnostics = [{ argv: ["emulator", "status", "--help"], exitCode: 0, timedOut: false, outputTruncated: false, helpSha256: "ab" }];
+    publishManagedFixtureVersion(harness, managedRoot, "0.4.2", {
+      extraFiles: { "compatibility.json": JSON.stringify({ schemaVersion: 1, version: "0.4.2", diagnostics }) },
+    });
+    const inspected = await inspectManagedPicoCli({ managedRoot }, createManagedIO(harness));
+    assert.equal(inspected.status, "ok", JSON.stringify(inspected));
+    assert.deepEqual(inspected.compatibility, diagnostics);
+    assert.equal(inspected.capabilities, undefined);
+
+    const mismatched = createHarness({ latestVersion: "0.4.2" });
+    const mismatchedRoot = path.join(mismatched.root, "managed");
+    publishManagedFixtureVersion(mismatched, mismatchedRoot, "0.4.2", {
+      extraFiles: { "compatibility.json": JSON.stringify({ schemaVersion: 1, version: "0.4.1", diagnostics }) },
+    });
+    const rejected = await inspectManagedPicoCli({ managedRoot: mismatchedRoot }, createManagedIO(mismatched));
+    assert.equal(rejected.status, "ok", JSON.stringify(rejected));
+    assert.equal(rejected.compatibility, undefined, "a legacy report for another version is not surfaced");
   });
 });
 

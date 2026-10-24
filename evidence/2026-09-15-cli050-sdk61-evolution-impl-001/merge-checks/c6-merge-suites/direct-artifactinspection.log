@@ -1,0 +1,30 @@
+✔ sha256Bytes and sha256File agree with the reference digest of the same fixture (0.617583ms)
+✔ sha256File reports a missing file instead of throwing or inventing a digest (2.312042ms)
+✔ a valid small PNG inspects as valid with its real dimensions and bit depth (1.413625ms)
+✔ a truncated PNG larger than 1000 bytes is INVALID — the size floor alone must not accept it (0.155875ms)
+✔ arbitrary nonempty bytes above the capture floor are not a PNG (0.105791ms)
+✔ a valid PNG below the capture-evidence floor is still a valid PNG, and says it is below the floor (0.297834ms)
+✔ a valid short MP4 reports its MEASURED duration and its declared video track (0.458291ms)
+✔ an MP4 whose only track is audio is a valid container with NO video stream (0.080916ms)
+✔ arbitrary nonempty bytes are not an MP4 (0.071834ms)
+✔ a truncated MP4 box header fails closed instead of reporting a partial duration (0.110041ms)
+✔ an MP4 missing mdat is refused — a header with no media payload is not a recording (0.068541ms)
+✔ a valid dark frame is INCONCLUSIVE about the capture route, never proof of failed rendering (0.971333ms)
+✔ a valid lit frame classifies as lit with a real mean luma (0.564625ms)
+✔ a malformed image is undecodable, not dark (0.053958ms)
+✔ with no decoder available the answer is UNVALIDATED, never a successful decode (0.0905ms)
+✔ an injected decoder is used when present, and its failure stays unvalidated (0.068ms)
+✔ the inspection module cannot reach a process, a device, or a decoder on PATH (0.124333ms)
+✔ a valid short recording is validated, with a MEASURED duration that is not the request (0.293833ms)
+✔ a recording with no video stream is a validated container that declares no video (0.085375ms)
+✔ a nonempty file that is not a container is INVALID media, not a recording (0.084583ms)
+✔ a recording that cannot be read at all is UNVALIDATED, never a successful decode (0.056833ms)
+✔ capture_record still caps the request at 180 s and defaults short (0.141541ms)
+ℹ tests 22
+ℹ suites 0
+ℹ pass 22
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 52.176625

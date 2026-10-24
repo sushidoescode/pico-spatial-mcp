@@ -1,0 +1,42 @@
+pico-spatial-mcp bootstrap: dependencies accepted on npm's hidden lockfile (provenance recorded as hidden-lockfile; this bootstrap did not perform the install)
+pico-spatial-mcp bootstrap: dependencies accepted on npm's hidden lockfile (provenance recorded as hidden-lockfile; this bootstrap did not perform the install)
+pico-spatial-mcp bootstrap: dependencies accepted on npm's hidden lockfile (provenance recorded as hidden-lockfile; this bootstrap did not perform the install)
+✔ the setup plan is decided by dependency and build freshness, not by directory existence (0.591542ms)
+✔ a source checkout is recognised by its sources and tsconfig, and an installed payload is not (3.549666ms)
+✔ the dependency identity is a digest over the lockfile bytes and this Node major (1.122417ms)
+✔ an install is only current when its receipt accounts for the lockfile on disk (2.604166ms)
+✔ npm's own record of the install is accepted when our receipt cannot speak (2.49225ms)
+✔ a receipt from another Node major blocks hidden-lockfile adoption and demands a reinstall (1.126ms)
+✔ hidden-lockfile adoption records its provenance and never reports npm-ci (1.297125ms)
+✔ adopting npm's record says on stderr that the bootstrap did not perform the install (2.843083ms)
+✔ a packaged payload is verified from its receipt without any source (3.424834ms)
+✔ an unchanged cache starts the server with no npm, no compiler and no setup lock (1.382834ms)
+✔ a deleted dist is rebuilt without reinstalling dependencies (2.473042ms)
+✔ a source edit rebuilds before the server starts (3.308084ms)
+✔ a lockfile edit reinstalls, rebuilds and records the new dependency identity (4.178917ms)
+✔ a cache with neither a receipt nor npm's own record installs once (1.890792ms)
+✔ a cache npm installed and we did not starts with no npm, records it once, then is receipt-fast (1.916375ms)
+✔ a single changed package in npm's record sends the cache through one install (2.037958ms)
+✔ a record npm wrote for another lockfile version, or no record we can parse, is not evidence (3.714167ms)
+✔ an install that changes the installed TypeScript rebuilds output that was current before it (2.957917ms)
+✔ restoring a deleted node_modules does not recompile output the install makes current again (2.67275ms)
+✔ the install and the build it feeds share one setup lease (1.440666ms)
+✔ the planned build runs the checkout's own TypeScript through this node binary with an explicit outDir (2.348166ms)
+✔ a failed install ends bootstrap and never compiles or launches (0.724833ms)
+✔ a failed compilation ends bootstrap, keeps the previous output and never launches (2.06725ms)
+✔ a lockfile that changes during installation is rejected instead of recorded (1.15325ms)
+✔ an installed package with an intact payload launches without npm or a compiler (2.015833ms)
+✔ an installed package whose payload was tampered with refuses to launch and asks for a reinstall (1.46275ms)
+✔ two cold bootstraps against one cache install once, build once, and never overlap (52.083834ms)
+bootstrap timings: warm 0.22125ms, e2e cold 182ms, e2e warm 48ms, e2e source-edit 74ms
+✔ two changed-lock bootstraps against one cache reinstall once and rebuild once (51.986958ms)
+✔ a waiter that times out on the setup lease launches nothing (5.714834ms)
+✔ a real cold bootstrap compiles, keeps npm and compiler chatter off stdout, then starts warm (307.21825ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 544.002667

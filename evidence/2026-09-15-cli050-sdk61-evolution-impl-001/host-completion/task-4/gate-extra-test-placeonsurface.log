@@ -1,0 +1,29 @@
+# gate test:placeonsurface (2026-09-16T10:50:43Z)
+  ok   fixture GLB measures cleanly
+  ok   measured dims flow into the emitted Kotlin (SIZE_X/Y/Z from the file's accessors)
+  ok   measured baseLift applied (origin-CENTRED box lifts by half its height)
+  ok   the Kotlin says the lift is MEASURED, not a convention label
+  ok   bundleAsset derived from the baked bundle path
+  ok   model name comes from the bake info, not a guess
+  ok   semantic target honored (TABLE)
+  ok   predictable primitive proxy avoids mesh local-space alignment/scale traps
+  ok   collider carries the REQUIRED PhysicsWorldComponent
+  ok   the poll-for-planes trap stays closed
+  ok   an object-sized TABLE seats at the plane centroid
+  ok   default object name derives from the semantic
+  ok   targetPath points into the requested package
+  ok   usage line shows the seat() insertion
+  ok   FLOOR variant seats in FRONT of the user (trap 6)
+  ok   FLOOR variant names FloorPlacement
+  ok   offset adds extra metres above the surface on top of the measured lift
+  ok   collider:none emits no collider
+  ok   explicit objectName wins
+  ok   composed Kotlin passes preflight_lint (0 non-error notes)
+  ok   deterministic: same measurement + bake + options -> byte-identical output
+  ok   parses the LATEST dump's count + retry count (cold boot ~7)
+  ok   parses label + pose (FLOOR at y=0.40, the measured emulator height)
+  ok   parses plane extents
+  ok   no markers -> null (probe reports the honest error)
+
+place-on-surface test done. Failures: 0
+exit=0

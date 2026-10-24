@@ -1,0 +1,20 @@
+# step3 build + GREEN: node --test test/logwindow.mjs (2026-09-16T10:32:42Z)
+
+> pico-spatial-mcp@38.0.0 build
+> node scripts/build-source.mjs
+
+build-source: published 191 file(s) for source 8ad00a655f85
+build exit=
+✔ sliceAfterMarker returns only lines after the marker line (0.527291ms)
+✔ a missing marker is reported, never silently treated as an empty window (0.077ms)
+✔ openLogWindow writes exactly one `log -t pico-mcp <marker>` and never a clear (0.937916ms)
+✔ readLogWindow always includes the marker tag in its filter and bounds the dump (0.136917ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 35.477958
+test exit=0

@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 files rm --help",
+  "argv": [
+    "files",
+    "rm",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:06.011Z",
+  "endedAt": "2026-09-15T09:12:06.119Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "bdc5874f469cc39f1e13ca1bbd8336b05a344927341fb01e1162518e1c3dcdbd",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

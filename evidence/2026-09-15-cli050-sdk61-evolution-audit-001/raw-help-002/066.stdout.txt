@@ -1,0 +1,13 @@
+Usage:
+  $ pico-cli plugin update
+
+Options:
+  --tool <tool>     Tool to update plugins for; defaults to all tools (all | claude-code | codex | cursor | copilot | traecli) 
+  --plugin <name>   Plugin name to update; omit to update the default/current plugin selection (pico-spatial-agentic-tools | pico-unity-agentic-tools) 
+  --cwd <path>      Override the global plugin workspace parent directory 
+  --project <path>  Project directory where plugin context should be linked from selected agent context files 
+  -h, --help        Display this message 
+
+Examples:
+  $ pico-cli plugin update
+  $ pico-cli plugin update --tool all

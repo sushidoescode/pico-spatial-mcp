@@ -1,0 +1,73 @@
+✔ a clean observation records every identity field as OBSERVED and is not a receipt (23.367209ms)
+✔ identity that could not be observed is explicitly MISSING with a reason, never synthesised (14.531792ms)
+✔ installed APK digest ≠ local APK digest → mismatch, and nothing is launched (0.751125ms)
+✔ a FOREIGN app in the foreground is a conflict with the observed package — and is never stopped (10.145584ms)
+✔ a boot identity that changes across the observation is INCONCLUSIVE (13.022833ms)
+✔ a PID that changes across the observation is INCONCLUSIVE (12.90825ms)
+✔ a process START that changes under the SAME PID is INCONCLUSIVE — PID reuse is not continuity (13.021042ms)
+✔ capture bytes substituted after the observation → tampered, and the frame is not evidence (13.031625ms)
+✔ a malformed image larger than 1000 bytes is INVALID MEDIA, not a capture (9.914542ms)
+✔ arbitrary nonempty bytes above the size floor are also invalid media (9.957416ms)
+✔ a capture that FAILED is capture:'unavailable' and never status ok/observed (9.948375ms)
+✔ a valid DARK frame is an inconclusive capture route, not a rendering failure (13.124833ms)
+✔ a boot identity that was never observed is INCONCLUSIVE, not a clean observation (14.892542ms)
+✔ a foreground that was never observed is INCONCLUSIVE — the frame is unattributable (13.999125ms)
+✔ an UNKNOWN crash state is INCONCLUSIVE — unknown is not 'no crash' (12.99725ms)
+✔ logcat is never cleared, is bounded, and is scoped to the observed PID (15.174791ms)
+✔ a FATAL with no attribution to this package or PID is NOT this app's crash (14.948042ms)
+✔ a FATAL naming this package IS attributed (13.820959ms)
+✔ a log read that fails leaves logs unavailable and never implies 'no crash' (12.945916ms)
+✔ each observation gets a unique run directory under the observation root, and refuses replacement (40.604792ms)
+✔ no capture is written to the old mutable package-keyed /tmp path (13.618ms)
+✔ the serial is REQUIRED — there is no emulator-5554 default to leak into (1.957958ms)
+✖ the canonical and emulator LOOK captures name no fixed shared output path (0.576459ms)
+✖ observationCapturePath roots every kind under the observation store and never repeats a run (0.371583ms)
+✔ an unresolvable adb is refused before any device command runs (0.865042ms)
+✔ the loud-runner fixture would actually catch a spawn (0.521458ms)
+✔ capture_frame refuses to capture without an explicit serial, before resolving adb (1.509625ms)
+✔ capture_record refuses to record without an explicit device, before any CLI work (1.924917ms)
+ℹ tests 28
+ℹ suites 0
+ℹ pass 26
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 367.421041
+
+✖ failing tests:
+
+test at test/verifyapk-observation.mjs:550:1
+✖ the canonical and emulator LOOK captures name no fixed shared output path (0.576459ms)
+  AssertionError [ERR_ASSERTION]: ../src/eye.ts must not name a fixed shared capture path
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-hc-t3-2026-09-16/test/verifyapk-observation.mjs:553:12)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test/verifyapk-observation.mjs:561:1
+✖ observationCapturePath roots every kind under the observation store and never repeats a run (0.371583ms)
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-hc-t3-2026-09-16/dist/capturepaths.js' imported from /Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-hc-t3-2026-09-16/test/verifyapk-observation.mjs
+      at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+      at moduleResolve (node:internal/modules/esm/resolve:861:10)
+      at defaultResolve (node:internal/modules/esm/resolve:988:11)
+      at #cachedDefaultResolve (node:internal/modules/esm/loader:697:20)
+      at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:714:38)
+      at ModuleLoader.resolveSync (node:internal/modules/esm/loader:746:52)
+      at #resolve (node:internal/modules/esm/loader:679:17)
+      at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:599:35)
+      at node:internal/modules/esm/loader:628:32
+      at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+    code: 'ERR_MODULE_NOT_FOUND',
+    url: 'file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-hc-t3-2026-09-16/dist/capturepaths.js'
+  }

@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 emulator doctor --help",
+  "argv": [
+    "emulator",
+    "doctor",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:04.642Z",
+  "endedAt": "2026-09-15T09:12:04.745Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "d5090b87c42757acf1069274dd2854b4530f970b6413641c43a377dbb3fe8c8c",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

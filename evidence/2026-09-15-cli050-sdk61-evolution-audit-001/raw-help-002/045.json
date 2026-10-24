@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 emulator delete --help",
+  "argv": [
+    "emulator",
+    "delete",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:51.946Z",
+  "endedAt": "2026-09-15T09:11:52.044Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "a6719e739e827307d3b9f25414a8e4d523362b5e9902d8222740e248fa9c1fa6",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,275 @@
+{
+  "gate": "render-liveness",
+  "gateVersion": "1.0.0",
+  "atUtc": "2026-09-16T21:50:44.155221+00:00",
+  "cases": [
+    {
+      "case": "healthy synthetic window passes",
+      "passed": true,
+      "detail": {
+        "advanceMs": 19000,
+        "maxAge": 10,
+        "onTarget": 20
+      }
+    },
+    {
+      "case": "retained real 041 sample passes R1-R4 and integrity",
+      "passed": true,
+      "detail": {
+        "emitter": {
+          "malformedWatchdogLines": 0,
+          "malformedSamples": [],
+          "emitters": [
+            {
+              "tag": "SpatialRuntimeService",
+              "pid": 21870
+            }
+          ],
+          "singleEmitter": true,
+          "emitterTag": "SpatialRuntimeService",
+          "emitterPid": 21870,
+          "timestampsNonDecreasing": true,
+          "checkCountStrictlyIncreasing": true,
+          "duplicateCheckCounts": 0,
+          "runtimeClockNonDecreasing": true,
+          "linesInWindow": 10200,
+          "noClockReset": true,
+          "noDuplicateSamples": true,
+          "wellFormed": true
+        },
+        "advanceMs": 19031,
+        "ageRange": [
+          0,
+          16
+        ],
+        "sprObserved": {
+          "lines": 0,
+          "perSecond": 0.0,
+          "previousGateRequirement": 11,
+          "required": false,
+          "regressionFlag": "absent"
+        }
+      }
+    },
+    {
+      "case": "retained 042 gate-004 rejected despite 65 FPS",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "R1_focusOwnedByTarget",
+          "R2_renderAdvanced",
+          "R4_everyFrameAgeInRange"
+        ],
+        "pxrWas": 65.15,
+        "focusSeen": [
+          "com.picoxr.systemui"
+        ]
+      }
+    },
+    {
+      "case": "negative frame age rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "R4_everyFrameAgeInRange"
+        ]
+      }
+    },
+    {
+      "case": "frame age over 100 ms rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "R4_everyFrameAgeInRange"
+        ]
+      }
+    },
+    {
+      "case": "clock reset rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "watchdogWellFormed",
+          "noClockReset",
+          "R4_everyFrameAgeInRange"
+        ]
+      }
+    },
+    {
+      "case": "duplicate sample rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "watchdogWellFormed",
+          "noDuplicateSamples"
+        ]
+      }
+    },
+    {
+      "case": "out-of-order timestamps rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "watchdogWellFormed",
+          "noOutOfOrderTimestamps"
+        ]
+      }
+    },
+    {
+      "case": "malformed watchdog line rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "watchdogWellFormed",
+          "noMalformedSamples"
+        ]
+      }
+    },
+    {
+      "case": "two emitters rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "watchdogWellFormed",
+          "singleKnownEmitter"
+        ]
+      }
+    },
+    {
+      "case": "unstable target identity rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "targetIdentityStableAcrossWindow"
+        ]
+      }
+    },
+    {
+      "case": "frozen app rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "R2_renderAdvanced",
+          "R3_noStalledSamples",
+          "R4_everyFrameAgeInRange"
+        ]
+      }
+    },
+    {
+      "case": "another app holding focus rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "R1_focusOwnedByTarget",
+          "R2_renderAdvanced",
+          "R4_everyFrameAgeInRange"
+        ]
+      }
+    },
+    {
+      "case": "too few on-target samples rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "R1_focusOwnedByTarget",
+          "R2_renderAdvanced"
+        ]
+      }
+    },
+    {
+      "case": "insufficient render advance rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "R2_renderAdvanced"
+        ]
+      }
+    },
+    {
+      "case": "early-vsync warning rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "earlyVsyncZero"
+        ]
+      }
+    },
+    {
+      "case": "Pxr below 50 rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "pxrMetricAtLeast50"
+        ]
+      }
+    },
+    {
+      "case": "host visibility failing after the sample rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "hostAfterSamplePass"
+        ]
+      }
+    },
+    {
+      "case": "host visibility failing AFTER THE CAPTURE rejected",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "failingChecks": [
+          "hostAfterCapturePass"
+        ]
+      }
+    },
+    {
+      "case": "capture-time visibility is not even checked when no capture is taken",
+      "passed": true,
+      "detail": {
+        "noCaptureCheckAdded": true
+      }
+    },
+    {
+      "case": "SPR absent does not fail the gate but is reported",
+      "passed": true,
+      "detail": {
+        "lines": 0,
+        "perSecond": 0.0,
+        "previousGateRequirement": 11,
+        "required": false,
+        "regressionFlag": "absent"
+      }
+    },
+    {
+      "case": "SPR present but below 11/s is flagged as a regression",
+      "passed": true,
+      "detail": {
+        "lines": 5,
+        "perSecond": 0.25,
+        "previousGateRequirement": 11,
+        "required": false,
+        "regressionFlag": "present but below the previous 11/s requirement"
+      }
+    }
+  ],
+  "passed": 22,
+  "total": 22,
+  "allPassed": true,
+  "scope": "Host-only failure-case tests for the adopted gate. No device mutation."
+}

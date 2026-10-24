@@ -1,0 +1,66 @@
++ set -x
++ SP=/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad
++ cd /Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15
++ export PICO_ADB=/fixture/no/such/adb
++ PICO_ADB=/fixture/no/such/adb
++ export HOME=/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakehome
++ HOME=/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakehome
++ unset PICO_HOME
++ find /tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakehome
+/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakehome
++ node --input-type=module -e 'const t = await import("./dist/toolchain.js"); const w = await import("./dist/toolchainwatch.js"); const io = t.hostToolchainIO(); console.log(JSON.stringify({ osHomedir: io.home, DEFAULT_TOOLS_ROOT: t.DEFAULT_TOOLS_ROOT, PICO_HOME: io.env.PICO_HOME ?? null }, null, 2)); console.log(JSON.stringify(w.installedVersions(), null, 2));'
+{
+  "osHomedir": "/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakehome",
+  "DEFAULT_TOOLS_ROOT": "/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakehome/Library/PICO/sdk",
+  "PICO_HOME": null
+}
+{
+  "emulator": "unknown",
+  "editor": "unknown",
+  "sdkMaven": "6.0.0",
+  "selection": {
+    "emulator": {
+      "unavailable": "unavailable/root-unavailable"
+    },
+    "editor": {
+      "unavailable": "unavailable/root-unavailable"
+    }
+  }
+}
++ export PICO_HOME=/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk
++ PICO_HOME=/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk
++ find /tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk -maxdepth 4
++ sort
+/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk
+/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk/0.13
+/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk/0.13/editor
+/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk/0.13/editor/Spatial Editor.app
+/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk/0.13/editor/Spatial Editor.app/Contents
+/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk/0.13/emulator
+/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk/0.13/emulator/emulator
+/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk/0.13/emulator/package.xml
+/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk/6.1
+/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk/6.1/emulator
+/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk/6.1/emulator/emulator
+/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk/6.1/emulator/package.xml
++ node --input-type=module -e 'const t = await import("./dist/toolchain.js"); const w = await import("./dist/toolchainwatch.js"); const io = t.hostToolchainIO(); console.log(JSON.stringify({ osHomedir: io.home, DEFAULT_TOOLS_ROOT: t.DEFAULT_TOOLS_ROOT, PICO_HOME: io.env.PICO_HOME ?? null }, null, 2)); console.log(JSON.stringify(w.installedVersions(), null, 2));'
+{
+  "osHomedir": "/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakehome",
+  "DEFAULT_TOOLS_ROOT": "/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakehome/Library/PICO/sdk",
+  "PICO_HOME": "/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/fix1/fakesdk"
+}
+{
+  "emulator": "6.1.0",
+  "editor": "0.13.3",
+  "sdkMaven": "6.0.0",
+  "selection": {
+    "emulator": {
+      "version": "6.1",
+      "rootSource": "PICO_HOME"
+    },
+    "editor": {
+      "version": "0.13",
+      "rootSource": "PICO_HOME"
+    }
+  }
+}

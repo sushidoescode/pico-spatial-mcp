@@ -1,0 +1,17 @@
+{
+  "command": [
+    "npm",
+    "run",
+    "test:tarball"
+  ],
+  "exitCode": 0,
+  "artifact": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-hosts/artifacts/checked/pico-spatial-mcp-38.1.0.tgz",
+    "sha256": "db8384db4054ca7bfdd6861b8b9b60d9769be3ee5b1649a18a2354e1483122f0",
+    "bytes": 2227762,
+    "sourceGateSha256": "db8384db4054ca7bfdd6861b8b9b60d9769be3ee5b1649a18a2354e1483122f0"
+  },
+  "temporaryRoot": "/private/tmp/pico-host-tarball-m7pw337e",
+  "packageAncestorCheckPassed": true,
+  "gateOwnsSandboxCleanup": true
+}

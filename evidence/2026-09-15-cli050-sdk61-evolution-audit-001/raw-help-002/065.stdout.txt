@@ -1,0 +1,14 @@
+Usage:
+  $ pico-cli plugin doctor
+
+Options:
+  --tool <tool>      Tool to inspect; defaults to all available tools (all | claude-code | codex | cursor | copilot | traecli) 
+  --plugin <name>    Plugin name to inspect; omit to inspect the default/current plugin selection (pico-spatial-agentic-tools | pico-unity-agentic-tools) 
+  --format <format>  Output format (plain, json) (default: plain)
+  --fix              Run targeted plugin update/repair for missing-plugin warnings (default: false)
+  -h, --help         Display this message 
+
+Examples:
+  $ pico-cli plugin doctor
+  $ pico-cli plugin doctor --tool codex
+  $ pico-cli plugin doctor --format json

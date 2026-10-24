@@ -1,0 +1,8 @@
+# Retained locally; ARTIFACTS.json pins these bytes without putting compiled APKs or
+# the machine's full resolved toolchain file inventory into source control.
+build-*/*.apk
+build-*/resolved-inputs*.json
+**/build-*/*.apk
+**/build-*/resolved-inputs*.json
+# Native frames stay local with exact SHA-256 identities in the committed result/LOOK records.
+*.png

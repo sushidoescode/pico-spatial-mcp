@@ -1,0 +1,298 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-23T21:39:58.799597+00:00",
+  "candidate": {
+    "worktree": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23",
+    "branch": "feature/cli-agent-iteration-2026-10-23",
+    "base": "1157f33ad2d3934595a3ebaafe4d3fbfc7e1ce36",
+    "cliCommit": "01180dbcdaeccbd54d852053d50dd543f373dfc0",
+    "implementationCommit": "9ca38de2f7652d49e0bd620cf1d22ce884f616fb",
+    "packageVersion": "38.1.0",
+    "reviewedSourceSha256": "a2085a54b1729b026b5b3b0fb3f7f6818786c9c92b318dfc91268c6a961d3cc7",
+    "outputSha256": "3b64d954bf1ea4d064cd9f21bdd0c48befae5d14f62468295e032c799873647a",
+    "buildReceipt": {
+      "path": "evidence/2026-10-23-agent-iteration/server-build7-receipt.json",
+      "bytes": 56336,
+      "sha256": "3074802c0e802b37230b0447130bcbbfc56ee4c217ee5a4bb93e0fe3b76860c6"
+    },
+    "entry": {
+      "path": "dist/index.js",
+      "bytes": 20204,
+      "sha256": "ba22e8e3a6b41aa5d661d1317a674f3602079b1070d776cfa1a09536f4dd8b4a"
+    },
+    "buildPolicy": {
+      "path": "data/iteration-fixture/build-policy.json",
+      "bytes": 1131,
+      "sha256": "7a3355c56835197c92bbc7cb6d36525442cfd6a795dee25c615fa010206eb2b9"
+    }
+  },
+  "officialCli": {
+    "version": "0.6.1",
+    "observation": {
+      "path": "evidence/2026-10-23-agent-iteration/cli/READ_ONLY_CONTRACTS.json",
+      "bytes": 22228,
+      "sha256": "2975b9e7e18bc33800bca3bc8a25d19f744a30aa84112a32faeab0eb89871b7a"
+    },
+    "binary": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+    "realpath": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/index.js",
+    "files": [
+      {
+        "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/package.json",
+        "bytes": 1205,
+        "sha256": "44c2ba62b978d28b62f7f22471f7b9a23c20011008371d7ec3435d5072913144"
+      },
+      {
+        "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/index.js",
+        "bytes": 944008,
+        "sha256": "6daf24579469fd00e69d7e389f241fc6efec6ffde526dea0e4949fe7a38e4542"
+      },
+      {
+        "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/workflows/catalog.json",
+        "bytes": 69,
+        "sha256": "39d8368d68c7f5e0c9f4e10c62167394897e0b9ae039c05fa399682071c2a648"
+      },
+      {
+        "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/workflows/registered-workflows.v1.json",
+        "bytes": 152968,
+        "sha256": "e48fd8a14f7fb58c9d1590693b360ea57854f87cc1ea96ae57a03c5d1083c6f4"
+      },
+      {
+        "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/profiler-worker.js",
+        "bytes": 761,
+        "sha256": "e3319250a0b2526a10fb7322f94c93edc5f9294591a4b476fdbb0691b7bd272f"
+      }
+    ],
+    "note": "Observed package identity; no timeless latest claim and no lifecycle mutation."
+  },
+  "hostRebuilds": [
+    {
+      "record": {
+        "path": "evidence/agent-iteration-example/build-16bd1965-d353-4d9d-8512-b59344053f27/build.json",
+        "bytes": 9028,
+        "sha256": "e14443c2113048254c405f3b508071c94261e14d49fb2b42c17ed4c4a13eea28"
+      },
+      "apk": {
+        "path": "evidence/agent-iteration-example/build-16bd1965-d353-4d9d-8512-b59344053f27/app-debug.apk",
+        "bytes": 32813306,
+        "sha256": "05edb1f0d71e7e3f4cfc564bfa34f997cdbeac10291ee69634cdf8cd143c970f"
+      },
+      "inputSha256": "4129f6240ae5084e922380d2655d7bd6e8e995b3cbeee856e3b7f7df47e63b48",
+      "sourceManifestSha256": "34389dfb67b5c971de2a3ceb85288837c7ba39010e963fe159641278958ee7e6",
+      "resolvedInputCount": 12342,
+      "resolvedBefore": {
+        "path": "evidence/agent-iteration-example/build-16bd1965-d353-4d9d-8512-b59344053f27/resolved-inputs-before.json",
+        "bytes": 3364763,
+        "sha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4"
+      },
+      "resolvedAfter": {
+        "path": "evidence/agent-iteration-example/build-16bd1965-d353-4d9d-8512-b59344053f27/resolved-inputs.json",
+        "bytes": 3364763,
+        "sha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4"
+      },
+      "ownership": "released",
+      "package": "com.example.picofixture.iteration.debug",
+      "gradle": {
+        "path": "/Users/sushantsrikrish/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/bin/gradle",
+        "phases": [
+          {
+            "argv": [
+              ":app:writeIterationInputs",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792790728500,
+            "name": "pre-inputs",
+            "startedAt": 1792790714909
+          },
+          {
+            "argv": [
+              ":app:assembleDebug",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792790741256,
+            "name": "assemble",
+            "startedAt": 1792790732670
+          },
+          {
+            "argv": [
+              ":app:writeIterationInputs",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792790752523,
+            "name": "post-inputs",
+            "startedAt": 1792790743035
+          }
+        ],
+        "sha256": "5a7ae6e523747516cc026dea0314023a8e3ee9c89e6c4e975b75b5924b1e7a13"
+      },
+      "serverBuild": "build6 before final boundary hardening",
+      "nativeInstalled": false,
+      "replayed": false,
+      "renderedReview": false
+    },
+    {
+      "record": {
+        "path": "evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/build.json",
+        "bytes": 9028,
+        "sha256": "1d1c2e40e76b40403291518c12a30204add2f8b08201b6b4155b061d065dcc75"
+      },
+      "apk": {
+        "path": "evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/app-debug.apk",
+        "bytes": 32813306,
+        "sha256": "24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04"
+      },
+      "inputSha256": "2d6474e68187119bd8258aba0d67465792c41645888f685ebea4b2d94cd60617",
+      "sourceManifestSha256": "fed8230323f850918c9e68e7bb0c3a758b2dc3da29643ac87c3c97f433b1c1fe",
+      "resolvedInputCount": 12342,
+      "resolvedBefore": {
+        "path": "evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/resolved-inputs-before.json",
+        "bytes": 3364763,
+        "sha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4"
+      },
+      "resolvedAfter": {
+        "path": "evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/resolved-inputs.json",
+        "bytes": 3364763,
+        "sha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4"
+      },
+      "ownership": "released",
+      "package": "com.example.picofixture.iteration.debug",
+      "gradle": {
+        "path": "/Users/sushantsrikrish/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/bin/gradle",
+        "phases": [
+          {
+            "argv": [
+              ":app:writeIterationInputs",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792791088397,
+            "name": "pre-inputs",
+            "startedAt": 1792791078309
+          },
+          {
+            "argv": [
+              ":app:assembleDebug",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792791102692,
+            "name": "assemble",
+            "startedAt": 1792791090927
+          },
+          {
+            "argv": [
+              ":app:writeIterationInputs",
+              "--offline",
+              "--no-daemon",
+              "--console=plain",
+              "-Dorg.gradle.java.installations.auto-download=false",
+              "-Pandroid.builder.sdkDownload=false",
+              "-Pkotlin.compiler.execution.strategy=in-process"
+            ],
+            "finishedAt": 1792791111054,
+            "name": "post-inputs",
+            "startedAt": 1792791103752
+          }
+        ],
+        "sha256": "5a7ae6e523747516cc026dea0314023a8e3ee9c89e6c4e975b75b5924b1e7a13"
+      },
+      "serverBuild": "final build7",
+      "nativeInstalled": false,
+      "replayed": false,
+      "renderedReview": false
+    }
+  ],
+  "releasePackagingCheckpoint": {
+    "sourceRevision": "before title-only source revision 2",
+    "apk": {
+      "path": "examples/agent-iteration-fixture/evidence/candidate-release-96495b04d1da7d4c3f6f87d732753647904a9acfbfbb1a07737c19a3fea84eed.apk",
+      "bytes": 24782869,
+      "sha256": "96495b04d1da7d4c3f6f87d732753647904a9acfbfbb1a07737c19a3fea84eed"
+    },
+    "package": "com.example.picofixture.iteration",
+    "inspection": {
+      "path": "examples/agent-iteration-fixture/evidence/candidate-apks.json",
+      "bytes": 3373,
+      "sha256": "817ff9b7e773c9eac8a093394925734a829782275acb802e1a897756799dfb91"
+    },
+    "nativeInstalled": false
+  },
+  "retainedTarball": {
+    "schemaVersion": 1,
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/artifacts/pico-spatial-mcp-38.1.0.tgz",
+    "bytes": 2216520,
+    "sha256": "c75843e2c034adb4e44b913eef9e0dbf2aee8451ba9ea39063a340579190d3e3",
+    "gateTarballSha256": "c75843e2c034adb4e44b913eef9e0dbf2aee8451ba9ea39063a340579190d3e3",
+    "byteIdenticalToGateTarball": true,
+    "method": "npm pack --ignore-scripts from unchanged built payload after successful test:tarball",
+    "published": false,
+    "activated": false,
+    "packageVersion": "38.1.0"
+  },
+  "preservedWorktrees": [
+    {
+      "path": "/Users/sushantsrikrish/PICO-MCP",
+      "head": "1157f33ad2d3934595a3ebaafe4d3fbfc7e1ce36",
+      "gitStatusPorcelain": "",
+      "packageVersion": "38.1.0"
+    },
+    {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/stage1-spatial-ui-workflow-2026-09-19",
+      "head": "3b09ac5db919afef612558f3fdb5302b2c55e3eb",
+      "gitStatusPorcelain": "",
+      "packageVersion": "38.4.2"
+    }
+  ],
+  "installedRegistration": {
+    "path": "/Users/sushantsrikrish/.codex-account-b/config.toml",
+    "server": "pico-spatial",
+    "command": "node",
+    "args": [
+      "/Users/sushantsrikrish/PICO-MCP/dist/index.js"
+    ],
+    "env": {
+      "PICO_MCP_SURFACE": "doors"
+    },
+    "candidateActivated": false
+  },
+  "retention": {
+    "git": "source, manifests, raw text and selected logs",
+    "localOnly": "APKs, identical verified tarball, complete resolved-input reports, dist and project-local caches remain at their exact paths",
+    "noReleaseOrPush": true
+  },
+  "pending": [
+    "actual outgoing native owner release and acquisition record",
+    "any necessary emulator-start permission",
+    "root-operated explicit emulator scenario/capture/rebuild/replay",
+    "rendered frame LOOK",
+    "interactive Claude/Codex/Gemini conformance",
+    "real hand/controller and other later backend proof"
+  ],
+  "incident": {
+    "path": "examples/agent-iteration-fixture/evidence/scaffold-observation.json",
+    "bytes": 1909,
+    "sha256": "60e695f465f8b466f63883c9ddfac107bc3c116693b2374f2f34da5f47e41c49"
+  }
+}

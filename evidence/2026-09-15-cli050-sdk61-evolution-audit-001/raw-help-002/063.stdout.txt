@@ -1,0 +1,6 @@
+Usage:
+  $ pico-cli mcp doctor
+
+Options:
+  --format <format>  Output format (plain, json) (default: plain)
+  -h, --help         Display this message 

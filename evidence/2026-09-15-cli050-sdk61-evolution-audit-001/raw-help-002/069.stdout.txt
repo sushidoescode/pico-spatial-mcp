@@ -1,0 +1,13 @@
+Usage:
+  $ pico-cli web launch
+
+Options:
+  --manifest-url <url>   Manifest URL of the WebApp to launch 
+  --url <url>            Page URL to open on the emulator or device 
+  -d, --device <device>  Target device id 
+  -h, --help             Display this message 
+
+Examples:
+  $ pico-cli web launch --manifest-url http://localhost:3000/manifest.json
+  $ pico-cli web launch --url http://localhost:3000
+  $ pico-cli web launch --url http://localhost:3000 -d emulator-5554

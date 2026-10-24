@@ -485,9 +485,16 @@ async function killChild(child) {
   await exited;
 }
 
+// The 4,095-residue capacity setup makes a single cross-process enrollment take most of the
+// production 15-second acquisition budget on an idle host, so on a loaded one the budget expires and
+// a child reports run-busy instead of acquired/limit-exceeded. Both capacity spawners therefore slow
+// the CHILD's monotonic clock; ACQUIRE_BUDGET_MS and every assertion below are unchanged.
+const CAPACITY_CHILD_CLOCK_SCALE = "0.01";
+
 function spawnCapacityChild(root, index) {
   const child = fork(new URL("./fixtures/runlock-child.mjs", import.meta.url), ["capacity-acquire", root, String(index)], {
     stdio: ["ignore", "ignore", "pipe", "ipc"],
+    env: { ...process.env, PICO_RUNLOCK_CHILD_CLOCK_SCALE: CAPACITY_CHILD_CLOCK_SCALE },
   });
   LIVE_CHILDREN.add(child);
   child.once("exit", () => LIVE_CHILDREN.delete(child));
@@ -531,6 +538,7 @@ function spawnCapacityChild(root, index) {
 function spawnCapacityAbaChild(root, command, index = 0) {
   const child = fork(new URL("./fixtures/runlock-child.mjs", import.meta.url), [command, root, String(index)], {
     stdio: ["ignore", "ignore", "pipe", "ipc"],
+    env: { ...process.env, PICO_RUNLOCK_CHILD_CLOCK_SCALE: CAPACITY_CHILD_CLOCK_SCALE },
   });
   LIVE_CHILDREN.add(child);
   child.once("exit", () => LIVE_CHILDREN.delete(child));

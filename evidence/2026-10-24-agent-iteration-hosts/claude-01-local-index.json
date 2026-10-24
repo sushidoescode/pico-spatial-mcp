@@ -1,0 +1,63 @@
+{
+  "files": [
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-01/stdout.raw.jsonl",
+      "bytes": 1025235,
+      "sha256": "14bdc1c51313276fb203e0c0d7ac92a5b4088486570f2e0939af72f332ca889d"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-01/stderr.raw.jsonl",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-01/result.json",
+      "bytes": 1653,
+      "sha256": "6dd578cd34b975f7c5c7158f4b8b833dbb86f8f7129e31f7d4e08b79ba23e83d"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-01/prompt.txt",
+      "bytes": 720,
+      "sha256": "ac2c22d85075f7cbe73c3001f4fd6f52ae7366a38a17281c1db4350357f79e70"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-01/input.jsonl",
+      "bytes": 1860,
+      "sha256": "70026330d4a1903a1874c291909b7bfe169d93d175c5312903c8e15dc05853ec"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-01/invocation.json",
+      "bytes": 1066,
+      "sha256": "9ab8f0a11f7028bee32dd9f79c220182665843ed7b04449ba83a48f2bb09974d"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-01/host-events.jsonl",
+      "bytes": 47657,
+      "sha256": "913eeaec9c7bcdc2454bff90ce6ad99374444305b029fec761ec26df79825696"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-01/mcp.json",
+      "bytes": 666,
+      "sha256": "769053a7af7e8b32a23438eaf282b38360a631dc7ab326dde52830f362b1fa8a"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-01/probe/f37849a5-2aa2-40d0-8609-4d524682c184/retained-image.json",
+      "bytes": 890,
+      "sha256": "4498f09bf350808f434c81a3f32c77398153f4395225d35e5ede009e8e1c6a31"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-01/probe/f37849a5-2aa2-40d0-8609-4d524682c184/wire.jsonl",
+      "bytes": 21763,
+      "sha256": "85a3232892eb9c55506d0f706cbd6df2e1ad525fad2fb37cc91b2925d15f40fd"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-01/probe/f37849a5-2aa2-40d0-8609-4d524682c184/candidate.stderr.txt",
+      "bytes": 62,
+      "sha256": "8e720df0f7f04eac4cea18f0f506d43522c183387600e013bbc9851188124f7e"
+    }
+  ],
+  "launchEnvironmentOverrides": {
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
+  }
+}

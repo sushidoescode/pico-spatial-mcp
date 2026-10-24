@@ -1,0 +1,15 @@
+# final battery (extra, smoke.mjs changed): npm run --silent test:smoke-isolation (2026-09-16T12:47:05Z)
+
+✔ default smoke reports the same checks and outcomes whether or not the host home holds an SDK (1958.312458ms)
+✔ default smoke cannot select host tooling: no host-home lookup and no environmental escape hatch (0.170417ms)
+✔ the child environment strips the host's toolchain variables and keeps only what is passed (0.285708ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1993.677125
+
+exit=0

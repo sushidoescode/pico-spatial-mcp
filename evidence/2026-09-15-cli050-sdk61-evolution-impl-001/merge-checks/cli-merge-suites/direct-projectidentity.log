@@ -1,0 +1,32 @@
+✔ the version-catalog alias form the app skeleton ships is a declared BOM (2.047125ms)
+✔ a version catalog alone yields declared — no build-file reference required (0.44775ms)
+✔ a literal platform() coordinate in a build file is a declared BOM with no catalog at all (0.457541ms)
+✔ a Groovy build.gradle literal and enforcedPlatform are read the same way (0.607667ms)
+✔ the packaged app skeleton itself declares BOM 6.0.0 (appskeleton/gradle/libs.versions.toml:5) (0.739417ms)
+✔ a BOM library entry whose artifact is not literally named 'bom' is found through its platform(libs.alias) pair (0.635916ms)
+✔ dynamic version providers are unknown, never guessed, with a file-specific reason (1.712625ms)
+✔ a version interpolated from a property or a Gradle provider is unknown (0.678875ms)
+✔ a catalog alias pointing at a missing or non-literal version is unknown (0.786041ms)
+✔ conflicting declarations across files are unknown and both files are named (0.582833ms)
+✔ a project with no catalog and no platform() declaration is unknown, not null-declared-as-fact (0.557084ms)
+✔ a missing or unreadable project root is unknown, never a throw (0.189292ms)
+✔ a settings file that relocates the version catalog suppresses catalog evidence instead of trusting the wrong file (0.421791ms)
+✔ commented-out declarations are not declarations (0.428625ms)
+✔ a repository URL is not mistaken for a comment (0.435625ms)
+✔ the fingerprint covers the allowlist, is stable, and ignores everything outside it (3.525292ms)
+✔ the fingerprint is content identity: two roots with identical files agree, and the canonical root is reported separately (1.383416ms)
+✔ two projects with no allowlisted files share a fingerprint and are told apart by projectRoot alone (0.500541ms)
+✔ the allowlist is exactly the bounded set, sorted, with no path escaping it (0.109417ms)
+✔ a hostile project path (space + non-ASCII) is read and canonicalised without escaping (0.364125ms)
+✔ resolvedArtifacts stays empty unless verified evidence is supplied by a separate boundary (0.678916ms)
+✔ malformed resolved evidence is refused rather than upgraded to 'resolved' (0.766208ms)
+✔ the reader never runs Gradle or any other process (0.254167ms)
+✔ reading an identity leaves the project untouched (4.941584ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 75.439375

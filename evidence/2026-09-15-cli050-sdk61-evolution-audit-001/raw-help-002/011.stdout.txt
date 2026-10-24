@@ -1,0 +1,9 @@
+Usage:
+  pico-cli mcp <command> [options]
+
+Commands:
+  dev-knowledge  Start the dev knowledge graph MCP server
+  doctor         Check MCP server configurations and dependencies
+
+Options:
+  -h, --help  Show this message and exit.

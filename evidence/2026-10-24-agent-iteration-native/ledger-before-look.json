@@ -1,0 +1,33 @@
+{
+  "input": {
+    "app": "com.example.picofixture.iteration.debug",
+    "claim": "Initial dedicated fixture frame shows source revision 2, State transitions: 0, and Panel hidden.",
+    "evidenceType": "vision_verified",
+    "artifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/before.png",
+    "attestation": "I opened the exact before.png capture. A single pale rounded app window is rendered in the emulator room; its visible text reads Agent iteration fixture (source revision 2), State transitions: 0, and Panel hidden. This is the initial state, not action or hand/controller evidence.",
+    "cClass": "C0_emulator"
+  },
+  "captureSha256": "29c8678a1cafac010350fc99eab67487a3fa8b2fde4c828f08e962fc6dc88cad",
+  "result": {
+    "status": "recorded",
+    "entry": {
+      "seq": 0,
+      "claim": "Initial dedicated fixture frame shows source revision 2, State transitions: 0, and Panel hidden.",
+      "evidenceType": "vision_verified",
+      "artifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/ledger/artifacts/29c8678a1cafac010350fc99eab67487a3fa8b2fde4c828f08e962fc6dc88cad.png",
+      "sourceArtifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/before.png",
+      "attestation": "I opened the exact before.png capture. A single pale rounded app window is rendered in the emulator room; its visible text reads Agent iteration fixture (source revision 2), State transitions: 0, and Panel hidden. This is the initial state, not action or hand/controller evidence.",
+      "cClass": "C0_emulator",
+      "capture": {
+        "sha256": "29c8678a1cafac010350fc99eab67487a3fa8b2fde4c828f08e962fc6dc88cad",
+        "width": 2160,
+        "height": 2158,
+        "bytes": 2985664,
+        "format": "png"
+      },
+      "reproHash": null
+    },
+    "totalEntries": 1,
+    "app": "com.example.picofixture.iteration.debug"
+  }
+}

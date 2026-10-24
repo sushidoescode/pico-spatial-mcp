@@ -1,9 +1,8 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { fail, ok, okJson, run, sleep } from "./util.js";
+import { adbExecutable } from "./adb.js";
+import { LogWindowOpenError, openLogWindow, readLogWindow, unseenMarkerCause, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * generate_scene_understanding_kotlin — the CORRECT native surface-pin path (sense/plane).
@@ -48,15 +47,10 @@ import { fail, ok, okJson, run, sleep } from "./util.js";
  * drives it through the Agent Bridge and parses the inventory back out of logcat.
  */
 
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools, identity-keyed so a replaced adb is observed without a restart. */
 function resolveAdb(): string {
-  const c = [
-    process.env.PICO_ADB,
-    path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb"),
-    "/opt/homebrew/bin/adb",
-    "adb",
-  ].filter(Boolean) as string[];
-  for (const x of c) if (x === "adb" || fs.existsSync(x)) return x;
-  return "adb";
+  return adbExecutable();
 }
 
 export interface ProbedPlane {
@@ -580,23 +574,62 @@ export function registerSenseTools(server: McpServer) {
       const dev = serial ?? "emulator-5554";
       const t = tag ?? "SceneUnderstanding";
       const action = `${applicationId}.AGENT_CMD`;
-      await run(adb, ["-s", dev, "logcat", "-c"], { timeoutMs: 10_000 });
+      // One marker window, opened BEFORE the broadcast; every poll re-reads the same window (bounded,
+      // sliced after the marker). The device log is never cleared (src/logwindow.ts).
+      const runner: AdbRunner = (a, timeoutMs) => run(adb, a, { timeoutMs });
+      let window: LogWindow;
+      try {
+        window = await openLogWindow(runner, dev);
+      } catch (e) {
+        return fail(JSON.stringify({
+          status: "inconclusive",
+          serial: dev,
+          logWindow: e instanceof LogWindowOpenError ? { marker: e.marker, markerSeen: false } : null,
+          error: `could not open a log window on ${dev}; nothing was driven or read: ${(e as Error).message}`,
+        }, null, 2));
+      }
       const bc = await run(adb, ["-s", dev, "shell", "am", "broadcast", "-a", action, "--es", "cmd", "dump_planes"], { timeoutMs: 15_000 });
-      if (/error|not found/i.test(bc.stderr)) return fail(`broadcast failed: ${bc.stderr.slice(0, 300)}`);
+      if (/error|not found/i.test(bc.stderr)) return fail(`broadcast failed on ${dev}: ${bc.stderr.slice(0, 300)}`);
       const deadline = Date.now() + (waitSec ?? 25) * 1000;
       let parsed: ReturnType<typeof parsePlaneMarkers> = null;
       let sawBridge = false;
+      let markerSeen = false;
+      let successfulDumps = 0;
+      let lastReadError: string | null = null;
       while (Date.now() < deadline) {
         await sleep(1500);
-        const lc = await run(adb, ["-s", dev, "logcat", "-d", "-s", `${t}:V`, "AgentBridge:V"], { timeoutMs: 15_000 });
-        if (lc.stdout.includes("AGENTBRIDGE|")) sawBridge = true;
-        parsed = parsePlaneMarkers(lc.stdout);
+        let read: Awaited<ReturnType<typeof readLogWindow>>;
+        try {
+          read = await readLogWindow(runner, window, { tags: [t, "AgentBridge"], timeoutMs: 15_000 });
+        } catch (e) {
+          // a failed dump is retried until the deadline — and remembered, so a dead adb is reported
+          // below as the dump failure it is, never as log eviction (unseenMarkerCause)
+          lastReadError = e instanceof Error ? e.message : String(e);
+          continue;
+        }
+        successfulDumps += 1;
+        markerSeen = read.markerSeen;
+        // No marker in the bounded tail: nothing here may be parsed — the lines are not provably
+        // this call's. Keep polling; if it never appears the result below is inconclusive.
+        if (!read.markerSeen) continue;
+        const text = read.lines.join("\n");
+        if (text.includes("AGENTBRIDGE|")) sawBridge = true;
+        parsed = parsePlaneMarkers(text);
         // A dump can be caught mid-flush (count line in, per-plane lines still coming) — poll on.
         if (parsed && parsed.planes.length >= parsed.count) break;
       }
+      const logWindow = { marker: window.marker, markerSeen };
+      if (!markerSeen) {
+        return fail(JSON.stringify({
+          status: "inconclusive",
+          serial: dev,
+          logWindow,
+          error: `the log window marker ${window.marker} was not seen within ${waitSec ?? 25}s on ${dev} (${unseenMarkerCause({ successfulDumps, lastReadError })}); the buffer was not cleared — re-run`,
+        }, null, 2));
+      }
       if (!parsed) {
         return fail(
-          `No PLANES| dump seen on ${dev} within ${waitSec ?? 25}s. Prerequisites, in the order they usually fail:\n` +
+          `No PLANES| dump seen on ${dev} inside the log window (${window.marker}) within ${waitSec ?? 25}s. Prerequisites, in the order they usually fail:\n` +
             `1. The app must hold an OPEN Stage (Full Space) — a WindowContainer returns 0 planes.\n` +
             `2. generate_agent_bridge must be injected (${sawBridge ? "bridge markers WERE seen — the bridge is alive" : "no AGENTBRIDGE| markers seen — is the app running with the bridge?"}).\n` +
             `3. The command must be registered: ${DUMP_PLANES_WIRING}\n` +
@@ -605,6 +638,8 @@ export function registerSenseTools(server: McpServer) {
       }
       return okJson({
         device: dev,
+        serial: dev,
+        logWindow,
         count: parsed.count,
         retries: parsed.retries,
         planes: parsed.planes,

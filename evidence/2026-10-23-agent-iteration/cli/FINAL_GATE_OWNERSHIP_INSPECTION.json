@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-23T21:29:43.534089+00:00",
+  "scope": "Only worker PIDs explicitly present in this task final gate logs and bounded ancestry/descendants",
+  "workers": {
+    "39136": "final-knowledge-lifecycle.log",
+    "39635": "final-distribution-adoption.log"
+  },
+  "rows": [
+    {
+      "pid": 39054,
+      "parentPid": 87722,
+      "pgid": 39054,
+      "birthIdentity": "Fri Oct 23 14:24:52 2026",
+      "command": "node --input-type=module"
+    },
+    {
+      "pid": 39071,
+      "parentPid": 39054,
+      "pgid": 39054,
+      "birthIdentity": "Fri Oct 23 14:24:52 2026",
+      "command": "npm run test:knowledge-lifecycle   "
+    },
+    {
+      "pid": 39092,
+      "parentPid": 39071,
+      "pgid": 39054,
+      "birthIdentity": "Fri Oct 23 14:24:52 2026",
+      "command": "node scripts/run-gate.mjs test:knowledge-lifecycle"
+    },
+    {
+      "pid": 39116,
+      "parentPid": 39092,
+      "pgid": 39054,
+      "birthIdentity": "Fri Oct 23 14:24:52 2026",
+      "command": "node --test test/knowledge-lifecycle.mjs"
+    },
+    {
+      "pid": 39136,
+      "parentPid": 39116,
+      "pgid": 39054,
+      "birthIdentity": "Fri Oct 23 14:24:52 2026",
+      "command": "/usr/local/bin/node test/knowledge-lifecycle.mjs"
+    },
+    {
+      "pid": 39205,
+      "parentPid": 87722,
+      "pgid": 39205,
+      "birthIdentity": "Fri Oct 23 14:24:53 2026",
+      "command": "node --input-type=module"
+    },
+    {
+      "pid": 39604,
+      "parentPid": 39205,
+      "pgid": 39205,
+      "birthIdentity": "Fri Oct 23 14:24:56 2026",
+      "command": "npm run test:distribution-adoption   "
+    },
+    {
+      "pid": 39621,
+      "parentPid": 39604,
+      "pgid": 39205,
+      "birthIdentity": "Fri Oct 23 14:24:56 2026",
+      "command": "node scripts/run-gate.mjs test:distribution-adoption"
+    },
+    {
+      "pid": 39633,
+      "parentPid": 39621,
+      "pgid": 39205,
+      "birthIdentity": "Fri Oct 23 14:24:56 2026",
+      "command": "node --test test/distribution-adoption.mjs"
+    },
+    {
+      "pid": 39635,
+      "parentPid": 39633,
+      "pgid": 39205,
+      "birthIdentity": "Fri Oct 23 14:24:56 2026",
+      "command": "/usr/local/bin/node test/distribution-adoption.mjs"
+    },
+    {
+      "pid": 41261,
+      "parentPid": 39635,
+      "pgid": 39205,
+      "birthIdentity": "Fri Oct 23 14:25:16 2026",
+      "command": "/usr/local/bin/node /Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/fixtures/fake-knowledge-server.mjs"
+    },
+    {
+      "pid": 41461,
+      "parentPid": 39635,
+      "pgid": 39205,
+      "birthIdentity": "Fri Oct 23 14:25:19 2026",
+      "command": "/usr/local/bin/node /Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/fixtures/fake-knowledge-server.mjs"
+    },
+    {
+      "pid": 87722,
+      "parentPid": 88461,
+      "pgid": 87722,
+      "birthIdentity": "Thu Oct 15 15:24:19 2026",
+      "command": "/Users/sushantsrikrish/.codex-account-b/packages/app-server-daemon/releases/0.163.0-aarch64-apple-darwin/bin/codex app-server --listen unix:// --analytics-default-enabled --managed-daemon"
+    }
+  ]
+}

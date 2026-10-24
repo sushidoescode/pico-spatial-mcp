@@ -1,0 +1,6 @@
+
+> pico-spatial-mcp@38.1.0 build
+> node scripts/build-source.mjs
+
+src/index.ts(74,10): error TS2305: Module '"./interaction.js"' has no exported member 'registerInteractionTools'.
+build-source: the TypeScript compiler exited with code 2

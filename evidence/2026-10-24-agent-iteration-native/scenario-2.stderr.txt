@@ -1,0 +1,7 @@
+pico-spatial-mcp ready (stdio)
+(node:29883) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:29805) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+in_doubt: bridge publication failed (0); do not resend request 04f69643-b23e-4f95-b3f4-87d26b002287
+Error: cannot stop without definite drain: in_doubt (uncertain work remains held)

@@ -1,0 +1,25 @@
+Description:
+Start Spatial Editor and MCP Server, piping stdio for upstream AI tools
+
+Usage:
+  $ pico-cli editor start
+
+Options:
+  --install-path <path>         Override editor installation path
+  --project <path>              Open an existing Spatial Editor project (.spatialproject or project
+                                directory)
+  --create-project <path>       Create a new Spatial Editor project in an empty directory before
+                                launch
+  --project-name <name>         Project name used with --create-project
+  --port <port>                 Editor IPC port (default: auto-detect or 6400)
+  --editor-version <version>    Preferred editor version to download
+  --config-url <url>            Debug: override plugin-style remote config URL for editor downloads
+  --artifact-url <url>          Download editor directly from this URL
+  --artifact-checksum <sha256>  Optional SHA-256 checksum for --artifact-url
+  --wait-timeout <seconds>      Wait for editor ready timeout seconds (default: 60)
+  --log-file <path>             Write editor and MCP Server logs to this file
+  -y, --yes                     Assume yes for prompts
+  --headless                    Start the editor in headless mode by default without loading the
+                                main window. Use --no-headless to disable it and show the GUI at
+                                startup. (default: true)
+  -h, --help                    Display this message

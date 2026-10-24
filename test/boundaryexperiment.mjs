@@ -3022,7 +3022,16 @@ test("the implementation imports the shared CP1 executor and registers exactly o
   const recoveryCollector = source.indexOf("const ownedLog = startOwnedLogWindow({", source.indexOf("executeRecoveryStep:"));
   const recoveryBeforeCapture = source.indexOf("`${prefix}-before.png`", recoveryCollector);
   assert.ok(recoveryCollector >= 0 && recoveryCollector < recoveryBeforeCapture, "recovery log child must start before its intervention pre-frame");
-  assert.equal((source.match(/"logcat", "-b", "all", "-c"/g) ?? []).length, 1, "only fresh prepare may destructively reset logcat");
+  // Host completion T4 (2026-09-16): no step may destructively reset the device log any more. The
+  // prepare step opens a marker window over every buffer (collectPreparationLogWindow) BEFORE its
+  // owned collector starts, and an evicted marker is its own structural stop.
+  assert.equal((source.match(/"logcat", "-b", "all", "-c"/g) ?? []).length, 0, "no step may destructively reset logcat");
+  assert.equal((source.match(/"logcat", "-c"/g) ?? []).length, 0, "no step may clear the device log");
+  const prepareWindow = source.indexOf("await collectPreparationLogWindow(");
+  const prepareCollector = source.indexOf("const ownedLog = startOwnedLogWindow({");
+  assert.ok(prepareWindow >= 0 && prepareWindow < prepareCollector, "prepare must open its -b all marker window before its owned collector starts");
+  assert.match(source, /structuralStop: error instanceof LogWindowEvictedError \? "log_window_evicted" : "preparation_failed"/,
+    "an evicted prepare window must stop the run as log_window_evicted, never pass silently");
   assert.equal((source.match(/appStartMarker: coverageMarker/g) ?? []).length, 2, "waypoint and recovery windows start from the preceding end marker");
   assert.match(source, /live\.coverageMarker = nextCoverageMarker/);
   const forceReserveCheck = source.indexOf("if (remainingRecoveryMs() < forceCompletionReserveMs)");

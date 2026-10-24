@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 emulator stop --help",
+  "argv": [
+    "emulator",
+    "stop",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:52.830Z",
+  "endedAt": "2026-09-15T09:11:52.934Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "2994c48daddd35bb084c314cff2facf837a56d1af1fe2f84f2dbf55d80787c8b",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,32 @@
+Description:
+Start a PICO emulator and wait for adb readiness
+
+Usage:
+  $ pico-cli emulator start
+
+Options:
+  --format <format>           Output format (plain | json) (default: plain)
+  --avd <name>                AVD name to start; omit it to use an existing managed/default AVD
+  --emulator-path <path>      Override emulator binary path
+  --adb-device <id>           Preferred adb device id after start (e.g. emulator-5554)
+  --source <source>           Download source (auto | cn | global | beta_cn | beta_global) (default:
+                              auto)
+  --bundle-version <version>  Preferred emulator bundle version to download
+  --config-url <url>          Override remote sdk_config URL for emulator downloads
+  --artifact-url <url>        Download emulator bundle directly from this archive URL
+  --artifact-checksum <sha1>  Optional SHA-1 checksum for --artifact-url
+  --wipe-data                 Wipe emulator data (dangerous)
+  --show-kernel               Show kernel log output in emulator stdout
+  --args <args>               Extra emulator args as a single string
+  --log-file <path>           Write emulator stdout/stderr to this file
+  --watch                     Restart emulator if it exits or adb becomes unavailable
+  --watch-interval <seconds>  Health-check interval seconds (default: 5)
+  -y, --yes                   Assume yes for prompts
+  -h, --help                  Display this message
+
+Examples:
+  $ pico-cli emulator start
+  $ pico-cli emulator start --avd Pico_Emulator_0_11
+  $ pico-cli emulator start --watch
+  $ pico-cli emulator start --format json
+  $ pico-cli emulator start --wipe-data --yes

@@ -1,0 +1,228 @@
+
+> pico-spatial-mcp@38.1.0 test:knowledge-lifecycle
+> node scripts/run-gate.mjs test:knowledge-lifecycle
+
+(node:39116) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:39136) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: KnowledgeBridge retires an inherited-stdio descendant and starts a fresh generation after timeout
+not ok 1 - KnowledgeBridge retires an inherited-stdio descendant and starts a fresh generation after timeout
+  ---
+  duration_ms: 607.842666
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/knowledge-lifecycle.mjs:284:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    {"status":"unavailable","action":"graph_stats","error":"MCP error -32001: Request timed out","lifecycleWarning":"spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the generation is quarantined and replacement is blocked"}
+    [32m+ actual[39m [31m- expected[39m
+    
+    [32m+[39m 'spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the generation is quarantined and replacement is blocked'
+    [31m- [39mundefined
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  actual: 'spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the generation is quarantined and replacement is blocked'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/knowledge-lifecycle.mjs:309:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: KnowledgeBridge retires its exact root before restart when that root removed the ownership token
+not ok 2 - KnowledgeBridge retires its exact root before restart when that root removed the ownership token
+  ---
+  duration_ms: 388.153083
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/knowledge-lifecycle.mjs:331:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    token-stripped root 39197 did not exercise the SIGTERM-resistant fixture path
+    
+    false !== true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/knowledge-lifecycle.mjs:364:12)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: KnowledgeBridge blocks replacement when retirement cannot prove the old generation ended
+ok 3 - KnowledgeBridge blocks replacement when retirement cannot prove the old generation ended
+  ---
+  duration_ms: 538.496417
+  ...
+# Subtest: KnowledgeBridge never signals a reused root PID whose birth identity changed
+ok 4 - KnowledgeBridge never signals a reused root PID whose birth identity changed
+  ---
+  duration_ms: 379.488041
+  ...
+# Subtest: KnowledgeBridge prevents SDK teardown from signalling a PID after root identity reuse
+ok 5 - KnowledgeBridge prevents SDK teardown from signalling a PID after root identity reuse
+  ---
+  duration_ms: 2551.840833
+  ...
+# Subtest: KnowledgeBridge prevents SDK-internal startup cleanup from signalling a reused PID
+ok 6 - KnowledgeBridge prevents SDK-internal startup cleanup from signalling a reused PID
+  ---
+  duration_ms: 2578.715375
+  ...
+# Subtest: KnowledgeBridge refuses a reused root row when the exact child handle reports exit before capture
+ok 7 - KnowledgeBridge refuses a reused root row when the exact child handle reports exit before capture
+  ---
+  duration_ms: 176.9375
+  ...
+# Subtest: KnowledgeBridge snapshots a token-stripped descendant before requesting root EOF
+ok 8 - KnowledgeBridge snapshots a token-stripped descendant before requesting root EOF
+  ---
+  duration_ms: 308.611917
+  ...
+# Subtest: KnowledgeBridge never signals a remembered descendant PID after birth-identity reuse
+ok 9 - KnowledgeBridge never signals a remembered descendant PID after birth-identity reuse
+  ---
+  duration_ms: 257.085917
+  ...
+# Subtest: KnowledgeBridge requires the generation token before signalling a same-birth remembered descendant
+ok 10 - KnowledgeBridge requires the generation token before signalling a same-birth remembered descendant
+  ---
+  duration_ms: 164.124834
+  ...
+# Subtest: KnowledgeBridge does not signal or replace when POSIX process identity is unavailable
+ok 11 - KnowledgeBridge does not signal or replace when POSIX process identity is unavailable
+  ---
+  duration_ms: 164.748583
+  ...
+# Subtest: KnowledgeBridge bounds a hung process-table provider and blocks replacement
+ok 12 - KnowledgeBridge bounds a hung process-table provider and blocks replacement
+  ---
+  duration_ms: 407.484
+  ...
+# Subtest: KnowledgeBridge simulated Windows retirement fails closed without numeric-PID signals
+ok 13 - KnowledgeBridge simulated Windows retirement fails closed without numeric-PID signals
+  ---
+  duration_ms: 145.771417
+  ...
+# Subtest: KnowledgeBridge rechecks a retirement block before a managed identity transition can spawn
+ok 14 - KnowledgeBridge rechecks a retirement block before a managed identity transition can spawn
+  ---
+  duration_ms: 2018.561417
+  ...
+# Subtest: KnowledgeBridge returns provenance and classification for managed startup drift
+ok 15 - KnowledgeBridge returns provenance and classification for managed startup drift
+  ---
+  duration_ms: 1528.165458
+  ...
+# Subtest: KnowledgeBridge returns provenance and classification for managed startup timeout
+not ok 16 - KnowledgeBridge returns provenance and classification for managed startup timeout
+  ---
+  duration_ms: 20023.37
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/knowledge-lifecycle.mjs:906:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    {"status":"unavailable","action":"graph_stats","error":"post-spawn managed pico-cli validation failed: managed pico-cli publication identity could not be revalidated: managed publication identity check exhausted its deadline","failureClass":"runtime","picoCli":{"source":"managed","policy":"managed-latest","path":"/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico managed runtime crb57m/home/.pico-mcp/cli/versions/0.4.2/node_modules/.bin/pico-cli","version":"0.4.2","latestVersion":"0.4.2","checkedAt":"2026-10-23T21:25:05.248Z","freshness":"latest","action":"installed"},"lifecycleWarning":"spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 194ms; the exact generation root did not exit during the bounded EOF grace period; the generation is quarantined and replacement is blocked"}
+    
+    null !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: ~
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/knowledge-lifecycle.mjs:936:14)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+    Test.postRun (node:internal/test_runner/test:1090:19)
+    Test.run (node:internal/test_runner/test:1018:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: KnowledgeBridge returns provenance and classification for managed call timeout
+ok 17 - KnowledgeBridge returns provenance and classification for managed call timeout
+  ---
+  duration_ms: 1630.8575
+  ...
+# Subtest: KnowledgeBridge returns provenance and classification for managed protocol failure
+ok 18 - KnowledgeBridge returns provenance and classification for managed protocol failure
+  ---
+  duration_ms: 1608.628791
+  ...
+# Subtest: KnowledgeBridge retains managed execution guards through process retirement
+ok 19 - KnowledgeBridge retains managed execution guards through process retirement
+  ---
+  duration_ms: 1594.048625
+  ...
+# Subtest: managed knowledge transport spawns only the capability-proven route for each CLI identity
+ok 20 - managed knowledge transport spawns only the capability-proven route for each CLI identity
+  ---
+  duration_ms: 6190.648959
+  ...
+# Subtest: a managed startup failure never retries another knowledge alias
+ok 21 - a managed startup failure never retries another knowledge alias
+  ---
+  duration_ms: 1662.220459
+  ...
+# Subtest: missing knowledge data and a transport startup failure stay distinct structured results
+ok 22 - missing knowledge data and a transport startup failure stay distinct structured results
+  ---
+  duration_ms: 3344.99925
+  ...
+# Subtest: a knowledge server that stops at the environment gate returns the exact PICO_HOME remedy
+ok 23 - a knowledge server that stops at the environment gate returns the exact PICO_HOME remedy
+  ---
+  duration_ms: 1634.715083
+  ...
+# Subtest: the canonical managed route keeps cold startup, concurrency, output caps and EOF retirement
+not ok 24 - the canonical managed route keeps cold startup, concurrency, output caps and EOF retirement
+  ---
+  duration_ms: 3705.219167
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/knowledge-lifecycle.mjs:1353:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    {"status":"unavailable","action":"graph_stats","error":"spatial-knowledge replacement is blocked: spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the generation is quarantined and replacement is blocked","failureClass":"runtime","picoCli":{"source":"managed","policy":"managed-latest","path":"/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico managed runtime WDfUfd/home/.pico-mcp/cli/versions/0.5.0/node_modules/.bin/pico-cli","version":"0.5.0","latestVersion":"0.5.0","checkedAt":"2026-10-23T21:25:42.944Z","freshness":"latest","action":"present"},"lifecycleWarning":"spatial-knowledge generation 1 retirement was not fully observed: process-table provider failed: bounded process-table provider did not settle within 250ms; the generation is quarantined and replacement is blocked"}
+    [32mactual[39m [31mexpected[39m
+    
+    [39m'[39m[32mu[39m[32mn[39m[32ma[39m[32mv[39m[32ma[39m[32mi[39m[32ml[39m[32ma[39m[32mb[39m[32ml[39m[32me[39m[31mo[39m[31mk[39m[39m'[39m
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'ok'
+  actual: 'unavailable'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/knowledge-lifecycle.mjs:1394:12)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+    Test.postRun (node:internal/test_runner/test:1090:19)
+    Test.run (node:internal/test_runner/test:1018:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: a started knowledge transport declares no graph API of its own
+ok 25 - a started knowledge transport declares no graph API of its own
+  ---
+  duration_ms: 138.947167
+  ...
+# Subtest: the exported legacy knowledge default is the 0.4.x route-table entry, not a second literal
+ok 26 - the exported legacy knowledge default is the 0.4.x route-table entry, not a second literal
+  ---
+  duration_ms: 4.544166
+  ...
+# Subtest: managed knowledge checks the actual child environment and selected project config before spawn
+ok 27 - managed knowledge checks the actual child environment and selected project config before spawn
+  ---
+  duration_ms: 3976.186167
+  ...
+1..27
+# tests 27
+# suites 0
+# pass 23
+# fail 4
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 364694.1835

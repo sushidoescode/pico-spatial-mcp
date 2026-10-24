@@ -1,0 +1,7 @@
+Usage:
+  $ pico-cli editor doctor
+
+Options:
+  --format <format>  Output format (plain, json) (default: plain)
+  --fix-orphans      Terminate headless orphaned editors whose owning host has exited (default: false)
+  -h, --help         Display this message 

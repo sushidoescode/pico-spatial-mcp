@@ -1,0 +1,1 @@
+Error: Perf utilities 0.2.0 are not installed. Run `pico-cli setup` to install.

@@ -1,0 +1,16 @@
+{
+  "startedAt": "2026-09-15T09:09:44.258267+00:00",
+  "endedAt": "2026-09-15T09:10:13.367636+00:00",
+  "argv": [
+    "node",
+    "scripts/compare-picocli-surfaces.mjs",
+    "--from",
+    "0.4.4",
+    "--to",
+    "0.5.0",
+    "--output",
+    "/Users/sushantsrikrish/PICO-MCP/evidence/2026-09-15-cli050-sdk61-evolution-audit-001/HELP_COMPARISON_001.json"
+  ],
+  "exitCode": 0,
+  "scope": "Isolated package installation plus version/help execution; no CLI activation, setup, device or emulator action."
+}

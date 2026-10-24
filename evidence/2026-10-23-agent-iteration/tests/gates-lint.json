@@ -1,0 +1,29 @@
+[
+  {
+    "name": "test:lint",
+    "startedAt": "2026-10-23T21:24:53.855Z",
+    "finishedAt": "2026-10-23T21:24:55.445Z",
+    "status": 1,
+    "signal": null,
+    "error": null,
+    "log": "evidence/2026-10-23-agent-iteration/tests/final-lint.log"
+  },
+  {
+    "name": "test:docsmeta",
+    "startedAt": "2026-10-23T21:24:55.450Z",
+    "finishedAt": "2026-10-23T21:24:56.549Z",
+    "status": 0,
+    "signal": null,
+    "error": null,
+    "log": "evidence/2026-10-23-agent-iteration/tests/final-docsmeta.log"
+  },
+  {
+    "name": "test:distribution-adoption",
+    "startedAt": "2026-10-23T21:24:56.549Z",
+    "finishedAt": "2026-10-23T21:30:57.034Z",
+    "status": 1,
+    "signal": null,
+    "error": null,
+    "log": "evidence/2026-10-23-agent-iteration/tests/final-distribution-adoption.log"
+  }
+]

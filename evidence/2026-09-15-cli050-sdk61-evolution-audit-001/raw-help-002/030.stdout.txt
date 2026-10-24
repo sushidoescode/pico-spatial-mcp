@@ -1,0 +1,5 @@
+Usage:
+  $ pico-cli device disconnect [address]
+
+Options:
+  -h, --help  Display this message 

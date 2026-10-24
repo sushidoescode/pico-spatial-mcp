@@ -1,0 +1,7 @@
+# step4 battery preconditions (2026-09-16T13:18:29Z)
+PICO_ADB is set?  <unset>
+which adb: /private/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/tripwire-bin/adb
+PATH[0]: /private/tmp/claude-501/-Users-sushantsrikrish-PICO-MCP/4bdd1daf-f7f3-4942-a5b1-49ca6592bcb5/scratchpad/tripwire-bin
+tripwire marker exists before run? no
+git HEAD: 54ce696ca5a7358c2fba78bf958d167634bacc72
+exit=0

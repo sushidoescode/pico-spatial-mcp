@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "hostCompiled": true,
+  "nativeInstalled": false,
+  "renderedReview": false,
+  "artifacts": [
+    {
+      "variant": "debug",
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/examples/agent-iteration-fixture/evidence/initial-debug-a41862bbe760290e4686a2f2b730f1f7f73e18d5f2645f40eb3d40a6bc22a92c.apk",
+      "sha256": "a41862bbe760290e4686a2f2b730f1f7f73e18d5f2645f40eb3d40a6bc22a92c",
+      "bytes": 32813965,
+      "dexContains": {
+        "bridgeClass": true,
+        "bridgePath": true,
+        "actionName": true
+      }
+    },
+    {
+      "variant": "release",
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/examples/agent-iteration-fixture/evidence/initial-release-bfe670ac21e68332f0c370e42ff13d6b677d37a1a438e6e39f542455e1e22203.apk",
+      "sha256": "bfe670ac21e68332f0c370e42ff13d6b677d37a1a438e6e39f542455e1e22203",
+      "bytes": 26471676,
+      "dexContains": {
+        "bridgeClass": false,
+        "bridgePath": false,
+        "actionName": false
+      }
+    }
+  ]
+}

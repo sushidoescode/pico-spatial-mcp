@@ -1,0 +1,12 @@
+Description:
+Sync Spatial app data into Spatial Editor
+
+Usage:
+  $ pico-cli editor sync <command> [options]
+
+Commands:
+  component  Sync Spatial app data into Spatial Editor; currently syncs a Kotlin ECS Component into
+             .Component/component.json
+
+Options:
+  -h, --help  Show this message and exit.

@@ -1,0 +1,181 @@
+(node:48242) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:48257) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: watchArgv is the verbatim wrapper argv for both version lines
+ok 1 - watchArgv is the verbatim wrapper argv for both version lines
+  ---
+  duration_ms: 0.89575
+  ...
+# Subtest: the native duration flag is a per-version route fact, not a version comparison
+ok 2 - the native duration flag is a per-version route fact, not a version comparison
+  ---
+  duration_ms: 0.572584
+  ...
+# Subtest: ObservationCoverage carries exactly the declared fields
+ok 3 - ObservationCoverage carries exactly the declared fields
+  ---
+  duration_ms: 0.254875
+  ...
+# Subtest: assessCoverage never calls an early or unbounded window complete
+ok 4 - assessCoverage never calls an early or unbounded window complete
+  ---
+  duration_ms: 0.140584
+  ...
+# Subtest: classifyWatchEnd separates the CLI's own duration from our watchdog
+ok 5 - classifyWatchEnd separates the CLI's own duration from our watchdog
+  ---
+  duration_ms: 0.502792
+  ...
+# Subtest: a quiet window is only a no-crash answer when coverage is complete
+ok 6 - a quiet window is only a no-crash answer when coverage is complete
+  ---
+  duration_ms: 0.079917
+  ...
+# Subtest: a 60 second request whose child exits after 1 second reports 1 second, not 60
+ok 7 - a 60 second request whose child exits after 1 second reports 1 second, not 60
+  ---
+  duration_ms: 48.371167
+  ...
+# Subtest: the watchdog grace is only spent on a line that was actually given the window
+ok 8 - the watchdog grace is only spent on a line that was actually given the window
+  ---
+  duration_ms: 0.166542
+  ...
+# Subtest: the native monitor timeout window that actually elapses is complete coverage
+ok 9 - the native monitor timeout window that actually elapses is complete coverage
+  ---
+  duration_ms: 40.790375
+  ...
+# Subtest: a CLI that gave up waiting for a process is never a clean no-crash window
+ok 10 - a CLI that gave up waiting for a process is never a clean no-crash window
+  ---
+  duration_ms: 45.367917
+  ...
+# Subtest: a stuck child is killed by the documented watchdog and reports observed elapsed time
+ok 11 - a stuck child is killed by the documented watchdog and reports observed elapsed time
+  ---
+  duration_ms: 1966.932458
+  ...
+# Subtest: a watchdog-killed silent child is never graded complete or no-crash-detected
+ok 12 - a watchdog-killed silent child is never graded complete or no-crash-detected
+  ---
+  duration_ms: 1966.912
+  ...
+# Subtest: a stuck child without a native timeout can only be partial coverage
+ok 13 - a stuck child without a native timeout can only be partial coverage
+  ---
+  duration_ms: 1968.693
+  ...
+# Subtest: an early clean exit without a native timeout leaves coverage unknown
+ok 14 - an early clean exit without a native timeout leaves coverage unknown
+  ---
+  duration_ms: 40.280875
+  ...
+# Subtest: a nonzero CLI exit is a failure that still carries its observed timing
+ok 15 - a nonzero CLI exit is a failure that still carries its observed timing
+  ---
+  duration_ms: 39.282292
+  ...
+# Subtest: truncated output is partial coverage and never a quiet-window success
+ok 16 - truncated output is partial coverage and never a quiet-window success
+  ---
+  duration_ms: 47.687875
+  ...
+# Subtest: a crash marker outside the returned UI tail is still found in the complete retained log
+ok 17 - a crash marker outside the returned UI tail is still found in the complete retained log
+  ---
+  duration_ms: 41.895416
+  ...
+# Subtest: raw stdout and stderr are retained immutably with hashes and byte counts
+ok 18 - raw stdout and stderr are retained immutably with hashes and byte counts
+  ---
+  duration_ms: 91.612541
+  ...
+# Subtest: optional start and activity are preserved and nothing launches implicitly
+ok 19 - optional start and activity are preserved and nothing launches implicitly
+  ---
+  duration_ms: 78.875375
+  ...
+# Subtest: an unsupported capability refuses before any spawn and keeps the neutral setup guidance
+ok 20 - an unsupported capability refuses before any spawn and keeps the neutral setup guidance
+  ---
+  duration_ms: 0.610792
+  ...
+# Subtest: the wrapper no longer claims the CLI has no duration flag or streams indefinitely
+ok 21 - the wrapper no longer claims the CLI has no duration flag or streams indefinitely
+  ---
+  duration_ms: 0.899791
+  ...
+# Subtest: watch_crash refuses to watch without an explicit device, before any CLI work
+ok 22 - watch_crash refuses to watch without an explicit device, before any CLI work
+  ---
+  duration_ms: 1.108125
+  ...
+# (node:48258) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: exit-zero help ending mid-option is unknown even when usage names the requested operation
+ok 23 - exit-zero help ending mid-option is unknown even when usage names the requested operation
+  ---
+  duration_ms: 1.397375
+  ...
+# Subtest: exit-zero usage-only prefix cannot establish a complete help contract
+ok 24 - exit-zero usage-only prefix cannot establish a complete help contract
+  ---
+  duration_ms: 0.31825
+  ...
+# Subtest: unknown flags are unavailable and a newer version never promotes incomplete output
+ok 25 - unknown flags are unavailable and a newer version never promotes incomplete output
+  ---
+  duration_ms: 0.853958
+  ...
+# Subtest: schema-1 records are retained for inspection but cannot authorize dispatch without selection identity
+ok 26 - schema-1 records are retained for inspection but cannot authorize dispatch without selection identity
+  ---
+  duration_ms: 1.946
+  ...
+# Subtest: selected utility bytes and nearest project environment invalidate an unchanged package identity
+ok 27 - selected utility bytes and nearest project environment invalidate an unchanged package identity
+  ---
+  duration_ms: 4.343458
+  ...
+# Subtest: command-specific JSON distinguishes raw workflow arrays from tool-result PARTIAL exit four
+ok 28 - command-specific JSON distinguishes raw workflow arrays from tool-result PARTIAL exit four
+  ---
+  duration_ms: 11.368417
+  ...
+# Subtest: CLI run references verify retained command, path, hash and revision; a local scenario cannot revise them
+ok 29 - CLI run references verify retained command, path, hash and revision; a local scenario cannot revise them
+  ---
+  duration_ms: 5.32675
+  ...
+# Subtest: retained 0.6.1 streams reproduce pipe uncertainty and PTY declaration without runtime promotion
+ok 30 - retained 0.6.1 streams reproduce pipe uncertainty and PTY declaration without runtime promotion
+  ---
+  duration_ms: 5.21425
+  ...
+# Subtest: external CLI imported package helpers are part of its execution identity
+ok 31 - external CLI imported package helpers are part of its execution identity
+  ---
+  duration_ms: 5.700667
+  ...
+# Subtest: retained current Workflow JSON is command specific and PARTIAL read is never success
+ok 32 - retained current Workflow JSON is command specific and PARTIAL read is never success
+  ---
+  duration_ms: 1.196375
+  ...
+# Subtest: a capability record cannot survive selected utility drift even at the same CLI version
+ok 33 - a capability record cannot survive selected utility drift even at the same CLI version
+  ---
+  duration_ms: 1.612083
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6464.398167

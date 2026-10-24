@@ -1,0 +1,58 @@
+Testing 38 built-in lint rules (positive + negative fixtures each)...
+
+  ok   compose-fork-direct-dependency [error]
+  ok   displayColor-flat-white [error]
+  ok   mesh-collider-alignment [warn]
+  ok   collisioncomponent-no-arg [error]
+  ok   raycast-without-physicsworld [error]
+  ok   menu-dispatch-missing-move-route [error]
+  ok   collisioncasthitmode-closest [error]
+  ok   spotlight-cone-radians [error]
+  ok   physics-ccd-continuous [error]
+  ok   physics-destroy-respawn [error]
+  ok   physics-kinematic-flip [error]
+  ok   rotation-rotateVector [error]
+  ok   transform-scale-property [warn]
+  ok   particlecomponent-ctor [error]
+  ok   text-component [error]
+  ok   raw-glb-runtime-load [error]
+  ok   usd-glb-reference [error]
+  ok   stage-lighting-in-mixed [warn]
+  ok   dynamic-full-stage-emulator-safety [warn]
+  ok   defaultstage-windowcontainer-metadata [warn]
+  ok   bundle-md5-diff [error]
+  ok   am-start-without-forcestop [warn]
+  ok   compose-material-in-spatial-ui [error]
+  ok   compose-setcontent-without-picotheme [error]
+  ok   entityquerycondition-custom [error]
+  ok   ecs-system-nonexistent-override [error]
+  ok   registersystem-without-unregister [error]
+  ok   animationresource-never-closed [error]
+  ok   assetbundle-never-closed [error]
+  ok   toglobal-without-close [error]
+  ok   vibrant-encoding-destroyed [warn]
+  ok   picotheme-colortokens-restricted [error]
+  ok   resource-closed-without-toglobal [warn]
+  ok   mediaplayer-never-closed [error]
+  ok   trackingmanager-never-stopped [error]
+  ok   subscription-never-cancelled [error]
+  ok   interactable-collider-full [error]
+  ok   scaffold-log-tag-drift [warn]
+
+  ok   integration blob surfaced 5 violations
+  FAIL battery: package.json declares gates that gates.yml never runs: test:runrevision
+  FAIL battery: README.md claims 47 invocations / 46 suites; package.json + gates.yml say 49 / 48
+  FAIL battery: docs/COLLABORATORS.md claims 47 invocations / 46 suites; package.json + gates.yml say 49 / 48
+  ok   S5: vault findings stay advisory beside an unavailable declaration identity that names package.xml
+  ok   S5: the project identity is read from projectDir and reported in the advisory block
+  ok   S5: unavailable linkage is stated without any target-validation wording
+  ok   S5: clean is derived from violations and project errors only (vault linkage does not enter)
+  ok   S5: without a project hint an unknown-symbol finding still leaves clean true and reports no target
+  ok   S5: a retained-lessons violation still makes clean false, independent of the vault block
+  ok   S5: a declared 0.13.3 vault against a 6.1.0 project reports unknown linkage
+  ok   S5: the no-findings note calls the lookup historical, not a target SDK validation
+  ok   S5: the packaged index has no records, so nothing is verified and nothing is rejected
+  ok   S5: the advisory block reports the packaged index as present with no records, distinct from missing
+  ok   S5: clean semantics unchanged with a declared vault and a project hint
+
+Lint fixture test done. Failures: 3

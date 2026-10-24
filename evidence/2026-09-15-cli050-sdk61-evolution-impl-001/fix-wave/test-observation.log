@@ -1,0 +1,60 @@
+
+> pico-spatial-mcp@38.0.0 test:observation
+> node scripts/run-gate.mjs test:observation
+
+✔ sha256Bytes and sha256File agree with the reference digest of the same fixture (0.6655ms)
+✔ sha256File reports a missing file instead of throwing or inventing a digest (2.407ms)
+✔ a valid small PNG inspects as valid with its real dimensions and bit depth (1.671292ms)
+✔ a truncated PNG larger than 1000 bytes is INVALID — the size floor alone must not accept it (0.213541ms)
+✔ arbitrary nonempty bytes above the capture floor are not a PNG (0.125916ms)
+✔ a valid PNG below the capture-evidence floor is still a valid PNG, and says it is below the floor (0.325458ms)
+✔ a valid short MP4 reports its MEASURED duration and its declared video track (0.90875ms)
+✔ an MP4 whose only track is audio is a valid container with NO video stream (0.099833ms)
+✔ arbitrary nonempty bytes are not an MP4 (0.081542ms)
+✔ a truncated MP4 box header fails closed instead of reporting a partial duration (0.121667ms)
+✔ an MP4 missing mdat is refused — a header with no media payload is not a recording (0.087833ms)
+✔ a valid dark frame is INCONCLUSIVE about the capture route, never proof of failed rendering (1.023125ms)
+✔ a valid lit frame classifies as lit with a real mean luma (0.581167ms)
+✔ a malformed image is undecodable, not dark (0.06075ms)
+✔ with no decoder available the answer is UNVALIDATED, never a successful decode (0.097083ms)
+✔ an injected decoder is used when present, and its failure stays unvalidated (0.06225ms)
+✔ the inspection module cannot reach a process, a device, or a decoder on PATH (0.132209ms)
+✔ a valid short recording is validated, with a MEASURED duration that is not the request (0.156417ms)
+✔ a recording with no video stream is a validated container that declares no video (0.088958ms)
+✔ a nonempty file that is not a container is INVALID media, not a recording (0.080042ms)
+✔ a recording that cannot be read at all is UNVALIDATED, never a successful decode (0.049291ms)
+✔ capture_record still caps the request at 180 s and defaults short (0.15275ms)
+✔ a clean observation records every identity field as OBSERVED and is not a receipt (20.534417ms)
+✔ identity that could not be observed is explicitly MISSING with a reason, never synthesised (14.507792ms)
+✔ installed APK digest ≠ local APK digest → mismatch, and nothing is launched (1.300209ms)
+✔ a FOREIGN app in the foreground is a conflict with the observed package — and is never stopped (9.62325ms)
+✔ a boot identity that changes across the observation is INCONCLUSIVE (13.007292ms)
+✔ a PID that changes across the observation is INCONCLUSIVE (13.941916ms)
+✔ a process START that changes under the SAME PID is INCONCLUSIVE — PID reuse is not continuity (13.907125ms)
+✔ capture bytes substituted after the observation → tampered, and the frame is not evidence (14.082792ms)
+✔ a malformed image larger than 1000 bytes is INVALID MEDIA, not a capture (10.877084ms)
+✔ arbitrary nonempty bytes above the size floor are also invalid media (9.986167ms)
+✔ a capture that FAILED is capture:'unavailable' and never status ok/observed (10.150375ms)
+✔ a valid DARK frame is an inconclusive capture route, not a rendering failure (13.847584ms)
+✔ a boot identity that was never observed is INCONCLUSIVE, not a clean observation (13.987625ms)
+✔ a foreground that was never observed is INCONCLUSIVE — the frame is unattributable (12.955417ms)
+✔ an UNKNOWN crash state is INCONCLUSIVE — unknown is not 'no crash' (12.99ms)
+✔ logcat is never cleared, is bounded, and is scoped to the observed PID (13.07375ms)
+✔ a FATAL with no attribution to this package or PID is NOT this app's crash (20.672209ms)
+✔ a FATAL naming this package IS attributed (13.185709ms)
+✔ a log read that fails leaves logs unavailable and never implies 'no crash' (14.951917ms)
+✔ each observation gets a unique run directory under the observation root, and refuses replacement (40.577417ms)
+✔ no capture is written to the old mutable package-keyed /tmp path (13.34225ms)
+✔ the serial is REQUIRED — there is no emulator-5554 default to leak into (1.113709ms)
+✔ an unresolvable adb is refused before any device command runs (0.402833ms)
+✔ the loud-runner fixture would actually catch a spawn (0.265625ms)
+✔ capture_frame refuses to capture without an explicit serial, before resolving adb (0.901709ms)
+✔ capture_record refuses to record without an explicit device, before any CLI work (1.742167ms)
+ℹ tests 48
+ℹ suites 0
+ℹ pass 48
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 372.92275

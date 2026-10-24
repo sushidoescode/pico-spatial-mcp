@@ -1,0 +1,12 @@
+{
+  "scope": "Additional diagnostic evidence from handoff validation; no production changes",
+  "whitespace": {
+    "checkReceipt": "WHITESPACE_CHECK_001.json",
+    "rawLog": "GIT_WHITESPACE_ALL_001.log",
+    "decision": "Retain exact upstream help bytes. Authored Markdown passed its scoped check; unscoped whitespace warnings remain preserved. No Git guard was changed."
+  },
+  "picoFix": {
+    "response": "PICO_FIX_WHITESPACE_003.json",
+    "decision": "The returned white_geometry diagnosis is unrelated to a Git whitespace check. Its keyword match was rejected on context; no material, scene or app change was performed. This is additional evidence for the plan's version/context review of diagnostic guidance."
+  }
+}

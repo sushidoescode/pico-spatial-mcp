@@ -1,0 +1,7 @@
+Usage:
+  $ pico-cli files mkdir <remote>
+
+Options:
+  -d, --device <device>  Target device id 
+  -p, --parents          Create parent directories as needed (default: true)
+  -h, --help             Display this message 

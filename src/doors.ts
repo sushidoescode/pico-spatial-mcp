@@ -2,11 +2,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { fileURLToPath } from "node:url";
+import { createInnerClientProvider, decodeDomainValue, domainValueText, isInnerToolError, type InnerClient, type InnerSession } from "./innerclient.js";
 import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
 import { hasSpatialNavigatorFullStageCall } from "./lint.js";
+import { BUILD_LENGTH_LOG_WINDOW_MAX_LINES, LOG_WINDOW_TAG, newLogMarker } from "./logwindow.js";
 import { CANONICAL_APP_KEY_PATTERN, isPassingDeviceEvidence, isPassingDeviceEvidenceForReceipt, readLedger } from "./ledger.js";
 import {
   findHistoricalRunReceipt,
@@ -105,9 +108,11 @@ export function loopFailureSignature(outcomes: LoopCriterionOutcome[]): string {
     .join("|");
 }
 
-/** `assert_scene` clears logcat before requesting its Agent Bridge dump. Consume every launch-log
- * criterion first so a caller's criterion order cannot erase the evidence a later logcat assert
- * needs. The partition is stable within each group, keeping caller order everywhere it is safe. */
+/** Logcat criteria first, then the rest. The partition dates from when `assert_scene` cleared logcat
+ * before requesting its Agent Bridge dump (a later logcat assert would have lost its evidence);
+ * assert_scene now opens its own marker window and clears nothing (src/logwindow.ts), and the stable
+ * partition is kept so exit reports and callers see the same shape. Caller order is preserved
+ * within each group. */
 export function loopCriteriaInEvidenceSafeOrder<T extends Record<string, any>>(criteria: T[]): T[] {
   return [...criteria.filter((c) => c.kind === "logcat"), ...criteria.filter((c) => c.kind !== "logcat")];
 }
@@ -233,15 +238,38 @@ export function loopNeedsLookHonesty(needsLook: LoopCriterionOutcome[]): string 
   return `No PASS/FAIL visual score was available (${verdicts.join(", ") || "unscored"}). This is an unscored look obligation, not evidence that the calibrated eye classified the frame. Everything else measurable passed. LOOK at the capture (or have a vision-capable agent do it), then record what you actually saw with pico_record {evidenceType:'vision_verified'} — that look, not this loop, decides success.`;
 }
 
-type InnerCache = {
+/**
+ * Inner full-surface server: connection + result lanes (C5, 2026-09-15; see innerclient.ts).
+ *
+ * Which door uses which lane
+ *   raw    — pico_look (capture_canonical) and pico_verify_app (verify_pico_apk): artifact-forwarding
+ *            doors. The inner CallToolResult (image/resource blocks, structuredContent, isError) IS
+ *            the door's result, verbatim.
+ *   domain — every other door (pico_build_app, pico_scan_world, pico_place, pico_measure, pico_perf,
+ *            pico_sdk, pico_doctor, pico_ship, pico_capabilities, pico_fix, pico_record, pico_emulator,
+ *            pico_next, pico_loop) and innerCall() (spatialbench): decoded values exactly as before
+ *            for successful results. An inner isError arrives as {status:"error", tool, error,
+ *            structuredContent?, fix}; when a door returns that payload as its whole result, the
+ *            door's envelope is additionally flagged isError (additive — the JSON shape is unchanged).
+ */
+type InnerLanes = {
   call: (name: string, args?: any) => Promise<any>;
+  callRaw: (name: string, args?: any) => Promise<CallToolResult>;
   close: () => Promise<void>;
 };
 
-let cached: InnerCache | null = null;
+function lanesOf(callRaw: InnerLanes["callRaw"], close: InnerLanes["close"]): InnerLanes {
+  return {
+    callRaw,
+    call: async (name, args = {}) => decodeDomainValue(name, await callRaw(name, args)),
+    close,
+  };
+}
 
-async function inner() {
-  if (cached) return cached;
+/** One inner child per generation. The transport's own close (child exit, broken pipe) retires the
+ * generation through the session, so the next door call reconnects instead of failing forever on a
+ * dead client. Clean stdio: the child inherits only stderr; nothing here writes to stdout. */
+async function connectInner(session: InnerSession): Promise<InnerClient> {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
   const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
@@ -261,20 +289,30 @@ async function inner() {
     env: childEnv,
   });
   const client = new Client({ name: "doors", version: "1" });
+  let transportClosed = false;
+  client.onclose = () => {
+    transportClosed = true;
+    void session.retire(new Error("inner full-surface server transport closed"));
+  };
   await client.connect(transport);
-  const entry: InnerCache = {
-    call: async (name: string, args: any = {}) => {
-      const r: any = await client.callTool({ name, arguments: args }, undefined, { timeout: 2_700_000 });
-      const text = (r.content ?? []).map((c: any) => (c.type === "text" ? c.text : "")).join("\n");
-      try { return JSON.parse(text); } catch { return text; }
-    },
+  return {
+    callRaw: async (name, args = {}) =>
+      (await client.callTool({ name, arguments: args }, undefined, { timeout: 2_700_000 })) as CallToolResult,
     close: async () => {
+      if (transportClosed) return;
       await client.close().catch(() => {});
-      if (cached === entry) cached = null;
     },
   };
-  cached = entry;
-  return cached;
+}
+
+const innerProvider = createInnerClientProvider(connectInner);
+
+/** The live inner client's lanes. Concurrent first callers share ONE pending connect (one child);
+ * a failed first initialization rejects them all and the next call retries; a retired generation
+ * (close, child exit) reconnects on the next call. */
+async function inner(): Promise<InnerLanes> {
+  const client = await innerProvider.acquire();
+  return lanesOf((name, args = {}) => client.callRaw(name, args), () => innerProvider.retire(client));
 }
 
 const fixOf = (hint: string) => hint;
@@ -316,25 +354,90 @@ export function buildAppDoorStatus(result: any): "failed" | "built-not-installed
   return "built-needs-look";
 }
 
-/** Call a full-surface tool through the cached inner client (shared by the doors + spatialbench). */
+/** Call a full-surface tool through the shared inner client — domain lane (the doors + spatialbench). */
 export async function innerCall(name: string, args: any = {}) {
   const { call } = await inner();
   return call(name, args);
 }
 
 export interface DoorToolDependencies {
-  call: (name: string, args?: any) => Promise<any>;
+  /** Domain-lane seam (decoded values). Used only when no callRaw is injected. */
+  call?: (name: string, args?: any) => Promise<any>;
+  /** Raw-lane seam (the inner CallToolResult). When present the domain lane is DERIVED from it with
+   * the production decoder, so lane fixtures exercise the real decoding, not a stand-in. */
+  callRaw?: (name: string, args?: any) => Promise<CallToolResult>;
 }
 
 export function registerDoorTools(server: McpServer, dependencies?: DoorToolDependencies) {
-  const doorCall = async (): Promise<DoorToolDependencies["call"]> =>
-    dependencies?.call ?? (await inner()).call;
+  // The injection seam has two lanes and one rule: supplying `dependencies` at all — even `{}` —
+  // means "this server must never spawn the real inner full-surface server". Every door reaches
+  // the inner lanes ONLY through doorCall()/doorCallRaw() below; on a fixture each lane returns the
+  // injected function or REFUSES, so no door can fall through to the shared inner client. The
+  // shapes are spelled out here because each once read as a reasonable default:
+  //   - `{ call }` WITHOUT `callRaw` (a call-only fixture): the two raw-lane doors, pico_look and
+  //     pico_verify_app, forward the inner CallToolResult verbatim and have no seam to forward
+  //     through. doorCallRaw used to fall back to the shared inner client for them — the exact
+  //     bypass the C5 base RED run demonstrated, where pico_look on a fixture server reached the
+  //     real emulator — so it REFUSES with a fixture error instead.
+  //   - `{ call, callRaw }`: `dependencies.call` is IGNORED. The domain lane is derived from
+  //     `callRaw` with the production decoder so a lane fixture exercises the real decoding rather
+  //     than a stand-in; a caller-supplied `call` beside a `callRaw` is never consulted.
+  //   - `{}` (no lane at all): every door refuses. Nine domain-lane doors used to call the shared
+  //     inner client directly, so a fixture that injected only `call` still spawned dist/index.js
+  //     for them (the 2026-09-16 host-completion RED run: 14 of 16 doors reached a real inner
+  //     server from inside the test process).
+  // With no `dependencies` at all (production), both lanes come from the shared inner client. The
+  // test is `!== undefined`, not truthiness: TypeScript forbids a null here today, but an explicit
+  // null from an untyped caller must still read as "a fixture was given" and never take the
+  // production path.
+  const injected: Partial<InnerLanes> | null = dependencies !== undefined
+    ? (dependencies.callRaw ? lanesOf(dependencies.callRaw, async () => {}) : { call: dependencies.call })
+    : null;
+  const seamError = (lane: "call" | "callRaw") => new Error(
+    `registerDoorTools was given a fixture (a dependencies object) without dependencies.${lane}: doors never spawn the `
+    + "real inner full-surface server on a fixture, so this call is refused. "
+    + (lane === "callRaw"
+      ? "The raw-lane doors pico_look and pico_verify_app forward the inner CallToolResult verbatim and have no seam "
+        + "to forward through on a call-only fixture; inject dependencies.callRaw to exercise them."
+      : "Inject dependencies.call (or dependencies.callRaw, from which the domain lane is derived) to exercise the "
+        + "domain-lane doors."),
+  );
+  const doorCall = async (): Promise<InnerLanes["call"]> => {
+    if (injected) {
+      if (injected.call) return injected.call;
+      throw seamError("call");
+    }
+    return (await inner()).call;
+  };
+  const doorCallRaw = async (): Promise<InnerLanes["callRaw"]> => {
+    if (injected) {
+      if (injected.callRaw) return injected.callRaw;
+      throw seamError("callRaw");
+    }
+    return (await inner()).callRaw;
+  };
+  const doorFailure = (e: unknown) =>
+    okJson({ status: "error", error: e instanceof Error ? e.message : String(e), fix: "Run pico_doctor to check the local toolchain; if healthy, retry — the inner server log is on stderr." });
+  /** Domain-lane door: the handler's value is JSON-wrapped exactly as before. When that value IS an
+   * inner tool's error payload (a forwarding door returned it whole), the envelope is also flagged
+   * isError — additive; the nested JSON shape does not change. */
   const door = (name: string, description: string, inputSchema: any, handler: (args: any) => Promise<any>) =>
     server.registerTool(name, { description, inputSchema }, async (args: any) => {
       try {
-        return okJson(await handler(args));
+        const value = await handler(args);
+        return isInnerToolError(value) ? { ...okJson(value), isError: true } : okJson(value);
       } catch (e) {
-        return okJson({ status: "error", error: e instanceof Error ? e.message : String(e), fix: "Run pico_doctor to check the local toolchain; if healthy, retry — the inner server log is on stderr." });
+        return doorFailure(e);
+      }
+    });
+  /** Raw-lane door: the inner CallToolResult is the door's result, verbatim (image/resource blocks,
+   * structuredContent, isError). Only the door's own exceptions take the status:error shape. */
+  const forwardDoor = (name: string, description: string, inputSchema: any, handler: (args: any) => Promise<CallToolResult>) =>
+    server.registerTool(name, { description, inputSchema }, async (args: any) => {
+      try {
+        return await handler(args);
+      } catch (e) {
+        return doorFailure(e);
       }
     });
 
@@ -388,7 +491,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       labelQueries: z.array(z.string()).optional().describe("Scene-specific vocabulary ('bar counter', 'neon sign') — sharper labels than the generic default."),
     },
     async ({ splatPath, labelQueries }) => {
-      const { call } = await inner();
+      const call = await doorCall();
       const scan = await call("semantic_splat_scan", { splatPath, autoLabel: true, ...(labelQueries ? { labelQueries } : {}) });
       if (!scan?.clusters) return { status: "scan-failed", detail: scan, fix: "Check the splat path; OWL-v2 needs the pico venv python (pico_doctor)." };
       const labels = scan.autoLabels?.labels ?? {};
@@ -421,29 +524,37 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     },
     async ({ semanticScenePath, label, relation, childSize }) => {
       const scene = JSON.parse(fs.readFileSync(semanticScenePath, "utf8"));
-      const { call } = await inner();
+      const call = await doorCall();
       return call("resolve_semantic_placement", { objects: scene.objects, anchorTo: { label, ...(relation ? { relation } : {}) }, ...(childSize ? { childSize } : {}), floorY: scene.floorY, bounds: scene.bounds });
     },
   );
 
-  door(
+  forwardDoor(
     "pico_look",
-    "DOOR 4 — Capture the emulator's forward view deterministically and return the image path. READ the image; that look is what turns a claim into vision_verified (record it with pico_record). NO pose control exists on this path: deterministic = the fixed forward screencap; the multi-angle alternatives are Accessibility-gated GUI drags whose free-cam drifts — so bring content into the forward FOV instead of moving the camera. OCCLUSION: a docked HUD/menu panel can cover the scene; when the app's generated wiring routes the panel DEBUG_CMDs, drive 'panel:hide' before a scene capture and 'panel:show' after (adb shell am broadcast -a <pkg>.DEBUG_CMD --es cmd panel:hide). Apps without that route ignore the broadcast — confirm with the capture itself, never by assumption.",
-    {},
-    async () => {
-      const { call } = await inner();
-      const cap = await call("capture_canonical", {});
-      return typeof cap === "object" ? cap : { status: "ok", detail: cap };
+    "DOOR 4 — Capture the emulator's current display through the device shell and return the image path. Pass serial for an explicit target; historical calls without serial retain emulator-5554. New interaction sessions always require an explicit emulator and use their bound capture route. ROUTE: `screencap` composites the display the shell presents, not what an XR runtime submits to the headset — for an immersive layer it can read black while the app renders correctly, and can read black when nothing is drawn, so black is inconclusive about the route rather than a rendering verdict; the bytes are structurally inspected before they are saved. READ the image; that look is what turns a claim into vision_verified (record it with pico_record). NO pose control exists on this path: deterministic = the fixed forward screencap; the multi-angle alternatives are Accessibility-gated GUI drags whose free-cam drifts — so bring content into the forward FOV instead of moving the camera. OCCLUSION: a docked HUD/menu panel can cover the scene; when the app's generated wiring routes the panel DEBUG_CMDs, drive 'panel:hide' before a scene capture and 'panel:show' after (adb shell am broadcast -a <pkg>.DEBUG_CMD --es cmd panel:hide). Apps without that route ignore the broadcast — confirm with the capture itself, never by assumption.",
+    { serial: z.string().optional().describe("Explicit adb serial; omitted preserves historical emulator-5554 calls.") },
+    async ({ serial }) => {
+      // raw lane: the capture tool's own result (path/sha JSON, or its fail() text as isError) is
+      // forwarded verbatim — a screencap failure is never rewrapped as {status:'ok', detail}.
+      const callRaw = await doorCallRaw();
+      return callRaw("capture_canonical", serial ? { serial } : {});
     },
   );
 
-  door(
+  forwardDoor(
     "pico_verify_app",
-    "DOOR 5 — Verify ANY PICO APK through the honest loop (v22 pico-verify core): install → launch → settle → deterministic capture → calibrated-eye judgment. Works for apps this server never built (including official PICO samples). Returns verdict + capture; escalations require a look.",
-    { apkPath: z.string(), packageName: z.string().describe("The APK's applicationId."), settleSec: z.number().optional() },
-    async ({ apkPath, packageName, settleSec }) => {
-      const { call } = await inner();
-      return call("verify_pico_apk", { apkPath, packageName, ...(settleSec ? { settleSec } : {}) });
+    "DOOR 5 — OBSERVE any external PICO APK on an EXPLICITLY NAMED device: install → installed-digest check → launch → settle → identity (boot id, PID + process start, foreground) → bounded PID-scoped log → one structurally inspected capture, published immutably into a unique run directory. Works for apps this server never built (including official PICO samples). The result is a STRUCTURAL OBSERVATION, never a run receipt, a release claim or a hardware claim, and no verdict is machine-assigned: it returns identity plus the capture, and YOU look. It never clears the device's global log and never stops an app it was not given — a foreign foreground comes back as a conflict with the evidence.",
+    {
+      apkPath: z.string(),
+      packageName: z.string().describe("The APK's applicationId."),
+      serial: z.string().describe("REQUIRED adb serial of the device to observe. There is no default: an observation names the device it observed."),
+      activity: z.string().optional().describe("Fully-qualified launch activity; omitted means a monkey LAUNCHER intent."),
+      settleSec: z.number().optional(),
+    },
+    async ({ apkPath, packageName, serial, activity, settleSec }) => {
+      // raw lane: identity + capture provenance (and any structured or isError result) verbatim
+      const callRaw = await doorCallRaw();
+      return callRaw("verify_pico_apk", { apkPath, packageName, serial, ...(activity ? { activity } : {}), ...(settleSec ? { settleSec } : {}) });
     },
   );
 
@@ -455,27 +566,37 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       targets: z.array(z.object({ name: z.string(), colorKey: z.array(z.number()).length(3), expectedPosition: z.array(z.number()).length(3), expectedSize: z.array(z.number()).length(3).optional() })).min(1),
     },
     async (args) => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("measure_placement", args);
     },
   );
 
   door(
     "pico_perf",
-    "DOOR 7 — Profile a running app with PICO's OFFICIAL profiler (pico-cli perf): FPS percentiles, CPU/GPU, jank windows, and PICO's own diagnosis engine. Structural evidence — numbers, not looks.",
-    { packageName: z.string(), durationSec: z.number().optional() },
+    "DOOR 7 — Profile a running app with PICO's OFFICIAL profiler (pico-cli perf): FPS percentiles, CPU/GPU, jank windows, and PICO's own diagnosis engine. Structural evidence — numbers, not looks. The target is the explicit `device` you pass or the wrapper's documented default; either way the result names it as requestedDevice.",
+    {
+      packageName: z.string(),
+      durationSec: z.number().optional(),
+      device: z.string().optional().describe("adb serial to profile; forwarded verbatim. Omitted: the wrapper's documented default target."),
+    },
     async (args) => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("perf_diagnose", args);
     },
   );
 
   door(
     "pico_sdk",
-    "DOOR 8 — Look up the EXACT PICO Spatial SDK declaration (constructors with parameter order and unit docs, properties, enum values) from the official 0.13.3 agent-vault before writing SDK code. The app skeleton builds on SDK 6.0.0; consult docs/SDK_6_0_0_DRIFT.md for the measured near-zero public-API drift caveat. All-Float signatures compile silently with swapped args — check first.",
-    { symbol: z.string() },
+    "DOOR 8 — Look up the EXACT PICO Spatial SDK declaration (constructors with parameter order and unit docs, properties, enum values) from the locally materialized agent-vault before writing SDK code — by default the HISTORICAL 0.13.3 declarations, labeled with the package revision their package.xml declares. The app skeleton builds on SDK 6.0.0; docs/SDK_6_0_0_DRIFT.md records the measured near-zero public-API drift as historical evidence, not target authority. Pass projectRoot (optionally vaultRoot / sdkVersion / recordPaths) and the answer reports declarationIdentity, target and declarationContext — target-compatible only when a reviewed compatibility record verifies against the local vault bytes and that project's exact resolved SDK; otherwise unknown/historical, and it says so. Hints select what is read; nothing here accepts an identity, a fingerprint or a compatibility verdict from the caller. All-Float signatures compile silently with swapped args — check first.",
+    {
+      symbol: z.string(),
+      projectRoot: z.string().optional().describe("Android project root hint: its declared BOM/identity are read statically (never Gradle) and reviewed compatibility evidence is verified against it. Omit for a plain historical lookup."),
+      vaultRoot: z.string().optional().describe("Explicit agent-vault root — an explicitly identified source, not proof of target compatibility."),
+      sdkVersion: z.string().optional().describe("Numeric vault workspace label under the tools root (e.g. '0.13'); never a path."),
+      recordPaths: z.array(z.string()).optional().describe("Reviewed compatibility record paths to consider; only records in the packaged reviewed index can be accepted."),
+    },
     async (args) => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("vault_api", args);
     },
   );
@@ -485,7 +606,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     "DOOR 9 — Health-check the local PICO environment: the read-only preflight (node/adb/emulator/gRPC/Accessibility/calibration/disk — every failure carries the exact fix), toolchain payloads, emulator state, and the v20 camera calibration. Run this FIRST on a new machine, and whenever anything smells off. Pass {calibrate:true} to also RUN the one-time camera calibration end-to-end (fleet_build(['calib']) → calibrate_capture_camera): the inner child server already runs the FULL surface, so no surface switch or client restart is needed — it does need a running emulator and takes a few minutes.",
     { calibrate: z.boolean().optional().describe("Build+launch the calib brief and solve the capture camera through the full-surface inner server. Requires a running emulator; takes minutes.") },
     async ({ calibrate }) => {
-      const { call } = await inner();
+      const call = await doorCall();
       const [tc, emu, pre] = await Promise.all([call("validate_toolchain", {}), call("emulator_status", {}), call("preflight_env", {})]);
       let calibrationRun: any = null;
       if (calibrate) {
@@ -539,7 +660,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     "DOOR 11 — What can this toolchain actually do, and how is each capability PROVEN? Generated from the trust ledger: every row's best evidence class, with vision_verified meaning a human/agent looked at a rendered frame.",
     {},
     async () => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("capability_matrix", {});
     },
   );
@@ -563,7 +684,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       }).optional().describe("After you SOLVE a novel gotcha: persist it as a retained-lessons lint rule. Passed through unchanged to record_lesson, which validates the regex + fixtures before persisting."),
     },
     async ({ error, kotlin, recordLesson }) => {
-      const { call } = await inner();
+      const call = await doorCall();
       // v27-pre first-light fix: diagnose takes a strict symptom enum — piping free text into it
       // leaked a raw schema error at the stranger. Map keywords -> symptom; no match is honest.
       const SYMPTOM_KEYWORDS: Array<[RegExp, string]> = [
@@ -672,7 +793,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
           honesty: "Not executed by this tool: the cold restart kills a host process by PID, so it stays a human-run command.",
         };
       }
-      const { call } = await inner();
+      const call = await doorCall();
       const out = await call(action === "boot" ? "emulator_boot" : "emulator_status", {});
       return typeof out === "object" && out !== null ? out : { status: "ok", detail: out };
     },
@@ -683,7 +804,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     "DOOR 15 — What should I do NOW? Reads the ACTUAL local state — preflight checks, emulator, camera calibration, your generated briefs with their build/capture/trust-ledger progress — and returns {situation, nextAction:{door,argsExample,why}, alternatives}. Every recommendation names a real door on this surface; nothing is executed for you, and a LOOK step still means YOU read the capture.",
     {},
     async () => {
-      const { call } = await inner();
+      const call = await doorCall();
       // a probe that cannot run (e.g. no adb) reads as its unhealthy state, not as a door error
       const [pre, emu] = await Promise.all([call("preflight_env", {}).catch(() => null), call("emulator_status", {}).catch(() => null)]);
       const failing = (Array.isArray(pre?.checks) ? pre.checks : []).filter((c: any) => c.status === "fail");
@@ -801,8 +922,11 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       "through the fleet pipeline, machine-checks every criterion, and when a failure matches a " +
       "retained lesson with a concrete AppSpec mutation, applies replan_spec and iterates. Failures " +
       "without a safe automatic mutation exit manual-repair-required with their measured detail; the " +
-      "loop never relabels them build_failed or pretends an unattended fix occurred. Logcat criteria " +
-      "are evaluated before structural asserts because assert_scene clears logcat for its own dump. " +
+      "loop never relabels them build_failed or pretends an unattended fix occurred. Each iteration " +
+      "opens a marker window (adb_shell `log -t pico-mcp <marker>`) before its build and scopes every " +
+      "logcat criterion to it through assert_logcat's sinceMarker — the device log is never cleared, and " +
+      "a window whose marker is never seen makes that criterion unmeasurable, not failed. Logcat criteria " +
+      "are evaluated before structural asserts (a stable order kept from when assert_scene cleared logcat). " +
       "HONESTY CEILING BY EVIDENCE: a calibrated-eye PASS earns `auto_judged` only when the matching " +
       "ledger write succeeds; a measured PASS with a rejected/missing write remains `structural`. An iteration " +
       "whose requested structural/logcat/perf criteria pass while the eye FAILs, ESCALATEs, or is " +
@@ -865,7 +989,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       const id = briefIdOf(goal);
       const app = `com.fleet.${id}`;
       const projectDir = fleetProjectDirectory(id);
-      const iterationsLog: Array<{ iteration: number; outcomes: LoopCriterionOutcome[]; capture: string | null; receiptId: string | null; receiptPath: string | null; ledger: string }> = [];
+      const iterationsLog: Array<{ iteration: number; outcomes: LoopCriterionOutcome[]; capture: string | null; receiptId: string | null; receiptPath: string | null; ledger: string; logWindow: { marker: string } | null }> = [];
       const scaffoldStarted = draftSpec === undefined;
 
       // Criterion pre-flight: a misconfigured criterion must be rejected BEFORE the first
@@ -914,11 +1038,17 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
         if (Date.now() - started > timeMs)
           return exit("budget-exhausted", i - 1, { failing: lastOutcomes.filter((o) => o.status !== "pass"), fix: `timeMin ${budget?.timeMin ?? 20} elapsed before acceptance — raise budget.timeMin/iterations or fix the failing criteria by hand (pico_fix names the next action), then re-call.` });
 
-        // Any logcat criterion: clear the buffer BEFORE the build/launch, so this iteration's
-        // assert can only match lines this iteration's app emitted (launch-time markers included).
-        // Asserting against an uncleared buffer false-PASSed on lines from a previous run.
-        if (acceptance.some((c: any) => c.kind === "logcat"))
-          await call("adb_shell", { command: "logcat -c" }).catch(() => {});
+        // Any logcat criterion: open a MARKER WINDOW before the build/launch (never a clear — the
+        // device's global log is not this loop's to erase; src/logwindow.ts), so this iteration's
+        // asserts can only match lines this iteration's app emitted (launch-time markers included).
+        // Asserting against an unscoped buffer false-PASSed on lines from a previous run. A failed
+        // marker write is not swallowed into a pass: assert_logcat never sees the marker and reports
+        // inconclusive, which the loop records as unmeasurable below.
+        let logMarker: string | null = null;
+        if (acceptance.some((c: any) => c.kind === "logcat")) {
+          logMarker = newLogMarker();
+          await call("adb_shell", { command: `log -t ${LOG_WINDOW_TAG} ${logMarker}` }).catch(() => {});
+        }
 
         writeUserBrief(id, { id, brief: goal, spec });
         const fleet = await call("fleet_build", { briefIds: [id], settleSec: 16 });
@@ -947,8 +1077,9 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
               : "native receipt was recorded, but the verification route did not conclude"),
           });
         } else {
-          // assert_scene clears logcat for its isolated dump, so launch-log evidence must be
-          // consumed before any structural criterion regardless of the caller's array order.
+          // Logcat criteria first, then the rest (see loopCriteriaInEvidenceSafeOrder): the order
+          // dates from when assert_scene cleared logcat for its dump; it now opens its own window,
+          // and the stable partition is kept so exit reports and callers see the same shape.
           for (const c of loopCriteriaInEvidenceSafeOrder(acceptance)) {
             if (c.kind === "visual") {
               // Three-way, matching the eye's own vocabulary: PASS = auto_judged; FAIL = the eye
@@ -967,27 +1098,44 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
                   ? { kind: "structural", status: "pass", detail: `${v.scene?.entityCount ?? "?"} entities; all asserts hold` }
                   : { kind: "structural", status: "fail", detail: JSON.stringify((v.results ?? []).filter((x: any) => !x.pass)).slice(0, 400) });
               } else {
-                // isError text (no Agent Bridge, broadcast failed) comes back as a raw string.
-                outcomes.push({ kind: "structural", status: "unmeasurable", detail: (typeof v === "string" ? v : JSON.stringify(v ?? null)).slice(0, 300) });
+                // an inner isError (no Agent Bridge, broadcast failed) arrives as the domain lane's
+                // error payload — keep the tool's own words as the detail.
+                outcomes.push({ kind: "structural", status: "unmeasurable", detail: domainValueText(v).slice(0, 300) });
               }
             } else if (c.kind === "logcat") {
               if (!c.pattern) { outcomes.push({ kind: "logcat", status: "unmeasurable", detail: "kind:'logcat' requires a pattern" }); continue; }
-              const l = await call("assert_logcat", { pattern: c.pattern, ...(c.tag ? { tag: c.tag } : {}), timeoutSec: c.timeoutSec ?? 20 });
+              // The marker was written BEFORE fleet_build (Gradle + install + launch + settle), so the
+              // raw tail logd keeps ahead of the tag filter must span that whole build: the build-length
+              // bound (src/logwindow.ts), not assert_logcat's own 20000 default.
+              const l = await call("assert_logcat", { pattern: c.pattern, ...(c.tag ? { tag: c.tag } : {}), timeoutSec: c.timeoutSec ?? 20, maxLines: BUILD_LENGTH_LOG_WINDOW_MAX_LINES, ...(logMarker ? { sinceMarker: logMarker } : {}) });
               if (l && typeof l === "object" && typeof l.matched === "boolean") {
-                outcomes.push(l.matched
-                  ? { kind: "logcat", status: "pass", detail: l.line }
-                  : { kind: "logcat", status: "fail", detail: `no logcat match for '${c.pattern}' within ${c.timeoutSec ?? 20}s` });
+                if (l.status === "inconclusive" || l.logWindow?.markerSeen === false) {
+                  // The window's marker was never seen in the bounded dump: the read is inconclusive,
+                  // not a measured miss — a replan would chase a failure nothing measured.
+                  // Two inconclusive shapes share this branch: the marker was never seen (evicted or
+                  // never written), or it WAS seen and the observation was lost afterwards (the final
+                  // dump before the deadline failed). assert_logcat's own hint names which.
+                  outcomes.push({ kind: "logcat", status: "unmeasurable", detail: `log window inconclusive for '${c.pattern}': ${typeof l.hint === "string" && l.hint ? l.hint.slice(0, 300) : `marker ${l.logWindow?.marker ?? logMarker} not seen in the bounded dump (evicted or never written; the device log was not cleared) — re-run`}` });
+                } else {
+                  outcomes.push(l.matched
+                    ? { kind: "logcat", status: "pass", detail: l.line }
+                    : { kind: "logcat", status: "fail", detail: `no logcat match for '${c.pattern}' within ${c.timeoutSec ?? 20}s` });
+                }
               } else {
-                // isError text (bad regex, no device) — the tool's own words, never a fabricated
+                // an inner isError (bad regex, no device) — the tool's own words, never a fabricated
                 // "no match" measurement that replanning would then chase.
-                outcomes.push({ kind: "logcat", status: "unmeasurable", detail: (typeof l === "string" ? l : JSON.stringify(l ?? null)).slice(0, 300) });
+                outcomes.push({ kind: "logcat", status: "unmeasurable", detail: domainValueText(l).slice(0, 300) });
               }
             } else if (c.kind === "perf") {
               const p = await call("perf_diagnose", { packageName: app, ...(c.durationSec ? { durationSec: c.durationSec } : {}) });
               const appFps = p?.summary?.appFps;
               const p5 = typeof appFps?.p5 === "number" ? appFps.p5 : null;
               const avg = typeof appFps?.avg === "number" ? appFps.avg : null;
-              if (p5 === null || avg === null || avg === 0) {
+              // C4: the wrapper now grades its own report. measurement:'missing' carries the
+              // profiler's OWN SKIP/INSUFFICIENT_DATA verdict and the no-app-frames case, so it is
+              // unmeasurable here — Spatial Runtime/compositor FPS never stands in for app FPS,
+              // and an absent counter is never read as an idle one.
+              if (p?.measurement === "missing" || p5 === null || avg === null || avg === 0) {
                 outcomes.push({
                   kind: "perf",
                   status: "unmeasurable",
@@ -1003,6 +1151,8 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
                   ...(typeof appFps?.p10 === "number" ? { p10: appFps.p10 } : {}),
                   ...(typeof appFps?.p50 === "number" ? { p50: appFps.p50 } : {}),
                   avg,
+                  ...(typeof p?.measurement === "string" ? { measurement: p.measurement } : {}),
+                  ...(Array.isArray(p?.missingCounters) && p.missingCounters.length ? { missingCounters: p.missingCounters } : {}),
                   ...(typeof p?.jankWindowCount === "number" ? { jankWindows: p.jankWindowCount } : {}),
                   ...(p?.reportPath ? { reportPath: p.reportPath } : {}),
                 });
@@ -1023,9 +1173,11 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
         // the door's contract promises an entry per iteration, so a broken ledger lane must show).
         const perfNow = perfTrail.length && (perfTrail[perfTrail.length - 1] as any).iteration === i ? perfTrail[perfTrail.length - 1] as any : null;
         const led = await call("record_verification", { app, claim: `pico_loop iteration ${i}/${maxIterations} [${goal.slice(0, 80)}]: ${outcomes.map((o) => `${o.kind}=${o.status}`).join(" ")}${perfNow ? ` | appFps p5=${perfNow.p5} avg=${perfNow.avg} (pico-cli measured)` : ""}`, evidenceType: "structural" }).catch((e) => `record_verification threw: ${e instanceof Error ? e.message : String(e)}`);
+        // an inner isError arrives as the domain lane's error payload — the tool's own words lead
+        // the detail, so the 200-char budget is not spent on the {"status":"error",…} wrapper.
         const ledger = led && typeof led === "object" && led.status === "recorded"
           ? "recorded"
-          : `NOT recorded: ${(typeof led === "string" ? led : JSON.stringify(led ?? null)).slice(0, 200)}`;
+          : `NOT recorded: ${domainValueText(led).slice(0, 200)}`;
         iterationsLog.push({
           iteration: i,
           outcomes,
@@ -1033,6 +1185,8 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
           receiptId: recordedReceipt?.receiptId ?? null,
           receiptPath: recordedReceipt?.receiptPath ?? null,
           ledger,
+          // the marker every logcat criterion of this iteration was scoped to (null: no logcat criterion)
+          logWindow: logMarker ? { marker: logMarker } : null,
         });
 
         const needsLook = outcomes.filter((o) => o.status === "needs-look");

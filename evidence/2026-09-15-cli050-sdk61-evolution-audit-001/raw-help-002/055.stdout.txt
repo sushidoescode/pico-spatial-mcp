@@ -1,0 +1,6 @@
+Usage:
+  $ pico-cli files cat <remote>
+
+Options:
+  -d, --device <device>  Target device id 
+  -h, --help             Display this message 

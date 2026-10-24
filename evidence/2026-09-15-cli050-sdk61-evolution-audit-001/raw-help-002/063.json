@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 mcp doctor --help",
+  "argv": [
+    "mcp",
+    "doctor",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:53.721Z",
+  "endedAt": "2026-09-15T09:11:53.820Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "882980141bb41b9eda757574ef03526536286cfcf3c662f36abed22670ff6e9d",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

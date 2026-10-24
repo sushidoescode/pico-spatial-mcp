@@ -1,0 +1,66 @@
+{
+  "at": "2026-10-24T05:27:27.079393+00:00",
+  "owner": "/root in this conversation",
+  "status": "native work drained and root ownership released",
+  "activeSessionOwnerFiles": [],
+  "retiredUncertainNonce": "04f69643-b23e-4f95-b3f4-87d26b002287",
+  "uncertainDisposition": "reconciliation-result.json; original in_doubt evidence preserved",
+  "lastTarget": {
+    "apkSha256": "9e311dc104d70a3997832162d6597d45805692f22f729ca869c86bdff45d9a12",
+    "appGeneration": "659e3ad2-39ed-42cf-bdc8-90a73810de4d",
+    "bindingSha256": "03fcdb9756d2a10352cf63b7893d4b067233366a6a20ad8ac72b3caebd2e596e",
+    "bootId": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+    "bootQemu": "1",
+    "enforcementScope": "interaction-session-only",
+    "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+    "model": "swan_arm64",
+    "observedAt": "2026-10-24T05:24:10.448Z",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "pid": 8478,
+    "pidStartTicks": "170913",
+    "schemaVersion": 1,
+    "serial": "emulator-5554"
+  },
+  "lastObservedState": {
+    "panelVisible": true,
+    "counter": 1
+  },
+  "emulatorDisposition": "Left running; no boot/restart/stop issued.",
+  "fixtureDisposition": "Left installed and running at source revision 3. No data clear/uninstall. Old generations, requests, ACKs and diagnostic files retained.",
+  "history": [
+    {
+      "path": "evidence/2026-10-24-agent-iteration-native/fence-history/04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017-f1d0a3e5-778b-46c8-96c8-80ee83a758fa.jsonl",
+      "sha256": "dd90d8e29d62593dc7d975172d48868b5a2f9c6ac34d575a3b7c786473172dbe"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-native/fence-history/04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017-e024e535-7207-44e3-a182-d56d6e76bbdb.jsonl",
+      "sha256": "8ff6296813e8b23acc10787dd56f2068b1246dc058e04a64e7686b823a1915a9"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-native/fence-history/04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017-768e3aeb-da71-4264-bf77-3363f0154a14.jsonl",
+      "sha256": "3781b68d2eabd0b2e32125cafe0870538bd563b81e6d0e477a556b8d1814f27f"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-native/fence-history/04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017-4c163a87-f2aa-4b7a-8e51-d4ed0e3f2237.jsonl",
+      "sha256": "1ad8335d483c9e56f9cf5f81f7c15372ccfdb97fb8861733b55c94212160b4ae"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-native/fence-history/04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017-ca7b0327-cc11-46a9-9ba0-a46b4eb1f642.jsonl",
+      "sha256": "afef0cc52fcc015f6671a7627146aee29312a7c3f5bd52b0f6f51489a2c47de7"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-native/fence-history/04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017-ca7b0327-cc11-46a9-9ba0-a46b4eb1f642.reconciled-owner.json",
+      "sha256": "e75244f15ea851918e2a9182304a5218b39f93f2b7a8dc029de06302c18118f4"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-native/fence-history/04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017-f947ee32-31d7-44cc-ae86-10fbce410519.jsonl",
+      "sha256": "808e5354415853476df126c9e2e4cee7823b63926e5269a7a8918ee3079e1595"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-native/fence-history/04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017-5b8b1278-0c10-49b3-b8ae-8eb807a7b658.jsonl",
+      "sha256": "898b4efab3248231c8702cd8c30b5ff0ffd159da154e071b2a928bf3b9ba8327"
+    }
+  ],
+  "remainingNativeOperationsPlanned": false,
+  "preserved": "Physical devices, VS Code, other apps/worktrees/program tracks, SDK configuration and installed MCP registration untouched during this native follow-up."
+}

@@ -1,0 +1,29 @@
+{
+  "probe": "direct-stdio-transport",
+  "startedAt": "2026-09-16T21:42:26.028Z",
+  "entry": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/dist/index.js",
+  "cwd": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16",
+  "surface": "full",
+  "childPid": 61258,
+  "serverInfo": {
+    "name": "pico-spatial-mcp",
+    "version": "38.0.0"
+  },
+  "tool": "scaffold_spatial_app",
+  "arguments": {
+    "targetDir": "/Users/sushantsrikrish/AndroidStudioProjects/pico-ui-polish-lab",
+    "packageName": "dev.local.picouipolish.lab",
+    "appName": "PICO UI Polish Lab",
+    "stageStyle": "1"
+  },
+  "elapsedMs": 29,
+  "isError": false,
+  "content": [
+    {
+      "type": "text",
+      "text": "{\n  \"created\": \"/Users/sushantsrikrish/AndroidStudioProjects/pico-ui-polish-lab\",\n  \"packageName\": \"dev.local.picouipolish.lab\",\n  \"renamedFrom\": \"com.example.spatialapp\",\n  \"filesUpdated\": 46,\n  \"appName\": \"PICO UI Polish Lab\",\n  \"stageStyle\": \"1\",\n  \"sceneInstalled\": null,\n  \"devScripts\": [\n    \"pico-bridge.sh\",\n    \"redeploy.sh\",\n    \".run/Mouse Bridge.run.xml\",\n    \".run/Redeploy (emulator).run.xml\",\n    \"pico.gradle.kts\",\n    \"build.gradle.kts (apply pico.gradle.kts)\"\n  ],\n  \"sourceDir\": \"/Users/sushantsrikrish/AndroidStudioProjects/pico-ui-polish-lab/app/src/main/java/dev/local/picouipolish/lab\",\n  \"homeStage\": \"/Users/sushantsrikrish/AndroidStudioProjects/pico-ui-polish-lab/app/src/main/java/dev/local/picouipolish/lab/content/HomeStage.kt\",\n  \"toolchain\": {\n    \"status\": \"ok\",\n    \"root\": \"/Users/sushantsrikrish/Library/PICO/sdk\",\n    \"rootSource\": \"PICO_HOME\",\n    \"version\": \"6.1\",\n    \"reason\": \"newest-usable\",\n    \"files\": {\n      \"packer\": {\n        \"path\": \"/Users/sushantsrikrish/Library/PICO/sdk/6.1/editor/spatialbundle/spatialbundle\",\n        \"sha256\": \"8797c55708ee146d0327802bfbff4de229131265c80007fe4b95acf6d6123639\"\n      }\n    },\n    \"identity\": \"0c82a97c2abc3030a6dbfeb67cb3653863880fdc4c1025a42be752b49865548c\"\n  },\n  \"appliedToolsDir\": \"/Users/sushantsrikrish/Library/PICO/sdk\",\n  \"templateBom\": {\n    \"declaredBom\": \"6.0.0\",\n    \"catalogSha256\": \"48d92282cb75aa093599a10ba9ae45b5fa6a0a258efdd43fca3bb958fd14c698\"\n  },\n  \"next\": [\n    \"Author the UI in /Users/sushantsrikrish/AndroidStudioProjects/pico-ui-polish-lab/app/src/main/java/dev/local/picouipolish/lab/content/HomeStage.kt (SpatialView; the default hello scene renders without any assets).\",\n    \"Optionally add data/assets under app/src/main/assets/ and generate content via the compile ledger.\",\n    \"build_and_run with projectDir='/Users/sushantsrikrish/AndroidStudioProjects/pico-ui-polish-lab', packageName='dev.local.picouipolish.lab'.\"\n  ]\n}"
+    }
+  ],
+  "finishedAt": "2026-09-16T21:42:26.269Z",
+  "serverStderr": "pico-spatial-mcp ready (stdio)\n"
+}

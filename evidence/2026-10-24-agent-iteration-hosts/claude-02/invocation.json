@@ -1,0 +1,58 @@
+{
+  "host": "claude",
+  "trial": "lifecycle",
+  "argv": [
+    "/Users/sushantsrikrish/.local/bin/claude",
+    "-p",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--no-session-persistence",
+    "--permission-mode",
+    "manual",
+    "--permission-prompts",
+    "host",
+    "--permission-prompt-tool",
+    "stdio",
+    "--restricted",
+    "--tools",
+    "",
+    "--disable-slash-commands",
+    "--no-chrome",
+    "--strict-mcp-config",
+    "--mcp-config",
+    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/mcp.json",
+    "--setting-sources",
+    "",
+    "--settings",
+    "{\"disableAllHooks\":true,\"disableClaudeAiConnectors\":true}",
+    "--max-turns",
+    "10",
+    "--max-budget-usd",
+    "2"
+  ],
+  "cwd": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/workspace",
+  "deadlineSeconds": 180,
+  "usesExistingAuth": true,
+  "credentialsCopied": false,
+  "sourceIdentities": [
+    {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/scripts/run-host-conformance.py",
+      "sha256": "812d53b97ef93da0f3cb79ff3a7e5f91173c6e0fda794244c1407669d832caae"
+    },
+    {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/scripts/host_conformance_process.py",
+      "sha256": "263aec6c58ea0a33440e49c9dcd937c1103119fa39ac923ea57b251d3aea4154"
+    },
+    {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/scripts/host-conformance-probe.mjs",
+      "sha256": "aa65813328613182da80944cb2a36a58e5d9023b51bd926237973f382d53f206"
+    },
+    {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/dist/build-receipt.json",
+      "sha256": "74503c2a744aef93961bbc382bff192aea570673eabfefad3f00e2cb70e56dc2"
+    }
+  ]
+}

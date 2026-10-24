@@ -1,6 +1,22 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import {
+  capabilityCoverage,
+  classifyOperation,
+  cliCapabilityIdentityKey,
+  cliOperationRoutes,
+  parseCliCapabilitySet,
+  sameCliCapabilityIdentity,
+  sha256Hex,
+  unknownCapability,
+  verifyCapabilitySet,
+  type CliCapabilityIdentity,
+  type CliCapabilitySet,
+  type HelpObservation,
+  type OperationCapability,
+} from "./clicapabilities.js";
 
 export const PICO_CLI_POLICY_ENV = "PICO_MCP_CLI_POLICY";
 export const PICO_CLI_PATH_ENV = "PICO_MCP_CLI_PATH";
@@ -24,17 +40,16 @@ const CONTENT_IDENTITY_MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
 const CONTENT_IDENTITY_READ_CHUNK_BYTES = 64 * 1024;
 const EXECUTABLE_IDENTITY_MAX_FILE_BYTES = 32 * 1024 * 1024;
 const CONTROL_RECORD_MAX_BYTES = 1024 * 1024;
-const COMPATIBILITY_CANARIES = [
-  ["perf", "monitor", "run", "--help"],
-  ["perf", "trace", "record", "--help"],
-  ["perf", "trace", "decode", "--help"],
-  ["perf", "trace", "load", "--help"],
-  ["perf", "trace", "query", "--help"],
-  ["app", "watch-crash", "--help"],
-  ["capture", "record", "--help"],
-  ["mcp", "dev-knowledge", "--help"],
-  ["emulator", "status", "--help"],
-] as const;
+// Capability reports live under <managedRoot>/capabilities/<version>/<identityKey>/<runId>/,
+// beside (never inside) the content-bound version roots, so a post-publication discovery cannot
+// alter a validated package tree. Every run directory is unique and is never rewritten.
+const CAPABILITY_STORE_DIRECTORY = "capabilities";
+const CAPABILITY_REPORT_FILE = "report.json";
+const CAPABILITY_HELP_TIMEOUT_MS = 120_000;
+const CAPABILITY_HELP_MAX_OUTPUT_BYTES = 64 * 1024;
+const CAPABILITY_MAX_PROBES = 8;
+const CAPABILITY_EVIDENCE_MAX_BYTES = 1024 * 1024;
+const CAPABILITY_MAX_RUNS_SCANNED = 64;
 
 export type PicoCliPolicy = "managed-latest" | "managed-cached" | "external" | "disabled";
 export type PicoCliFreshness = "latest" | "outdated" | "unknown" | "cached" | "external";
@@ -53,6 +68,8 @@ export type ManagedPicoCliIO = {
   env: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
   homeDir: string;
+  /** Working directory used by the child (configuration selection is cwd-sensitive). */
+  cwd?: string;
   /** Opaque identity of the executable that this IO will run for the `npm` command. */
   npmCommandIdentity: string;
   now: () => number;
@@ -60,6 +77,7 @@ export type ManagedPicoCliIO = {
   run: (command: string, args: string[], options?: {
     timeoutMs?: number;
     killGraceMs?: number;
+    maxOutputBytes?: number;
     beforeSpawn?: (deadlineMs: number) => string | null;
     afterSpawn?: (deadlineMs: number) => string | null;
   }) => Promise<ManagedPicoCliCommandResult>;
@@ -73,12 +91,24 @@ export type ManagedPicoCliOptions = {
   killGraceMs?: number;
 };
 
+/** Legacy schema-1 `compatibility.json` diagnostics written by earlier MCP releases at staging
+ * time. New installs no longer write them; the versioned reader keeps surfacing them for cache
+ * entries that still carry one. They are observations, never a capability decision. */
 export type PicoCliCompatibilityDiagnostic = {
   argv: string[];
   exitCode: number | null;
   timedOut: boolean;
   outputTruncated: boolean;
   helpSha256: string;
+};
+
+/** Immutable per-operation capability report bound to one validated execution identity. */
+export type CliCapabilityReport = CliCapabilitySet & {
+  /** `complete` only when every operation reached a terminal (`supported`/`unavailable`) state. */
+  coverage: "complete" | "partial";
+  limits: { timeoutMs: number; maxOutputBytes: number; maxProbes: number };
+  /** Absolute path of the persisted report; its evidence files sit beside it. */
+  reportPath: string;
 };
 
 export type PicoCliEnsureResult =
@@ -95,6 +125,7 @@ export type PicoCliEnsureResult =
       freshness: PicoCliFreshness;
       deprecatedAliases: string[];
       compatibility?: PicoCliCompatibilityDiagnostic[];
+      capabilities?: CliCapabilityReport;
       warning?: {
         failureClass: "latest-unknown" | "update-failed";
         note: string;
@@ -836,18 +867,6 @@ async function validateManagedVersion(
   };
 }
 
-function hasCompleteCompatibility(diagnostics: PicoCliCompatibilityDiagnostic[] | undefined): boolean {
-  if (!diagnostics || diagnostics.length !== COMPATIBILITY_CANARIES.length) return false;
-  const expected = new Set(COMPATIBILITY_CANARIES.map((argv) => JSON.stringify(argv)));
-  const seen = new Set<string>();
-  for (const diagnostic of diagnostics) {
-    const key = JSON.stringify(diagnostic.argv);
-    if (!expected.has(key) || seen.has(key)) return false;
-    seen.add(key);
-  }
-  return seen.size === expected.size;
-}
-
 async function validateLatestPublishedVersion(
   versionRoot: string,
   version: string,
@@ -859,8 +878,7 @@ async function validateLatestPublishedVersion(
   if (!record || record.registryIntegrity !== registryIntegrity) return null;
   if (!validatePublicationState(versionRoot, version, registryIntegrity)) return null;
   const validated = await validateManagedVersion(versionRoot, version, options, io);
-  return validated && hasCompleteCompatibility(validated.compatibility)
-    && validatePublicationState(versionRoot, version, registryIntegrity) ? bindManagedExecution(validated) : null;
+  return validated && validatePublicationState(versionRoot, version, registryIntegrity) ? bindManagedExecution(validated) : null;
 }
 
 async function validateOwnedUnfinalizedVersion(
@@ -872,8 +890,7 @@ async function validateOwnedUnfinalizedVersion(
 ): Promise<ValidatedManagedCli | null> {
   const record = readInstallRecord(versionRoot);
   if (!record || record.registryIntegrity !== registryIntegrity) return null;
-  const validated = await validateManagedVersion(versionRoot, version, options, io);
-  return validated && hasCompleteCompatibility(validated.compatibility) ? validated : null;
+  return validateManagedVersion(versionRoot, version, options, io);
 }
 
 async function validateCachedPublishedVersion(
@@ -1381,14 +1398,39 @@ function writeFsyncedJson(file: string, value: unknown): void {
   }
 }
 
-function fsyncDirectoryWhereSupported(directory: string): void {
+export type ManagedDirectorySyncResult =
+  | { status: "synced" }
+  | { status: "unsupported"; operation: "open" | "fsync"; code: string };
+
+/**
+ * Directory metadata flushing is best-effort on platforms/filesystems that do not support it.
+ * `unsupported` does not promise that a rename or hard link survives a crash; control-record
+ * contents are still synced separately, and publication/ownership validation is unchanged. Windows libuv
+ * uses FlushFileBuffers, which requires a writable handle and reports EPERM for our read-only
+ * directory handle. Permit that case only after fstat proves the opened descriptor is a directory.
+ * The platform parameter is a fixture seam; production always uses the current process platform.
+ */
+export function fsyncDirectoryWhereSupported(
+  directory: string,
+  platform: NodeJS.Platform = process.platform,
+): ManagedDirectorySyncResult {
   let descriptor: number | undefined;
+  let operation: "open" | "inspect" | "fsync" = "open";
   try {
     descriptor = fs.openSync(directory, "r");
+    operation = "inspect";
+    if (!fs.fstatSync(descriptor).isDirectory()) {
+      throw Object.assign(new Error(`Directory sync requires a directory: ${directory}`), { code: "ENOTDIR" });
+    }
+    operation = "fsync";
     fs.fsyncSync(descriptor);
+    return { status: "synced" };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException)?.code;
-    if (!code || !["EINVAL", "ENOTSUP", "EISDIR", "EBADF"].includes(code)) throw error;
+    const unsupportedWindowsDirectorySync = platform === "win32" && operation === "fsync" && code === "EPERM";
+    if (operation === "inspect" || !code
+      || (!["EINVAL", "ENOTSUP", "EISDIR", "EBADF"].includes(code) && !unsupportedWindowsDirectorySync)) throw error;
+    return { status: "unsupported", operation, code };
   } finally {
     if (descriptor !== undefined) fs.closeSync(descriptor);
   }
@@ -1421,7 +1463,11 @@ export async function inspectManagedPicoCli(
   if (policy.policy === "disabled") {
     return unavailable("disabled", null, "cli-disabled", "PICO CLI use is disabled by PICO_MCP_CLI_POLICY=disabled.", policy.deprecatedAliases);
   }
-  if (policy.policy === "external") return inspectExternal(policy, options, io);
+  if (policy.policy === "external") {
+    const external = await inspectExternal(policy, options, io);
+    if (external.status === "ok") await attachCliCapabilities(external, options, io, "read-only");
+    return external;
+  }
 
   const managedRoot = path.resolve(options.managedRoot ?? path.join(io.homeDir, ".pico-mcp", "cli"));
   const versionsRoot = path.join(managedRoot, "versions");
@@ -1433,7 +1479,11 @@ export async function inspectManagedPicoCli(
   for (const version of children) {
     const versionRoot = path.join(versionsRoot, version);
     const validated = await validateCachedPublishedVersion(versionRoot, version, options, io);
-    if (validated) return managedOk(validated, policy.policy, "cached", null, null, "cached", policy.deprecatedAliases);
+    if (validated) {
+      const result = managedOk(validated, policy.policy, "cached", null, null, "cached", policy.deprecatedAliases);
+      if (result.status === "ok") await attachCliCapabilities(result, options, io, "read-only");
+      return result;
+    }
   }
   return unavailable(
     policy.policy,
@@ -1444,7 +1494,11 @@ export async function inspectManagedPicoCli(
   );
 }
 
-export async function resolveManagedPicoCli(
+/**
+ * Package activation only: registry lookup, exact install, content-bound publication and
+ * validation. Per-operation capability discovery is layered on by resolveManagedPicoCli.
+ */
+async function activateManagedPicoCli(
   options: ManagedPicoCliOptions,
   io: ManagedPicoCliIO,
 ): Promise<PicoCliEnsureResult> {
@@ -1606,29 +1660,8 @@ export async function resolveManagedPicoCli(
       );
     }
 
-    const compatibility: PicoCliCompatibilityDiagnostic[] = [];
-    for (const canary of COMPATIBILITY_CANARIES) {
-      const argv = [...canary];
-      const result = await io.run(stagedCliPath, argv, {
-        timeoutMs: options.updateCheckTimeoutMs,
-        killGraceMs: options.killGraceMs,
-        beforeSpawn: stagedExecutionGuard,
-        afterSpawn: stagedExecutionGuard,
-      });
-      compatibility.push({
-        argv,
-        exitCode: result.code,
-        timedOut: result.timedOut,
-        outputTruncated: result.outputTruncated,
-        helpSha256: crypto.createHash("sha256").update(`${result.stdout}${result.stderr}`).digest("hex"),
-      });
-    }
-
-    writeFsyncedJson(path.join(staging, "compatibility.json"), {
-      schemaVersion: 1,
-      version: registry.version,
-      diagnostics: compatibility,
-    });
+    // Per-operation capability discovery runs after publication (attachCliCapabilities) against
+    // the validated, content-bound package; nothing about it is written into the version root.
     const contentIdentity = managedContentIdentity(staging);
     writeFsyncedJson(path.join(staging, "install.json"), {
       schemaVersion: INSTALL_RECORD_SCHEMA_VERSION,
@@ -1739,3 +1772,409 @@ export async function resolveManagedPicoCli(
     }
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Per-operation capability evidence (see clicapabilities.ts for classification and stale checks).
+
+function managedRootFor(options: ManagedPicoCliOptions, io: ManagedPicoCliIO): string {
+  return path.resolve(options.managedRoot ?? path.join(io.homeDir, ".pico-mcp", "cli"));
+}
+
+function packageJsonPath(versionRoot: string): string {
+  return path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json");
+}
+
+export type CliSelectionContext = {
+  env: NodeJS.ProcessEnv;
+  platform: NodeJS.Platform;
+  homeDir: string;
+  cwd?: string;
+};
+
+/** The bounded inputs that can select a utility independently of the pico-cli package. Values
+ * are digested, not copied into reports: arbitrary inherited variables and secrets are excluded.
+ * Configuration is read, never repaired. Missing files are identities too. */
+export function cliSelectionIdentity(context: CliSelectionContext = {
+  env: process.env, platform: process.platform, homeDir: os.homedir(), cwd: process.cwd(),
+}): { schemaVersion: 1; sha256: string } | null {
+  const { env, platform } = context;
+  const homeDir = (platform === "win32" ? env.USERPROFILE : env.HOME) || context.homeDir;
+  const cwd = path.resolve(context.cwd ?? process.cwd());
+  const get = (name: string): string | null => {
+    const key = platform === "win32" ? Object.keys(env).find(item => item.toUpperCase() === name) : name;
+    return key && env[key] !== undefined ? env[key]! : null;
+  };
+  const keys = ["PICO_HOME", "PICO_CLI_PROFILER_ENTRY_PATH", "SPATIAL_AGENTIC_TOOLS_PROFILER_CLI_PREFIX",
+    "PATH", "PATHEXT", "ANDROID_HOME", "ANDROID_SDK_ROOT", "ADB_PATH", "PROFILER_ADB", "PICO_ADB",
+    "PICO_DEVICE", "ADB_SERIAL", "CLAUDE_PLUGIN_ROOT", "LOCALAPPDATA"];
+  const inputs: Array<Record<string, unknown>> = [];
+  let remainingBytes = 128 * 1024 * 1024;
+  const fingerprint = (candidate: string, directory = false): void => {
+    const file = path.resolve(cwd, candidate);
+    let stat: fs.Stats;
+    try { stat = fs.lstatSync(file); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      inputs.push({ path: file, missing: true }); return;
+    }
+    const realPath = fs.realpathSync(file);
+    const real = fs.statSync(realPath);
+    if (directory) {
+      if (!real.isDirectory()) throw new Error("selected utility root is not a directory");
+      // This reuses the bounded content traversal used for package publication. The two excluded
+      // root receipt names are bound separately so no selected-utility file is omitted.
+      const tree = managedContentIdentityForFixture(realPath, { maxEntries: 10_000, maxDepth: 32,
+        maxFileBytes: 64 * 1024 * 1024, maxTotalBytes: remainingBytes }, Date.now() + 5_000);
+      remainingBytes -= tree.totalBytes;
+      inputs.push({ path: file, realPath, tree: tree.digest });
+      fingerprint(path.join(realPath, "install.json")); fingerprint(path.join(realPath, "publication.json"));
+      return;
+    }
+    if (!real.isFile() || real.size > remainingBytes) throw new Error("selected utility identity exceeds its byte bound");
+    const bytes = fs.readFileSync(realPath);
+    const after = fs.statSync(realPath);
+    if (!sameObservedStat(real, after) || bytes.length !== real.size) throw new Error("selection changed while reading");
+    remainingBytes -= bytes.length;
+    inputs.push({ path: file, realPath, sha256: sha256Hex(bytes), mode: stat.mode & 0o7777 });
+  };
+  try {
+    fingerprint(path.join(homeDir, ".pico", "config.json"));
+    let directory = cwd;
+    for (let depth = 0; ; depth += 1) {
+      if (depth > 128) return null;
+      const file = path.join(directory, ".pico-env.json");
+      if (fs.existsSync(file)) { fingerprint(file); break; }
+      const parent = path.dirname(directory);
+      if (parent === directory) { fingerprint(path.join(homeDir, ".pico", ".pico-env.json")); break; }
+      directory = parent;
+    }
+    const override = get("PICO_CLI_PROFILER_ENTRY_PATH")?.trim();
+    if (override) fingerprint(override);
+    // 0.4.4's prefix and 0.5.0's PICO_HOME/profiler-cli selection are measured source facts.
+    // 0.6.1 bundles its profiler, already covered by executionTreeSha256. Watching the older
+    // roots conservatively also invalidates a report if the host changes a utility selection.
+    const prefix = get("SPATIAL_AGENTIC_TOOLS_PROFILER_CLI_PREFIX") || path.join(homeDir, ".local");
+    fingerprint(platform === "win32" ? path.join(prefix, "profiler-cli") : path.join(prefix, "lib", "profiler-cli"), true);
+    const picoHome = get("PICO_HOME")?.trim();
+    if (picoHome && path.isAbsolute(picoHome)) fingerprint(path.join(picoHome, "profiler-cli"), true);
+    // The knowledge backend selects ~/.local/bin/graphify first, then PATH. Bind the selected
+    // executable's actual bytes too; unchanged PATH strings must not hide an overwritten utility.
+    const graphify = platform === "win32" ? "graphify.exe" : "graphify";
+    const utilityCandidates = [path.join(homeDir, ".local", "bin", graphify),
+      ...(get("PATH") ?? "").split(platform === "win32" ? ";" : path.delimiter).filter(Boolean).map(item => path.join(item, graphify))];
+    for (const candidate of utilityCandidates) {
+      if (!fs.existsSync(candidate)) continue;
+      fingerprint(candidate); break;
+    }
+    // Different working directories with the same selected configuration and utilities are
+    // equivalent. Relative utility overrides are already resolved against cwd by fingerprint.
+    return { schemaVersion: 1, sha256: sha256Hex(JSON.stringify({ platform, homeDir,
+      environment: keys.map(key => [key, get(key)]), inputs })) };
+  } catch {
+    // Unreadable, raced, or over-budget selection is not silently represented as "missing".
+    return null;
+  }
+}
+
+function withCliSelectionIdentity(identity: CliCapabilityIdentity, context?: CliSelectionContext): CliCapabilityIdentity | null {
+  const selection = cliSelectionIdentity(context);
+  return selection ? { ...identity, selectionSchemaVersion: 1, selectionSha256: selection.sha256 } : null;
+}
+
+/** Managed identity: the canonical shim path, the package manifest bytes and the content-bound
+ * execution tree digest recorded in install.json and revalidated before every spawn. */
+function managedCliCapabilityIdentityForBinding(binding: ManagedPicoCliExecutionBinding, context?: CliSelectionContext): CliCapabilityIdentity | null {
+  const packageJson = readBoundedRegularFile(packageJsonPath(binding.versionRoot));
+  if (!packageJson) return null;
+  return withCliSelectionIdentity({
+    version: binding.version,
+    executablePath: binding.cliPath,
+    packageJsonSha256: sha256Hex(packageJson),
+    executionTreeSha256: binding.contentIdentity.digest,
+    executionScope: "package-tree",
+  }, context);
+}
+
+/** Identity of the validated managed package behind an opaque execution handle. */
+export function managedPicoCliCapabilityIdentity(handle: ManagedPicoCliExecutionHandle, context?: CliSelectionContext): CliCapabilityIdentity | null {
+  const binding = managedExecutionBindings.get(handle);
+  return binding ? managedCliCapabilityIdentityForBinding(binding, context) : null;
+}
+
+function adjacentPackageJson(realPath: string): { path: string; bytes: Buffer } | null {
+  const candidates: string[] = [];
+  let directory = path.dirname(realPath);
+  candidates.push(path.join(directory, "node_modules", "@picoxr", "pico-cli", "package.json"));
+  for (let depth = 0; depth < 8; depth += 1) {
+    candidates.push(path.join(directory, "package.json"));
+    const parent = path.dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  for (const candidate of candidates) {
+    const bytes = readBoundedRegularFile(candidate);
+    if (!bytes) continue;
+    try {
+      const parsed: unknown = JSON.parse(bytes.toString("utf8"));
+      if (parsed && typeof parsed === "object" && (parsed as { name?: unknown }).name === PICO_CLI_PACKAGE) return { path: candidate, bytes };
+    } catch {
+      // Not the package manifest; keep walking.
+    }
+  }
+  return null;
+}
+
+/**
+ * External identity includes the containing package tree (and containing node_modules when
+ * present), not just index.js: a helper or bundled profiler change must invalidate its help.
+ * Oversized/unreadable/dependency symlink escape trees refuse evidence reuse. A standalone
+ * executable with no discoverable package retains the explicitly narrower executable identity.
+ */
+export function externalCliCapabilityIdentity(cliPath: string, version: string, context?: CliSelectionContext): CliCapabilityIdentity | null {
+  try {
+    const realPath = fs.realpathSync(cliPath);
+    const file = executableFileIdentity(realPath, Number.POSITIVE_INFINITY);
+    const packageJson = adjacentPackageJson(realPath);
+    let packageTree: { root: string; digest: string; excludedReceipts: Array<string | null> } | null = null;
+    if (packageJson) {
+      const packageRoot = path.dirname(packageJson.path);
+      let root = packageRoot;
+      for (let ancestor = packageRoot; path.dirname(ancestor) !== ancestor; ancestor = path.dirname(ancestor)) {
+        if (path.basename(ancestor) === "node_modules") { root = ancestor; break; }
+      }
+      const content = managedContentIdentityForFixture(root, { maxEntries: 20_000, maxDepth: 64,
+        maxFileBytes: 64 * 1024 * 1024, maxTotalBytes: 256 * 1024 * 1024 }, Date.now() + 5_000);
+      packageTree = { root, digest: content.digest, excludedReceipts: ["install.json", "publication.json"].map(name => {
+        const candidate = path.join(root, name);
+        if (!fs.existsSync(candidate)) return null;
+        const bytes = readBoundedRegularFile(candidate);
+        if (!bytes) throw new Error("external package receipt exceeds its bounds");
+        return sha256Hex(bytes);
+      }) };
+    }
+    return withCliSelectionIdentity({
+      version,
+      executablePath: realPath,
+      packageJsonSha256: sha256Hex(packageJson?.bytes ?? Buffer.alloc(0)),
+      executionTreeSha256: sha256Hex(Buffer.from(JSON.stringify({ realPath, size: file.size, contentSha256: file.contentSha256, packageTree }), "utf8")),
+      executionScope: packageTree ? "package-tree" : "standalone-entry",
+    }, context);
+  } catch {
+    return null;
+  }
+}
+
+/** Bounded read of one retained evidence file (null when missing, oversized, or not regular). */
+export function readCliCapabilityEvidence(file: string): Buffer | null {
+  return readBoundedRegularFile(file, CAPABILITY_EVIDENCE_MAX_BYTES);
+}
+
+function capabilityRunsRoot(managedRoot: string, identity: CliCapabilityIdentity): string {
+  return path.join(managedRoot, CAPABILITY_STORE_DIRECTORY, identity.version, cliCapabilityIdentityKey(identity));
+}
+
+function validCapabilityLimits(value: unknown): value is CliCapabilityReport["limits"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return Object.keys(record).sort().join("\0") === ["maxOutputBytes", "maxProbes", "timeoutMs"].join("\0")
+    && [record.timeoutMs, record.maxOutputBytes, record.maxProbes]
+      .every((item) => typeof item === "number" && Number.isSafeInteger(item) && item > 0);
+}
+
+function readCliCapabilityReport(reportPath: string): CliCapabilityReport | null {
+  try {
+    const bytes = readBoundedRegularFile(reportPath);
+    if (!bytes) return null;
+    const parsed: unknown = JSON.parse(bytes.toString("utf8"));
+    const set = parseCliCapabilitySet(parsed);
+    if (!set) return null;
+    const record = parsed as { coverage?: unknown; limits?: unknown };
+    if ((record.coverage !== "complete" && record.coverage !== "partial") || record.coverage !== capabilityCoverage(set)) return null;
+    if (!validCapabilityLimits(record.limits)) return null;
+    return { ...set, coverage: record.coverage, limits: { ...record.limits }, reportPath };
+  } catch {
+    return null;
+  }
+}
+
+/** Newest persisted report whose entire identity matches and whose evidence bytes still verify. */
+function findCliCapabilityReport(managedRoot: string, identity: CliCapabilityIdentity): CliCapabilityReport | null {
+  const root = capabilityRunsRoot(managedRoot, identity);
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const runs = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort().reverse().slice(0, CAPABILITY_MAX_RUNS_SCANNED);
+  for (const run of runs) {
+    const report = readCliCapabilityReport(path.join(root, run, CAPABILITY_REPORT_FILE));
+    if (!report || !sameCliCapabilityIdentity(report.identity, identity)) continue;
+    if (verifyCapabilitySet(report, readCliCapabilityEvidence).status !== "ok") continue;
+    return report;
+  }
+  return null;
+}
+
+function writeFsyncedBytes(file: string, bytes: Buffer): void {
+  const descriptor = fs.openSync(file, "wx");
+  try {
+    fs.writeFileSync(descriptor, bytes);
+    fs.fsyncSync(descriptor);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+type CapabilityDiscoveryTarget = {
+  cliPath: string;
+  identity: CliCapabilityIdentity;
+  /** Managed targets revalidate their publication before and after every probe spawn. */
+  guard?: (deadlineMs: number) => string | null;
+  /** External targets recompute their identity after discovery; drift discards the run. */
+  verifyIdentity?: () => CliCapabilityIdentity | null;
+};
+
+/**
+ * Bounded, help-only discovery: at most one `<route> --help` per operation, each under the
+ * caller's timeout, the 64 KiB output cap and the managed execution guard. Raw streams and the
+ * classified report are persisted once into a unique run directory. Failures to persist yield null
+ * and never affect package activation.
+ */
+async function discoverCliCapabilities(
+  target: CapabilityDiscoveryTarget,
+  managedRoot: string,
+  options: ManagedPicoCliOptions,
+  io: ManagedPicoCliIO,
+): Promise<CliCapabilityReport | null> {
+  const routes = cliOperationRoutes(target.identity.version);
+  const limits: CliCapabilityReport["limits"] = {
+    timeoutMs: options.updateCheckTimeoutMs ?? CAPABILITY_HELP_TIMEOUT_MS,
+    maxOutputBytes: CAPABILITY_HELP_MAX_OUTPUT_BYTES,
+    maxProbes: CAPABILITY_MAX_PROBES,
+  };
+  const checkedAt = new Date(io.now()).toISOString();
+  const runDirectory = path.join(capabilityRunsRoot(managedRoot, target.identity), `${checkedAt.replace(/[-:.]/g, "")}-${io.randomUUID()}`);
+  try {
+    fs.mkdirSync(path.dirname(runDirectory), { recursive: true });
+    fs.mkdirSync(runDirectory);
+  } catch {
+    return null;
+  }
+  try {
+    const operations: OperationCapability[] = [];
+    let probes = 0;
+    for (const route of routes) {
+      if (route.argvPrefix === null) {
+        operations.push(classifyOperation(route, []));
+        continue;
+      }
+      if (probes >= limits.maxProbes) {
+        operations.push(unknownCapability(route.operation, `bounded: the ${limits.maxProbes}-probe discovery budget was exhausted before \`${route.argvPrefix.join(" ")}\``, route.argvPrefix));
+        continue;
+      }
+      probes += 1;
+      const argv = [...route.argvPrefix, "--help"];
+      const result = await io.run(target.cliPath, argv, {
+        timeoutMs: limits.timeoutMs,
+        killGraceMs: options.killGraceMs,
+        maxOutputBytes: limits.maxOutputBytes,
+        ...(target.guard ? { beforeSpawn: target.guard, afterSpawn: target.guard } : {}),
+      });
+      const stem = path.join(runDirectory, `${String(probes).padStart(2, "0")}-${route.operation}`);
+      const stdoutBytes = Buffer.from(result.stdout, "utf8");
+      const stderrBytes = Buffer.from(result.stderr, "utf8");
+      const stdoutPath = `${stem}.stdout.txt`;
+      const stderrPath = `${stem}.stderr.txt`;
+      writeFsyncedBytes(stdoutPath, stdoutBytes);
+      writeFsyncedBytes(stderrPath, stderrBytes);
+      const observation: HelpObservation = {
+        argv,
+        exitCode: result.code,
+        timedOut: result.timedOut,
+        outputTruncated: result.outputTruncated,
+        stdoutPath,
+        stderrPath,
+        stdoutSha256: sha256Hex(stdoutBytes),
+        stderrSha256: sha256Hex(stderrBytes),
+      };
+      operations.push(classifyOperation(route, [{
+        observation,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        ...(result.spawnError ? { spawnError: result.spawnError } : {}),
+        timeoutMs: limits.timeoutMs,
+        maxOutputBytes: limits.maxOutputBytes,
+      }]));
+    }
+    if (target.verifyIdentity) {
+      const after = target.verifyIdentity();
+      if (!after || !sameCliCapabilityIdentity(after, target.identity)) return null;
+    }
+    const set: CliCapabilitySet = { schemaVersion: 2, identity: { ...target.identity }, checkedAt, operations,
+      evidenceScope: "help-only", runtimeTested: false, visuallyReviewed: false };
+    const coverage = capabilityCoverage(set);
+    const reportPath = path.join(runDirectory, CAPABILITY_REPORT_FILE);
+    writeFsyncedJson(reportPath, { ...set, coverage, limits });
+    fsyncDirectoryWhereSupported(runDirectory);
+    return { ...set, coverage, limits, reportPath };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Bind capability evidence to an ok result. "read-only" (inspection, preflight, default doctor)
+ * only reuses a persisted report whose identity and evidence verify; "discover" (the first real
+ * CLI-backed operation, or the force-refresh health path) runs bounded discovery when nothing
+ * reusable exists or when forceRefresh is set.
+ */
+async function attachCliCapabilities(
+  result: Extract<PicoCliEnsureResult, { status: "ok" }>,
+  options: ManagedPicoCliOptions,
+  io: ManagedPicoCliIO,
+  mode: "read-only" | "discover",
+): Promise<void> {
+  const managedRoot = managedRootFor(options, io);
+  const managed = result.source === "managed";
+  const handle = managed ? managedResultHandles.get(result) : undefined;
+  const binding = handle ? managedExecutionBindings.get(handle) : undefined;
+  if (managed && !binding) return;
+  const deriveIdentity = (): CliCapabilityIdentity | null => (binding
+    ? managedCliCapabilityIdentityForBinding(binding, io)
+    : externalCliCapabilityIdentity(result.path, result.version, io));
+  const identity = deriveIdentity();
+  if (!identity) { delete result.capabilities; return; }
+  const refresh = mode === "discover" && options.forceRefresh === true;
+  if (!refresh) {
+    if (result.capabilities && sameCliCapabilityIdentity(result.capabilities.identity, identity)) return;
+    const existing = findCliCapabilityReport(managedRoot, identity);
+    if (existing) {
+      result.capabilities = existing;
+      return;
+    }
+  }
+  delete result.capabilities;
+  if (mode !== "discover") return;
+  const report = await discoverCliCapabilities({
+    cliPath: result.path,
+    identity,
+    ...(handle ? { guard: (deadlineMs: number) => validateManagedPicoCliExecution(handle, deadlineMs) } : {}),
+    verifyIdentity: deriveIdentity,
+  }, managedRoot, options, io);
+  if (report) result.capabilities = report;
+}
+
+/**
+ * Lazy resolution for a real CLI-backed operation: activate the exact package, then bind
+ * per-operation capability evidence (reusing verified reports, discovering otherwise).
+ */
+export async function resolveManagedPicoCli(
+  options: ManagedPicoCliOptions,
+  io: ManagedPicoCliIO,
+): Promise<PicoCliEnsureResult> {
+  const activated = await activateManagedPicoCli(options, io);
+  if (activated.status !== "ok") return activated;
+  await attachCliCapabilities(activated, options, io, "discover");
+  return activated;
+}
+

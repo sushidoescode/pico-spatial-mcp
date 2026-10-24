@@ -1,0 +1,12 @@
+Description:
+Remove a file or directory on the preferred current device
+
+Usage:
+  $ pico-cli files rm <remote>
+
+Options:
+  -d, --device <device>   Target device id
+  -r, --recursive         Remove directories recursively
+  -f, --force             Ignore nonexistent files and arguments, never prompt
+  --allow-dangerous-path  Permit deleting / or /sdcard after path normalization
+  -h, --help              Display this message

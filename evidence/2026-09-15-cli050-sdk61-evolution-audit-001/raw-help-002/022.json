@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 app logcat --help",
+  "argv": [
+    "app",
+    "logcat",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:49.680Z",
+  "endedAt": "2026-09-15T09:11:49.781Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "62f68aeaf728821082b7547405f040517b828ce40985f87a46e6e40ad785b348",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

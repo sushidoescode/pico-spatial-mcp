@@ -1,0 +1,71 @@
+# GREEN — Task 1 Step 4 — 2026-09-16T09:42:23Z — HEAD e1481ea + uncommitted gate-inventory/run-gate/gates.yml/test changes
+# cmd: PICO_ADB=/fixture/no/such/adb node --test test/gate-inventory.mjs
+[run-gate] node test/eye.mjs failed: ENOENT
+[run-gate] node test/eye.mjs was terminated by SIGTERM
+[run-gate] node missing.mjs failed: spawn failed
+✔ GATES declares a host, a scope, and at least one argv array for every gate (0.515042ms)
+✔ the repository's package.json and gates.yml agree with the inventory (0.805709ms)
+✔ every public gate script is routed through run-gate, and nothing else is (0.158125ms)
+✔ the native Windows lane keeps its exact three constituent suites (0.066916ms)
+✔ macOS keeps both native CMIO contracts, and only those (0.07375ms)
+✔ test:runrevision is a Linux gate, not an orphan script (0.043834ms)
+✔ the build-freshness and plugin-bootstrap-freshness suites are named Linux fixture gates (0.071625ms)
+✔ multi-command gates keep every && tail as its own sequential argv array (0.051958ms)
+✔ every argv target file that the inventory names exists in the checkout (0.385ms)
+✔ a gate the workflow stops invoking is reported as missing (0.251ms)
+✔ a gate invoked twice is reported as a duplicate (0.265958ms)
+✔ a workflow step invoking an unknown gate is reported (0.386125ms)
+✔ a gate run by a lane whose runner OS disagrees with its host is reported (0.208833ms)
+✔ a package script with no host assignment is reported (0.154083ms)
+✔ an inventory entry with no package script is reported (0.138458ms)
+✔ a lane whose runner OS cannot be recognized is reported rather than silently trusted (0.15075ms)
+✔ workflow lanes carry their job name, runner, host family, and gate invocations (0.114375ms)
+✔ runner labels map to host families, and an unknown label maps to null (0.02675ms)
+✔ published counts are derived from the inventory, never typed (0.050917ms)
+✔ the shape checks survive a synthetic inventory, so no repository total is baked in (0.10725ms)
+✔ a stale build fails the gate before any child is spawned (0.222333ms)
+✔ an installed-artifact gate is freshness-checked too (0.066375ms)
+✔ a native-contract gate skips the freshness check, because it never loads dist/ (0.212458ms)
+✔ commands run sequentially, with no shell, inheriting stdio, in the given root (0.082208ms)
+✔ FIXTURE_NO_ADB is the exact literal the checkpoint's runs exported, and names no file (0.026459ms)
+✔ a fixture gate child gets PICO_ADB=FIXTURE_NO_ADB when the caller set none (0.048125ms)
+✔ an installed-artifact gate child gets the same default (0.046125ms)
+✔ an inherited PICO_ADB is replaced by the pin, whatever it holds: a real adb, empty, or whitespace (0.12875ms)
+✔ a native-contract gate child gets no PICO_ADB default (0.040458ms)
+✔ the default is built into the child env, never written to process.env (0.043791ms)
+✔ an inherited real PICO_ADB is replaced by the fixture pin in fixture gates (0.029333ms)
+✔ an empty or whitespace PICO_ADB is replaced, never passed through (0.028583ms)
+✔ installed-artifact gates are pinned exactly like fixture gates (0.023666ms)
+✔ native-contract gates get the identical env object and no pin (0.014875ms)
+✔ the harness override passes an explicit fake executable through as PICO_ADB (0.740917ms)
+✔ an invalid harness override refuses to spawn the gate instead of falling back (0.126917ms)
+✔ run-gate hands a valid harness override to the child as PICO_ADB, replacing the inherited value (0.425833ms)
+✔ run-gate refuses a gate whose harness override is invalid: exit 2, the fix printed, nothing spawned (0.087459ms)
+✔ gates.yml carries the same literal at workflow level, covering the one raw node --test step (0.393541ms)
+✔ the first nonzero exit propagates and stops the remaining commands (0.076792ms)
+✔ a spawn error and a killed child are both nonzero, and stop the gate (0.283084ms)
+✔ an unknown gate name is refused by name (0.053583ms)
+✔ runArgv resolves nonzero without throwing when the child cannot start (0.039583ms)
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-bNI2WO/ignores-sigterm.mjs exceeded 0s; sending SIGTERM
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-bNI2WO/ignores-sigterm.mjs ignored SIGTERM for 1s; sending SIGKILL
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-bNI2WO/ignores-sigterm.mjs was terminated by SIGKILL after exceeding 0s
+✔ a real child that ignores SIGTERM is still bounded: SIGKILL lands after the grace (1006.699709ms)
+[run-gate] node test/eye.mjs exceeded 0s; sending SIGTERM
+[run-gate] node test/eye.mjs ignored SIGTERM for 0s; sending SIGKILL
+[run-gate] node test/eye.mjs was terminated by SIGKILL after exceeding 0s
+✔ a timed-out gate stops before its remaining commands (22.332ms)
+✔ only npm goes through the Windows launch shim; node and sh are spawned directly (0.413666ms)
+ℹ tests 46
+ℹ suites 0
+ℹ pass 46
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1075.762417
+# exit=0
+
+# live CLI refusal: PICO_GATE_FIXTURE_ADB=/no/such/fake-adb node scripts/run-gate.mjs test:ledger (must exit 2, spawn nothing)
+[run-gate] PICO_GATE_FIXTURE_ADB="/no/such/fake-adb" must be an absolute path to an existing executable fake adb; refusing to spawn fixture gate children
+[run-gate] fix: unset PICO_GATE_FIXTURE_ADB or point it at an executable fake
+# exit=2

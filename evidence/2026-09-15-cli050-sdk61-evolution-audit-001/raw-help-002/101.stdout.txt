@@ -1,0 +1,9 @@
+Description:
+Disconnect from a device over WiFi
+
+Usage:
+  $ pico-cli device disconnect [address]
+
+Options:
+  --all       Disconnect every TCP/IP adb device instead of one explicit address
+  -h, --help  Display this message

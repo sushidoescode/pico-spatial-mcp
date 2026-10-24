@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-24T11:57:02.370516+00:00",
+  "userAuthorization": "I give full authority and approval to build it, test it and authenticate it. Then update the github repo accordingly and everything else for it.",
+  "scope": [
+    "Build/test/release reviewed PICO iteration candidate",
+    "Publish required existing local-main foundations and candidate to private origin through reviewed PR",
+    "Activate opt-in interaction in existing Codex PICO registration",
+    "Attempt supported host authentication; user interaction only if needed"
+  ],
+  "preserved": [
+    "Stage1 branch and separate Stage2 backlog",
+    "Mission Replay restrictions",
+    "existing windows/processes/SDKs/emulator/app data/evidence",
+    "no connected headset fallback"
+  ],
+  "baseCandidate": "fbc0841b60bae9245bc49f2b1ea44a8372bb94b4",
+  "localMainBefore": "1157f33ad2d3934595a3ebaafe4d3fbfc7e1ce36",
+  "remoteMainBefore": "308c898",
+  "localMainAheadOfRemote": 119,
+  "releaseVersion": "38.2.0"
+}

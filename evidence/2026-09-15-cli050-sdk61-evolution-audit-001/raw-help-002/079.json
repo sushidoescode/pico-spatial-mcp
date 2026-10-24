@@ -1,0 +1,16 @@
+{
+  "label": "0.5.0 files --help",
+  "argv": [
+    "files",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:00.500Z",
+  "endedAt": "2026-09-15T09:12:00.603Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "5e6d82ed58e1778d1cb47ce7a12f0895280dda0538f413efa20aaafca411e9f4",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

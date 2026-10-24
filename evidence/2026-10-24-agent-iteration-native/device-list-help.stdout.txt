@@ -1,0 +1,10 @@
+[1mDescription[22m:
+List connected devices
+
+[1mUsage[22m:
+  $ [1mpico-cli device list[22m
+
+[1mOptions[22m:
+  [1m-l, --long[22m         Show extended device info
+  [1m--format <format>[22m  Output format (table | json | plain) (default: table)
+  [1m-h, --help[22m         Display this message

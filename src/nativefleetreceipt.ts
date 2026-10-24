@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import { adbExecutable } from "./adb.js";
 import { materializeCaptureBytes } from "./ledger.js";
 import {
   canonicalJson,
@@ -19,6 +20,7 @@ import {
   type PublishedNativeRunReceipt,
 } from "./runreceiptstore.js";
 import { gradleEnv as defaultGradleEnv } from "./toolchain.js";
+import { parseJavaProperties } from "./toolchainselection.js";
 import {
   run,
   runBinary,
@@ -71,7 +73,7 @@ export interface NativeFleetReceiptDependencies {
 }
 
 export type NativeFleetFailureStage =
-  | "source-identity" | "build" | "build-input-continuity" | "apk-resolution" | "apk-publication" | "apk-inspection"
+  | "adb-resolution" | "source-identity" | "build" | "build-input-continuity" | "apk-resolution" | "apk-publication" | "apk-inspection"
   | "install" | "installed-byte-identity" | "after-install" | "device-identity" | "launch"
   | "pid" | "foreground" | "capture" | "capture-publication" | "receipt-publication";
 
@@ -280,7 +282,22 @@ function writeUniqueCapture(targetPath: string, bytes: Buffer, randomUUID: () =>
   return fs.realpathSync(targetPath);
 }
 
-function parseLocalPropertiesSdk(projectDir: string): string | null {
+/**
+ * `local.properties` is a java.util.Properties file, so it is parsed as one (Task S4).
+ *
+ * The hand-rolled `^\s*sdk\.dir\s*=` + unescape-`\:`-and-`\\` reader this replaces understood a
+ * strict subset of what Gradle's own `Properties.load` accepts, and — since S3 — a strict subset
+ * of what this server WRITES: `serializeJavaProperty` escapes `#`, `!`, `=`, `:` and everything
+ * outside printable ASCII as `\uXXXX`, exactly like `Properties.store`. An Android SDK under a
+ * non-ASCII home or on a volume with a `#` in its name therefore read back as a path that does
+ * not exist, and aapt2/apksigner inspection silently degraded to "Android SDK root was not
+ * found" — a receipt weakened by a parser bug rather than by anything about the machine.
+ *
+ * The first declaration still wins (unchanged behaviour for a pathological duplicate key), and
+ * the value is no longer trimmed, because `Properties.load` does not trim trailing spaces and
+ * `serializeJavaProperty` writes them literally.
+ */
+export function parseLocalPropertiesSdk(projectDir: string): string | null {
   const propertiesPath = path.join(projectDir, "local.properties");
   let text: string;
   try {
@@ -289,11 +306,7 @@ function parseLocalPropertiesSdk(projectDir: string): string | null {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
-  const line = text.split(/\r?\n/).find((entry) => /^\s*sdk\.dir\s*=/.test(entry));
-  if (!line) return null;
-  const value = line.slice(line.indexOf("=") + 1).trim()
-    .replace(/\\:/g, ":")
-    .replace(/\\\\/g, "\\");
+  const value = parseJavaProperties(text).find((entry) => entry.key === "sdk.dir")?.value;
   return value ? path.resolve(projectDir, value) : null;
 }
 
@@ -402,28 +415,47 @@ function fleetPackages(output: string): string[] {
   return [...new Set(packages)];
 }
 
+/**
+ * The adb this run spawns: an injected path (tests, and fleetbuild's own adapter-resolved value) or
+ * THE shared adapter's answer (src/adb.ts). The adapter throws on a set-but-unusable `$PICO_ADB` —
+ * blank included — and that refusal becomes this producer's first structured failure stage. A host
+ * with no adb anywhere still gets the bare name, exactly as before. The previous
+ * `process.env.PICO_ADB ?? "adb"` read the variable by string: a blank export became the command ""
+ * and a real one was trusted by filename, bypassing the identity check every other consumer gets.
+ */
+function resolveAdbPath(deps: NativeFleetReceiptDependencies | undefined): string {
+  if (deps?.adbPath != null) return deps.adbPath;
+  try {
+    return adbExecutable();
+  } catch (error) {
+    throw new StageFailure("adb-resolution", error instanceof Error ? error.message : String(error));
+  }
+}
+
 export async function produceNativeFleetReceipt(
   input: ProduceNativeFleetReceiptInput,
   deps?: NativeFleetReceiptDependencies,
 ): Promise<ProduceNativeFleetReceiptResult> {
   const runText = deps?.runText ?? run;
   const gradleEnv = deps?.gradleEnv ?? defaultGradleEnv();
-  const resolvedDeps: NativeFleetReceiptDependencies = {
-    runText,
-    runBinary: deps?.runBinary ?? runBinary,
-    adbPath: deps?.adbPath ?? process.env.PICO_ADB ?? "adb",
-    gradleEnv,
-    now: deps?.now ?? (() => new Date()),
-    monotonicNow: deps?.monotonicNow ?? (() => performance.now()),
-    randomUUID: deps?.randomUUID ?? (() => crypto.randomUUID()),
-    sleep: deps?.sleep ?? defaultSleep,
-    inspectApk: deps?.inspectApk ?? ((apkPath, projectDir) => defaultInspectApk(apkPath, projectDir, runText, gradleEnv)),
-  };
   const completedStages: string[] = [];
   let built = false;
   let installed = false;
 
   try {
+    // adb is resolved FIRST, inside the fail-closed envelope: a refused $PICO_ADB is a structured
+    // "adb-resolution" failure before Gradle, adb or any capture command runs.
+    const resolvedDeps: NativeFleetReceiptDependencies = {
+      runText,
+      runBinary: deps?.runBinary ?? runBinary,
+      adbPath: resolveAdbPath(deps),
+      gradleEnv,
+      now: deps?.now ?? (() => new Date()),
+      monotonicNow: deps?.monotonicNow ?? (() => performance.now()),
+      randomUUID: deps?.randomUUID ?? (() => crypto.randomUUID()),
+      sleep: deps?.sleep ?? defaultSleep,
+      inspectApk: deps?.inspectApk ?? ((apkPath, projectDir) => defaultInspectApk(apkPath, projectDir, runText, gradleEnv)),
+    };
     let projectDir: string;
     let authoredAppSpec: NativeRunReceiptPayload["source"]["authoredAppSpec"];
     let effectiveAppSpec: NativeRunReceiptPayload["source"]["effectiveAppSpec"];

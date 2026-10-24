@@ -324,7 +324,16 @@ export function registerSpatialBenchTools(server: McpServer) {
                     const diag = await runPerfDiagnose(pkg, { durationSec: 10 });
                     const cliScore = scorePicoCliPerfAxis(diag, perfBudgetMs);
                     if (cliScore.perf === null) {
-                      row.notes.push(`${cliScore.note} — falling back to the gfxinfo UI view`);
+                      // C4: a missing measurement (the profiler's own SKIP/INSUFFICIENT_DATA, or no
+                      // app 3D frames) is carried into the notes as what it is. The gfxinfo
+                      // fallback below measures UI/RenderThread frames only — it is a DIFFERENT
+                      // axis source, never a substitute app-FPS measurement for this window.
+                      const gap = [
+                        diag.measurement ? `measurement:${diag.measurement}` : null,
+                        diag.reportVersion ? `report ${diag.reportVersion}` : null,
+                        Array.isArray(diag.missingCounters) && diag.missingCounters.length ? `not measured: ${diag.missingCounters.join("/")}` : null,
+                      ].filter(Boolean).join("; ");
+                      row.notes.push(`${cliScore.note}${gap ? ` (${gap})` : ""} — falling back to the gfxinfo UI view, which is NOT an app 3D-FPS measurement`);
                     } else {
                       row.perf = cliScore.perf;
                       row.max += 1;

@@ -1,0 +1,7 @@
+Usage:
+  $ pico-cli capture screenshot
+
+Options:
+  -d, --device <device>  Target device id 
+  -o, --out <path>       Local output path 
+  -h, --help             Display this message 

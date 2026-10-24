@@ -1,0 +1,63 @@
+{
+  "host": "claude",
+  "exitCode": 0,
+  "durationSeconds": 26.664,
+  "pid": 70057,
+  "termination": null,
+  "cleanupSignals": [
+    "SIGINT"
+  ],
+  "cleanupErrors": [
+    "group signal failed: [Errno 1] Operation not permitted",
+    "group signal failed: [Errno 1] Operation not permitted",
+    "group signal failed: [Errno 1] Operation not permitted"
+  ],
+  "leaderReaped": true,
+  "streamsDrained": true,
+  "outputTruncated": false,
+  "cleanupScope": "new task-owned process group; no discovered PID signalling",
+  "maximumSeconds": 185.5,
+  "permissionDecisions": [
+    {
+      "requestId": "782e241e-cfd3-4cf8-86d1-c16e4c835c46",
+      "tool": "mcp__pico_iteration_fixture__pico_doctor",
+      "input": {},
+      "decision": "allow"
+    },
+    {
+      "requestId": "93829083-01c6-4052-b1ff-eb41ebfd9270",
+      "tool": "mcp__pico_iteration_fixture__pico_interaction",
+      "input": {
+        "action": "describe"
+      },
+      "decision": "allow"
+    },
+    {
+      "requestId": "fa296fa3-fa9c-49ba-9b2b-5caf5321063f",
+      "tool": "mcp__pico_iteration_fixture__host_probe",
+      "input": {
+        "mode": "identity"
+      },
+      "decision": "allow"
+    },
+    {
+      "requestId": "a3e3dc5e-9eee-4e14-945b-0f6e1bf963dc",
+      "tool": "mcp__pico_iteration_fixture__host_probe",
+      "input": {
+        "mode": "error"
+      },
+      "decision": "allow"
+    },
+    {
+      "requestId": "0dc71a0f-b272-427a-ae87-af900b05f7e2",
+      "tool": "mcp__pico_iteration_fixture__host_probe",
+      "input": {
+        "mode": "image"
+      },
+      "decision": "allow"
+    }
+  ],
+  "protocolErrors": [],
+  "resultSeen": true,
+  "runnerError": null
+}

@@ -1,0 +1,16 @@
+{
+  "label": "0.4.4 doctor --help",
+  "argv": [
+    "doctor",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:48.117Z",
+  "endedAt": "2026-09-15T09:11:48.222Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "b2073e7d78e7636e5e0a3e7eeb663bef5c38727b885b2288d7efeeed09fdc2aa",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

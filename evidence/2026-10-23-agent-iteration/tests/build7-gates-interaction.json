@@ -1,0 +1,42 @@
+[
+  {
+    "name": "test:interaction",
+    "startedAt": "2026-10-23T21:31:19.295Z",
+    "finishedAt": "2026-10-23T21:31:23.689Z",
+    "status": 0,
+    "signal": null,
+    "error": null,
+    "log": "evidence/2026-10-23-agent-iteration/tests/build7-interaction.log",
+    "buildSource": "a2085a54b1729b026b5b3b0fb3f7f6818786c9c92b318dfc91268c6a961d3cc7"
+  },
+  {
+    "name": "test:observation",
+    "startedAt": "2026-10-23T21:31:23.691Z",
+    "finishedAt": "2026-10-23T21:32:16.866Z",
+    "status": 0,
+    "signal": null,
+    "error": null,
+    "log": "evidence/2026-10-23-agent-iteration/tests/build7-observation.log",
+    "buildSource": "a2085a54b1729b026b5b3b0fb3f7f6818786c9c92b318dfc91268c6a961d3cc7"
+  },
+  {
+    "name": "test:docsmeta",
+    "startedAt": "2026-10-23T21:32:16.869Z",
+    "finishedAt": "2026-10-23T21:32:17.430Z",
+    "status": 0,
+    "signal": null,
+    "error": null,
+    "log": "evidence/2026-10-23-agent-iteration/tests/build7-docsmeta.log",
+    "buildSource": "a2085a54b1729b026b5b3b0fb3f7f6818786c9c92b318dfc91268c6a961d3cc7"
+  },
+  {
+    "name": "test:lint",
+    "startedAt": "2026-10-23T21:32:17.431Z",
+    "finishedAt": "2026-10-23T21:32:18.833Z",
+    "status": 0,
+    "signal": null,
+    "error": null,
+    "log": "evidence/2026-10-23-agent-iteration/tests/build7-lint.log",
+    "buildSource": "a2085a54b1729b026b5b3b0fb3f7f6818786c9c92b318dfc91268c6a961d3cc7"
+  }
+]

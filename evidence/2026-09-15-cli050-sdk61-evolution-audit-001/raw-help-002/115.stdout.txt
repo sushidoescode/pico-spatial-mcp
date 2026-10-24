@@ -1,0 +1,22 @@
+Description:
+Create a PICO emulator AVD without starting it
+
+Usage:
+  $ pico-cli emulator create
+
+Options:
+  --format <format>           Output format (plain | json) (default: plain)
+  --avd <name>                AVD name to create
+  --source <source>           Download source (auto | cn | global | beta_cn | beta_global) (default:
+                              auto)
+  --bundle-version <version>  Preferred emulator bundle version to download
+  --config-url <url>          Override remote sdk_config URL for emulator downloads
+  --artifact-url <url>        Download emulator bundle directly from this archive URL
+  --artifact-checksum <sha1>  Optional SHA-1 checksum for --artifact-url
+  -y, --yes                   Assume yes for prompts
+  -h, --help                  Display this message
+
+Examples:
+  $ pico-cli emulator create
+  $ pico-cli emulator create --avd Pico_Emulator_0_11
+  $ pico-cli emulator create --format json

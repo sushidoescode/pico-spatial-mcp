@@ -1,0 +1,21 @@
+Description:
+Download or update the PICO emulator bundle without creating an AVD
+
+Usage:
+  $ pico-cli emulator install [bundleVersion]
+
+Options:
+  --format <format>           Output format (plain | json) (default: plain)
+  --source <source>           Download source (auto | cn | global | beta_cn | beta_global) (default:
+                              auto)
+  --config-url <url>          Override remote sdk_config URL for emulator downloads
+  --artifact-url <url>        Download emulator bundle directly from this archive URL
+  --artifact-checksum <sha1>  Optional SHA-1 checksum for --artifact-url
+  -y, --yes                   Assume yes for prompts
+  -h, --help                  Display this message
+
+Examples:
+  $ pico-cli emulator install
+  $ pico-cli emulator install x.x.x
+  $ pico-cli emulator install --source global
+  $ pico-cli emulator install --format json

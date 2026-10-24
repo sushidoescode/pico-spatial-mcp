@@ -8,6 +8,7 @@
 import { analyzeFrame, analyzeColorKeys, judgeFrame, PASSTHROUGH_COVERAGE_THRESHOLD, registerEyeTools } from "../dist/eye.js";
 import * as eyeModule from "../dist/eye.js";
 import { sendXrRecenter } from "../dist/grpc.js";
+import { picoCliObservationRoot } from "../dist/picocli.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -100,6 +101,14 @@ const fakeServer = {
     if (name === "capture_canonical") captureHandler = handler;
   },
 };
+// The screencap payload is a REAL committed PNG fixture (test/fixtures/media, provenance in its
+// README — none is a device capture). The previous version of this fixture returned 1200 bytes of
+// constant 7: a payload that is not an image at all, which passed only because the tool's own gate
+// was `length < 1000`. That is the defect C6 fix round 1 closes, so the fixture has to stop
+// depending on it.
+const mediaFixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "media");
+const validFramePng = fs.readFileSync(path.join(mediaFixtures, "valid-small.png"));
+let screencapPayload = validFramePng;
 registerEyeTools(fakeServer, {
   sendXrRecenterFn: async (_toolsVersion, options) => {
     recenteredSerial = options?.serial;
@@ -107,7 +116,7 @@ registerEyeTools(fakeServer, {
   },
   runBinaryFn: async (_command, args) => {
     screencapSerial = args[1];
-    return { code: 0, stdout: Buffer.alloc(1200, 7), stderr: "" };
+    return { code: 0, stdout: screencapPayload, stderr: "" };
   },
   analyzeFrameFn: async () => ({ available: true }),
   resolveAdbFn: () => "fake-adb",
@@ -120,7 +129,73 @@ const captureResult = JSON.parse((await captureHandler({
   settleMs: 0,
 })).content[0].text);
 check("capture_canonical binds RECENTER and screencap to one requested serial", captureResult.status === "captured" && recenteredSerial === "emulator-5580" && screencapSerial === "emulator-5580" && captureResult.recenter?.targetSerial === "emulator-5580");
+check("capture_canonical reports the inspected frame's real dimensions", captureResult.width === 64 && captureResult.height === 64);
+
+// C6 fix round 1: a malformed payload ABOVE the old 1000-byte floor must be refused, and nothing
+// may be written — the canonical frame is what every later sha/drift/measurement claim is anchored
+// to, so "big enough" was never an inspection.
+screencapPayload = fs.readFileSync(path.join(mediaFixtures, "truncated.png"));
+const malformedOut = path.join(captureScratch, "malformed.png");
+const malformedResult = await captureHandler({ serial: "emulator-5580", outPath: malformedOut, settleMs: 0 });
+const malformedText = malformedResult.content[0].text;
+check(
+  `capture_canonical refuses a malformed >1000-byte screencap and writes nothing (${screencapPayload.length} bytes)`,
+  screencapPayload.length > 1000
+    && malformedResult.isError === true
+    && /not a valid image/.test(malformedText)
+    && !fs.existsSync(malformedOut),
+);
+screencapPayload = validFramePng;
 fs.rmSync(captureScratch, { recursive: true, force: true });
+
+// ── the canonical capture's DEFAULT output path ────────────────────────────────────────────────
+// The old default was one fixed file, /tmp/pico-render/canonical.png, so the second LOOK silently
+// overwrote the frame the first one was still being cited for — and record_verification's
+// byte-equality re-capture then compared against bytes that had already been replaced. The default
+// is now a run-unique RETAINED file under the observation root, the same store capture_frame and
+// capture_record already write to. The DEFAULT TARGET is deliberately unchanged: with no serial
+// this tool still captures emulator-5554.
+const defaultPathHome = fs.mkdtempSync(path.join(os.tmpdir(), "eye-default-capture-path-"));
+const previousHome = process.env.HOME;
+process.env.HOME = defaultPathHome;
+let defaultPathHandler = null;
+let defaultTargetArgv = null;
+registerEyeTools({
+  registerTool(name, _definition, handler) { if (name === "capture_canonical") defaultPathHandler = handler; },
+}, {
+  runBinaryFn: async (_command, args) => { defaultTargetArgv = args; return { code: 0, stdout: validFramePng, stderr: "" }; },
+  analyzeFrameFn: async () => ({ available: true }),
+  resolveAdbFn: () => "fake-adb",
+});
+const firstDefault = JSON.parse((await defaultPathHandler({ settleMs: 0 })).content[0].text);
+const firstDefaultArgv = defaultTargetArgv;
+const secondDefault = JSON.parse((await defaultPathHandler({ settleMs: 0 })).content[0].text);
+const canonicalRoot = path.join(picoCliObservationRoot(), "canonical");
+check(
+  `capture_canonical's default path is a run-unique file under the observation root (${firstDefault.path})`,
+  firstDefault.status === "captured"
+    && typeof firstDefault.path === "string"
+    && firstDefault.path.startsWith(canonicalRoot + path.sep)
+    && path.basename(firstDefault.path) === "canonical.png"
+    && path.relative(canonicalRoot, path.dirname(firstDefault.path)).split(path.sep).length === 1,
+);
+check(
+  "capture_canonical's default path is never the fixed shared /tmp/pico-render file",
+  !firstDefault.path.includes("/tmp/pico-render") && !secondDefault.path.includes("/tmp/pico-render"),
+);
+check(
+  "two default captures RETAIN both frames instead of one overwriting the other",
+  firstDefault.path !== secondDefault.path
+    && fs.existsSync(firstDefault.path)
+    && fs.existsSync(secondDefault.path),
+);
+check(
+  `capture_canonical still defaults to the emulator-5554 target (${JSON.stringify(firstDefaultArgv?.slice(0, 2))})`,
+  firstDefaultArgv?.[0] === "-s" && firstDefaultArgv?.[1] === "emulator-5554",
+);
+if (previousHome === undefined) delete process.env.HOME;
+else process.env.HOME = previousHome;
+fs.rmSync(defaultPathHome, { recursive: true, force: true });
 
 // Public visual_judge regression: the caller's prose names semantic content that the calibrated
 // checks do not measure. A PASS may persist only a canonical claim derived from the exact predicate
@@ -281,7 +356,7 @@ try {
   }));
   const swanColorKey = await analyzeColorKeys(swanFixturePath, swanPalette);
   check(
-    `Swan capture-derived swatches find all seven authored color keys (found ${swanColorKey.found.length}: ${swanColorKey.found.join(",")}; missing ${swanColorKey.missing.join(",") || "none"})`,
+    `Swan capture-derived swatches find all seven authored color keys (found ${swanColorKey.found.length}: ${swanColorKey.found.join(",")}; missing ${swanColorKey.missing.join(",") || "none"}; detector ${swanColorKey.available ? "available" : swanColorKey.error})`,
     swanColorKey.available
       && swanColorKey.expected.length === SWAN_CAPTURE_RGB.length
       && swanColorKey.found.length === SWAN_CAPTURE_RGB.length

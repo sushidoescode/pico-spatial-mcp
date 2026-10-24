@@ -1,0 +1,64 @@
+{
+  "label": "after",
+  "kind": "host-executed fixture measurement (not a promise, not a target)",
+  "measuredAt": "2026-09-15T14:58:52.904Z",
+  "commit": "9726a84888479e500365e3cfbaec731422e70a25",
+  "workingTreeDirty": true,
+  "node": "v25.8.1",
+  "platform": "darwin-arm64",
+  "harness": "test/helpers/picocli-managed-fixture.mjs createManagedRuntimeHarness() + PICO_ADB exit-1 stub; doors surface; inner full-surface dist/index.js",
+  "sequential": {
+    "doorsServerConnectMs": 139.4,
+    "picoSdk": {
+      "input": {
+        "symbol": "Entity"
+      },
+      "status": "unavailable",
+      "coldMs": 343.3,
+      "warmMs": [
+        0.8,
+        0.5,
+        0.5,
+        0.5,
+        0.4,
+        0.6,
+        0.6,
+        0.5,
+        0.6,
+        0.4
+      ],
+      "warmMedianMs": 0.5,
+      "warmMinMs": 0.4,
+      "warmMaxMs": 0.8,
+      "responseBytes": 816
+    },
+    "picoDoctor": {
+      "input": {},
+      "ms": 6,
+      "responseBytes": 6788,
+      "preflightChecks": 13
+    },
+    "picoLook": {
+      "input": {},
+      "ms": 647.7,
+      "envelopeIsError": true,
+      "textStatusField": null,
+      "textHead": "screencap failed (code 1, 0 bytes). Is emulator-5554 running?",
+      "responseBytes": 115
+    },
+    "innerChildrenStarted": 1
+  },
+  "burst": {
+    "concurrentCalls": 20,
+    "input": {
+      "symbol": "Entity"
+    },
+    "wallMs": 296.2,
+    "innerChildrenStarted": 1,
+    "statuses": {
+      "unavailable": 20
+    },
+    "responseBytesFirst": 816,
+    "identicalResponses": true
+  }
+}

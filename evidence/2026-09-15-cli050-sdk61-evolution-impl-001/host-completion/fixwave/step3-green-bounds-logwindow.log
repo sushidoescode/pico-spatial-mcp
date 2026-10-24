@@ -1,0 +1,34 @@
+# GREEN — item 1 bound tests after the fix (node --test test/logwindow.mjs) (2026-09-16T12:28:54Z)
+
+✔ sliceAfterMarker returns only lines after the marker line (0.628791ms)
+✔ a missing marker is reported, never silently treated as an empty window (0.05125ms)
+✔ openLogWindow writes exactly one `log -t pico-mcp <marker>` and never a clear (0.819459ms)
+✔ readLogWindow always includes the marker tag in its filter and bounds the dump (0.114959ms)
+✔ assert_scene opens a window before its broadcast and matches only the dump inside it (3243.535125ms)
+✔ assert_scene reports an evicted marker as an inconclusive error, never as a dump (1612.4525ms)
+✔ assert_scene refuses when the window cannot be opened and reads no dump at all (58.615709ms)
+✔ probe_planes opens a window before its broadcast and parses only the inventory inside it (1609.240334ms)
+✔ probe_planes reports an evicted marker as inconclusive instead of reading the stale inventory (3142.3645ms)
+✔ live_scene_snapshot opens a window before its dump_scene broadcast and returns only the fresh scene (147.18875ms)
+✔ live_scene_snapshot reports an evicted marker as inconclusive rather than parsing the stale dump (8240.051709ms)
+✔ assert_logcat sinceMarker adopts a caller-written marker and matches only lines after it (1238.336333ms)
+✔ assert_logcat clearFirst opens a marker window instead of clearing, and an evicted marker is inconclusive (1284.360917ms)
+✔ the logcat tool's clear:true is the one destructive clear and requires an explicit serial (66.351083ms)
+✔ wait_for_log's default opens a marker window instead of clearing and reports the window it matched in (2211.743625ms)
+✔ assert_logcat reads with the long-poll bound (-t 20000) by default and sends an explicit maxLines verbatim (111.879708ms)
+✔ wait_for_log reads with the long-poll bound (-t 20000) by default and sends an explicit maxLines verbatim (130.244917ms)
+✔ the long-poll bounds are named constants of the module, and build_and_run's settle-long read uses one (0.249583ms)
+✔ pico_loop writes a marker through adb_shell before the build and scopes every assert_logcat to it (13.183792ms)
+✔ pico_loop treats an inconclusive (evicted-window) assert_logcat as unmeasurable, never as a fail to replan (1.245708ms)
+✔ the boundary prepare step opens a -b all window, writes its sidecar, and stops on an evicted marker (34.282ms)
+✔ no src file clears logcat implicitly; the explicit logcat tool is the only clear (19.981541ms)
+ℹ tests 22
+ℹ suites 0
+ℹ pass 22
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 23246.587084
+
+exit=0

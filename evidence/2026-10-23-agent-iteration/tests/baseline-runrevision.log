@@ -1,0 +1,1693 @@
+
+> pico-spatial-mcp@38.1.0 test:runrevision
+> node scripts/run-gate.mjs test:runrevision
+
+(node:74958) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:74962) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: goal normalization preserves raw target bytes while canonicalizing intent
+ok 1 - goal normalization preserves raw target bytes while canonicalizing intent
+  ---
+  duration_ms: 2.071833
+  ...
+# Subtest: goal normalization CRLF catches normalization drift
+ok 2 - goal normalization CRLF catches normalization drift
+  ---
+  duration_ms: 0.205042
+  ...
+# Subtest: goal normalization bare CR catches normalization drift
+ok 3 - goal normalization bare CR catches normalization drift
+  ---
+  duration_ms: 0.097458
+  ...
+# Subtest: goal normalization NFC catches normalization drift
+ok 4 - goal normalization NFC catches normalization drift
+  ---
+  duration_ms: 0.175417
+  ...
+# Subtest: goal normalization outer whitespace catches normalization drift
+ok 5 - goal normalization outer whitespace catches normalization drift
+  ---
+  duration_ms: 0.089583
+  ...
+# Subtest: goal normalization internal tab and newline catches normalization drift
+ok 6 - goal normalization internal tab and newline catches normalization drift
+  ---
+  duration_ms: 0.258458
+  ...
+# Subtest: goal empty rejects an unbounded or unsafe intent
+ok 7 - goal empty rejects an unbounded or unsafe intent
+  ---
+  duration_ms: 0.443916
+  ...
+# Subtest: goal control rejects an unbounded or unsafe intent
+ok 8 - goal control rejects an unbounded or unsafe intent
+  ---
+  duration_ms: 0.181458
+  ...
+# Subtest: goal oversize rejects an unbounded or unsafe intent
+ok 9 - goal oversize rejects an unbounded or unsafe intent
+  ---
+  duration_ms: 0.534959
+  ...
+# Subtest: goal bounds original bytes separately from normalized bytes
+ok 10 - goal bounds original bytes separately from normalized bytes
+  ---
+  duration_ms: 0.707667
+  ...
+# Subtest: acceptance preserves order and duplicates while digesting strict per-kind values
+ok 11 - acceptance preserves order and duplicates while digesting strict per-kind values
+  ---
+  duration_ms: 0.993458
+  ...
+# Subtest: ignored cross-kind fields do not consume the normalized acceptance byte budget
+ok 12 - ignored cross-kind fields do not consume the normalized acceptance byte budget
+  ---
+  duration_ms: 0.811666
+  ...
+# Subtest: acceptance expands exact per-kind defaults and ignores cross-kind fields
+ok 13 - acceptance expands exact per-kind defaults and ignores cross-kind fields
+  ---
+  duration_ms: 0.262041
+  ...
+# Subtest: acceptance strict numerics are safe, bounded, and uniquely normalized
+ok 14 - acceptance strict numerics are safe, bounded, and uniquely normalized
+  ---
+  duration_ms: 0.38775
+  ...
+# Subtest: acceptance allows 64 criteria and rejects 65
+ok 15 - acceptance allows 64 criteria and rejects 65
+  ---
+  duration_ms: 1.205125
+  ...
+# Subtest: acceptance rejects empty, invalid logcat, and a canonical envelope over its byte cap
+ok 16 - acceptance rejects empty, invalid logcat, and a canonical envelope over its byte cap
+  ---
+  duration_ms: 3.864833
+  ...
+# Subtest: loop policy defaults catches default/bound drift
+ok 17 - loop policy defaults catches default/bound drift
+  ---
+  duration_ms: 0.08125
+  ...
+# Subtest: loop policy lower iteration bound catches default/bound drift
+ok 18 - loop policy lower iteration bound catches default/bound drift
+  ---
+  duration_ms: 0.101334
+  ...
+# Subtest: loop policy upper iteration bound catches default/bound drift
+ok 19 - loop policy upper iteration bound catches default/bound drift
+  ---
+  duration_ms: 0.049125
+  ...
+# Subtest: loop policy zero time catches default/bound drift
+ok 20 - loop policy zero time catches default/bound drift
+  ---
+  duration_ms: 0.028417
+  ...
+# Subtest: loop policy fractional time catches default/bound drift
+ok 21 - loop policy fractional time catches default/bound drift
+  ---
+  duration_ms: 0.026791
+  ...
+# Subtest: loop policy signed inert toolCalls catches default/bound drift
+ok 22 - loop policy signed inert toolCalls catches default/bound drift
+  ---
+  duration_ms: 0.024791
+  ...
+# Subtest: loop policy large inert toolCalls catches default/bound drift
+ok 23 - loop policy large inert toolCalls catches default/bound drift
+  ---
+  duration_ms: 0.159417
+  ...
+# Subtest: loop policy rejects zero iterations
+ok 24 - loop policy rejects zero iterations
+  ---
+  duration_ms: 0.071084
+  ...
+# Subtest: loop policy rejects seven iterations
+ok 25 - loop policy rejects seven iterations
+  ---
+  duration_ms: 0.062209
+  ...
+# Subtest: loop policy rejects negative time
+ok 26 - loop policy rejects negative time
+  ---
+  duration_ms: 0.053792
+  ...
+# Subtest: loop policy rejects above 1440
+ok 27 - loop policy rejects above 1440
+  ---
+  duration_ms: 0.035042
+  ...
+# Subtest: loop policy rejects non-finite time
+ok 28 - loop policy rejects non-finite time
+  ---
+  duration_ms: 0.212875
+  ...
+# Subtest: loop policy rejects unknown budget key
+ok 29 - loop policy rejects unknown budget key
+  ---
+  duration_ms: 0.19575
+  ...
+# Subtest: loop policy rejects unknown failure mode
+ok 30 - loop policy rejects unknown failure mode
+  ---
+  duration_ms: 0.092167
+  ...
+# Subtest: bounded diagnostics retain a digest of scrubbed pre-truncation detail
+ok 31 - bounded diagnostics retain a digest of scrubbed pre-truncation detail
+  ---
+  duration_ms: 0.606125
+  ...
+# Subtest: snapshot parsers expand AppSpec defaults through the repository schema
+ok 32 - snapshot parsers expand AppSpec defaults through the repository schema
+  ---
+  duration_ms: 10.809417
+  ...
+# Subtest: snapshot parser accepts every exact envelope kind
+ok 33 - snapshot parser accepts every exact envelope kind
+  ---
+  duration_ms: 2.304416
+  ...
+# Subtest: brief payload preserves the 256 KiB caller brief exception
+ok 34 - brief payload preserves the 256 KiB caller brief exception
+  ---
+  duration_ms: 0.458709
+  ...
+# Subtest: snapshot parser rejects wrong kinds, versions, unknown keys, and canonical-unsafe inputs
+ok 35 - snapshot parser rejects wrong kinds, versions, unknown keys, and canonical-unsafe inputs
+  ---
+  duration_ms: 0.197541
+  ...
+# Subtest: external-input files are canonical-path sorted and unique
+ok 36 - external-input files are canonical-path sorted and unique
+  ---
+  duration_ms: 0.321833
+  ...
+# Subtest: external-input enforces IBL file bindings, safe relative paths, count caps, and bytes
+ok 37 - external-input enforces IBL file bindings, safe relative paths, count caps, and bytes
+  ---
+  duration_ms: 5.505208
+  ...
+# Subtest: compiler ledger rejects impossible execution evidence and broken write chains
+ok 38 - compiler ledger rejects impossible execution evidence and broken write chains
+  ---
+  duration_ms: 0.499083
+  ...
+# Subtest: canonical value grammar enforces depth 32, finite numbers, and collection bounds
+ok 39 - canonical value grammar enforces depth 32, finite numbers, and collection bounds
+  ---
+  duration_ms: 3.951167
+  ...
+# Subtest: build public results accept only workflow-specific strict status shapes
+ok 40 - build public results accept only workflow-specific strict status shapes
+  ---
+  duration_ms: 0.653875
+  ...
+# Subtest: loop public results accept every exact status arm
+ok 41 - loop public results accept every exact status arm
+  ---
+  duration_ms: 1.023
+  ...
+# Subtest: loop public results reject partial receipt triples, partial perf pairs, wrong order, and cross-status keys
+ok 42 - loop public results reject partial receipt triples, partial perf pairs, wrong order, and cross-status keys
+  ---
+  duration_ms: 0.793458
+  ...
+# Subtest: run head is strict and bounded
+ok 43 - run head is strict and bounded
+  ---
+  duration_ms: 1.066417
+  ...
+# Subtest: run revision verifies its derived identity and workflow intent shape
+ok 44 - run revision verifies its derived identity and workflow intent shape
+  ---
+  duration_ms: 7.301709
+  ...
+# Subtest: every transition has exactly one lifecycle family
+ok 45 - every transition has exactly one lifecycle family
+  ---
+  duration_ms: 7.723459
+  ...
+# Subtest: transition state matrix requires matching intent, attempt, result, compiler, and iteration fields
+ok 46 - transition state matrix requires matching intent, attempt, result, compiler, and iteration fields
+  ---
+  duration_ms: 8.62925
+  ...
+# Subtest: compiler and iteration strict unions reject impossible pairing fields
+ok 47 - compiler and iteration strict unions reject impossible pairing fields
+  ---
+  duration_ms: 2.31125
+  ...
+# Subtest: receipt and auto-event evidence combinations are closed and capped
+ok 48 - receipt and auto-event evidence combinations are closed and capped
+  ---
+  duration_ms: 1.67525
+  ...
+# Subtest: run-control result is exact and status-specific
+ok 49 - run-control result is exact and status-specific
+  ---
+  duration_ms: 0.588125
+  ...
+# Subtest: runtime discriminants reject unknown snapshot kinds and workflows
+ok 50 - runtime discriminants reject unknown snapshot kinds and workflows
+  ---
+  duration_ms: 0.056959
+  ...
+# (node:74963) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: resource keys hash the exact canonical application and physical-project identities
+ok 51 - resource keys hash the exact canonical application and physical-project identities
+  ---
+  duration_ms: 1.209084
+  ...
+# Subtest: locator records literal existing-root, absent-root, and existing-project coordinates
+ok 52 - locator records literal existing-root, absent-root, and existing-project coordinates
+  ---
+  duration_ms: 50.932209
+  ...
+# Subtest: lexical root spellings and two stable symlink aliases retain requested spelling but share physical identity
+ok 53 - lexical root spellings and two stable symlink aliases retain requested spelling but share physical identity
+  ---
+  duration_ms: 35.077084
+  ...
+# Subtest: locator admits exactly 64 components and 16 KiB paths, then rejects each +1 before filesystem traversal
+ok 54 - locator admits exactly 64 components and 16 KiB paths, then rejects each +1 before filesystem traversal
+  ---
+  duration_ms: 8.462166
+  ...
+# Subtest: locator detects alias retarget, in-call symlink races, and persisted ancestor replacement
+ok 55 - locator detects alias retarget, in-call symlink races, and persisted ancestor replacement
+  ---
+  duration_ms: 66.193625
+  ...
+# Subtest: locator rejects unsafe IDs, non-directories, FIFOs, and project resolution outside the physical root
+ok 56 - locator rejects unsafe IDs, non-directories, FIFOs, and project resolution outside the physical root
+  ---
+  duration_ms: 28.772709
+  ...
+# Subtest: locator failures distinguish invalid stored coordinates, exhausted bounds, and observed drift
+ok 57 - locator failures distinguish invalid stored coordinates, exhausted bounds, and observed drift
+  ---
+  duration_ms: 41.321083
+  ...
+# Subtest: post-scaffold revalidation requires the predicted real path and preserves the original anchor
+ok 58 - post-scaffold revalidation requires the predicted real path and preserves the original anchor
+  ---
+  duration_ms: 13.602458
+  ...
+# Subtest: delete/recreate changes the observed directory generation while same-inode ctime changes remain the documented boundary
+ok 59 - delete/recreate changes the observed directory generation while same-inode ctime changes remain the documented boundary
+  ---
+  duration_ms: 71.595875
+  ...
+# Subtest: compatibility brief reports absent or exact raw canonical bytes without returning adopted intent
+ok 60 - compatibility brief reports absent or exact raw canonical bytes without returning adopted intent
+  ---
+  duration_ms: 12.790167
+  ...
+# Subtest: compatibility brief rejects an absent-to-present race instead of returning a torn absent generation
+ok 61 - compatibility brief rejects an absent-to-present race instead of returning a torn absent generation
+  ---
+  duration_ms: 9.568041
+  ...
+# Subtest: compatibility brief rejects normalized-only equality, noncanonical bytes, unknown keys, malformed JSON, and invalid UTF-8
+ok 62 - compatibility brief rejects normalized-only equality, noncanonical bytes, unknown keys, malformed JSON, and invalid UTF-8
+  ---
+  duration_ms: 58.115166
+  ...
+# Subtest: compatibility brief admits exactly 3 MiB and rejects the +1 byte case before parsing
+ok 63 - compatibility brief admits exactly 3 MiB and rejects the +1 byte case before parsing
+  ---
+  duration_ms: 49.644417
+  ...
+# Subtest: compatibility brief rejects symlink, hard-link, and atomic replacement leaves
+ok 64 - compatibility brief rejects symlink, hard-link, and atomic replacement leaves
+  ---
+  duration_ms: 21.938666
+  ...
+# Subtest: compatibility brief regular-to-FIFO replacement cannot block before authoritative fstat
+ok 65 - compatibility brief regular-to-FIFO replacement cannot block before authoritative fstat
+  ---
+  duration_ms: 62.019625
+  ...
+# Subtest: target identity rejects a project mapping that does not belong to the target brief ID
+ok 66 - target identity rejects a project mapping that does not belong to the target brief ID
+  ---
+  duration_ms: 6.180458
+  ...
+# Subtest: target generation reuses the exact receipt Gradle policy and changes only for selected inputs
+ok 67 - target generation reuses the exact receipt Gradle policy and changes only for selected inputs
+  ---
+  duration_ms: 53.671291
+  ...
+# Subtest: target generation represents an absent project and a bounded unmeasurable project without inventing authority
+ok 68 - target generation represents an absent project and a bounded unmeasurable project without inventing authority
+  ---
+  duration_ms: 18.345458
+  ...
+# Subtest: target generation rejects a brief change across project collection instead of returning a torn pair
+ok 69 - target generation rejects a brief change across project collection instead of returning a torn pair
+  ---
+  duration_ms: 17.102833
+  ...
+# Subtest: target generation rejects brief and selected-input ABA instead of returning a pair that never coexisted
+ok 70 - target generation rejects brief and selected-input ABA instead of returning a pair that never coexisted
+  ---
+  duration_ms: 61.42325
+  ...
+# Subtest: target generation rejects a project absent-to-present race instead of returning a torn absence
+ok 71 - target generation rejects a project absent-to-present race instead of returning a torn absence
+  ---
+  duration_ms: 34.044666
+  ...
+# Subtest: target generation revalidates alias and anchored-project identity at the return boundary
+ok 72 - target generation revalidates alias and anchored-project identity at the return boundary
+  ---
+  duration_ms: 148.102958
+  ...
+# Subtest: project generation rejects a root replacement during selected-input collection instead of pairing torn identities
+ok 73 - project generation rejects a root replacement during selected-input collection instead of pairing torn identities
+  ---
+  duration_ms: 50.783625
+  ...
+# Subtest: locator and generation V1 stay read-only and never create, truncate, rename, repair, or adopt compatibility state
+ok 74 - locator and generation V1 stay read-only and never create, truncate, rename, repair, or adopt compatibility state
+  ---
+  duration_ms: 54.341125
+  ...
+# (node:74964) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: acquireRunOwners publishes canonical run then application then project owner generations
+ok 75 - acquireRunOwners publishes canonical run then application then project owner generations
+  ---
+  duration_ms: 169.87225
+  ...
+# Subtest: acquirePublicFleetOwners publishes only application then project execution owners
+ok 76 - acquirePublicFleetOwners publishes only application then project execution owners
+  ---
+  duration_ms: 120.720584
+  ...
+# Subtest: fresh owner tokens cannot reuse a recognized residue generation
+ok 77 - fresh owner tokens cannot reuse a recognized residue generation
+  ---
+  duration_ms: 34.164
+  ...
+# Subtest: coordination release requires a local durable authority and quarantines project application run
+ok 78 - coordination release requires a local durable authority and quarantines project application run
+  ---
+  duration_ms: 325.879833
+  ...
+# Subtest: release quarantines exact owner bytes in causal project application run order
+ok 79 - release quarantines exact owner bytes in causal project application run order
+  ---
+  duration_ms: 325.183334
+  ...
+# Subtest: release refuses to create a second residue for one owner generation
+ok 80 - release refuses to create a second residue for one owner generation
+  ---
+  duration_ms: 289.841
+  ...
+# Subtest: definite execution outcome authorizes reverse release but attempt-started does not
+ok 81 - definite execution outcome authorizes reverse release but attempt-started does not
+  ---
+  duration_ms: 1059.874792
+  ...
+# Subtest: run release authority rejects cloned capabilities and every mismatched durable coordinate
+ok 82 - run release authority rejects cloned capabilities and every mismatched durable coordinate
+  ---
+  duration_ms: 965.511667
+  ...
+# Subtest: durable run and public completion authority is rebound immediately before release
+    # Subtest: run HEAD changed after authorization
+    ok 1 - run HEAD changed after authorization
+      ---
+      duration_ms: 281.234292
+      ...
+    # Subtest: public completion removed after authorization
+    ok 2 - public completion removed after authorization
+      ---
+      duration_ms: 127.923458
+      ...
+    # Subtest: public completion altered after authorization
+    ok 3 - public completion altered after authorization
+      ---
+      duration_ms: 130.042167
+      ...
+    1..3
+ok 83 - durable run and public completion authority is rebound immediately before release
+  ---
+  duration_ms: 539.950125
+  ...
+# Subtest: public completion marker is consumed as persisted release authority without Task 4 publishing it
+ok 84 - public completion marker is consumed as persisted release authority without Task 4 publishing it
+  ---
+  duration_ms: 135.428333
+  ...
+# Subtest: public completion authority rejects every identity input and disposition mismatch
+ok 85 - public completion authority rejects every identity input and disposition mismatch
+  ---
+  duration_ms: 130.045375
+  ...
+# Subtest: retaining an in-doubt execution preserves all owners and rejects cloned capabilities
+ok 86 - retaining an in-doubt execution preserves all owners and rejects cloned capabilities
+  ---
+  duration_ms: 155.419625
+  ...
+# Subtest: one shared monotonic budget is not renewed after the run owner is acquired
+ok 87 - one shared monotonic budget is not renewed after the run owner is acquired
+  ---
+  duration_ms: 186.735041
+  ...
+# Subtest: shared 15-second budget spans project staging and public application-project order despite wall-clock jumps
+    # Subtest: run-application-project
+    ok 1 - run-application-project
+      ---
+      duration_ms: 255.654292
+      ...
+    # Subtest: public application-project
+    ok 2 - public application-project
+      ---
+      duration_ms: 220.144417
+      ...
+    1..2
+ok 88 - shared 15-second budget spans project staging and public application-project order despite wall-clock jumps
+  ---
+  duration_ms: 476.059542
+  ...
+# Subtest: a committed owner publication is cleaned when confirmation or enrollment release fails
+ok 89 - a committed owner publication is cleaned when confirmation or enrollment release fails
+  ---
+  duration_ms: 128.020333
+  ...
+# Subtest: elapsed time never reaps a live owner
+ok 90 - elapsed time never reaps a live owner
+  ---
+  duration_ms: 136.466417
+  ...
+# Subtest: dead owner and PID reuse are recovery-required and never silently stolen
+ok 91 - dead owner and PID reuse are recovery-required and never silently stolen
+  ---
+  duration_ms: 146.31825
+  ...
+# Subtest: malformed owners and missing process identity fail closed
+ok 92 - malformed owners and missing process identity fail closed
+  ---
+  duration_ms: 33.02925
+  ...
+# Subtest: current process identity failure happens before any owner publication
+ok 93 - current process identity failure happens before any owner publication
+  ---
+  duration_ms: 3.968834
+  ...
+# Subtest: owner schema rejects symlinks noncanonical bytes and key-path disagreement
+    # Subtest: symlink lock directory
+    ok 1 - symlink lock directory
+      ---
+      duration_ms: 23.71
+      ...
+    # Subtest: noncanonical owner bytes
+    ok 2 - noncanonical owner bytes
+      ---
+      duration_ms: 23.278917
+      ...
+    # Subtest: scope key path binding
+    ok 3 - scope key path binding
+      ---
+      duration_ms: 26.88675
+      ...
+    1..3
+ok 94 - owner schema rejects symlinks noncanonical bytes and key-path disagreement
+  ---
+  duration_ms: 74.151666
+  ...
+# Subtest: every release mutation revalidates capability origin token bytes and current process identity
+    # Subtest: identity drift
+    ok 1 - identity drift
+      ---
+      duration_ms: 260.93625
+      ...
+    # Subtest: noncanonical current owner
+    ok 2 - noncanonical current owner
+      ---
+      duration_ms: 263.497292
+      ...
+    # Subtest: owner leaf symlink replacement
+    ok 3 - owner leaf symlink replacement
+      ---
+      duration_ms: 276.121959
+      ...
+    1..3
+ok 95 - every release mutation revalidates capability origin token bytes and current process identity
+  ---
+  duration_ms: 800.897583
+  ...
+# Subtest: same application serializes different runs and same physical project serializes different applications
+ok 96 - same application serializes different runs and same physical project serializes different applications
+  ---
+  duration_ms: 319.056375
+  ...
+# Subtest: dead pre-target strict prefixes recover in reverse order
+ok 97 - dead pre-target strict prefixes recover in reverse order
+  ---
+  duration_ms: 317.4355
+  ...
+# Subtest: run-only and run-application acquisition prefixes are independently recoverable pre-target
+    # Subtest: prefix length 1
+    ok 1 - prefix length 1
+      ---
+      duration_ms: 231.345917
+      ...
+    # Subtest: prefix length 2
+    ok 2 - prefix length 2
+      ---
+      duration_ms: 272.830666
+      ...
+    1..2
+ok 98 - run-only and run-application acquisition prefixes are independently recoverable pre-target
+  ---
+  duration_ms: 504.39975
+  ...
+# Subtest: recovery independently proves every omitted later-scope owner is absent
+    # Subtest: run prefix length 1 cannot omit an extant later scope
+    ok 1 - run prefix length 1 cannot omit an extant later scope
+      ---
+      duration_ms: 164.516083
+      ...
+    # Subtest: run prefix length 2 cannot omit an extant later scope
+    ok 2 - run prefix length 2 cannot omit an extant later scope
+      ---
+      duration_ms: 157.228709
+      ...
+    # Subtest: public application prefix cannot omit its extant project owner
+    ok 3 - public application prefix cannot omit its extant project owner
+      ---
+      duration_ms: 125.615209
+      ...
+    # Subtest: run-application prefix retains all owners when the exact project path is mismatched
+    ok 4 - run-application prefix retains all owners when the exact project path is mismatched
+      ---
+      duration_ms: 164.191125
+      ...
+    # Subtest: run-only prefix retains a same-run application owner from a different process generation
+    ok 5 - run-only prefix retains a same-run application owner from a different process generation
+      ---
+      duration_ms: 153.8595
+      ...
+    # Subtest: public application prefix retains both owners when the exact project path is mismatched
+    ok 6 - public application prefix retains both owners when the exact project path is mismatched
+      ---
+      duration_ms: 128.136416
+      ...
+    1..6
+ok 99 - recovery independently proves every omitted later-scope owner is absent
+  ---
+  duration_ms: 894.085
+  ...
+# Subtest: run-only and run-application durable release prefixes consume exact ordinary quarantine witnesses
+    # Subtest: coordination prefix length 1
+    ok 1 - coordination prefix length 1
+      ---
+      duration_ms: 261.027167
+      ...
+    # Subtest: coordination prefix length 2
+    ok 2 - coordination prefix length 2
+      ---
+      duration_ms: 270.32975
+      ...
+    # Subtest: execution prefix length 1
+    ok 3 - execution prefix length 1
+      ---
+      duration_ms: 432.981708
+      ...
+    1..3
+ok 100 - run-only and run-application durable release prefixes consume exact ordinary quarantine witnesses
+  ---
+  duration_ms: 964.642333
+  ...
+# Subtest: recovery elections are exact token-specific canonical directories acquired forward and quarantined reverse
+ok 101 - recovery elections are exact token-specific canonical directories acquired forward and quarantined reverse
+  ---
+  duration_ms: 224.711375
+  ...
+# Subtest: a committed election publication is cleaned when enrollment release fails
+ok 102 - a committed election publication is cleaned when enrollment release fails
+  ---
+  duration_ms: 172.587833
+  ...
+# Subtest: fresh election tokens cannot reuse a recognized election residue generation
+ok 103 - fresh election tokens cannot reuse a recognized election residue generation
+  ---
+  duration_ms: 124.409541
+  ...
+# Subtest: stale election quarantine restores rather than moving a replacement generation
+ok 104 - stale election quarantine restores rather than moving a replacement generation
+  ---
+  duration_ms: 127.171708
+  ...
+# Subtest: every run suffix skipped-middle and mismatched generation classification remains invalid and retained
+ok 105 - every run suffix skipped-middle and mismatched generation classification remains invalid and retained
+  ---
+  duration_ms: 116.883167
+  ...
+# Subtest: recovery classification is exhaustive and pre-target independently proves durable state absence
+    # Subtest: attempt-started cannot be mislabeled pre-target
+    ok 1 - attempt-started cannot be mislabeled pre-target
+      ---
+      duration_ms: 314.212
+      ...
+    # Subtest: unknown run discriminator cannot fall through to quarantine
+    ok 2 - unknown run discriminator cannot fall through to quarantine
+      ---
+      duration_ms: 192.081292
+      ...
+    # Subtest: unknown public discriminator cannot release a started-only pair
+    ok 3 - unknown public discriminator cannot release a started-only pair
+      ---
+      duration_ms: 81.099708
+      ...
+    1..3
+ok 106 - recovery classification is exhaustive and pre-target independently proves durable state absence
+  ---
+  duration_ms: 587.721459
+  ...
+# Subtest: token-specific recovery never touches a replacement owner generation
+ok 107 - token-specific recovery never touches a replacement owner generation
+  ---
+  duration_ms: 112.832459
+  ...
+# Subtest: recovery revalidates the selected owner generation immediately before reverse quarantine
+ok 108 - recovery revalidates the selected owner generation immediately before reverse quarantine
+  ---
+  duration_ms: 251.574333
+  ...
+# Subtest: attempt-in-doubt recovery retains the complete exact generation
+ok 109 - attempt-in-doubt recovery retains the complete exact generation
+  ---
+  duration_ms: 418.869417
+  ...
+# Subtest: attempt-started HEAD and publication-complete lagging tail both become retained in doubt
+    # Subtest: authoritative attempt-started
+    ok 1 - authoritative attempt-started
+      ---
+      duration_ms: 427.166708
+      ...
+    # Subtest: lagging linked tail
+    ok 2 - lagging linked tail
+      ---
+      duration_ms: 405.704
+      ...
+    1..2
+ok 110 - attempt-started HEAD and publication-complete lagging tail both become retained in doubt
+  ---
+  duration_ms: 833.151375
+  ...
+# Subtest: lagging definite tails cannot advance or release a different execution owner generation
+    # Subtest: wrong attempt
+    ok 1 - wrong attempt
+      ---
+      duration_ms: 332.307417
+      ...
+    # Subtest: wrong target
+    ok 2 - wrong target
+      ---
+      duration_ms: 350.883209
+      ...
+    1..2
+ok 111 - lagging definite tails cannot advance or release a different execution owner generation
+  ---
+  duration_ms: 683.444375
+  ...
+# Subtest: a completed coordination HEAD authorizes recovery of a shorter release prefix
+ok 112 - a completed coordination HEAD authorizes recovery of a shorter release prefix
+  ---
+  duration_ms: 264.272625
+  ...
+# Subtest: public dead-prefix recovery distinguishes pre-started interrupted completed and application-only cleanup
+    # Subtest: pre-started pair
+    ok 1 - pre-started pair
+      ---
+      duration_ms: 176.966208
+      ...
+    # Subtest: pre-started application-only reverse-cleanup prefix
+    ok 2 - pre-started application-only reverse-cleanup prefix
+      ---
+      duration_ms: 142.8835
+      ...
+    # Subtest: started retains complete pair
+    ok 3 - started retains complete pair
+      ---
+      duration_ms: 237.942459
+      ...
+    # Subtest: completed pair and application singleton
+    ok 4 - completed pair and application singleton
+      ---
+      duration_ms: 341.558334
+      ...
+    1..4
+ok 113 - public dead-prefix recovery distinguishes pre-started interrupted completed and application-only cleanup
+  ---
+  duration_ms: 899.844542
+  ...
+# Subtest: public prefix mismatches and unexpected quarantine are invalid and retained
+ok 114 - public prefix mismatches and unexpected quarantine are invalid and retained
+  ---
+  duration_ms: 108.161125
+  ...
+# Subtest: lock-backed revision publication rejects a valid candidate for an unowned target
+ok 115 - lock-backed revision publication rejects a valid candidate for an unowned target
+  ---
+  duration_ms: 166.157167
+  ...
+# Subtest: coordination store authority rejects every attempt-bound revision candidate
+ok 116 - coordination store authority rejects every attempt-bound revision candidate
+  ---
+  duration_ms: 560.936583
+  ...
+# Subtest: lock-backed HEAD publication rejects raw linked revisions outside the exact owner generation
+    # Subtest: mismatched target
+    ok 1 - mismatched target
+      ---
+      duration_ms: 191.823
+      ...
+    # Subtest: attempt-bound coordination tail
+    ok 2 - attempt-bound coordination tail
+      ---
+      duration_ms: 370.630959
+      ...
+    1..2
+ok 117 - lock-backed HEAD publication rejects raw linked revisions outside the exact owner generation
+  ---
+  duration_ms: 562.79075
+  ...
+# Subtest: lock-backed revision store keeps its exact five methods and rejects non-owner tokens
+ok 118 - lock-backed revision store keeps its exact five methods and rejects non-owner tokens
+  ---
+  duration_ms: 276.818791
+  ...
+# Subtest: lock-backed revision and HEAD publication revalidate exact authority at the final reservation callback
+    # Subtest: revision-publication: removal
+    ok 1 - revision-publication: removal
+      ---
+      duration_ms: 561.54275
+      ...
+    # Subtest: revision-publication: replacement
+    ok 2 - revision-publication: replacement
+      ---
+      duration_ms: 879.528375
+      ...
+    # Subtest: revision-publication: malformed
+    ok 3 - revision-publication: malformed
+      ---
+      duration_ms: 827.671167
+      ...
+    # Subtest: revision-publication: symlink
+    ok 4 - revision-publication: symlink
+      ---
+      duration_ms: 654.084583
+      ...
+    # Subtest: revision-publication: identity-drift
+    ok 5 - revision-publication: identity-drift
+      ---
+      duration_ms: 730.327667
+      ...
+    # Subtest: head-publication: removal
+    ok 6 - head-publication: removal
+      ---
+      duration_ms: 606.5825
+      ...
+    # Subtest: head-publication: replacement
+    ok 7 - head-publication: replacement
+      ---
+      duration_ms: 631.621042
+      ...
+    # Subtest: head-publication: malformed
+    ok 8 - head-publication: malformed
+      ---
+      duration_ms: 410.336458
+      ...
+    # Subtest: head-publication: symlink
+    ok 9 - head-publication: symlink
+      ---
+      duration_ms: 333.361042
+      ...
+    # Subtest: head-publication: identity-drift
+    ok 10 - head-publication: identity-drift
+      ---
+      duration_ms: 588.903208
+      ...
+    1..10
+ok 119 - lock-backed revision and HEAD publication revalidate exact authority at the final reservation callback
+  ---
+  duration_ms: 6234.622042
+  ...
+# Subtest: recoverLinkedTail revalidates owner and election authority at its final HEAD callback
+    # Subtest: removal
+    ok 1 - removal
+      ---
+      duration_ms: 796.4175
+      ...
+    # Subtest: replacement
+    ok 2 - replacement
+      ---
+      duration_ms: 489.591042
+      ...
+    # Subtest: malformed
+    ok 3 - malformed
+      ---
+      duration_ms: 484.601167
+      ...
+    # Subtest: symlink
+    ok 4 - symlink
+      ---
+      duration_ms: 455.353125
+      ...
+    # Subtest: identity-drift
+    ok 5 - identity-drift
+      ---
+      duration_ms: 398.51
+      ...
+    1..5
+ok 120 - recoverLinkedTail revalidates owner and election authority at its final HEAD callback
+  ---
+  duration_ms: 2625.098959
+  ...
+# Subtest: lock namespaces accept exactly 4096 each and 12288 aggregate but reject every 4097th and prospective publication
+    # Subtest: exact per-scope and aggregate limits
+    ok 1 - exact per-scope and aggregate limits
+      ---
+      duration_ms: 33979.237417
+      ...
+    # Subtest: run 4097th recognized entry
+    ok 2 - run 4097th recognized entry
+      ---
+      duration_ms: 2100.310958
+      ...
+    # Subtest: application 4097th recognized entry
+    ok 3 - application 4097th recognized entry
+      ---
+      duration_ms: 2202.135875
+      ...
+    # Subtest: project 4097th recognized entry
+    ok 4 - project 4097th recognized entry
+      ---
+      duration_ms: 2146.591291
+      ...
+    1..4
+ok 121 - lock namespaces accept exactly 4096 each and 12288 aggregate but reject every 4097th and prospective publication
+  ---
+  duration_ms: 40428.875166
+  ...
+# Subtest: dead-owner recovery remains available at exact logical namespace capacity
+ok 122 - dead-owner recovery remains available at exact logical namespace capacity
+  ---
+  duration_ms: 32977.365083
+  ...
+# Subtest: exact-cap recovery election and owner enrollment remain deterministically serialized
+ok 123 - exact-cap recovery election and owner enrollment remain deterministically serialized
+  ---
+  duration_ms: 38754.972667
+  ...
+# Subtest: concurrent cross-process enrollment cannot cross exact lock namespace or aggregate capacity
+ok 124 - concurrent cross-process enrollment cannot cross exact lock namespace or aggregate capacity
+  ---
+  duration_ms: 22688.544583
+  ...
+# Subtest: stale capacity reaper cannot admit a third process across an already-scanned final slot
+ok 125 - stale capacity reaper cannot admit a third process across an already-scanned final slot
+  ---
+  duration_ms: 4759.844208
+  ...
+# Subtest: capacity enrollment is crash-conservative strict and exactly eight-entry bounded
+    # Subtest: SIGKILL after capacity staging open is bounded and fresh-process recoverable
+    ok 1 - SIGKILL after capacity staging open is bounded and fresh-process recoverable
+      ---
+      duration_ms: 168.66975
+      ...
+    # Subtest: SIGKILL after capacity staging write is bounded and fresh-process recoverable
+    ok 2 - SIGKILL after capacity staging write is bounded and fresh-process recoverable
+      ---
+      duration_ms: 165.623875
+      ...
+    # Subtest: SIGKILL after capacity staging fsync is bounded and fresh-process recoverable
+    ok 3 - SIGKILL after capacity staging fsync is bounded and fresh-process recoverable
+      ---
+      duration_ms: 173.19475
+      ...
+    # Subtest: SIGKILL after capacity staging link is bounded and fresh-process recoverable
+    ok 4 - SIGKILL after capacity staging link is bounded and fresh-process recoverable
+      ---
+      duration_ms: 168.991167
+      ...
+    # Subtest: SIGKILL after capacity staging unlink is bounded and fresh-process recoverable
+    ok 5 - SIGKILL after capacity staging unlink is bounded and fresh-process recoverable
+      ---
+      duration_ms: 169.209541
+      ...
+    # Subtest: malformed active enrollment fails closed before an owner claim
+    ok 6 - malformed active enrollment fails closed before an owner claim
+      ---
+      duration_ms: 14.604084
+      ...
+    # Subtest: malformed residue enrollment fails closed before an owner claim
+    ok 7 - malformed residue enrollment fails closed before an owner claim
+      ---
+      duration_ms: 15.184416
+      ...
+    # Subtest: fresh active enrollment token cannot reuse a recognized residue token
+    ok 8 - fresh active enrollment token cannot reuse a recognized residue token
+      ---
+      duration_ms: 16.25225
+      ...
+    # Subtest: seven residues plus active is accepted but an eighth residue leaves no active slot
+    ok 9 - seven residues plus active is accepted but an eighth residue leaves no active slot
+      ---
+      duration_ms: 112.549708
+      ...
+    1..9
+ok 126 - capacity enrollment is crash-conservative strict and exactly eight-entry bounded
+  ---
+  duration_ms: 1005.227625
+  ...
+# Subtest: owner election and quarantine directories distinguish exact eight entries from the ninth
+    # Subtest: owner exact 8
+    ok 1 - owner exact 8
+      ---
+      duration_ms: 90.661375
+      ...
+    # Subtest: owner 9th
+    ok 2 - owner 9th
+      ---
+      duration_ms: 93.902792
+      ...
+    # Subtest: election exact 8
+    ok 3 - election exact 8
+      ---
+      duration_ms: 16.718583
+      ...
+    # Subtest: election 9th
+    ok 4 - election 9th
+      ---
+      duration_ms: 17.407875
+      ...
+    # Subtest: quarantine exact 8
+    ok 5 - quarantine exact 8
+      ---
+      duration_ms: 18.349875
+      ...
+    # Subtest: quarantine 9th
+    ok 6 - quarantine 9th
+      ---
+      duration_ms: 19.145042
+      ...
+    1..6
+ok 127 - owner election and quarantine directories distinguish exact eight entries from the ninth
+  ---
+  duration_ms: 257.008417
+  ...
+# Subtest: cross-process live ownership blocks without touching the child generation
+ok 128 - cross-process live ownership blocks without touching the child generation
+  ---
+  duration_ms: 209.077291
+  ...
+# Subtest: cross-process dead prefix is recovered only from byte-identical records
+ok 129 - cross-process dead prefix is recovered only from byte-identical records
+  ---
+  duration_ms: 247.122083
+  ...
+# Subtest: SIGKILL after run acquisition leaves only the documented strict prefix
+ok 130 - SIGKILL after run acquisition leaves only the documented strict prefix
+  ---
+  duration_ms: 134.531709
+  ...
+# Subtest: SIGKILL after application acquisition leaves only the documented strict prefix
+ok 131 - SIGKILL after application acquisition leaves only the documented strict prefix
+  ---
+  duration_ms: 219.089417
+  ...
+# Subtest: SIGKILL after project acquisition leaves only the documented strict prefix
+ok 132 - SIGKILL after project acquisition leaves only the documented strict prefix
+  ---
+  duration_ms: 244.309167
+  ...
+# Subtest: SIGKILL after project reverse quarantine leaves only an authorized release prefix
+ok 133 - SIGKILL after project reverse quarantine leaves only an authorized release prefix
+  ---
+  duration_ms: 348.754042
+  ...
+# Subtest: SIGKILL after application reverse quarantine leaves only an authorized release prefix
+ok 134 - SIGKILL after application reverse quarantine leaves only an authorized release prefix
+  ---
+  duration_ms: 310.622917
+  ...
+# Subtest: SIGKILL after run reverse quarantine leaves only an authorized release prefix
+ok 135 - SIGKILL after run reverse quarantine leaves only an authorized release prefix
+  ---
+  duration_ms: 267.0745
+  ...
+# (node:74965) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: runStoreRoot uses the explicit root, then environment, then the home store
+ok 136 - runStoreRoot uses the explicit root, then environment, then the home store
+  ---
+  duration_ms: 1.667167
+  ...
+# Subtest: snapshot identity excludes only the publication newline
+ok 137 - snapshot identity excludes only the publication newline
+  ---
+  duration_ms: 55.731
+  ...
+# Subtest: injected authority rejects plain, cloned, revoked, and wrong-target mutation requests
+ok 138 - injected authority rejects plain, cloned, revoked, and wrong-target mutation requests
+  ---
+  duration_ms: 51.178167
+  ...
+# Subtest: cloned authority cannot publish HEAD or recover a linked tail
+ok 139 - cloned authority cannot publish HEAD or recover a linked tail
+  ---
+  duration_ms: 205.840334
+  ...
+# Subtest: create, read, and append preserve exact parent identity and immutable old revisions
+ok 140 - create, read, and append preserve exact parent identity and immutable old revisions
+  ---
+  duration_ms: 229.151917
+  ...
+# Subtest: revision replacement is refused and HEAD compares the complete expected coordinate
+ok 141 - revision replacement is refused and HEAD compares the complete expected coordinate
+  ---
+  duration_ms: 233.687
+  ...
+# Subtest: reader rejects missing, wrong, and noncanonical referenced CAS bytes
+    # Subtest: missing
+    ok 1 - missing
+      ---
+      duration_ms: 127.200416
+      ...
+    # Subtest: wrong
+    ok 2 - wrong
+      ---
+      duration_ms: 107.067958
+      ...
+    # Subtest: noncanonical
+    ok 3 - noncanonical
+      ---
+      duration_ms: 121.02125
+      ...
+    1..3
+ok 142 - reader rejects missing, wrong, and noncanonical referenced CAS bytes
+  ---
+  duration_ms: 367.8875
+  ...
+# Subtest: reader rejects revision gaps and filename, parent, and HEAD mismatches
+    # Subtest: gap
+    ok 1 - gap
+      ---
+      duration_ms: 200.838833
+      ...
+    # Subtest: filename
+    ok 2 - filename
+      ---
+      duration_ms: 232.456833
+      ...
+    # Subtest: parent
+    ok 3 - parent
+      ---
+      duration_ms: 189.928083
+      ...
+    # Subtest: head
+    ok 4 - head
+      ---
+      duration_ms: 221.281917
+      ...
+    1..4
+ok 143 - reader rejects revision gaps and filename, parent, and HEAD mismatches
+  ---
+  duration_ms: 857.867625
+  ...
+# Subtest: reader refuses symlink components and symlink or multiply-linked leaves
+    # Subtest: symlink run component
+    ok 1 - symlink run component
+      ---
+      duration_ms: 1.160708
+      ...
+    # Subtest: symlink HEAD leaf
+    ok 2 - symlink HEAD leaf
+      ---
+      duration_ms: 133.353333
+      ...
+    # Subtest: hardlink HEAD leaf
+    ok 3 - hardlink HEAD leaf
+      ---
+      duration_ms: 132.5615
+      ...
+    1..3
+ok 144 - reader refuses symlink components and symlink or multiply-linked leaves
+  ---
+  duration_ms: 269.793541
+  ...
+# Subtest: reader lstat-walks configured-root ancestors and compares complete leaf metadata
+    # Subtest: symlinked configured-root ancestor is rejected
+    ok 1 - symlinked configured-root ancestor is rejected
+      ---
+      duration_ms: 91.199709
+      ...
+    # Subtest: leaf metadata changed between lstat and descriptor inspection is rejected
+    ok 2 - leaf metadata changed between lstat and descriptor inspection is rejected
+      ---
+      duration_ms: 119.975917
+      ...
+    # Subtest: access-time metadata differs between path and descriptor inspection
+    ok 3 - access-time metadata differs between path and descriptor inspection
+      ---
+      duration_ms: 114.668542
+      ...
+    # Subtest: relevant objects namespace changes after enumeration are detected
+    ok 4 - relevant objects namespace changes after enumeration are detected
+      ---
+      duration_ms: 115.671417
+      ...
+    # Subtest: a selected revision changed after its read is detected
+    ok 5 - a selected revision changed after its read is detected
+      ---
+      duration_ms: 113.410583
+      ...
+    # Subtest: multiply-linked staging aliases are preserved and rejected
+    ok 6 - multiply-linked staging aliases are preserved and rejected
+      ---
+      duration_ms: 109.907416
+      ...
+    1..6
+ok 145 - reader lstat-walks configured-root ancestors and compares complete leaf metadata
+  ---
+  duration_ms: 691.387708
+  ...
+# Subtest: every global CAS target is validated even when unreferenced
+    # Subtest: digest-named invalid envelope
+    ok 1 - digest-named invalid envelope
+      ---
+      duration_ms: 108.715333
+      ...
+    # Subtest: filename digest mismatch
+    ok 2 - filename digest mismatch
+      ---
+      duration_ms: 115.978584
+      ...
+    # Subtest: namespace and envelope kind mismatch
+    ok 3 - namespace and envelope kind mismatch
+      ---
+      duration_ms: 81.799417
+      ...
+    # Subtest: only the exact publisher staging grammar is recognized
+    ok 4 - only the exact publisher staging grammar is recognized
+      ---
+      duration_ms: 103.39025
+      ...
+    # Subtest: arbitrary root dot regular is invalid
+    ok 5 - arbitrary root dot regular is invalid
+      ---
+      duration_ms: 108.816
+      ...
+    # Subtest: arbitrary root dot fifo is invalid
+    ok 6 - arbitrary root dot fifo is invalid
+      ---
+      duration_ms: 112.026833
+      ...
+    # Subtest: goal exact stored bound is content-validated
+    ok 7 - goal exact stored bound is content-validated
+      ---
+      duration_ms: 113.356375
+      ...
+    # Subtest: goal plus one is rejected by stat before content allocation
+    ok 8 - goal plus one is rejected by stat before content allocation
+      ---
+      duration_ms: 114.114583
+      ...
+    # Subtest: acceptance exact stored bound is content-validated
+    ok 9 - acceptance exact stored bound is content-validated
+      ---
+      duration_ms: 102.649917
+      ...
+    # Subtest: acceptance plus one is rejected by stat before content allocation
+    ok 10 - acceptance plus one is rejected by stat before content allocation
+      ---
+      duration_ms: 109.148292
+      ...
+    # Subtest: app-spec exact stored bound is content-validated
+    ok 11 - app-spec exact stored bound is content-validated
+      ---
+      duration_ms: 109.324792
+      ...
+    # Subtest: app-spec plus one is rejected by stat before content allocation
+    ok 12 - app-spec plus one is rejected by stat before content allocation
+      ---
+      duration_ms: 110.571917
+      ...
+    # Subtest: brief-payload exact stored bound is content-validated
+    ok 13 - brief-payload exact stored bound is content-validated
+      ---
+      duration_ms: 127.36475
+      ...
+    # Subtest: brief-payload plus one is rejected by stat before content allocation
+    ok 14 - brief-payload plus one is rejected by stat before content allocation
+      ---
+      duration_ms: 99.881
+      ...
+    # Subtest: external-input exact stored bound is content-validated
+    ok 15 - external-input exact stored bound is content-validated
+      ---
+      duration_ms: 108.632458
+      ...
+    # Subtest: external-input plus one is rejected by stat before content allocation
+    ok 16 - external-input plus one is rejected by stat before content allocation
+      ---
+      duration_ms: 106.208542
+      ...
+    # Subtest: compiler-ledger exact stored bound is content-validated
+    ok 17 - compiler-ledger exact stored bound is content-validated
+      ---
+      duration_ms: 112.751458
+      ...
+    # Subtest: compiler-ledger plus one is rejected by stat before content allocation
+    ok 18 - compiler-ledger plus one is rejected by stat before content allocation
+      ---
+      duration_ms: 107.443458
+      ...
+    # Subtest: public-result exact stored bound is content-validated
+    ok 19 - public-result exact stored bound is content-validated
+      ---
+      duration_ms: 115.915916
+      ...
+    # Subtest: public-result plus one is rejected by stat before content allocation
+    ok 20 - public-result plus one is rejected by stat before content allocation
+      ---
+      duration_ms: 105.18925
+      ...
+    1..20
+ok 146 - every global CAS target is validated even when unreferenced
+  ---
+  duration_ms: 2266.112333
+  ...
+# Subtest: unsafe run IDs are rejected before path construction
+ok 147 - unsafe run IDs are rejected before path construction
+  ---
+  duration_ms: 3.654667
+  ...
+# Subtest: authority is rechecked at the revision link, HEAD rename, and recovery commit boundaries
+ok 148 - authority is rechecked at the revision link, HEAD rename, and recovery commit boundaries
+  ---
+  duration_ms: 180.465584
+  ...
+# Subtest: a HEAD replacement performed by the authority boundary immediately before rename is rejected
+ok 149 - a HEAD replacement performed by the authority boundary immediately before rename is rejected
+  ---
+  duration_ms: 200.281
+  ...
+# Subtest: the final HEAD authority boundary revalidates the complete next chain before rename
+ok 150 - the final HEAD authority boundary revalidates the complete next chain before rename
+  ---
+  duration_ms: 203.884417
+  ...
+# Subtest: Round 2: an authority-side HEAD stage overwrite cannot publish unintended bytes
+ok 151 - Round 2: an authority-side HEAD stage overwrite cannot publish unintended bytes
+  ---
+  duration_ms: 215.0015
+  ...
+# Subtest: recovery reports publication stages conservatively and every control result parses
+    # Subtest: rename visible but run-directory fsync failed is publication-in-doubt
+    ok 1 - rename visible but run-directory fsync failed is publication-in-doubt
+      ---
+      duration_ms: 195.387375
+      ...
+    # Subtest: Round 2: post-fsync run-directory replacement remains publication-in-doubt
+    ok 2 - Round 2: post-fsync run-directory replacement remains publication-in-doubt
+      ---
+      duration_ms: 201.448375
+      ...
+    # Subtest: completed writeHead remains durable when its later chain confirmation fails
+    ok 3 - completed writeHead remains durable when its later chain confirmation fails
+      ---
+      duration_ms: 203.079917
+      ...
+    1..3
+ok 152 - recovery reports publication stages conservatively and every control result parses
+  ---
+  duration_ms: 623.982791
+  ...
+# Subtest: Round 2: globally charged other-run identities remain stable through selected-run CAS validation
+    # Subtest: charged leaf growth is detected after its enumeration
+    ok 1 - charged leaf growth is detected after its enumeration
+      ---
+      duration_ms: 111.135
+      ...
+    # Subtest: charged other-run revisions-directory replacement is detected
+    ok 2 - charged other-run revisions-directory replacement is detected
+      ---
+      duration_ms: 108.165
+      ...
+    # Subtest: other-run staging growth cannot split charged size from retained identity
+    ok 3 - other-run staging growth cannot split charged size from retained identity
+      ---
+      duration_ms: 118.589125
+      ...
+    # Subtest: CAS staging growth cannot split charged size from retained identity
+    ok 4 - CAS staging growth cannot split charged size from retained identity
+      ---
+      duration_ms: 110.99
+      ...
+    # Subtest: publication revalidates an earlier CAS staging leaf after later namespace traversal
+    ok 5 - publication revalidates an earlier CAS staging leaf after later namespace traversal
+      ---
+      duration_ms: 162.119875
+      ...
+    1..5
+ok 153 - Round 2: globally charged other-run identities remain stable through selected-run CAS validation
+  ---
+  duration_ms: 628.237292
+  ...
+# Subtest: Round 2: raw invalid UTF-8 in an unreferenced CAS leaf is rejected
+ok 154 - Round 2: raw invalid UTF-8 in an unreferenced CAS leaf is rejected
+  ---
+  duration_ms: 97.038375
+  ...
+# Subtest: conflicting duplicate snapshot refs are rejected independent of traversal order
+    # Subtest: revision 0 declares conflicting bytes
+    ok 1 - revision 0 declares conflicting bytes
+      ---
+      duration_ms: 205.304375
+      ...
+    # Subtest: revision 1 declares conflicting bytes
+    ok 2 - revision 1 declares conflicting bytes
+      ---
+      duration_ms: 209.7455
+      ...
+    # Subtest: identical duplicate refs dedupe to one unique run snapshot
+    ok 3 - identical duplicate refs dedupe to one unique run snapshot
+      ---
+      duration_ms: 207.909334
+      ...
+    1..3
+ok 155 - conflicting duplicate snapshot refs are rejected independent of traversal order
+  ---
+  duration_ms: 648.070667
+  ...
+# Subtest: a HEAD replacement at the final revision authority check prevents the stale link
+ok 156 - a HEAD replacement at the final revision authority check prevents the stale link
+  ---
+  duration_ms: 170.573583
+  ...
+# Subtest: a revisions-directory replacement at the final authority check prevents publication
+ok 157 - a revisions-directory replacement at the final authority check prevents publication
+  ---
+  duration_ms: 162.928167
+  ...
+# Subtest: directory-entry capacity is reserved before every store mutation
+    # Subtest: root objects creation is preflighted
+    ok 1 - root objects creation is preflighted
+      ---
+      duration_ms: 16295.048584
+      ...
+    # Subtest: run and revisions creation are independently preflighted
+    ok 2 - run and revisions creation are independently preflighted
+      ---
+      duration_ms: 6423.89075
+      ...
+    # Subtest: revisions directory creation is preflighted
+    ok 3 - revisions directory creation is preflighted
+      ---
+      duration_ms: 201.970959
+      ...
+    # Subtest: revision staging plus link peak fails unchanged at the exact limit
+    ok 4 - revision staging plus link peak fails unchanged at the exact limit
+      ---
+      duration_ms: 536.281458
+      ...
+    # Subtest: revision staging plus link peak succeeds one entry below the limit
+    ok 5 - revision staging plus link peak succeeds one entry below the limit
+      ---
+      duration_ms: 822.507083
+      ...
+    # Subtest: first HEAD staging is preflighted at the direct-entry limit
+    ok 6 - first HEAD staging is preflighted at the direct-entry limit
+      ---
+      duration_ms: 267.774459
+      ...
+    # Subtest: replacement HEAD staging is preflighted without changing HEAD
+    ok 7 - replacement HEAD staging is preflighted without changing HEAD
+      ---
+      duration_ms: 351.196916
+      ...
+    1..7
+ok 158 - directory-entry capacity is reserved before every store mutation
+  ---
+  duration_ms: 25918.925541
+  ...
+# Subtest: root, run-directory, and object enumeration accept exact count and reject plus one
+    # Subtest: root 4096 / 4097
+    ok 1 - root 4096 / 4097
+      ---
+      duration_ms: 6432.528167
+      ...
+    # Subtest: run 1024 / 1025
+    ok 2 - run 1024 / 1025
+      ---
+      duration_ms: 290.438542
+      ...
+    # Subtest: objects 32768 / 32769
+    ok 3 - objects 32768 / 32769
+      ---
+      duration_ms: 23482.92375
+      ...
+    # Subtest: root canonical bytes 512 MiB / plus one
+    ok 4 - root canonical bytes 512 MiB / plus one
+      ---
+      duration_ms: 91.7235
+      ...
+    1..4
+ok 159 - root, run-directory, and object enumeration accept exact count and reject plus one
+  ---
+  duration_ms: 32414.023584
+  ...
+# Subtest: Round 2: root-wide reservations make concurrent admission atomic
+    # Subtest: combined CAS publishers cannot cross the global object ceiling
+    ok 1 - combined CAS publishers cannot cross the global object ceiling
+      ---
+      duration_ms: 18383.816958
+      ...
+    # Subtest: combined CAS publishers reserve the fixed canonical-byte peak
+    ok 2 - combined CAS publishers reserve the fixed canonical-byte peak
+      ---
+      duration_ms: 220.324
+      ...
+    # Subtest: different-run publishers cannot cross the root ceiling
+    ok 3 - different-run publishers cannot cross the root ceiling
+      ---
+      duration_ms: 6762.158875
+      ...
+    1..3
+ok 160 - Round 2: root-wide reservations make concurrent admission atomic
+  ---
+  duration_ms: 27851.572292
+  ...
+# Subtest: Round 2: reservation leftovers are bounded evidence and malformed records fail closed
+    # Subtest: SIGKILL preserves only the producer reservation and reports it
+    ok 1 - SIGKILL preserves only the producer reservation and reports it
+      ---
+      duration_ms: 336.324625
+      ...
+    # Subtest: partial reservation records are never skipped
+    ok 2 - partial reservation records are never skipped
+      ---
+      duration_ms: 95.684625
+      ...
+    # Subtest: duplicate reservation tokens fail closed
+    ok 3 - duplicate reservation tokens fail closed
+      ---
+      duration_ms: 74.580292
+      ...
+    # Subtest: operation-specific reservation delta shapes are exact
+    ok 4 - operation-specific reservation delta shapes are exact
+      ---
+      duration_ms: 78.84075
+      ...
+    # Subtest: snapshot missing objects also reserves its namespace
+    ok 5 - snapshot missing objects also reserves its namespace
+      ---
+      duration_ms: 77.837375
+      ...
+    # Subtest: revision missing run also reserves its revisions directory
+    ok 6 - revision missing run also reserves its revisions directory
+      ---
+      duration_ms: 78.004542
+      ...
+    # Subtest: HEAD byte peak cannot be an arbitrary undercharge
+    ok 7 - HEAD byte peak cannot be an arbitrary undercharge
+      ---
+      duration_ms: 77.865917
+      ...
+    # Subtest: reservation slots accept exactly 64 and reject a 65th
+    ok 8 - reservation slots accept exactly 64 and reject a 65th
+      ---
+      duration_ms: 86.251625
+      ...
+    1..8
+ok 161 - Round 2: reservation leftovers are bounded evidence and malformed records fail closed
+  ---
+  duration_ms: 985.761875
+  ...
+# Subtest: aggregate nested and revision enumeration accept exact bounds and reject plus one
+    # Subtest: aggregate nested run entries 65536 / 65537
+    ok 1 - aggregate nested run entries 65536 / 65537
+      ---
+      duration_ms: 11197.763042
+      ...
+    # Subtest: aggregate revision envelopes 16384 / 16385
+    ok 2 - aggregate revision envelopes 16384 / 16385
+      ---
+      duration_ms: 2550.92
+      ...
+    1..2
+ok 162 - aggregate nested and revision enumeration accept exact bounds and reject plus one
+  ---
+  duration_ms: 17436.852917
+  ...
+# Subtest: per-run unique declared snapshot bytes are charged as a complete set before reads
+    # Subtest: exact 512 MiB reaches missing-content validation
+    ok 1 - exact 512 MiB reaches missing-content validation
+      ---
+      duration_ms: 88.704334
+      ...
+    # Subtest: plus one byte fails aggregate admission before any missing CAS read
+    ok 2 - plus one byte fails aggregate admission before any missing CAS read
+      ---
+      duration_ms: 62.046459
+      ...
+    1..2
+ok 163 - per-run unique declared snapshot bytes are charged as a complete set before reads
+  ---
+  duration_ms: 152.611875
+  ...
+# Subtest: Round 2: a real referenced CAS leaf reaches production actual-byte accounting
+ok 164 - Round 2: a real referenced CAS leaf reaches production actual-byte accounting
+  ---
+  duration_ms: 61.795209
+  ...
+# Subtest: fixed pure accumulator covers exact and plus-one unique run snapshot totals
+    # Subtest: declared exact 512 MiB
+    ok 1 - declared exact 512 MiB
+      ---
+      duration_ms: 0.153208
+      ...
+    # Subtest: declared plus one
+    ok 2 - declared plus one
+      ---
+      duration_ms: 0.047458
+      ...
+    # Subtest: actual exact 512 MiB
+    ok 3 - actual exact 512 MiB
+      ---
+      duration_ms: 0.025291
+      ...
+    # Subtest: actual plus one
+    ok 4 - actual plus one
+      ---
+      duration_ms: 0.020458
+      ...
+    # Subtest: prospective admission starts from the prior chain total
+    ok 5 - prospective admission starts from the prior chain total
+      ---
+      duration_ms: 0.016584
+      ...
+    # Subtest: store surface remains the approved five methods
+    ok 6 - store surface remains the approved five methods
+      ---
+      duration_ms: 0.157083
+      ...
+    1..6
+ok 165 - fixed pure accumulator covers exact and plus-one unique run snapshot totals
+  ---
+  duration_ms: 0.73975
+  ...
+# Subtest: SIGKILL publication cuts classify staging, aliases, tails, and committed HEAD exactly
+    # Subtest: before-revision-link
+    ok 1 - before-revision-link
+      ---
+      duration_ms: 180.980208
+      ...
+    # Subtest: after-revision-link
+    ok 2 - after-revision-link
+      ---
+      duration_ms: 162.499334
+      ...
+    # Subtest: after-staging-unlink
+    ok 3 - after-staging-unlink
+      ---
+      duration_ms: 146.896875
+      ...
+    # Subtest: after-revision-directory-flush
+    ok 4 - after-revision-directory-flush
+      ---
+      duration_ms: 165.92925
+      ...
+    # Subtest: before-head-rename
+    ok 5 - before-head-rename
+      ---
+      duration_ms: 176.720458
+      ...
+    # Subtest: after-head-rename
+    ok 6 - after-head-rename
+      ---
+      duration_ms: 178.67625
+      ...
+    # Subtest: after-run-directory-flush
+    ok 7 - after-run-directory-flush
+      ---
+      duration_ms: 175.710958
+      ...
+    1..7
+ok 166 - SIGKILL publication cuts classify staging, aliases, tails, and committed HEAD exactly
+  ---
+  duration_ms: 1196.834292
+  ...
+# Subtest: revision zero without HEAD is the only recoverable first-head cut
+ok 167 - revision zero without HEAD is the only recoverable first-head cut
+  ---
+  duration_ms: 134.667041
+  ...
+# Subtest: authoritative interrupted attempts preserve exact stored external-mutation certainty
+    # Subtest: attempt-started reports possible
+    ok 1 - attempt-started reports possible
+      ---
+      duration_ms: 186.352084
+      ...
+    # Subtest: attempt-in-doubt reports confirmed
+    ok 2 - attempt-in-doubt reports confirmed
+      ---
+      duration_ms: 167.30625
+      ...
+    1..2
+ok 168 - authoritative interrupted attempts preserve exact stored external-mutation certainty
+  ---
+  duration_ms: 356.259292
+  ...
+# Subtest: attempt-started tail recovery advances once and remains interrupted in doubt without owner cleanup
+ok 169 - attempt-started tail recovery advances once and remains interrupted in doubt without owner cleanup
+  ---
+  duration_ms: 170.252167
+  ...
+# Subtest: recovery never moves HEAD backward or skips a corrupt or second tail
+ok 170 - recovery never moves HEAD backward or skips a corrupt or second tail
+  ---
+  duration_ms: 120.416625
+  ...
+1..170
+# tests 327
+# suites 0
+# pass 327
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 167524.912666

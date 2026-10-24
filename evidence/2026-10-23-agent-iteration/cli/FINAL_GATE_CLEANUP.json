@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-23T21:30:58.040780+00:00",
+  "authorizedScope": "Root explicitly authorized stopping these two exact stuck final gate workers and their owned fixtures only",
+  "actions": [
+    {
+      "pid": 41261,
+      "signal": "SIGTERM",
+      "proof": "fresh birth/parent/exact argv/token hash; exact owned fixture log retained"
+    },
+    {
+      "pid": 41461,
+      "signal": "SIGTERM",
+      "proof": "fresh birth/parent/exact argv/token hash; exact owned fixture log retained"
+    },
+    {
+      "pid": 41261,
+      "after": null
+    },
+    {
+      "pid": 41461,
+      "after": null
+    },
+    {
+      "pid": 39136,
+      "signal": "SIGTERM",
+      "proof": "exact final gate worker; fresh birth/parent/argv; zero direct children"
+    },
+    {
+      "pid": 39136,
+      "after": null
+    },
+    {
+      "pid": 39635,
+      "after": null
+    }
+  ],
+  "groupSignals": 0,
+  "unrelatedProcessSignals": 0
+}

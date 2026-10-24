@@ -1,0 +1,319 @@
+
+> pico-spatial-mcp@38.1.0 test:interaction
+> node scripts/run-gate.mjs test:interaction
+
+(node:90593) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:90594) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: bounded fixture build identity is implemented
+ok 1 - bounded fixture build identity is implemented
+  ---
+  duration_ms: 0.548
+  ...
+# Subtest: source changes invalidate fixture identity while generated outputs do not; extra modules refuse
+ok 2 - source changes invalidate fixture identity while generated outputs do not; extra modules refuse
+  ---
+  duration_ms: 315.249958
+  ...
+# Subtest: failed fixture build retains failure and never returns stale APK bytes
+ok 3 - failed fixture build retains failure and never returns stale APK bytes
+  ---
+  duration_ms: 176.0005
+  ...
+# (node:90595) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: semantic interaction transaction is implemented
+ok 4 - semantic interaction transaction is implemented
+  ---
+  duration_ms: 0.4515
+  ...
+# Subtest: acknowledged panel action has independent readback and fresh retained PNG, LOOK remains pending
+ok 5 - acknowledged panel action has independent readback and fresh retained PNG, LOOK remains pending
+  ---
+  duration_ms: 87.920292
+  ...
+# Subtest: invalid action, expired deadline, stale revision and target drift send nothing
+ok 6 - invalid action, expired deadline, stale revision and target drift send nothing
+  ---
+  duration_ms: 103.71675
+  ...
+# Subtest: lost ACK, accepted without completion, transport failure and post-send interference retain uncertainty without retry
+ok 7 - lost ACK, accepted without completion, transport failure and post-send interference retain uncertainty without retry
+  ---
+  duration_ms: 146.760458
+  ...
+# Subtest: completed request ID cannot be replayed, even if expected revision is changed
+ok 8 - completed request ID cannot be replayed, even if expected revision is changed
+  ---
+  duration_ms: 25.669833
+  ...
+# Subtest: a distinct request to an already visible panel is idempotent
+ok 9 - a distinct request to an already visible panel is idempotent
+  ---
+  duration_ms: 32.973333
+  ...
+# Subtest: external semantic mutation during capture is detected, not claimed prevented
+ok 10 - external semantic mutation during capture is detected, not claimed prevented
+  ---
+  duration_ms: 31.952875
+  ...
+# Subtest: stale state and stale ACK timestamps cannot authorize or complete a transaction
+ok 11 - stale state and stale ACK timestamps cannot authorize or complete a transaction
+  ---
+  duration_ms: 33.951125
+  ...
+# Subtest: capture failure and stale timestamp do not erase completed semantics or manufacture visual proof
+ok 12 - capture failure and stale timestamp do not erase completed semantics or manufacture visual proof
+  ---
+  duration_ms: 31.275209
+  ...
+# Subtest: cancellation before dispatch sends nothing; cancellation after a possible mutation remains held
+ok 13 - cancellation before dispatch sends nothing; cancellation after a possible mutation remains held
+  ---
+  duration_ms: 20.620375
+  ...
+# (node:90596) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: strict schemas allow only named panel action and bounded identities
+ok 14 - strict schemas allow only named panel action and bounded identities
+  ---
+  duration_ms: 3.048333
+  ...
+# Subtest: ACK matching rejects wrong caller, generation, request, action and contradictions
+ok 15 - ACK matching rejects wrong caller, generation, request, action and contradictions
+  ---
+  duration_ms: 1.393458
+  ...
+# Subtest: backend rejects unsafe target before spawning
+ok 16 - backend rejects unsafe target before spawning
+  ---
+  duration_ms: 0.229875
+  ...
+# Subtest: app-private observation uses explicit serial, bounded output and no receiver
+ok 17 - app-private observation uses explicit serial, bounded output and no receiver
+  ---
+  duration_ms: 0.828583
+  ...
+# Subtest: send is once-only even when its transport failed or timed out
+ok 18 - send is once-only even when its transport failed or timed out
+  ---
+  duration_ms: 0.5775
+  ...
+# Subtest: pre-dispatch cancellation sends nothing and does not reserve an attempted request
+ok 19 - pre-dispatch cancellation sends nothing and does not reserve an attempted request
+  ---
+  duration_ms: 0.423583
+  ...
+# Subtest: in-flight cancellation reaches the child runner and leaves the request uncertain and non-retryable
+ok 20 - in-flight cancellation reaches the child runner and leaves the request uncertain and non-retryable
+  ---
+  duration_ms: 0.368375
+  ...
+# Subtest: publication is app-generation scoped and atomically refuses duplicate file names
+ok 21 - publication is app-generation scoped and atomically refuses duplicate file names
+  ---
+  duration_ms: 0.241542
+  ...
+# Subtest: missing ACK remains absent and invalid ACK never becomes completion
+ok 22 - missing ACK remains absent and invalid ACK never becomes completion
+  ---
+  duration_ms: 1.694375
+  ...
+# Subtest: ACK read is path-bound; release/foreign UID denial stays a transport failure
+ok 23 - ACK read is path-bound; release/foreign UID denial stays a transport failure
+  ---
+  duration_ms: 0.566208
+  ...
+# Subtest: read rejects malformed framing, oversized payloads and mismatched observed package
+ok 24 - read rejects malformed framing, oversized payloads and mismatched observed package
+  ---
+  duration_ms: 0.229208
+  ...
+# Subtest: debug emitter has app-private IPC and bounded replay/deadline guards
+ok 25 - debug emitter has app-private IPC and bounded replay/deadline guards
+  ---
+  duration_ms: 0.303542
+  ...
+# Subtest: debug source set contains IPC; release source set contains only an inert adapter
+ok 26 - debug source set contains IPC; release source set contains only an inert adapter
+  ---
+  duration_ms: 0.871417
+  ...
+# Subtest: actual host shell publication refuses duplicate commands, stale generation, symlinks and foreign package
+ok 27 - actual host shell publication refuses duplicate commands, stale generation, symlinks and foreign package
+  ---
+  duration_ms: 374.387708
+  ...
+# (node:90597) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: actual candidate stdio discovery preserves default surface and opt-in tool is offline/pure
+ok 28 - actual candidate stdio discovery preserves default surface and opt-in tool is offline/pure
+  ---
+  duration_ms: 602.3265
+  ...
+# Subtest: ordinary MCP transfers image/text/resource and cancellation without host-specific backend logic
+ok 29 - ordinary MCP transfers image/text/resource and cancellation without host-specific backend logic
+  ---
+  duration_ms: 59.804292
+  ...
+# (node:90598) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: pre-cancelled rebuild runner spawns no child
+ok 30 - pre-cancelled rebuild runner spawns no child
+  ---
+  duration_ms: 1.632833
+  ...
+# Subtest: cancellation drains the owned child group; it is distinct from timeout
+ok 31 - cancellation drains the owned child group; it is distinct from timeout
+  ---
+  duration_ms: 378.091208
+  ...
+# (node:90599) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: finite semantic scenario is implemented
+ok 32 - finite semantic scenario is implemented
+  ---
+  duration_ms: 0.962833
+  ...
+# Subtest: scenario asserts independent state, retains source target action and frame evidence
+ok 33 - scenario asserts independent state, retains source target action and frame evidence
+  ---
+  duration_ms: 108.895584
+  ...
+# Subtest: scenario initial mismatch, invalid bound, or unapproved reset refuses without dispatch
+ok 34 - scenario initial mismatch, invalid bound, or unapproved reset refuses without dispatch
+  ---
+  duration_ms: 62.146542
+  ...
+# Subtest: uncertain action stops scenario before the second action and never retries
+ok 35 - uncertain action stops scenario before the second action and never retries
+  ---
+  duration_ms: 47.585
+  ...
+# Subtest: assertion and capture failure stop the scenario without erasing completed action
+ok 36 - assertion and capture failure stop the scenario without erasing completed action
+  ---
+  duration_ms: 86.246334
+  ...
+# Subtest: failed build cannot deploy a previously successful artifact; incomplete closure refuses before build
+ok 37 - failed build cannot deploy a previously successful artifact; incomplete closure refuses before build
+  ---
+  duration_ms: 16.759458
+  ...
+# Subtest: source moving during build refuses deploy; cancellation after build leaves no native calls
+ok 38 - source moving during build refuses deploy; cancellation after build leaves no native calls
+  ---
+  duration_ms: 17.537958
+  ...
+# Subtest: cancellation during the final source snapshot cannot cross into deploy
+ok 39 - cancellation during the final source snapshot cannot cross into deploy
+  ---
+  duration_ms: 6.635084
+  ...
+# Subtest: bounded watch coalesces identical source snapshots and ignores generated-output changes
+ok 40 - bounded watch coalesces identical source snapshots and ignores generated-output changes
+  ---
+  duration_ms: 0.5075
+  ...
+# Subtest: watch rechecks cancellation/time after snapshot and passes its remaining budget to the owned cycle
+ok 41 - watch rechecks cancellation/time after snapshot and passes its remaining budget to the owned cycle
+  ---
+  duration_ms: 32.736958
+  ...
+# (node:90600) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: explicit emulator target binding is implemented
+ok 42 - explicit emulator target binding is implemented
+  ---
+  duration_ms: 0.347167
+  ...
+# Subtest: missing or physical serial refuses before any probe; two devices never choose for caller
+ok 43 - missing or physical serial refuses before any probe; two devices never choose for caller
+  ---
+  duration_ms: 3.469083
+  ...
+# Subtest: offline, wrong family, APK mismatch and incomplete identity fail closed
+ok 44 - offline, wrong family, APK mismatch and incomplete identity fail closed
+  ---
+  duration_ms: 0.937958
+  ...
+# Subtest: boot, APK, process, generation and emulator drift invalidate the same serial
+ok 45 - boot, APK, process, generation and emulator drift invalidate the same serial
+  ---
+  duration_ms: 0.804833
+  ...
+# Subtest: durable target fence excludes competing callers, requires drain and never steals an old owner
+ok 46 - durable target fence excludes competing callers, requires drain and never steals an old owner
+  ---
+  duration_ms: 119.13075
+  ...
+# Subtest: modified fence owner is detected, never treated as prevented external interference
+ok 47 - modified fence owner is detected, never treated as prevented external interference
+  ---
+  duration_ms: 15.238958
+  ...
+# Subtest: target deadline and cancellation are rechecked after each awaited probe
+ok 48 - target deadline and cancellation are rechecked after each awaited probe
+  ---
+  duration_ms: 0.785167
+  ...
+# (node:90601) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ordinary MCP interaction service is implemented
+ok 49 - ordinary MCP interaction service is implemented
+  ---
+  duration_ms: 0.508042
+  ...
+# Subtest: offline describe does not resolve a target or CLI; physical target refused before connect
+ok 50 - offline describe does not resolve a target or CLI; physical target refused before connect
+  ---
+  duration_ms: 1.594292
+  ...
+# Subtest: public observe/action result delivers structured text, image and exact record link; stop releases only session
+ok 51 - public observe/action result delivers structured text, image and exact record link; stop releases only session
+  ---
+  duration_ms: 154.432209
+  ...
+# Subtest: public uncertainty propagates isError and cannot be cleared by stop or retry
+ok 52 - public uncertainty propagates isError and cannot be cleared by stop or retry
+  ---
+  duration_ms: 68.257417
+  ...
+# Subtest: MCP delivery never reuses changed capture bytes
+ok 53 - MCP delivery never reuses changed capture bytes
+  ---
+  duration_ms: 37.457958
+  ...
+# Subtest: public host fixture completes observe/action/build/reconnect/replay with a new source-bound APK identity
+ok 54 - public host fixture completes observe/action/build/reconnect/replay with a new source-bound APK identity
+  ---
+  duration_ms: 175.76375
+  ...
+# (node:90602) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: exact colored CLI leaf help admits supported lifecycle arguments and every command uses explicit target
+ok 55 - exact colored CLI leaf help admits supported lifecycle arguments and every command uses explicit target
+  ---
+  duration_ms: 9.567875
+  ...
+# Subtest: ownership changes after first mutation refuse every subsequent command
+ok 56 - ownership changes after first mutation refuse every subsequent command
+  ---
+  duration_ms: 5.653417
+  ...
+# Subtest: incomplete zero-exit lifecycle help refuses before any mutation
+ok 57 - incomplete zero-exit lifecycle help refuses before any mutation
+  ---
+  duration_ms: 1.256708
+  ...
+1..57
+# tests 57
+# suites 0
+# pass 57
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 878.87

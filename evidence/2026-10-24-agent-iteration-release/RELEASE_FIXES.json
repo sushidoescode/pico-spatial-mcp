@@ -1,0 +1,43 @@
+{
+  "at": "2026-10-24T12:16:45.887600+00:00",
+  "reviewer": "/root/independent_review",
+  "disposition": "No remaining material findings after review of report retention/freshness, all late imports, and portable evidence mapping",
+  "fixes": [
+    "Preserve prior generated report bytes; require new regular report under held project owner instead of comparing filesystem mtime with Date.now",
+    "Complete all declaration-context imports before test/cleanup registration",
+    "Rename eleven Windows-invalid evidence log paths without changing bytes; docs gate rejects forbidden filename components"
+  ],
+  "redEvidence": [
+    "GitHub workflow40092138554 Windows checkout invalid path",
+    "GitHub workflow40092138554 Linux Node20/22 fresh-report failures",
+    "tests/fixturebuild-clock-red.log",
+    "tests/declaration-diagnosis.stdout.txt"
+  ],
+  "greenEvidence": {
+    "sdkselection": "184/184 (accepted-sdkselection.stdout.txt)",
+    "interaction": "88/88 (final-interaction.stdout.txt)",
+    "docsmeta": "26/26 + forbidden filename guard",
+    "lint": "63/63",
+    "fixturebuild": "23/23, including deterministic filesystem clock regression"
+  },
+  "fullBattery": "Initial38.2 battery55/56; SDK fixture-order failure fixed and full affected gate rerun; not relabeled a single56/56 run",
+  "sources": [
+    {
+      "path": "src/fixturebuild.ts",
+      "sha256": "0f5bf9cb2c1503acafd7222e47773bb5be9fc32cd6b9ccdb78c0ec49ed5ac0ae"
+    },
+    {
+      "path": "test/fixturebuild.mjs",
+      "sha256": "0ceaf2c27e6b76b2d065d22367266849bd70fb3219de3ba7e0bd9d0be7dda18b"
+    },
+    {
+      "path": "test/declarationcontext.mjs",
+      "sha256": "d8da5d2ee523c236476fac72c08b0b1a619078cc8ffb85c9c27cfc02726a497f"
+    },
+    {
+      "path": "test/docsmeta.mjs",
+      "sha256": "0178bb0cf8ee642568d6331a0277cdbad91578ad6b180cc890c290fb71209b36"
+    }
+  ],
+  "nativeEvidence": "No new device operations or LOOK; real offline build validation recorded separately"
+}

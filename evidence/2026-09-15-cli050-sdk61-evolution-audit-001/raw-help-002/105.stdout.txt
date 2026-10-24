@@ -1,0 +1,9 @@
+Description:
+Execute a raw ADB shell command
+
+Usage:
+  $ pico-cli device shell <cmd>
+
+Options:
+  -d, --device <device>  Target device id
+  -h, --help             Display this message

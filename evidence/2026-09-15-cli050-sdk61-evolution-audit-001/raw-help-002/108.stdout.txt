@@ -1,0 +1,13 @@
+Description:
+Download and install Spatial Editor
+
+Usage:
+  $ pico-cli editor install
+
+Options:
+  --editor-version <version>    Preferred editor version to download
+  --config-url <url>            Debug: override plugin-style remote config URL for editor downloads
+  --artifact-url <url>          Download editor directly from this URL
+  --artifact-checksum <sha256>  Optional SHA-256 checksum for --artifact-url
+  -y, --yes                     Assume yes for prompts
+  -h, --help                    Display this message

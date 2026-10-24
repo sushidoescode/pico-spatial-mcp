@@ -1,0 +1,62 @@
+# npm run test:preflight
+# exit=0 signal= elapsedMs=1452
+
+## stdout
+  ok   check present: node
+  ok   check present: adb
+  ok   check present: emulator
+  ok   check present: grpc
+  ok   check present: accessibility
+  ok   check present: calibration
+  ok   check present: disk
+  ok   node (fail) carries a pointed fix
+  ok   adb (fail) carries a pointed fix
+  ok   pico-sdk (fail) carries a pointed fix
+  ok   jdk (fail) carries a pointed fix
+  ok   imagemagick (warn) carries a pointed fix
+  ok   app-skeleton (fail) carries a pointed fix
+  ok   unity-lane (fail) carries a pointed fix
+  ok   pico-cli (warn) carries a pointed fix
+  ok   emulator (unknown) carries a pointed fix
+  ok   grpc (unknown) carries a pointed fix
+  ok   accessibility (unknown) carries a pointed fix
+  ok   calibration (warn) carries a pointed fix
+  ok   disk (unknown) carries a pointed fix
+  ok   healthy env passes: node
+  ok   healthy env passes: adb
+  ok   healthy env passes: emulator
+  ok   healthy env passes: calibration
+  ok   healthy env passes unity-lane
+  ok   pico-cli inspection remains policy-honest: disabled
+  ok   pico-cli inspection remains policy-honest: managed-cached empty
+  ok   pico-cli inspection remains policy-honest: managed-latest corrupt immutable cache
+  ok   pico-cli inspection remains policy-honest: external unusable
+  ok   pico-cli inspection remains policy-honest: invalid configuration
+  ok   runnable pico-cli inspection preserves provenance: managed cached
+  ok   runnable pico-cli inspection preserves provenance: external
+  ok   pico-cli structured status is read-only, exact-argv, and never a doctor probe
+  ok   nested pico-cli returned remediation is surfaced with deterministic precedence
+  ok   non-zero pico-cli exit preserves its valid FAILED envelope and exact nested remediation
+  ok   stale calibration fails with the recalibrate fix
+  ok   calibration on file + emulator down => unknown with a fix
+  ok   stale ISO-string calibration fails with the recalibrate fix
+  ok   fresh ISO-string calibration passes
+  ok   unparseable calibration `at` falls back to mtime and reports stale
+  ok   preflight_env is managed-store read-only when empty (status: problems)
+  ok   preflight_env remains read-only and policy-honest: disabled
+  ok   preflight_env remains read-only and policy-honest: managed-cached empty
+  ok   preflight_env remains read-only and policy-honest: invalid external config
+  ok   preflight_env probes configured external CLI read-only without relabeling it managed/latest
+  ok   preflight_env inspects cached managed CLI and emulator status without registry/install
+
+Preflight test done. Failures: 0
+
+
+## stderr
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+

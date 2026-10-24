@@ -9,8 +9,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { VERIFY_APK_TEARDOWN_MS } from "../dist/verifyapk.js";
 import * as doorsModule from "../dist/doors.js";
+import { decodeDomainValue } from "../dist/innerclient.js";
 import * as plannerModule from "../dist/planner.js";
 import { innerFailureDetail } from "../dist/fleetbuild.js";
 import { createManagedRuntimeHarness } from "./helpers/picocli-managed-fixture.mjs";
@@ -98,10 +100,16 @@ if (doorsModule.registerDoorTools.length < 2) {
   };
   let injectedFleetResult = fleetResult;
   let injectedRecordArgs = null;
+  let injectedLedgerFailure = null;
   const injectedCall = async (name, args) => {
     if (name === "plan_app_spec") return { status: "ok", spec: { meta: { packageName: "com.example.fixture" } } };
     if (name === "fleet_build") return { status: "ok", results: [injectedFleetResult] };
-    if (name === "record_verification") { injectedRecordArgs = args; return { status: "recorded", entry: { evidenceType: args.evidenceType } }; }
+    if (name === "record_verification") {
+      injectedRecordArgs = args;
+      // a failed ledger lane reaches the loop as the domain lane's error payload (production decoder)
+      if (injectedLedgerFailure) return decodeDomainValue("record_verification", { content: [{ type: "text", text: injectedLedgerFailure }], isError: true });
+      return { status: "recorded", entry: { evidenceType: args.evidenceType } };
+    }
     throw new Error(`unexpected injected door call: ${name}`);
   };
   const receiptServer = new McpServer({ name: "door-receipt-test", version: "0.0.0" });
@@ -154,6 +162,20 @@ if (doorsModule.registerDoorTools.length < 2) {
       ok("pico_loop carries the receipt identity, exact capture, and usable absolute project path through its exit");
     else fail(`pico_loop dropped or rewrote fleet receipt identity: ${JSON.stringify(loopedOut).slice(0, 420)}`);
 
+    // C5 fix round 1: a failed ledger lane is disclosed with the tool's OWN words first. The
+    // {"status":"error",…} payload wrapper must not lead the detail and eat its 200-char budget.
+    injectedLedgerFailure = "ledger root is read-only: EACCES /fixture/ledgers/com.example.fixture.json";
+    const ledgerFailed = await receiptClient.callTool({
+      name: "pico_loop",
+      arguments: { goal: loopGoal, draftSpec: { meta: { packageName: "com.example.fixture" } }, acceptance: [{ kind: "visual" }], budget: { iterations: 1 } },
+    });
+    const ledgerFailedOut = JSON.parse(ledgerFailed.content[0].text);
+    const ledgerDetail = ledgerFailedOut.iterationsLog?.[0]?.ledger ?? "";
+    if (ledgerDetail.startsWith(`NOT recorded: ${injectedLedgerFailure}`) && !/"status":"error"/.test(ledgerDetail))
+      ok("pico_loop discloses a failed ledger lane with the tool's own words first");
+    else fail(`pico_loop ledger detail wraps or hides the tool's words: ${JSON.stringify({ ledgerDetail, status: ledgerFailedOut.status }).slice(0, 360)}`);
+    injectedLedgerFailure = null;
+
     injectedFleetResult = { ...fleetResult, concluded: false, artifact: null, receipt: null, notes: ["after-install failed"] };
     const receiptless = await receiptClient.callTool({
       name: "pico_loop",
@@ -169,6 +191,292 @@ if (doorsModule.registerDoorTools.length < 2) {
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
     fs.rmSync(receiptHome, { recursive: true, force: true });
+  }
+}
+
+// ── partial injection (fix wave, 2026-09-15) — no process ──
+// A call-only fixture server (`{ call }` without `callRaw`) has no seam for the two raw-lane doors.
+// Before this fix doorCallRaw fell back to inner(), so pico_look on such a server spawned the REAL
+// inner full-surface server — the bypass the C5 base RED run demonstrated. The adapter must now
+// refuse at the seam with its own failure envelope naming the missing callRaw. PICO_ADB is pinned
+// to an exit-1 stub for the block, so a run against an old adapter is RED without touching
+// hardware (its pico_look would come back as a forwarded screencap failure, not this envelope).
+{
+  const partialTmp = fs.mkdtempSync(path.join(os.tmpdir(), "pico-door-partial-"));
+  const partialAdbStub = path.join(partialTmp, "adb");
+  fs.writeFileSync(partialAdbStub, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const previousPartialAdb = process.env.PICO_ADB;
+  process.env.PICO_ADB = partialAdbStub;
+  const domainCalls = [];
+  const callOnly = async (name, args = {}) => { domainCalls.push({ name, args }); return { status: "ok", fixture: name }; };
+  const partialServer = new McpServer({ name: "doors-partial-fixture", version: "0.0.0" });
+  doorsModule.registerDoorTools(partialServer, { call: callOnly });
+  const [partialClientTransport, partialServerTransport] = InMemoryTransport.createLinkedPair();
+  await partialServer.connect(partialServerTransport);
+  const partialClient = new Client({ name: "doors-partial-test", version: "0.0.0" });
+  await partialClient.connect(partialClientTransport);
+  try {
+    const rawDoors = [
+      ["pico_look", {}],
+      ["pico_verify_app", { apkPath: "/tmp/fixture.apk", packageName: "com.example.fixture", serial: "fixture-partial-0001" }],
+    ];
+    for (const [name, args] of rawDoors) {
+      const result = await partialClient.callTool({ name, arguments: args });
+      let payload = null;
+      try { payload = JSON.parse(result.content?.[0]?.text ?? ""); } catch { payload = null; }
+      const error = payload?.error ?? "";
+      if (payload?.status === "error" && /callRaw/.test(error) && /pico_look/.test(error) && /pico_verify_app/.test(error)
+          && /call-only/.test(error) && domainCalls.length === 0)
+        ok(`${name} on a call-only fixture server refuses with the door failure envelope naming the missing callRaw seam (no inner call, no domain call)`);
+      else fail(`${name} on a call-only fixture server did not refuse at the seam: ${JSON.stringify({ result, domainCalls }).slice(0, 400)}`);
+    }
+    // …while the domain lane on the same server still runs through the injected call.
+    const domain = await partialClient.callTool({ name: "pico_emulator", arguments: { action: "status" } });
+    const domainOut = (() => { try { return JSON.parse(domain.content?.[0]?.text ?? ""); } catch { return null; } })();
+    if (!domain.isError && domainOut?.fixture === "emulator_status" && domainCalls.length === 1 && domainCalls[0].name === "emulator_status")
+      ok("a call-only fixture server still serves domain-lane doors through the injected call");
+    else fail(`the domain lane on a call-only fixture server drifted: ${JSON.stringify({ domain, domainCalls }).slice(0, 300)}`);
+  } finally {
+    await partialClient.close();
+    if (previousPartialAdb === undefined) delete process.env.PICO_ADB; else process.env.PICO_ADB = previousPartialAdb;
+    fs.rmSync(partialTmp, { recursive: true, force: true });
+  }
+}
+
+// ── every door through its seam (host completion T1, 2026-09-16) — no process ──
+// A fixture server with NO lane at all (`{}`) must be refused by EVERY door at the seam. Nine
+// doors used to call the shared inner client directly, so a fixture that injected only `call`
+// still spawned the REAL inner full-surface server for them — which then ran against whatever
+// adb, HOME and CLI state this process inherited. The block is hermetic against a regressed
+// adapter: PICO_ADB is an exit-1 stub (no hardware), HOME is a scratch dir (no real ledgers,
+// briefs or managed store), CLI use is disabled (no registry contact), pico_loop's draftSpec is
+// invalid on purpose (plan-failed before any fleet build), and every call is bounded so a door
+// that reaches the real inner server fails this block instead of waiting on it.
+{
+  const seamTmp = fs.mkdtempSync(path.join(os.tmpdir(), "pico-door-seam-"));
+  const seamAdbStub = path.join(seamTmp, "adb");
+  fs.writeFileSync(seamAdbStub, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const seamHome = path.join(seamTmp, "home");
+  fs.mkdirSync(seamHome, { recursive: true });
+  const previousSeamEnv = { PICO_ADB: process.env.PICO_ADB, HOME: process.env.HOME, PICO_MCP_CLI_POLICY: process.env.PICO_MCP_CLI_POLICY };
+  process.env.PICO_ADB = seamAdbStub;
+  process.env.HOME = seamHome;
+  process.env.PICO_MCP_CLI_POLICY = "disabled";
+  // pico_place reads its semantic scene BEFORE reaching the seam, so it gets a real (empty) one.
+  const seamScene = path.join(seamTmp, "scene.json");
+  fs.writeFileSync(seamScene, JSON.stringify({ objects: [], floorY: 0, bounds: { min: [0, 0, 0], max: [1, 1, 1] } }));
+  // Minimal schema-valid arguments per door: enough to pass zod and reach the handler's seam call.
+  const minimalArgs = {
+    pico_build_app: { brief: "seam fixture" },
+    pico_scan_world: { splatPath: path.join(seamTmp, "no-such.ply") },
+    pico_place: { semanticScenePath: seamScene, label: "counter" },
+    pico_look: {},
+    pico_verify_app: { apkPath: path.join(seamTmp, "no-such.apk"), packageName: "com.example.fixture", serial: "fixture-seam-0001" },
+    pico_measure: { capturePath: path.join(seamTmp, "no-such.png"), targets: [{ name: "a", colorKey: [1, 0, 0], expectedPosition: [0, 0, -1] }] },
+    pico_perf: { packageName: "com.example.fixture" },
+    pico_sdk: { symbol: "Entity" },
+    pico_doctor: {},
+    pico_ship: { app: "com.example.fixture" },
+    pico_capabilities: {},
+    pico_fix: { error: "seam fixture" },
+    pico_record: { app: "com.example.fixture", claim: "seam fixture", evidenceType: "vision_verified" },
+    pico_emulator: { action: "status" },
+    pico_next: {},
+    pico_loop: { goal: "seam fixture", draftSpec: { meta: { appName: "SeamFixture" } }, acceptance: [{ kind: "visual" }] },
+  };
+  const bare = new McpServer({ name: "doors-bare-fixture", version: "0.0.0" });
+  doorsModule.registerDoorTools(bare, {});
+  const [bareClientTransport, bareServerTransport] = InMemoryTransport.createLinkedPair();
+  await bare.connect(bareServerTransport);
+  const bareClient = new Client({ name: "doors-bare-test", version: "0.0.0" });
+  await bareClient.connect(bareClientTransport);
+  try {
+    const names = (await bareClient.listTools()).tools.map((t) => t.name).sort();
+    const driven = Object.keys(minimalArgs).sort();
+    if (JSON.stringify(names) === JSON.stringify(driven)) ok(`the bare fixture server registers exactly the ${names.length} doors this block drives`);
+    else fail(`the bare fixture server's doors differ from the driven set (a new door needs minimal args here): ${JSON.stringify({ names, driven })}`);
+    let refusedAtSeam = 0;
+    for (const name of names) {
+      let result;
+      try {
+        result = await bareClient.callTool({ name, arguments: minimalArgs[name] ?? {} }, undefined, { timeout: 10_000 });
+      } catch (error) {
+        fail(`${name}: no answer within 10 s (or the call threw) — a door on a lane-less fixture must refuse at the seam, not reach the inner server: ${error instanceof Error ? error.message : String(error)}`);
+        continue;
+      }
+      let payload = null;
+      try { payload = JSON.parse(result.content?.[0]?.text ?? ""); } catch { payload = null; }
+      if (payload?.status === "error" && /dependencies\.call|dependencies\.callRaw/.test(payload.error ?? "")) refusedAtSeam++;
+      else fail(`${name}: a door on a lane-less fixture must refuse through the seam, got ${JSON.stringify(payload ?? result).slice(0, 200)}`);
+    }
+    if (refusedAtSeam === names.length) ok(`every door refuses through the seam on a {} fixture (${refusedAtSeam}/${names.length})`);
+    else fail(`only ${refusedAtSeam}/${names.length} doors refused through the seam on a {} fixture`);
+
+    // Source-level: the only inner() call sites left in doors.ts are the two lane fallbacks and innerCall().
+    const source = fs.readFileSync(new URL("../src/doors.ts", import.meta.url), "utf8");
+    const sites = source.match(/await inner\(\)/g) ?? [];
+    if (sites.length === 3) ok("doors.ts has exactly three inner() sites (innerCall, doorCall, doorCallRaw)");
+    else fail(`doors.ts has ${sites.length} inner() sites; expected exactly three (innerCall, doorCall, doorCallRaw)`);
+  } finally {
+    await bareClient.close();
+    await bare.close();
+    for (const [key, value] of Object.entries(previousSeamEnv)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    fs.rmSync(seamTmp, { recursive: true, force: true });
+  }
+}
+
+// ── C5 result lanes (2026-09-15) — no process ──
+// The door adapter must never launder an inner tool's isError into a success payload, and the
+// artifact-forwarding doors (pico_look, pico_verify_app) must carry image/resource blocks and
+// structuredContent verbatim. Exercised through the REAL registered doors with an injected raw
+// inner lane. `legacyCall` reproduces the pre-C5 text-only decoder for doors that already honored
+// the injected seam. The pre-C5 pico_look/pico_verify_app/pico_emulator bypassed the seam and
+// spawned a REAL inner server (observed in the 2026-09-15 RED run), so PICO_ADB is pinned to an
+// exit-1 stub for the block: a run against an old adapter is RED without touching hardware.
+{
+  const PNG_1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  const laneTmp = fs.mkdtempSync(path.join(os.tmpdir(), "pico-door-lanes-"));
+  const laneAdbStub = path.join(laneTmp, "adb");
+  fs.writeFileSync(laneAdbStub, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const previousPicoAdb = process.env.PICO_ADB;
+  process.env.PICO_ADB = laneAdbStub;
+  const responses = new Map();
+  const rawCalls = [];
+  const callRaw = async (name, args = {}) => {
+    rawCalls.push({ name, args });
+    const response = responses.get(name);
+    if (!response) throw new Error(`lane fixture has no response for ${name}`);
+    return structuredClone(response);
+  };
+  const legacyCall = async (name, args = {}) => {
+    const r = await callRaw(name, args);
+    const text = (r.content ?? []).map((c) => (c.type === "text" ? c.text : "")).join("\n");
+    try { return JSON.parse(text); } catch { return text; }
+  };
+  const laneServer = new McpServer({ name: "doors-lane-fixture", version: "0.0.0" });
+  doorsModule.registerDoorTools(laneServer, { call: legacyCall, callRaw });
+  const [laneClientTransport, laneServerTransport] = InMemoryTransport.createLinkedPair();
+  await laneServer.connect(laneServerTransport);
+  const laneClient = new Client({ name: "doors-lane-test", version: "0.0.0" });
+  await laneClient.connect(laneClientTransport);
+  const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  try {
+    // raw lane — structured success with an image block survives byte-for-byte
+    const captured = {
+      content: [
+        { type: "image", data: PNG_1x1, mimeType: "image/png" },
+        { type: "text", text: JSON.stringify({ status: "captured", path: "/tmp/pico-render/canonical.png" }, null, 2) },
+      ],
+      structuredContent: { status: "captured", path: "/tmp/pico-render/canonical.png" },
+    };
+    responses.set("capture_canonical", captured);
+    const look = await laneClient.callTool({ name: "pico_look", arguments: {} });
+    if (sameJson(look.content, captured.content) && sameJson(look.structuredContent, captured.structuredContent) && !look.isError)
+      ok("pico_look forwards an image block + structuredContent verbatim (raw lane)");
+    else fail(`pico_look dropped inner content: ${JSON.stringify(look).slice(0, 300)}`);
+
+    await laneClient.callTool({ name: "pico_look", arguments: {serial:"emulator-5678"} });
+    if (sameJson(rawCalls.at(-1), {name:"capture_canonical",args:{serial:"emulator-5678"}}))
+      ok("pico_look forwards the explicit target without changing it");
+    else fail("pico_look lost the explicit serial");
+
+    // raw lane — text-only failure keeps isError and the tool's own words (never {status:'ok', detail})
+    const screencapFailed = { content: [{ type: "text", text: "screencap failed (code 1, 0 bytes). Is emulator-5554 running?" }], isError: true };
+    responses.set("capture_canonical", screencapFailed);
+    const lookFailed = await laneClient.callTool({ name: "pico_look", arguments: {} });
+    if (lookFailed.isError === true && sameJson(lookFailed.content, screencapFailed.content))
+      ok("pico_look forwards an inner isError text result as an error, not a success object");
+    else fail(`pico_look laundered an inner error: ${JSON.stringify(lookFailed).slice(0, 300)}`);
+
+    // raw lane — an embedded resource block survives verbatim
+    const resourceResult = {
+      content: [
+        { type: "resource", resource: { uri: "file:///tmp/pico-render/canonical.png", mimeType: "image/png", blob: PNG_1x1 } },
+        { type: "text", text: "canonical capture attached" },
+      ],
+    };
+    responses.set("capture_canonical", resourceResult);
+    const lookResource = await laneClient.callTool({ name: "pico_look", arguments: {} });
+    if (sameJson(lookResource.content, resourceResult.content) && !lookResource.isError)
+      ok("pico_look forwards an embedded resource block verbatim (raw lane)");
+    else fail(`pico_look dropped a resource block: ${JSON.stringify(lookResource).slice(0, 300)}`);
+
+    // raw lane — structured failure keeps isError AND structuredContent, and the door's args reach the tool
+    const blocked = { content: [{ type: "text", text: "launch blocked by incumbent" }], structuredContent: { status: "attention", launched: false }, isError: true };
+    responses.set("verify_pico_apk", blocked);
+    const verify = await laneClient.callTool({ name: "pico_verify_app", arguments: { apkPath: "/tmp/fixture.apk", packageName: "com.example.fixture", serial: "fixture-lane-0001" } });
+    const verifyArgs = rawCalls.at(-1);
+    if (verify.isError === true && sameJson(verify.content, blocked.content) && sameJson(verify.structuredContent, blocked.structuredContent)
+        && verifyArgs?.name === "verify_pico_apk" && sameJson(verifyArgs.args, { apkPath: "/tmp/fixture.apk", packageName: "com.example.fixture", serial: "fixture-lane-0001" }))
+      ok("pico_verify_app forwards a structured failure verbatim (isError + structuredContent) with its args intact");
+    else fail(`pico_verify_app lost the structured failure: ${JSON.stringify({ verify, verifyArgs }).slice(0, 400)}`);
+
+    // domain lane — success keeps today's decoded-JSON contract
+    responses.set("emulator_status", { content: [{ type: "text", text: JSON.stringify({ running: false, grpcDiscovery: null }) }] });
+    const status = await laneClient.callTool({ name: "pico_emulator", arguments: { action: "status" } });
+    if (!status.isError && sameJson(JSON.parse(status.content[0].text), { running: false, grpcDiscovery: null }))
+      ok("pico_emulator returns the decoded inner JSON object unchanged (domain lane success)");
+    else fail(`pico_emulator domain success drifted: ${JSON.stringify(status).slice(0, 300)}`);
+
+    // domain lane — text-only failure becomes the documented status:error payload, marked isError
+    responses.set("emulator_status", { content: [{ type: "text", text: "adb not found on PATH" }], isError: true });
+    const statusFailed = await laneClient.callTool({ name: "pico_emulator", arguments: { action: "status" } });
+    const statusFailedOut = JSON.parse(statusFailed.content[0].text);
+    if (statusFailed.isError === true && statusFailedOut.status === "error" && statusFailedOut.error === "adb not found on PATH"
+        && statusFailedOut.tool === "emulator_status" && typeof statusFailedOut.fix === "string")
+      ok("pico_emulator carries an inner isError as status:error with the tool's own words (domain lane), never {status:'ok', detail}");
+    else fail(`pico_emulator laundered an inner error: ${JSON.stringify(statusFailed).slice(0, 300)}`);
+
+    // domain lane — structured failure keeps structuredContent beside the text
+    responses.set("emulator_status", { content: [{ type: "text", text: "boot refused" }], structuredContent: { running: false, reason: "already-online" }, isError: true });
+    const structuredFailed = JSON.parse((await laneClient.callTool({ name: "pico_emulator", arguments: { action: "status" } })).content[0].text);
+    if (structuredFailed.status === "error" && structuredFailed.error === "boot refused" && sameJson(structuredFailed.structuredContent, { running: false, reason: "already-online" }))
+      ok("pico_emulator keeps a structured failure's structuredContent beside the inner error text");
+    else fail(`pico_emulator dropped structured failure content: ${JSON.stringify(structuredFailed).slice(0, 300)}`);
+
+    // domain lane — a structured SUCCESS decodes the text block (intentional: structuredContent is raw-lane data)
+    responses.set("emulator_status", {
+      content: [{ type: "text", text: JSON.stringify({ running: true, serial: "emulator-5554" }) }],
+      structuredContent: { running: true, serial: "emulator-5554", extra: "structured-only" },
+    });
+    const structuredSuccess = await laneClient.callTool({ name: "pico_emulator", arguments: { action: "status" } });
+    if (!structuredSuccess.isError && sameJson(JSON.parse(structuredSuccess.content[0].text), { running: true, serial: "emulator-5554" }))
+      ok("pico_emulator decodes a structured success from its text block (documented domain-lane semantics)");
+    else fail(`pico_emulator structured-success decoding drifted: ${JSON.stringify(structuredSuccess).slice(0, 300)}`);
+
+    // domain lane — pico_perf carries an EXPLICIT device through to perf_diagnose (host completion
+    // T5). The door forwarded only packageName/durationSec, and zod strips what a schema does not
+    // declare, so a caller on a multi-device host could not say which device to profile: every
+    // door-driven run silently went to the wrapper's default target.
+    responses.set("perf_diagnose", {
+      content: [{ type: "text", text: JSON.stringify({ status: "ok", requestedDevice: "fixture-serial", measurement: "missing" }) }],
+    });
+    const perfExplicit = await laneClient.callTool({
+      name: "pico_perf",
+      arguments: { packageName: "com.example.fixture", durationSec: 10, device: "fixture-serial" },
+    });
+    const perfExplicitCall = rawCalls.at(-1);
+    if (!perfExplicit.isError && perfExplicitCall?.name === "perf_diagnose"
+        && sameJson(perfExplicitCall.args, { packageName: "com.example.fixture", durationSec: 10, device: "fixture-serial" }))
+      ok("pico_perf forwards an explicit device verbatim to perf_diagnose");
+    else fail(`pico_perf dropped or rewrote the explicit device: ${JSON.stringify({ forwarded: perfExplicitCall, result: perfExplicit }).slice(0, 400)}`);
+
+    // …and omitting it forwards NO device key, so the wrapper's documented default still decides.
+    const perfDefault = await laneClient.callTool({ name: "pico_perf", arguments: { packageName: "com.example.fixture" } });
+    const perfDefaultCall = rawCalls.at(-1);
+    if (!perfDefault.isError && perfDefaultCall?.name === "perf_diagnose"
+        && sameJson(perfDefaultCall.args, { packageName: "com.example.fixture" })
+        && !Object.hasOwn(perfDefaultCall.args, "device"))
+      ok("pico_perf with no device forwards no device key (the wrapper's documented default target stands)");
+    else fail(`pico_perf invented a device for a caller that named none: ${JSON.stringify(perfDefaultCall).slice(0, 300)}`);
+  } finally {
+    await laneClient.close();
+    await laneServer.close();
+    if (previousPicoAdb === undefined) delete process.env.PICO_ADB;
+    else process.env.PICO_ADB = previousPicoAdb;
+    fs.rmSync(laneTmp, { recursive: true, force: true });
   }
 }
 
@@ -226,9 +534,10 @@ else fail(`innerFailureDetail slice wrong: len ${longDetail.length}`);
   else fail("loopFailureSignature should ignore passing criteria");
 }
 
-// A structural assert clears logcat to isolate its Agent Bridge dump. Therefore launch-time
-// logcat criteria must be consumed first even when the caller supplied structural first. Keep
-// relative order stable within the logcat and non-logcat groups so the exit report stays legible.
+// Logcat criteria are consumed first even when the caller supplied structural first. The order
+// dates from when a structural assert cleared logcat to isolate its Agent Bridge dump; assert_scene
+// now opens its own marker window (host completion T4) and clears nothing, and the stable partition
+// is kept so the exit report keeps its shape. Relative order stays stable within each group.
 if (typeof loopCriteriaInEvidenceSafeOrder !== "function") {
   fail("pico_loop has no evidence-safe criterion ordering helper");
 } else {
@@ -410,11 +719,36 @@ if (picoRecordSchema?.properties?.app?.pattern === "^[a-z0-9][a-z0-9._-]{0,199}$
   ok("pico_record advertises canonical keys, caller-recordable tiers, structured device outcomes, and exact receipt binding");
 else fail(`pico_record advertises calls its inner ledger rejects: ${JSON.stringify(picoRecordSchema)}`);
 
+// Explicit targeting is opt-in for historical LOOK; the new session requires it.
+const picoLookDefinition = toolDefinitions.find((tool) => tool.name === "pico_look");
+const picoLookInputs = Object.keys(picoLookDefinition?.inputSchema?.properties ?? {});
+if (/historical calls without serial retain emulator-5554/.test(picoLookDefinition?.description ?? "")
+    && picoLookInputs.includes("serial"))
+  ok("pico_look accepts explicit serial and discloses the historical default");
+else fail("pico_look does not advertise its target migration");
+
 // a door that orchestrates through the child server (vault lookup — fast, no emulator needed)
 const sdk = await client.callTool({ name: "pico_sdk", arguments: { symbol: "RigidBodyComponent" } });
 const sdkOut = JSON.parse(sdk.content[0].text);
 if (sdkOut.status === "ok" || sdkOut.status === "unavailable") ok(`pico_sdk orchestrates the inner server (status: ${sdkOut.status})`);
 else fail(`pico_sdk unexpected: ${JSON.stringify(sdkOut).slice(0, 120)}`);
+
+// Task S5: the SDK door forwards HINTS only — never an identity, a fingerprint or a compatibility
+// verdict — and a lookup without a project hint is labeled historical (or unavailable), never target-verified.
+const picoSdkDefinition = toolDefinitions.find((tool) => tool.name === "pico_sdk");
+const picoSdkProperties = Object.keys(picoSdkDefinition?.inputSchema?.properties ?? {}).sort();
+if (JSON.stringify(picoSdkProperties) === JSON.stringify(["projectRoot", "recordPaths", "sdkVersion", "symbol", "vaultRoot"])
+    && JSON.stringify(picoSdkDefinition?.inputSchema?.required) === JSON.stringify(["symbol"])
+    && !picoSdkProperties.some((name) => /identity|fingerprint|compatib|verdict|binding/i.test(name))
+    && /historical/i.test(picoSdkDefinition?.description ?? "")
+    && /0\.13\.3/.test(picoSdkDefinition?.description ?? "")
+    && /docs\/SDK_6_0_0_DRIFT\.md/.test(picoSdkDefinition?.description ?? "")
+    && (sdkOut.symbolAuthority === "historical" || sdkOut.symbolAuthority === "unavailable")
+    && sdkOut.lookup !== "target-verified"
+    && (sdkOut.target === null || sdkOut.target === undefined)
+    && typeof sdkOut.declarationIdentity?.status === "string")
+  ok(`pico_sdk takes hint inputs only and labels a projectless lookup ${sdkOut.symbolAuthority}`);
+else fail(`pico_sdk authority contract drifted: ${JSON.stringify({ properties: picoSdkProperties, required: picoSdkDefinition?.inputSchema?.required, symbolAuthority: sdkOut.symbolAuthority, lookup: sdkOut.lookup, target: sdkOut.target, identity: sdkOut.declarationIdentity?.status }).slice(0, 400)}`);
 
 // error path carries a fix pointer
 const fx = await client.callTool({ name: "pico_place", arguments: { semanticScenePath: "/nonexistent.json", label: "counter" } });
@@ -593,6 +927,57 @@ else fail(`pico_loop patternless-logcat pre-flight broken: ${JSON.stringify(loop
 await client.close();
 fs.rmSync(managedHarness.root, { recursive: true, force: true });
 
+// ── C5 single-flight inner server (2026-09-15) — the one real end-to-end case ──
+// A COLD doors server receiving 20 concurrent door calls must start exactly ONE inner
+// full-surface child. Before C5, inner() tested its cache, awaited connect, then stored the
+// cache, so every concurrent first caller spawned its own dist/index.js. The fake node proxy on
+// the fixture PATH logs each inner lifetime; PICO_ADB points at an exit-1 stub so the raw-lane
+// check below can never reach a real adb or emulator. eye.ts resolves PICO_ADB by EXISTENCE first
+// and falls through to a real adb when it is missing, so the stub records every argv it receives
+// (proof it ran) and is asserted present + executable immediately before the call.
+{
+  const coldHarness = createManagedRuntimeHarness();
+  const coldAdb = path.join(coldHarness.root, "adb");
+  const coldAdbMarker = path.join(coldHarness.root, "adb-invocations.log");
+  fs.writeFileSync(coldAdb, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${coldAdbMarker}'\nexit 1\n`, { mode: 0o755 });
+  const coldTransport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["dist/index.js"],
+    env: { ...coldHarness.env, PICO_MCP_SURFACE: "doors", PICO_ADB: coldAdb },
+  });
+  const coldClient = new Client({ name: "doors-cold-concurrency-test", version: "0.0.0" });
+  const innerStarts = () => coldHarness.calls().filter((call) => call.role === "node-proxy" && call.args.some((arg) => /dist[/\\]index\.js$/.test(arg))).length;
+  try {
+    await coldClient.connect(coldTransport);
+    const burst = await Promise.all(Array.from({ length: 20 }, () => coldClient.callTool({ name: "pico_sdk", arguments: { symbol: "Entity" } })));
+    const statuses = burst.map((r) => JSON.parse(r.content[0].text).status);
+    const startsAfterBurst = innerStarts();
+    if (startsAfterBurst === 1 && statuses.every((s) => s === statuses[0] && s !== "error"))
+      ok(`20 concurrent first door calls started exactly one inner server (all ${statuses[0]})`);
+    else fail(`concurrent first use started ${startsAfterBurst} inner servers (statuses: ${[...new Set(statuses)].join(", ")})`);
+
+    // raw lane over the real transport: capture_canonical's fail() must arrive as an error.
+    // Guarded: a missing/non-executable stub would let eye.ts fall through to a real adb, so the
+    // call is only made once the stub is proven present, and the marker proves it actually ran.
+    const stubExecutable = (() => { try { fs.accessSync(coldAdb, fs.constants.X_OK); return fs.statSync(coldAdb).isFile(); } catch { return false; } })();
+    if (!stubExecutable) {
+      fail(`the e2e adb stub is missing or not executable immediately before pico_look (${coldAdb}); the call was NOT made`);
+    } else {
+      ok("the e2e adb stub exists and is executable immediately before pico_look");
+      const look = await coldClient.callTool({ name: "pico_look", arguments: {} });
+      const lookText = look.content?.[0]?.text ?? "";
+      const stubInvocations = fs.existsSync(coldAdbMarker) ? fs.readFileSync(coldAdbMarker, "utf8").split("\n").filter(Boolean) : [];
+      const stubRanScreencap = stubInvocations.some((line) => /exec-out screencap/.test(line));
+      if (look.isError === true && /screencap failed/.test(lookText) && !/"status": "ok"/.test(lookText) && innerStarts() === 1 && stubRanScreencap)
+        ok(`pico_look forwards the inner screencap failure as isError over the real inner transport (stub adb ran: ${stubInvocations.length} invocation(s), screencap argv recorded)`);
+      else fail(`pico_look laundered, re-spawned, or bypassed the stub: ${JSON.stringify({ isError: look.isError, lookText: lookText.slice(0, 160), innerStarts: innerStarts(), stubInvocations })}`);
+    }
+  } finally {
+    await coldClient.close();
+    fs.rmSync(coldHarness.root, { recursive: true, force: true });
+  }
+}
+
 // v36.3 default-surface flip: with PICO_MCP_SURFACE UNSET, the server must serve the doors
 // surface — the docs told every host to set doors while the code defaulted to full, so one
 // missed env var exposed the 86,927-token full `tools/list` schema payload (o200k_base,
@@ -632,58 +1017,108 @@ fs.rmSync(managedHarness.root, { recursive: true, force: true });
   else fail(`self-spawns without a surface pin (doors-by-default breaks their inner calls): ${offenders.join(", ")}`);
 }
 
-// v27.8 Unity hello-XR finding: an immersive container tears down asynchronously. Re-launching
-// immediately after force-stop is rejected with "current full space don't allow start fullscreen",
-// even for the SAME package. Exercise the real verify_pico_apk tool with a fake adb that only
-// admits the launch after the tested two-second handoff window.
-const verifyTmp = fs.mkdtempSync(path.join(os.tmpdir(), "pico-verifyapk-race-"));
+// ── external-APK OBSERVATION through the real registered tool, over a stub adb ─────────────────
+// Three properties, exercised end to end against `dist/index.js` with $PICO_ADB pinned to a stub:
+//   1. v27.8 immersive-container finding: an immersive container tears down asynchronously, so an
+//      immediate re-launch is rejected with "current full space don't allow start fullscreen" even
+//      for the SAME package. The observation must wait out VERIFY_APK_TEARDOWN_MS.
+//   2. A rejected launch stays a structured, non-clean result.
+//   3. C6: a FOREIGN app in the foreground is a CONFLICT carrying the evidence. It is NOT stopped,
+//      and the device's global log is never cleared.
+// The stub is itself a tripwire: it exits non-zero on a log-clear, on a missing `-s <serial>`, and
+// records every force-stop target, so "no foreign app was stopped" is asserted from what the stub
+// actually saw rather than assumed from reading the source.
+const verifyTmp = fs.mkdtempSync(path.join(os.tmpdir(), "pico-verifyapk-observe-"));
 const fakeAdb = path.join(verifyTmp, "adb");
 const fakeState = path.join(verifyTmp, "state.json");
 const fixturePng = path.resolve("golden/showcase-6cards.golden.png");
+const fixtureApk = path.join(verifyTmp, "fixture.apk");
+fs.writeFileSync(fixtureApk, "doors-observation-fixture-apk-bytes");
+const observeSerial = `fixture-doors-${process.pid}`;
 const fixturePackage = `com.example.immersive.fixture${process.pid}`;
 const rejectPackage = `com.example.immersive.reject${process.pid}`;
 const blockedPackage = `com.example.immersive.blocked${process.pid}`;
+const INCUMBENT = "com.example.incumbent";
 fs.writeFileSync(fakeAdb, `#!/usr/bin/env node
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const statePath = process.env.VERIFYAPK_FAKE_STATE;
-const args = process.argv.slice(2).join(" ");
+const argv = process.argv.slice(2);
 const read = () => { try { return JSON.parse(fs.readFileSync(statePath, "utf8")); } catch { return {}; } };
 const write = (value) => fs.writeFileSync(statePath, JSON.stringify(value));
-if (args.includes(" install -r ")) process.stdout.write("Success\\n");
-else if (args.includes(" am force-stop ")) {
-  if (args.includes("com.example.incumbent")) write({ ...read(), incumbentStopped: true });
-  else write({ ...read(), forcedAt: Date.now(), alive: false });
+const state = read();
+state.calls = [...(state.calls || []), argv.join(" ")];
+
+// TRIPWIRE: an explicit target is mandatory. No serial, no device command.
+if (argv[0] !== "-s" || !argv[1]) { state.missingSerial = argv.join(" "); write(state); process.exit(98); }
+state.serials = Array.from(new Set([...(state.serials || []), argv[1]]));
+const sub = argv.slice(2);
+const joined = sub.join(" ");
+
+// TRIPWIRE: clearing the device's global log is never ordinary verification.
+if (sub.includes("logcat") && sub.includes("-c")) {
+  state.clearedLogcat = true; write(state);
+  process.stderr.write("FIXTURE VIOLATION: the global log was cleared\\n");
+  process.exit(97);
 }
-else if (args.includes(" logcat -c")) process.exit(0);
-else if (args.includes(" dumpsys activity activities")) process.stdout.write("    topResumedActivity=ActivityRecord{1a2b3c u0 com.example.incumbent/.MainActivity t42}\\n");
-else if (args.includes(" am start ")) {
-  const state = read();
-  if (args.includes(".blocked")) {
-    // am start reports success while the incumbent full-space app blocks the real start; only
-    // logcat shows the block. The app comes alive only after the incumbent is force-stopped.
-    write({ ...state, alive: !!state.incumbentStopped, blockedLaunches: (state.blockedLaunches || 0) + 1 });
-    process.stdout.write("Starting: Intent\\n");
+
+const last = argv[argv.length - 1];
+if (joined.startsWith("install -r ")) { state.apkPath = last; write(state); process.stdout.write("Success\\n"); }
+else if (joined.startsWith("shell am force-stop ")) {
+  state.stops = [...(state.stops || []), last];
+  state.forcedAt = Date.now();
+  state.alive = false;
+  write(state);
+}
+else if (joined.startsWith("shell pm path ")) { write(state); process.stdout.write("package:/data/app/~~fixture==/base.apk\\n"); }
+else if (joined.startsWith("shell toybox sha256sum ")) {
+  write(state);
+  const digest = crypto.createHash("sha256").update(fs.readFileSync(state.apkPath)).digest("hex");
+  process.stdout.write(digest + "  " + last + "\\n");
+}
+else if (joined.includes("/proc/sys/kernel/random/boot_id")) { write(state); process.stdout.write("fixture-boot-0001\\n"); }
+else if (joined.startsWith("shell am start")) {
+  const component = argv[argv.indexOf("-n") + 1] || "";
+  const pkg = component.split("/")[0];
+  state.launchedPackage = pkg;
+  state.launchAfterMs = Date.now() - (state.forcedAt || Date.now());
+  if (pkg.includes(".reject")) {
+    state.alive = false; write(state);
+    process.stdout.write("Warning: current full space don't allow start fullscreen\\n");
   } else {
-    const internalForceStop = args.includes(" am start -S ");
-    const launchAfterMs = internalForceStop ? 0 : Date.now() - (state.forcedAt ?? Date.now());
-    const forcedRejection = args.includes(".reject");
-    const alive = !internalForceStop && !forcedRejection && launchAfterMs >= 1900;
-    write({ ...state, launchAfterMs, alive, internalForceStop, forcedRejection });
-    process.stdout.write(alive ? "Starting: Intent\\n" : "Warning: current full space don't allow start fullscreen\\n");
+    // The happy package only comes alive once the immersive container has finished tearing down.
+    state.alive = pkg.includes(".blocked") ? true : state.launchAfterMs >= 1900;
+    write(state);
+    process.stdout.write("Starting: Intent\\n");
   }
 }
-else if (args.includes(" pidof ")) {
-  if (read().alive) process.stdout.write("4242\\n"); else process.exit(1);
+else if (joined.startsWith("shell pidof ")) {
+  write(state);
+  if (state.alive) process.stdout.write("4242\\n"); else process.exit(1);
 }
-else if (args.includes(" logcat -d")) {
-  const state = read();
-  if (state.blockedLaunches && !state.incumbentStopped) process.stdout.write("E ContainerManager: current full space don't allow start fullscreen\\n");
-  else process.stdout.write("UNITY_HELLO_XR status=ready\\n");
+else if (/\\/proc\\/\\d+\\/stat/.test(joined)) {
+  write(state);
+  process.stdout.write("4242 (fixture) S 1 2 3 4 -1 4194304 100 0 0 0 10 20 0 0 20 0 15 0 555000\\n");
 }
-else if (args.includes(" exec-out screencap -p")) process.stdout.write(fs.readFileSync(process.env.VERIFYAPK_FAKE_PNG));
+else if (joined.startsWith("shell dumpsys activity activities")) {
+  write(state);
+  // The blocked scenario has a FOREIGN app resumed; everything else resumes the launched package.
+  const foreground = String(state.launchedPackage || "").includes(".blocked")
+    ? ${JSON.stringify(INCUMBENT)}
+    : state.launchedPackage;
+  process.stdout.write("    topResumedActivity=ActivityRecord{1a2b3c u0 " + foreground + "/.MainActivity t42}\\n");
+}
+else if (joined.startsWith("shell logcat")) {
+  state.logcatArgs = [...(state.logcatArgs || []), joined];
+  write(state);
+  process.stdout.write("09-15 10:00:00.000  4242  4242 I UNITY_HELLO_XR: status=ready\\n");
+}
+else if (joined.startsWith("exec-out screencap -p")) { write(state); process.stdout.write(fs.readFileSync(process.env.VERIFYAPK_FAKE_PNG)); }
+else { write(state); process.stderr.write("FIXTURE: unmodelled device command " + joined + "\\n"); process.exit(96); }
 `);
 fs.chmodSync(fakeAdb, 0o755);
 
+const observationRoot = path.join(verifyTmp, "observations");
 const verifyTransport = new StdioClientTransport({
   command: "node",
   args: ["dist/index.js"],
@@ -691,68 +1126,82 @@ const verifyTransport = new StdioClientTransport({
     ...process.env,
     PICO_MCP_SURFACE: "full",
     PICO_ADB: fakeAdb,
+    HOME: verifyTmp,
+    PICO_HOME: verifyTmp,
     VERIFYAPK_FAKE_STATE: fakeState,
     VERIFYAPK_FAKE_PNG: fixturePng,
   },
 });
-const verifyClient = new Client({ name: "verifyapk-race-test", version: "0.0.0" });
+const verifyClient = new Client({ name: "verifyapk-observation-test", version: "0.0.0" });
 await verifyClient.connect(verifyTransport);
-const verify = await verifyClient.callTool({
-  name: "verify_pico_apk",
-  arguments: {
-    apkPath: path.join(verifyTmp, "fixture.apk"),
-    packageName: fixturePackage,
-    activity: "com.example.MainActivity",
-    expectLogcatContains: "UNITY_HELLO_XR status=",
-    settleSec: 0,
-  },
-});
-const verifyOut = JSON.parse(verify.content[0].text);
-const launchAfterMs = JSON.parse(fs.readFileSync(fakeState, "utf8")).launchAfterMs;
-if (VERIFY_APK_TEARDOWN_MS === 2000 && verifyOut.status === "ok" && verifyOut.processAlive === true && launchAfterMs >= 1900)
-  ok(`verify_pico_apk waits for immersive teardown before relaunch (${launchAfterMs}ms)`);
-else fail(`verify_pico_apk raced immersive teardown: ${JSON.stringify({ verifyOut, launchAfterMs }).slice(0, 300)}`);
+const observeApk = async (packageName) => {
+  const response = await verifyClient.callTool({
+    name: "verify_pico_apk",
+    arguments: {
+      apkPath: fixtureApk,
+      packageName,
+      serial: observeSerial,
+      activity: "com.example.MainActivity",
+      settleSec: 0,
+    },
+  });
+  return JSON.parse(response.content[0].text);
+};
 
-const rejected = await verifyClient.callTool({
-  name: "verify_pico_apk",
-  arguments: {
-    apkPath: path.join(verifyTmp, "fixture.apk"),
-    packageName: rejectPackage,
-    activity: "com.example.MainActivity",
-    settleSec: 0,
-  },
-});
-const rejectedOut = JSON.parse(rejected.content[0].text);
-if (rejectedOut.status === "attention" && rejectedOut.launched === false
+const verifyOut = await observeApk(fixturePackage);
+const afterHappy = JSON.parse(fs.readFileSync(fakeState, "utf8"));
+if (VERIFY_APK_TEARDOWN_MS === 2000 && verifyOut.status === "observed" && afterHappy.launchAfterMs >= 1900
+    && verifyOut.identity.process.pid === 4242 && verifyOut.capture.status === "captured")
+  ok(`verify_pico_apk waits for immersive teardown before relaunch (${afterHappy.launchAfterMs}ms) and observes the process`);
+else fail(`verify_pico_apk raced immersive teardown: ${JSON.stringify({ verifyOut, launchAfterMs: afterHappy.launchAfterMs }).slice(0, 400)}`);
+
+// The identity the observation is built on is OBSERVED, and it is explicitly not a receipt.
+if (verifyOut.scope === "external-apk-observation" && verifyOut.scope !== "fleet-native-debug"
+    && verifyOut.identity.serial.value === observeSerial
+    && verifyOut.identity.installedApk.sha256 === createHash("sha256").update(fs.readFileSync(fixtureApk)).digest("hex")
+    && verifyOut.identity.bootId.value === "fixture-boot-0001"
+    && typeof verifyOut.runDirectory === "string" && verifyOut.runDirectory.includes("external-apk-observation")
+    && fs.existsSync(verifyOut.capture.artifactPath))
+  ok("verify_pico_apk returns observed identity (serial, installed digest, boot id) and publishes the capture into a run directory");
+else fail(`verify_pico_apk identity incomplete: ${JSON.stringify(verifyOut).slice(0, 600)}`);
+
+const rejectedOut = await observeApk(rejectPackage);
+if (rejectedOut.status === "inconclusive" && rejectedOut.launched === false
     && rejectedOut.errors.some((error) => error.includes("current full space don't allow start fullscreen")))
-  ok("verify_pico_apk reports the full-space rejection as a structured launch error");
-else fail(`verify_pico_apk hid the full-space rejection: ${JSON.stringify(rejectedOut).slice(0, 300)}`);
+  ok("verify_pico_apk reports the full-space rejection as a structured, non-clean result");
+else fail(`verify_pico_apk hid the full-space rejection: ${JSON.stringify(rejectedOut).slice(0, 400)}`);
 
-// v31 incumbent recovery: the launch "succeeds" while the incumbent full-space app blocks the real
-// start (only logcat shows it). verify_pico_apk must force-stop the incumbent, wait out the
-// container teardown, relaunch ONCE, and record the recovery — mirroring fleet_build's
-// launch_blocked path.
-const blocked = await verifyClient.callTool({
-  name: "verify_pico_apk",
-  arguments: {
-    apkPath: path.join(verifyTmp, "fixture.apk"),
-    packageName: blockedPackage,
-    activity: "com.example.MainActivity",
-    settleSec: 0,
-  },
-});
-const blockedOut = JSON.parse(blocked.content[0].text);
+// C6 REPLACEMENT of the v31 incumbent-recovery fixture. The old contract expected this tool to
+// force-stop whatever foreign app held the foreground and relaunch. Ordinary verification does not
+// get to stop an app it was not given: the foreign foreground is now the RESULT, with its evidence.
+const blockedOut = await observeApk(blockedPackage);
 const blockedState = JSON.parse(fs.readFileSync(fakeState, "utf8"));
-if (blockedOut.status === "ok" && blockedOut.processAlive === true && blockedState.incumbentStopped === true
-    && (blockedOut.recoveryNotes ?? []).some((n) => n.includes("com.example.incumbent") && n.includes("relaunched once")))
-  ok("verify_pico_apk force-stops the full-space incumbent and relaunches once (recovery recorded)");
-else fail(`verify_pico_apk incumbent recovery broken: ${JSON.stringify({ blockedOut, blockedState }).slice(0, 400)}`);
+if (blockedOut.status === "conflict" && blockedOut.conflict?.foregroundPackage === "com.example.incumbent"
+    && blockedOut.conflict.expectedPackage === blockedPackage
+    && String(blockedOut.conflict.evidence).includes("com.example.incumbent")
+    && blockedOut.capture.status === "not-attributable")
+  ok("verify_pico_apk reports a foreign foreground as a conflict carrying the observed evidence");
+else fail(`verify_pico_apk mishandled the foreign incumbent: ${JSON.stringify(blockedOut).slice(0, 600)}`);
+
+if (!(blockedState.stops || []).includes("com.example.incumbent")
+    && (blockedState.stops || []).every((pkg) => [fixturePackage, rejectPackage, blockedPackage].includes(pkg)))
+  ok(`ordinary verification stopped only the packages it was given (${(blockedState.stops || []).length} force-stops, none foreign)`);
+else fail(`verify_pico_apk stopped an app it was not given: ${JSON.stringify(blockedState.stops)}`);
+
+if (blockedState.clearedLogcat === undefined && (blockedState.logcatArgs || []).length === 3
+    && (blockedState.logcatArgs || []).every((args) => args.includes("-d") && args.includes("-t")))
+  ok("verification never cleared the global log and read it bounded, once per observation");
+else fail(`log handling regressed: ${JSON.stringify({ cleared: blockedState.clearedLogcat, logcatArgs: blockedState.logcatArgs })}`);
+
+if (blockedState.missingSerial === undefined && (blockedState.serials || []).join(",") === observeSerial)
+  ok(`every device command named the explicit serial (${observeSerial}) — no default target was used`);
+else fail(`serial handling regressed: ${JSON.stringify({ missingSerial: blockedState.missingSerial, serials: blockedState.serials })}`);
+
+if (!fs.existsSync(path.join("/tmp/pico-render/verifyapk", `${fixturePackage}.png`)))
+  ok("no capture was written to the old package-keyed mutable /tmp path");
+else fail(`the mutable /tmp capture path is still written: /tmp/pico-render/verifyapk/${fixturePackage}.png`);
 
 await verifyClient.close();
-for (const packageName of [fixturePackage, rejectPackage, blockedPackage]) {
-  const artifact = path.join("/tmp/pico-render/verifyapk", `${packageName}.png`);
-  try { fs.unlinkSync(artifact); } catch {}
-}
 fs.rmSync(verifyTmp, { recursive: true, force: true });
 
 console.log(`\nDoors test done. Failures: ${failures}`);

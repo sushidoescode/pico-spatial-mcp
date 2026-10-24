@@ -1,0 +1,13 @@
+Description:
+Search, install, and verify SpatialML Pipeline Zoo packages
+
+Usage:
+  $ pico-cli spatialml pipeline <command> [options]
+
+Commands:
+  install <id>    Install a Pipeline Zoo package for the detected SpatialML SDK
+  search <query>  Search PICO Pipeline Zoo packages with model-card summaries
+  verify          Verify a SpatialML Pipeline Zoo package with pyspatialml
+
+Options:
+  -h, --help  Show this message and exit.

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { expandHome, fail, ok, okJson, sleep, tail } from "./util.js";
 import { AVD_HOME } from "./toolchain.js";
 import { adb, resolveSerial } from "./adb.js";
+import { LONG_POLL_LOG_WINDOW_MAX_LINES, openLogWindow, readLogWindow, unseenMarkerCause, type AdbRunner, type LogWindow } from "./logwindow.js";
 
 /**
  * v0.3 — capabilities a self-running agent loop needs beyond raw observe/control:
@@ -136,28 +137,102 @@ export function registerAgentLoopTools(server: McpServer) {
     "wait_for_log",
     {
       description:
-        "Block until a regex appears in logcat (or timeout). Essential for an agent loop: wait for 'scene loaded', an app-ready marker, or an error, instead of sleeping a fixed time. Returns the matching line(s).",
+        "Block until a regex appears in logcat (or timeout). Essential for an agent loop: wait for 'scene loaded', an app-ready marker, or an error, instead of sleeping a fixed time. By default it opens a marker window first, so only lines logged after the call can match; the device log is never cleared. Returns {matched, elapsedSec, serial, logWindow, lines}; a window whose marker is never seen is an inconclusive error, never a match against the unscoped buffer, and so is a wait whose final dump before the deadline failed — a lost observation is never reported as a timeout.",
       inputSchema: {
         pattern: z.string().describe("Regex to match against new logcat lines"),
         serial: z.string().optional(),
         tag: z.string().optional(),
         timeoutSec: z.number().int().default(30),
-        clearFirst: z.boolean().default(true).describe("Clear the log buffer before waiting (recommended)"),
+        clearFirst: z.boolean().default(true).describe("Open a marker window before waiting (recommended): only lines logged after the window opens can match. Nothing is cleared; false polls the whole buffer."),
+        maxLines: z.number().int().min(100).max(200000).optional().describe("Bound on each raw dump (`logcat -t <n>`) of a WINDOWED read — the one clearFirst:true opens. With clearFirst:false there is no marker to slice after, so the wait dumps the whole buffer and this input is inert. logd applies the bound to the selected buffers BEFORE the tag filter, so on a chatty device a small tail can drop the window marker while the filtered output stays short — the wait is then inconclusive, never a false match. Default 20000 (the module default of 4000 suits short reads; this tool polls for tens of seconds). Raise it for a long wait on a busy device: `-t <n>` never returns more than the buffer holds."),
       },
     },
-    async ({ pattern, serial, tag, timeoutSec, clearFirst }) => {
+    async ({ pattern, serial, tag, timeoutSec, clearFirst, maxLines }) => {
       const s = await resolveSerial(serial);
-      if (clearFirst) await adb(["-s", s, "logcat", "-c"]);
+      const runner: AdbRunner = (args, timeoutMs) => adb(args, timeoutMs ?? 60_000);
+      // A long poller's bound (src/logwindow.ts): the raw tail logd keeps BEFORE the tag filter.
+      // It applies to the windowed read only; with clearFirst:false the poll dumps the whole buffer.
+      const bound = maxLines ?? LONG_POLL_LOG_WINDOW_MAX_LINES;
+      let window: LogWindow | null = null;
+      if (clearFirst) {
+        try {
+          window = await openLogWindow(runner, s);
+        } catch (e) {
+          return fail(`Inconclusive: could not open a log window on ${s}, so nothing was polled (${(e as Error).message}). status=inconclusive`);
+        }
+      }
       const re = new RegExp(pattern, "i");
-      const deadline = Date.now() + timeoutSec * 1000;
+      const started = Date.now();
+      const deadline = started + timeoutSec * 1000;
       const filter = tag ? [`${tag}:V`, "*:S"] : [];
+      let markerSeen = false;
+      let successfulDumps = 0;
+      let failedDumps = 0;
+      // Whether the MOST RECENT dump succeeded. `markerSeen` cannot stand in for this: it is only
+      // ever assigned on a successful read and is never reset, so a wait that reads the marker once
+      // and then loses adb for every remaining poll would otherwise fall through to a flat
+      // `Timeout:` — a conclusive miss for a stretch of the wait nothing observed. Same rule as
+      // assert_logcat (src/adb.ts): a miss is conclusive only when the final dump succeeded.
+      let lastDumpSucceeded: boolean | null = null;
+      let lastReadError: string | null = null;
       while (Date.now() < deadline) {
-        const r = await adb(["-s", s, "logcat", "-d", ...filter], 20_000);
-        const hit = r.stdout.split("\n").filter((l) => re.test(l));
-        if (hit.length) return ok(`Matched after ${Math.round((timeoutSec * 1000 - (deadline - Date.now())) / 1000)}s:\n${hit.slice(-10).join("\n")}`);
+        let lines: string[] | null = null;
+        if (window) {
+          try {
+            const read = await readLogWindow(runner, window, { tags: tag ? [tag] : undefined, maxLines: bound, timeoutMs: 20_000 });
+            successfulDumps += 1;
+            lastDumpSucceeded = true;
+            markerSeen = read.markerSeen;
+            lines = read.markerSeen ? read.lines : null; // no marker: nothing here is provably post-window
+          } catch (e) {
+            // a failed dump is retried until the deadline — and remembered, so a dead adb is reported
+            // below as the dump failure it is, never as log eviction (unseenMarkerCause)
+            failedDumps += 1;
+            lastDumpSucceeded = false;
+            lastReadError = e instanceof Error ? e.message : String(e);
+            lines = null;
+          }
+        } else {
+          const r = await adb(["-s", s, "logcat", "-d", ...filter], 20_000);
+          if (r.code === 0) {
+            successfulDumps += 1;
+            lastDumpSucceeded = true;
+            lines = r.stdout.split("\n");
+          } else {
+            // `run` resolves on a nonzero exit, so an unchecked dump handed back [""] and read as
+            // "no match". A failed dump is not an observation.
+            failedDumps += 1;
+            lastDumpSucceeded = false;
+            lastReadError = (r.stderr || r.stdout || `exit ${r.code}`).trim().slice(0, 300);
+            lines = null;
+          }
+        }
+        const hit = lines ? lines.filter((l) => re.test(l)) : [];
+        if (hit.length) {
+          return okJson({
+            matched: true,
+            elapsedSec: Math.round((Date.now() - started) / 1000),
+            serial: s,
+            logWindow: window ? { marker: window.marker, markerSeen: true } : null,
+            lines: hit.slice(-10),
+          });
+        }
         await sleep(1000);
       }
-      return fail(`Timeout: /${pattern}/ not seen in ${timeoutSec}s`);
+      if (window && !markerSeen) {
+        const deadAdb = successfulDumps === 0 && lastReadError !== null;
+        return fail(`Inconclusive: the log window marker ${window.marker} was never seen on ${s} within ${timeoutSec}s (${unseenMarkerCause({ successfulDumps, lastReadError })}; bound -t ${bound}); the device log was NOT cleared and nothing was matched against the unscoped buffer — ${deadAdb ? "check the adb connection" : "raise maxLines if the device is chatty"} and re-run. status=inconclusive`);
+      }
+      if (lastDumpSucceeded !== true) {
+        return fail(
+          `Inconclusive: the observation was lost on ${s} — the last logcat dump before the ${timeoutSec}s deadline failed `
+          + `(${successfulDumps} succeeded, ${failedDumps} failed; last error: ${lastReadError ?? "none recorded"}). `
+          + `${window ? `The window's marker ${window.marker} WAS seen, so the window is not the problem; ` : ""}`
+          + `/${pattern}/ was not matched for the tail of the wait, so this is NOT a measured miss. `
+          + `Check the adb connection to ${s} and re-run. status=inconclusive`,
+        );
+      }
+      return fail(`Timeout: /${pattern}/ not seen in ${timeoutSec}s on ${s}${window ? ` (log window ${window.marker}, markerSeen=true)` : ""}`);
     },
   );
 

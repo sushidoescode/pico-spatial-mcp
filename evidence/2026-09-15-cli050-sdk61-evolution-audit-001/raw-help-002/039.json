@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 editor start --help",
+  "argv": [
+    "editor",
+    "start",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:51.358Z",
+  "endedAt": "2026-09-15T09:11:51.459Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "53d62f29772a93d2691e1ba87df09e16beb31d3ebfc06fc4339b35b72a2b15a6",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

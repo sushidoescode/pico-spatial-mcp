@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "hostCompiled": true,
+  "nativeInstalled": false,
+  "renderedReview": false,
+  "inspection": "aapt actual APK manifest; all DEX bytes searched for bridge class/path/action literals",
+  "artifacts": [
+    {
+      "variant": "debug",
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/examples/agent-iteration-fixture/evidence/candidate-debug-05edb1f0d71e7e3f4cfc564bfa34f997cdbeac10291ee69634cdf8cd143c970f.apk",
+      "sha256": "05edb1f0d71e7e3f4cfc564bfa34f997cdbeac10291ee69634cdf8cd143c970f",
+      "bytes": 32813306,
+      "package": "com.example.picofixture.iteration.debug",
+      "debuggable": true,
+      "dexContains": {
+        "bridgeClass": true,
+        "bridgePath": true,
+        "actionName": true
+      },
+      "components": [
+        {
+          "type": "activity",
+          "name": "com.example.picofixture.iteration.platform.LaunchActivity",
+          "exported": true,
+          "permission": null
+        },
+        {
+          "type": "provider",
+          "name": "com.pico.spatial.ui.design.SpatialUIProvider",
+          "exported": false,
+          "permission": null
+        },
+        {
+          "type": "activity",
+          "name": "com.pico.spatial.ui.platform.stub.SpatialStubActivity",
+          "exported": false,
+          "permission": null
+        },
+        {
+          "type": "provider",
+          "name": "androidx.startup.InitializationProvider",
+          "exported": false,
+          "permission": null
+        },
+        {
+          "type": "receiver",
+          "name": "androidx.profileinstaller.ProfileInstallReceiver",
+          "exported": true,
+          "permission": "android.permission.DUMP"
+        }
+      ],
+      "manifestCapture": "candidate-debug-manifest.txt"
+    },
+    {
+      "variant": "release",
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/examples/agent-iteration-fixture/evidence/candidate-release-96495b04d1da7d4c3f6f87d732753647904a9acfbfbb1a07737c19a3fea84eed.apk",
+      "sha256": "96495b04d1da7d4c3f6f87d732753647904a9acfbfbb1a07737c19a3fea84eed",
+      "bytes": 24782869,
+      "package": "com.example.picofixture.iteration",
+      "debuggable": false,
+      "dexContains": {
+        "bridgeClass": false,
+        "bridgePath": false,
+        "actionName": false
+      },
+      "components": [
+        {
+          "type": "activity",
+          "name": "com.example.picofixture.iteration.platform.LaunchActivity",
+          "exported": true,
+          "permission": null
+        },
+        {
+          "type": "provider",
+          "name": "com.pico.spatial.ui.design.SpatialUIProvider",
+          "exported": false,
+          "permission": null
+        },
+        {
+          "type": "activity",
+          "name": "com.pico.spatial.ui.platform.stub.SpatialStubActivity",
+          "exported": false,
+          "permission": null
+        },
+        {
+          "type": "provider",
+          "name": "androidx.startup.InitializationProvider",
+          "exported": false,
+          "permission": null
+        },
+        {
+          "type": "receiver",
+          "name": "androidx.profileinstaller.ProfileInstallReceiver",
+          "exported": true,
+          "permission": "android.permission.DUMP"
+        }
+      ],
+      "manifestCapture": "candidate-release-manifest.txt"
+    }
+  ]
+}

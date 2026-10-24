@@ -1,0 +1,15 @@
+{
+  "label": "@picoxr/pico-cli@0.4.4 version",
+  "argv": [
+    "-v"
+  ],
+  "startedAt": "2026-09-15T09:11:47.539Z",
+  "endedAt": "2026-09-15T09:11:47.726Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "99ca71c8950c00f8295b9e1cccfd0ff6fcafd3acb17cf8a7aa82dc752f4eb4a6",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

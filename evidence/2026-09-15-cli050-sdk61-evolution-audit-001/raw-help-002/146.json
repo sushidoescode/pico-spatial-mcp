@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 plugin update --help",
+  "argv": [
+    "plugin",
+    "update",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:07.578Z",
+  "endedAt": "2026-09-15T09:12:07.684Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "ced15f9c3bfcdf3626a93e4b975ae01176e59284d605715fa64ac63ab8c8c5ff",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/artifacts/pico-spatial-mcp-38.1.0.tgz",
+  "bytes": 2216520,
+  "sha256": "c75843e2c034adb4e44b913eef9e0dbf2aee8451ba9ea39063a340579190d3e3",
+  "gateTarballSha256": "c75843e2c034adb4e44b913eef9e0dbf2aee8451ba9ea39063a340579190d3e3",
+  "byteIdenticalToGateTarball": true,
+  "method": "npm pack --ignore-scripts from unchanged built payload after successful test:tarball",
+  "published": false,
+  "activated": false,
+  "packageVersion": "38.1.0"
+}

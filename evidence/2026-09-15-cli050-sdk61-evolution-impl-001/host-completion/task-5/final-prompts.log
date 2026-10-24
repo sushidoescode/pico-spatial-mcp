@@ -1,0 +1,14 @@
+✔ first-light pico identifier gate rejects an invented tool name (1.042458ms)
+✔ each advanced prompt registration consults its own contract entry (0.358ms)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+✔ prompt listings and guidance conform to the active tool surface (559.899542ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 632.768084

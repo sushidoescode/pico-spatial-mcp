@@ -1,0 +1,735 @@
+{
+  "schemaVersion": "pico-workflow-description/v1",
+  "workflow": {
+    "id": "spatial-design-to-app",
+    "version": "1.0.0",
+    "contractVersion": "1.0.0"
+  },
+  "displayName": "Spatial Design to App",
+  "summary": "Turn a text product requirement into a reviewed PICO Spatial design and a validated Kotlin/Compose app.",
+  "permissions": {
+    "requested": [
+      "workspace-read",
+      "workspace-edit",
+      "command",
+      "network"
+    ]
+  },
+  "environment": {
+    "node": {
+      "requirement": ">=20.0.0",
+      "current": "22.14.0",
+      "satisfied": true
+    }
+  },
+  "contracts": {
+    "input": {
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "$id": "https://schemas.picoxr.dev/workflow/spatial-design-to-app/1.0.0/input.schema.json",
+        "title": "Spatial Design to App Input v1",
+        "description": "A text product requirement and workspace-relative target for PICO Spatial app generation.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "intent",
+          "target",
+          "generationMode"
+        ],
+        "properties": {
+          "intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "The user's original text requirement without implementation choices added."
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?:\\.|[A-Za-z0-9._/-]+)$",
+            "description": "Workspace-relative Android project directory."
+          },
+          "generationMode": {
+            "enum": [
+              "existing_module",
+              "new_project"
+            ],
+            "description": "Whether the target is an existing module or a new CLI-created project."
+          },
+          "applicationId": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$",
+            "description": "Optional user-selected Android application ID. When omitted for a new project, the workflow generates and persists a unique com.example.* ID."
+          }
+        }
+      },
+      "examples": [
+        {
+          "intent": "Create a spatial task board where I can group tasks, change status, and inspect task details.",
+          "target": "task-board",
+          "generationMode": "new_project"
+        }
+      ]
+    },
+    "output": {
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "$id": "https://schemas.picoxr.dev/workflow/spatial-design-to-app/1.0.0/output.schema.json",
+        "title": "Spatial Design to App Output v1",
+        "description": "Final app-generation result, including warnings when the bounded review remained unsatisfied.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "status",
+          "target",
+          "artifacts",
+          "verification",
+          "warnings"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": "spatialcraft.spatial-design-to-app-result/v1",
+            "description": "Version of the public workflow output."
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "partial"
+            ],
+            "description": "Completed for a passing review, or partial after the single revision still leaves review findings."
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Workspace-relative Android project directory."
+          },
+          "artifacts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intentBrief",
+              "designDoc",
+              "designSpec",
+              "preview"
+            ],
+            "description": "Workspace-relative paths to the durable design inputs.",
+            "properties": {
+              "intentBrief": {
+                "type": "string",
+                "minLength": 1
+              },
+              "designDoc": {
+                "type": "string",
+                "minLength": 1
+              },
+              "designSpec": {
+                "type": "string",
+                "minLength": 1
+              },
+              "preview": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "verification": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "summaryPath",
+              "clean"
+            ],
+            "description": "Final machine-validation result.",
+            "properties": {
+              "summaryPath": {
+                "type": "string",
+                "minLength": 1
+              },
+              "clean": {
+                "const": true
+              }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "maxItems": 64,
+            "description": "Non-blocking design or implementation review findings.",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          }
+        }
+      }
+    },
+    "snapshot": {
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "$id": "https://schemas.picoxr.dev/workflow/spatial-design-to-app/1.0.0/snapshot.schema.json",
+        "title": "Spatial Design to App Snapshot v1",
+        "description": "Latest accepted Gate view for the five-stage app generation flow.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "phase",
+          "attempt",
+          "gateDecision"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": "spatialcraft.spatial-design-to-app-snapshot/v1",
+            "description": "Version of the public snapshot."
+          },
+          "phase": {
+            "enum": [
+              "feature_definition",
+              "design",
+              "design_review",
+              "compose_app",
+              "compose_review"
+            ],
+            "description": "The Module whose Gate most recently produced a decision."
+          },
+          "attempt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Zero-based attempt within the current Module."
+          },
+          "gateDecision": {
+            "enum": [
+              "accept",
+              "retry",
+              "fail"
+            ],
+            "description": "The normalized Gate action for this Module attempt."
+          },
+          "warning": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Non-blocking review finding carried forward after the revision budget is used."
+          }
+        }
+      }
+    }
+  },
+  "agentTasks": [
+    {
+      "id": "feature-definition",
+      "sandbox": "workspace-write",
+      "session": "fresh",
+      "execution": "caller"
+    },
+    {
+      "id": "design",
+      "sandbox": "workspace-write",
+      "session": "fresh",
+      "execution": "caller"
+    },
+    {
+      "id": "design-review",
+      "sandbox": "workspace-write",
+      "session": "fresh",
+      "execution": "caller"
+    },
+    {
+      "id": "compose-app",
+      "sandbox": "workspace-write",
+      "session": "fresh",
+      "execution": "caller"
+    },
+    {
+      "id": "compose-review",
+      "sandbox": "workspace-write",
+      "session": "fresh",
+      "execution": "caller"
+    }
+  ],
+  "runtime": {
+    "kind": "domain",
+    "definition": {
+      "format": "pico-domain-v1",
+      "path": "./definitions/spatial-design-to-app.domain.json",
+      "value": {
+        "schemaVersion": "pico-domain-runtime-definition/v1",
+        "definition": {
+          "schemaVersion": "pico-domain-workflow-definition/v1",
+          "id": "spatial-design-to-app",
+          "controlModel": "module-kernel",
+          "moduleManifest": "./modules/manifest.json",
+          "bindings": {
+            "modules": [
+              {
+                "moduleId": "feature_definition",
+                "kind": "caller-agent",
+                "taskId": "feature-definition",
+                "input": {
+                  "from": "workflow-input",
+                  "path": ""
+                }
+              },
+              {
+                "moduleId": "design",
+                "kind": "caller-agent",
+                "taskId": "design",
+                "input": {
+                  "from": "module-output",
+                  "module": "feature_definition",
+                  "path": ""
+                }
+              },
+              {
+                "moduleId": "design_review",
+                "kind": "caller-agent",
+                "taskId": "design-review",
+                "input": {
+                  "feature": {
+                    "from": "module-output",
+                    "module": "feature_definition",
+                    "path": ""
+                  },
+                  "design": {
+                    "from": "module-output",
+                    "module": "design",
+                    "path": ""
+                  }
+                }
+              },
+              {
+                "moduleId": "compose_app",
+                "kind": "caller-agent",
+                "taskId": "compose-app",
+                "input": {
+                  "feature": {
+                    "from": "module-output",
+                    "module": "feature_definition",
+                    "path": ""
+                  },
+                  "designReview": {
+                    "from": "module-output",
+                    "module": "design_review",
+                    "path": ""
+                  }
+                }
+              },
+              {
+                "moduleId": "compose_review",
+                "kind": "caller-agent",
+                "taskId": "compose-review",
+                "input": {
+                  "feature": {
+                    "from": "module-output",
+                    "module": "feature_definition",
+                    "path": ""
+                  },
+                  "designReview": {
+                    "from": "module-output",
+                    "module": "design_review",
+                    "path": ""
+                  },
+                  "composeApp": {
+                    "from": "module-output",
+                    "module": "compose_app",
+                    "path": ""
+                  }
+                }
+              }
+            ],
+            "gates": [
+              {
+                "gateType": "contract",
+                "stepId": "contract-gate"
+              },
+              {
+                "gateType": "design-review",
+                "stepId": "contract-gate"
+              },
+              {
+                "gateType": "compose-review",
+                "stepId": "contract-gate"
+              }
+            ]
+          },
+          "completion": {
+            "kind": "all-required-accepted",
+            "output": {
+              "from": "module-output",
+              "module": "compose_review",
+              "path": "/result"
+            }
+          }
+        },
+        "moduleKernel": {
+          "manifestPath": "./modules/manifest.json",
+          "manifest": {
+            "schemaVersion": "spatialcraft.workflow-module-manifest/v3",
+            "manifestId": "manifest:spatial-design-to-app",
+            "revision": "1.0.0",
+            "modules": [
+              {
+                "moduleId": "feature_definition",
+                "revision": "1.0.0",
+                "dependsOn": [],
+                "required": true,
+                "riskScore": 100,
+                "gateType": "contract",
+                "executionKind": "agent",
+                "inputContractVersion": "1.0.0",
+                "outputContractVersion": "1.0.0",
+                "representationSignature": "representation:intent-brief:v1",
+                "owns": [
+                  "scope:feature-definition"
+                ],
+                "acceptsCorrections": [],
+                "consumes": []
+              },
+              {
+                "moduleId": "design",
+                "revision": "1.0.0",
+                "dependsOn": [
+                  "feature_definition"
+                ],
+                "required": true,
+                "riskScore": 90,
+                "gateType": "contract",
+                "executionKind": "agent",
+                "inputContractVersion": "1.0.0",
+                "outputContractVersion": "1.0.0",
+                "representationSignature": "representation:spatial-design-package:v1",
+                "owns": [
+                  "scope:design"
+                ],
+                "acceptsCorrections": [],
+                "consumes": [
+                  {
+                    "moduleId": "feature_definition",
+                    "mode": "content_sensitive"
+                  }
+                ]
+              },
+              {
+                "moduleId": "design_review",
+                "revision": "1.0.0",
+                "dependsOn": [
+                  "feature_definition",
+                  "design"
+                ],
+                "required": true,
+                "riskScore": 80,
+                "gateType": "design-review",
+                "executionKind": "agent",
+                "inputContractVersion": "1.0.0",
+                "outputContractVersion": "1.0.0",
+                "representationSignature": "representation:design-review:v1",
+                "owns": [
+                  "scope:design-review"
+                ],
+                "acceptsCorrections": [],
+                "consumes": [
+                  {
+                    "moduleId": "feature_definition",
+                    "mode": "content_sensitive"
+                  },
+                  {
+                    "moduleId": "design",
+                    "mode": "content_sensitive"
+                  }
+                ]
+              },
+              {
+                "moduleId": "compose_app",
+                "revision": "1.0.0",
+                "dependsOn": [
+                  "feature_definition",
+                  "design_review"
+                ],
+                "required": true,
+                "riskScore": 70,
+                "gateType": "contract",
+                "executionKind": "agent",
+                "inputContractVersion": "1.0.0",
+                "outputContractVersion": "1.0.0",
+                "representationSignature": "representation:compose-app:v1",
+                "owns": [
+                  "scope:compose-app"
+                ],
+                "acceptsCorrections": [],
+                "consumes": [
+                  {
+                    "moduleId": "feature_definition",
+                    "mode": "content_sensitive"
+                  },
+                  {
+                    "moduleId": "design_review",
+                    "mode": "content_sensitive"
+                  }
+                ]
+              },
+              {
+                "moduleId": "compose_review",
+                "revision": "1.0.0",
+                "dependsOn": [
+                  "feature_definition",
+                  "design_review",
+                  "compose_app"
+                ],
+                "required": true,
+                "riskScore": 60,
+                "gateType": "compose-review",
+                "executionKind": "agent",
+                "inputContractVersion": "1.0.0",
+                "outputContractVersion": "1.0.0",
+                "representationSignature": "representation:compose-review:v1",
+                "owns": [
+                  "scope:compose-review"
+                ],
+                "acceptsCorrections": [],
+                "consumes": [
+                  {
+                    "moduleId": "feature_definition",
+                    "mode": "content_sensitive"
+                  },
+                  {
+                    "moduleId": "design_review",
+                    "mode": "content_sensitive"
+                  },
+                  {
+                    "moduleId": "compose_app",
+                    "mode": "content_sensitive"
+                  }
+                ]
+              }
+            ],
+            "policy": {
+              "dependencyMode": "all_of",
+              "selectionOrder": [
+                "risk_score_desc",
+                "module_id_asc"
+              ],
+              "maxConcurrency": 1
+            },
+            "limits": {
+              "maxAttemptsPerModule": 2,
+              "maxRevisions": 0,
+              "maxStrategyResetsPerModule": 0,
+              "maxElapsedTimeMs": 14400000,
+              "maxChildRuns": 0
+            }
+          },
+          "graph": {
+            "schemaVersion": "spatialcraft.workflow-graph-definition/v1",
+            "graphId": "graph:spatial-design-to-app",
+            "revision": "1.0.0",
+            "nodes": [
+              {
+                "nodeId": "feature_definition",
+                "revision": "1.0.0",
+                "dependsOn": [],
+                "required": true,
+                "executionKind": "agent",
+                "metadata": {
+                  "riskScore": 100,
+                  "gateType": "contract",
+                  "inputContractVersion": "1.0.0",
+                  "outputContractVersion": "1.0.0",
+                  "representationSignature": "representation:intent-brief:v1",
+                  "maxCorrectionBatchesPerStrategy": 1,
+                  "maxStrategyResets": 0,
+                  "ownershipScopes": [
+                    "scope:feature-definition"
+                  ],
+                  "supportedCorrectionTypes": [],
+                  "dependencyConsumptions": []
+                }
+              },
+              {
+                "nodeId": "design",
+                "revision": "1.0.0",
+                "dependsOn": [
+                  "feature_definition"
+                ],
+                "required": true,
+                "executionKind": "agent",
+                "metadata": {
+                  "riskScore": 90,
+                  "gateType": "contract",
+                  "inputContractVersion": "1.0.0",
+                  "outputContractVersion": "1.0.0",
+                  "representationSignature": "representation:spatial-design-package:v1",
+                  "maxCorrectionBatchesPerStrategy": 1,
+                  "maxStrategyResets": 0,
+                  "ownershipScopes": [
+                    "scope:design"
+                  ],
+                  "supportedCorrectionTypes": [],
+                  "dependencyConsumptions": [
+                    {
+                      "moduleId": "feature_definition",
+                      "mode": "content_sensitive"
+                    }
+                  ]
+                }
+              },
+              {
+                "nodeId": "design_review",
+                "revision": "1.0.0",
+                "dependsOn": [
+                  "feature_definition",
+                  "design"
+                ],
+                "required": true,
+                "executionKind": "agent",
+                "metadata": {
+                  "riskScore": 80,
+                  "gateType": "design-review",
+                  "inputContractVersion": "1.0.0",
+                  "outputContractVersion": "1.0.0",
+                  "representationSignature": "representation:design-review:v1",
+                  "maxCorrectionBatchesPerStrategy": 1,
+                  "maxStrategyResets": 0,
+                  "ownershipScopes": [
+                    "scope:design-review"
+                  ],
+                  "supportedCorrectionTypes": [],
+                  "dependencyConsumptions": [
+                    {
+                      "moduleId": "feature_definition",
+                      "mode": "content_sensitive"
+                    },
+                    {
+                      "moduleId": "design",
+                      "mode": "content_sensitive"
+                    }
+                  ]
+                }
+              },
+              {
+                "nodeId": "compose_app",
+                "revision": "1.0.0",
+                "dependsOn": [
+                  "feature_definition",
+                  "design_review"
+                ],
+                "required": true,
+                "executionKind": "agent",
+                "metadata": {
+                  "riskScore": 70,
+                  "gateType": "contract",
+                  "inputContractVersion": "1.0.0",
+                  "outputContractVersion": "1.0.0",
+                  "representationSignature": "representation:compose-app:v1",
+                  "maxCorrectionBatchesPerStrategy": 1,
+                  "maxStrategyResets": 0,
+                  "ownershipScopes": [
+                    "scope:compose-app"
+                  ],
+                  "supportedCorrectionTypes": [],
+                  "dependencyConsumptions": [
+                    {
+                      "moduleId": "feature_definition",
+                      "mode": "content_sensitive"
+                    },
+                    {
+                      "moduleId": "design_review",
+                      "mode": "content_sensitive"
+                    }
+                  ]
+                }
+              },
+              {
+                "nodeId": "compose_review",
+                "revision": "1.0.0",
+                "dependsOn": [
+                  "feature_definition",
+                  "design_review",
+                  "compose_app"
+                ],
+                "required": true,
+                "executionKind": "agent",
+                "metadata": {
+                  "riskScore": 60,
+                  "gateType": "compose-review",
+                  "inputContractVersion": "1.0.0",
+                  "outputContractVersion": "1.0.0",
+                  "representationSignature": "representation:compose-review:v1",
+                  "maxCorrectionBatchesPerStrategy": 1,
+                  "maxStrategyResets": 0,
+                  "ownershipScopes": [
+                    "scope:compose-review"
+                  ],
+                  "supportedCorrectionTypes": [],
+                  "dependencyConsumptions": [
+                    {
+                      "moduleId": "feature_definition",
+                      "mode": "content_sensitive"
+                    },
+                    {
+                      "moduleId": "design_review",
+                      "mode": "content_sensitive"
+                    },
+                    {
+                      "moduleId": "compose_app",
+                      "mode": "content_sensitive"
+                    }
+                  ]
+                }
+              }
+            ],
+            "limits": {
+              "maxNodes": 16,
+              "maxEdges": 32,
+              "maxDepth": 8,
+              "maxReadyNodes": 4,
+              "maxAttemptsPerNode": 2,
+              "maxRevisions": 0,
+              "maxStrategyResets": 0,
+              "maxElapsedTimeMs": 14400000,
+              "maxChildRuns": 0
+            }
+          },
+          "graphDigest": "c4bf3ede7180a66fbb3c5ab216088ba58a019b6464e128da9267e9913300c690"
+        }
+      }
+    },
+    "assets": [
+      "./agent-tasks/manifest.json",
+      "./dist",
+      "./dist/contract-gate.mjs",
+      "./modules/manifest.json",
+      "./prompts/compose-app.md",
+      "./prompts/compose-review.md",
+      "./prompts/design-review.md",
+      "./prompts/design.md",
+      "./prompts/feature-definition.md",
+      "./schemas/compose-app.input.schema.json",
+      "./schemas/compose-app.output.schema.json",
+      "./schemas/compose-review.input.schema.json",
+      "./schemas/compose-review.output.schema.json",
+      "./schemas/design-review.input.schema.json",
+      "./schemas/design-review.output.schema.json",
+      "./schemas/design.input.schema.json",
+      "./schemas/design.output.schema.json",
+      "./schemas/feature-definition.input.schema.json",
+      "./schemas/feature-definition.output.schema.json",
+      "./steps/manifest.json"
+    ],
+    "capabilities": {
+      "schemaVersion": "pico-workflow-runtime-capabilities/v1",
+      "resume": true,
+      "cancellation": true,
+      "snapshots": true,
+      "handoffKinds": [
+        "agent-task",
+        "human-input"
+      ]
+    }
+  },
+  "compatibility": null
+}

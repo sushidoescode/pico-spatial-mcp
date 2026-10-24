@@ -1,0 +1,44 @@
+{
+  "record": "demo-build-001",
+  "recordedAt": "2026-09-16T21:50:54.986Z",
+  "project": "/Users/sushantsrikrish/AndroidStudioProjects/pico-ui-polish-lab",
+  "applicationId": "dev.local.picouipolish.lab",
+  "scaffoldedBy": "pico-spatial-mcp 38.0.0 scaffold_spatial_app (direct transport), then hand-authored to a DefaultWindowContainer + one SpatialUI Button",
+  "bom": "6.1.9",
+  "resolved": {
+    "com.pico.spatial.core:core": "6.1.9",
+    "com.pico.spatial.ui:platform": "6.1.9",
+    "com.pico.spatial.ui:foundation": "6.1.9",
+    "com.pico.spatial.ui:design": "6.1.9",
+    "com.pico.spatial.sense:sense": "6.1.9",
+    "com.pico.spatial.tracking:tracking": "6.1.9",
+    "com.pico.spatial.ui:ui (Compose fork)": "1.2.5",
+    "com.pico.spatial.ui.foundation:foundation": "1.2.5"
+  },
+  "build": {
+    "task": "assembleDebug (host-side, ./gradlew, JAVA_HOME=Android Studio JBR)",
+    "result": "BUILD SUCCESSFUL in 12s",
+    "apk": "/Users/sushantsrikrish/AndroidStudioProjects/pico-ui-polish-lab/app/build/outputs/apk/debug/app-debug.apk",
+    "apkSha256": "5e0871e4cf613073ca73edce544f09c88e4cb61b3de58098ebeb204c1f213b12",
+    "apkBytes": 31770062,
+    "abi": "arm64-v8a (ndk.abiFilters)",
+    "agpOutputMetadata": [
+      {
+        "versionCode": 1,
+        "versionName": "1.0",
+        "outputFile": "app-debug.apk",
+        "filters": []
+      }
+    ]
+  },
+  "sourceSha256": {
+    "app/src/main/java/dev/local/picouipolish/lab/Main.kt": "dd950e9951d804c98384cd371a24ff6bac2a7931071840e5f0d0269560da452d",
+    "app/src/main/java/dev/local/picouipolish/lab/content/LabWindow.kt": "e98aabf68510d3c9af81ec34a4cb54fb2833d21335663562e8e0f48a9231b2a7",
+    "app/src/main/java/dev/local/picouipolish/lab/platform/SpatialApplication.kt": "6cef3afec6a6d4f9917f4993b8c8bea933c6ffaec0529f66f7a5997e8a9c48c8",
+    "app/src/main/java/dev/local/picouipolish/lab/platform/LaunchActivity.kt": "a562f65076b81430a0e2e8450bbf8783a4c9e81c8727140079a88e1adbee3540",
+    "app/src/main/AndroidManifest.xml": "8f492577d14733a99056060d8e27f2a6a18e246a87d5e56c6700bcd181b00a3c",
+    "gradle/libs.versions.toml": "0f1ed6027cc773095aa9ba9bd02637fe61242a7a79586bfb193062887d07de95",
+    "app/build.gradle.kts": "d7e2c26294ecd1d33cf409fc111399beee4d1983cd57efb2b42c87778273357c",
+    "settings.gradle.kts": "47ef5195dd06c70ddb7e57335b1042e4ef93373c4fb3eaae9d44de7d6a659094"
+  }
+}

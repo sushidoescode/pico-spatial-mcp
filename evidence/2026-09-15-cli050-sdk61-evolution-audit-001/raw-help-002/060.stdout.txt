@@ -1,0 +1,8 @@
+Usage:
+  $ pico-cli files rm <remote>
+
+Options:
+  -d, --device <device>  Target device id 
+  -r, --recursive        Remove directories recursively (default: false)
+  -f, --force            Ignore nonexistent files and arguments, never prompt (default: false)
+  -h, --help             Display this message 

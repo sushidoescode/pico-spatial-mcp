@@ -32,6 +32,7 @@ const trackedEnv = [
   "FAKE_REGISTRY_MODE",
   "FAKE_PICO_DRIVER",
   "FAKE_CANARY_FAILURE",
+  "FAKE_PICO_HELP_MAP",
 ];
 
 function runtimeDriverSource() {
@@ -70,16 +71,39 @@ if (role === "managed-cli") {
     process.stdout.write("pico-cli/" + version + " (managed runtime fixture)\\n");
     process.exit(0);
   }
+  if (cliArgs.at(-1) === "--help" && process.env.FAKE_PICO_HELP_MAP) {
+    const helpMap = JSON.parse(fs.readFileSync(process.env.FAKE_PICO_HELP_MAP, "utf8"));
+    const replay = helpMap[cliArgs.slice(0, -1).join(" ")];
+    if (replay) {
+      if (replay.hang) { setInterval(() => {}, 1_000); await new Promise(() => {}); }
+      if (replay.stdoutFile) process.stdout.write(fs.readFileSync(replay.stdoutFile));
+      if (typeof replay.stdout === "string") process.stdout.write(replay.stdout);
+      if (replay.stderrFile) process.stderr.write(fs.readFileSync(replay.stderrFile));
+      if (typeof replay.stderr === "string") process.stderr.write(replay.stderr);
+      process.exit(replay.code ?? 0);
+    }
+  }
+  if (cliArgs.at(-1) === "--help" && cliArgs[0] === "perf" && process.env.FAKE_PICO_OPERATION_MODE === "setup-required") {
+    // The perf family resolves its utilities gate ONCE, before delegating any perf argv, so on an
+    // unprovisioned host a perf CHILD HELP fails too — that is what the retained observations show
+    // (0.4.4 invocation 012 exited 1; 0.5.0 invocations 137-141 exited 3). Fixture text, never real
+    // CLI bytes. Every other route's help still succeeds, because only the perf payload is missing.
+    process.stderr.write("Error: Perf utilities are not installed. Run \`pico-cli setup\` to install.\\n");
+    process.exit(/^v?0\\.[0-4](\\.|$)/.test(version) ? 1 : 3);
+  }
   if (cliArgs.at(-1) === "--help") {
-    process.stdout.write("fixture help: " + cliArgs.join(" ") + "\\n");
+    // Fixture help (never real CLI bytes) shaped like a real child help: a usage line that names
+    // the probed route, so bounded capability discovery has something to classify. Tests that need
+    // a different classification supply FAKE_PICO_HELP_MAP with retained or inline bytes.
+    process.stdout.write("Usage:\\n  $ pico-cli " + cliArgs.slice(0, -1).join(" ") + " [options]\\n\\nOptions:\\n  -h, --help  Display this message\\n\\nfixture help: " + cliArgs.join(" ") + "\\n");
     process.exit(0);
   }
-  if (cliArgs.join(" ") === "mcp dev-knowledge") {
+  if (cliArgs.join(" ") === "mcp dev-knowledge" || cliArgs.join(" ") === "knowledge server") {
     await import(pathToFileURL(process.env.FAKE_KNOWLEDGE_SERVER).href);
     await new Promise(() => {});
   }
   if (cliArgs.join(" ") === "emulator status --format json") {
-    process.stdout.write(JSON.stringify({ tool_status: "SUCCESS", data: { fixture: true }, errors: [] }) + "\\n");
+    process.stdout.write(JSON.stringify({ tool_name: "emulator.status", tool_status: "SUCCESS", data: { fixture: true }, errors: [] }) + "\\n");
     process.exit(0);
   }
   if (process.env.FAKE_PICO_OPERATION_MODE === "setup-required") {
@@ -87,7 +111,9 @@ if (role === "managed-cli") {
     process.exit(1);
   }
   if (process.env.FAKE_PICO_OPERATION_MODE === "empty-artifact" || process.env.FAKE_PICO_OPERATION_MODE === "directory-artifact") {
-    const outputIndex = cliArgs.indexOf("-o");
+    // The real CLI/profiler declares "-o, --output <path>", so both spellings name one option and
+    // the fixture must honor whichever a wrapper chose (C4 moved the trace wrappers to --output).
+    const outputIndex = Math.max(cliArgs.indexOf("-o"), cliArgs.indexOf("--output"));
     if (outputIndex >= 0 && cliArgs[outputIndex + 1]) {
       const outputPath = cliArgs[outputIndex + 1];
       if (process.env.FAKE_PICO_OPERATION_MODE === "directory-artifact") {
@@ -190,7 +216,7 @@ function shQuote(value) {
   return `'${String(value).replaceAll("'", `'"'"'`)}'`;
 }
 
-function writeCommand(binDir, name, driverPath, role, fixedArgs = []) {
+export function writeCommand(binDir, name, driverPath, role, fixedArgs = []) {
   if (process.platform === "win32") {
     const command = path.join(binDir, `${name}.cmd`);
     const fixed = fixedArgs.map((arg) => ` "${String(arg).replaceAll('"', '""')}"`).join("");
@@ -208,11 +234,20 @@ export function readLog(logPath) {
   return fs.readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 
+export function managedRuntimeEnvironment(baseEnv, overrides, platform = process.platform) {
+  // The SDK adds inherited uppercase PATH/USERPROFILE before these values. On Windows, a
+  // second spelling such as Path can lose to that inherited PATH during child-process creation.
+  // Canonicalize both inputs before merging so the fixture overrides remain the only spelling.
+  const canonical = (env) => Object.fromEntries(Object.entries(env)
+    .map(([key, value]) => [platform === "win32" ? key.toUpperCase() : key, value]));
+  return { ...canonical(baseEnv), ...canonical(overrides) };
+}
+
 /**
  * Fresh-process Task 4 fixture. It never mutates this test process's HOME/PATH and every npm/CLI
  * byte lives below one temporary root. Callers pass `env` to a newly spawned Node/MCP child.
  */
-export function createManagedRuntimeHarness({ latestVersion = "0.4.2", operationMode = "success" } = {}) {
+export function createManagedRuntimeHarness({ latestVersion = "0.4.2", operationMode = "success", helpMap = null } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico managed runtime "));
   tempRoots.push(root);
   const home = path.join(root, "home");
@@ -233,17 +268,13 @@ export function createManagedRuntimeHarness({ latestVersion = "0.4.2", operation
   fs.writeFileSync(driverPath, runtimeDriverSource());
   writeCommand(binDir, "npm", driverPath, "npm");
   writeCommand(binDir, "node", driverPath, "node-proxy");
-  const pathKey = process.platform === "win32"
-    ? (Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "Path")
-    : "PATH";
   const supportPath = process.platform === "win32"
     ? [path.win32.dirname(process.env.ComSpec ?? `${process.env.SystemRoot ?? "C:\\Windows"}\\System32\\cmd.exe`)]
     : [path.dirname(process.execPath)];
-  const env = {
-    ...process.env,
+  const env = managedRuntimeEnvironment(process.env, {
     HOME: home,
     USERPROFILE: home,
-    [pathKey]: [binDir, ...supportPath].join(path.delimiter),
+    PATH: [binDir, ...supportPath].join(path.delimiter),
     PICO_MCP_CLI_POLICY: "managed-latest",
     PICO_HOME: path.join(root, "missing-pico-home"),
     FAKE_PICO_LOG: logPath,
@@ -258,7 +289,12 @@ export function createManagedRuntimeHarness({ latestVersion = "0.4.2", operation
     ),
     FAKE_KNOWLEDGE_LOG: knowledgeLogPath,
     FAKE_KNOWLEDGE_SERVER: path.resolve("test", "fixtures", "fake-knowledge-server.mjs"),
-  };
+  });
+  if (helpMap) {
+    const helpMapPath = path.join(root, "help-map.json");
+    fs.writeFileSync(helpMapPath, JSON.stringify(helpMap));
+    env.FAKE_PICO_HELP_MAP = helpMapPath;
+  }
   delete env.PICO_MCP_AUTOINSTALL_CLI;
   delete env.PICO_MCP_AUTOUPDATE_CLI;
   return {
@@ -287,8 +323,9 @@ export function createHarness({
   registryMode = "success",
   canaryFailure = "",
   separateGlobalBin = false,
+  tempParent = os.tmpdir(),
 } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico cli auto "));
+  const root = fs.mkdtempSync(path.join(tempParent, "pico cli auto "));
   tempRoots.push(root);
   const binDir = path.join(root, "bin");
   const templateDir = path.join(root, "template");
@@ -323,6 +360,13 @@ if (role === "managed-cli") {
   else if (cliArgs[0] === "fixture-mutate-managed-file") {
     fs.appendFileSync(process.env.FAKE_MANAGED_MUTATION_TARGET, "\\nfixture post-spawn mutation\\n");
     process.stdout.write("fake managed pico-cli mutated its published tree\\n");
+  }
+  else if (cliArgs.at(-1) === "--help" && process.env.FAKE_PICO_HELP_MAP && JSON.parse(fs.readFileSync(process.env.FAKE_PICO_HELP_MAP, "utf8"))[cliArgs.slice(0, -1).join(" ")]) {
+    const replay = JSON.parse(fs.readFileSync(process.env.FAKE_PICO_HELP_MAP, "utf8"))[cliArgs.slice(0, -1).join(" ")];
+    if (replay.hang) { setInterval(() => {}, 1_000); await new Promise(() => {}); }
+    if (replay.stdoutFile) process.stdout.write(fs.readFileSync(replay.stdoutFile));
+    if (replay.stderrFile) process.stderr.write(fs.readFileSync(replay.stderrFile));
+    process.exit(replay.code ?? 0);
   }
   else if (cliArgs.at(-1) === "--help" && cliArgs.slice(0, -1).join(" ") === process.env.FAKE_CANARY_FAILURE) {
     process.stderr.write("fixture incompatible: " + cliArgs.join(" ") + "\\n");
@@ -456,7 +500,7 @@ export function createManagedIO(harness, {
   let uuid = 0;
   const commands = [];
   return {
-    env,
+    get env() { return { ...process.env, ...env }; },
     platform: process.platform,
     homeDir: path.join(harness.root, "unused-home"),
     npmCommandIdentity,
@@ -465,7 +509,7 @@ export function createManagedIO(harness, {
     commands,
     run: (command, args, options = {}) => {
       commands.push({ command, args, options });
-      return runPicoCliCommand(command, args, options);
+      return runPicoCliCommand(command, args, { ...options, baseEnv: { ...process.env, ...env } });
     },
   };
 }
@@ -476,6 +520,7 @@ export function publishManagedFixtureVersion(harness, managedRoot, version, {
   cliVersion = version,
   recordText,
   registryIntegrity = null,
+  extraFiles = {},
 } = {}) {
   const versionRoot = path.join(managedRoot, "versions", version);
   const relativeCliPath = path.join("node_modules", ".bin", process.platform === "win32" ? "pico-cli.cmd" : "pico-cli");
@@ -485,6 +530,7 @@ export function publishManagedFixtureVersion(harness, managedRoot, version, {
   fs.mkdirSync(packageRoot, { recursive: true });
   writeCommand(path.dirname(shimPath), "pico-cli", harness.driverPath, "managed-cli", [cliVersion]);
   fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@picoxr/pico-cli", version: packageVersion }));
+  for (const [relativePath, text] of Object.entries(extraFiles)) fs.writeFileSync(path.join(versionRoot, relativePath), text);
   const contentIdentity = managedContentIdentityForFixture(versionRoot);
   fs.writeFileSync(path.join(versionRoot, "install.json"), recordText ?? JSON.stringify({
     schemaVersion: 2,
@@ -557,7 +603,7 @@ fs.openSync = function instrumentedOpenSync(file, flags, ...rest) {
   }
   return descriptor;
 };
-let canaries = 0;
+let versionProbes = 0;
 const io = {
   env: {},
   platform: process.platform,
@@ -566,7 +612,9 @@ const io = {
   randomUUID: () => process.pid + "-" + crypto.randomUUID(),
   run: async (command, args, options = {}) => {
     const result = await runPicoCliCommand(command, args, options);
-    if (args.at(-1) === "--help" && ++canaries === 9) {
+    // Staging is complete once the staged shim answered its -v probe (the cold store has no
+    // published version to probe first); hold every worker there so claim contention is real.
+    if (args.length === 1 && args[0] === "-v" && ++versionProbes === 1) {
       fs.writeFileSync(path.join(barrierRoot, String(process.pid)), "ready");
       const deadline = Date.now() + 15_000;
       while (fs.readdirSync(barrierRoot).length < participants) {

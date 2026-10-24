@@ -1,0 +1,42 @@
+[
+  {
+    "name": "paths",
+    "command": "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'pwd; ls -ld files files/agentbridge files/agentbridge/interaction-v1 files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015 files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox; ls -la \"$(dirname \"$1\")\"; for p in \"$1\" \"$1.tmp\"; do if test -e \"$p\"; then ls -l \"$p\"; head -c 16384 \"$p\"; else printf \"absent:%s\\n\" \"$p\"; fi; done' 'pico-diagnose' 'files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox/04f69643-b23e-4f95-b3f4-87d26b002287.json'",
+    "code": 0,
+    "stdout": "/data/user/0/com.example.picofixture.iteration.debug\ndrwxrwx--x 3 u0_a101 u0_a101 4096 2026-10-23 22:03 files\ndrwx------ 3 u0_a101 u0_a101 4096 2026-10-23 22:03 files/agentbridge\ndrwx------ 3 u0_a101 u0_a101 4096 2026-10-23 22:09 files/agentbridge/interaction-v1\ndrwx------ 4 u0_a101 u0_a101 4096 2026-10-23 22:03 files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015\ndrwx------ 2 u0_a101 u0_a101 4096 2026-10-23 22:05 files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox\ntotal 16\ndrwx------ 2 u0_a101 u0_a101 4096 2026-10-23 22:05 .\ndrwx------ 4 u0_a101 u0_a101 4096 2026-10-23 22:03 ..\nabsent:files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox/04f69643-b23e-4f95-b3f4-87d26b002287.json\nabsent:files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox/04f69643-b23e-4f95-b3f4-87d26b002287.json.tmp\n",
+    "stderr": "",
+    "timedOut": false,
+    "stdoutBase64": "L2RhdGEvdXNlci8wL2NvbS5leGFtcGxlLnBpY29maXh0dXJlLml0ZXJhdGlvbi5kZWJ1Zwpkcnd4cnd4LS14IDMgdTBfYTEwMSB1MF9hMTAxIDQwOTYgMjAyNi0xMC0yMyAyMjowMyBmaWxlcwpkcnd4LS0tLS0tIDMgdTBfYTEwMSB1MF9hMTAxIDQwOTYgMjAyNi0xMC0yMyAyMjowMyBmaWxlcy9hZ2VudGJyaWRnZQpkcnd4LS0tLS0tIDMgdTBfYTEwMSB1MF9hMTAxIDQwOTYgMjAyNi0xMC0yMyAyMjowOSBmaWxlcy9hZ2VudGJyaWRnZS9pbnRlcmFjdGlvbi12MQpkcnd4LS0tLS0tIDQgdTBfYTEwMSB1MF9hMTAxIDQwOTYgMjAyNi0xMC0yMyAyMjowMyBmaWxlcy9hZ2VudGJyaWRnZS9pbnRlcmFjdGlvbi12MS85NzFiMTg2Zi1lNTI5LTRiZDYtOGJhYi1jM2I1N2Y1N2QwMTUKZHJ3eC0tLS0tLSAyIHUwX2ExMDEgdTBfYTEwMSA0MDk2IDIwMjYtMTAtMjMgMjI6MDUgZmlsZXMvYWdlbnRicmlkZ2UvaW50ZXJhY3Rpb24tdjEvOTcxYjE4NmYtZTUyOS00YmQ2LThiYWItYzNiNTdmNTdkMDE1L2luYm94CnRvdGFsIDE2CmRyd3gtLS0tLS0gMiB1MF9hMTAxIHUwX2ExMDEgNDA5NiAyMDI2LTEwLTIzIDIyOjA1IC4KZHJ3eC0tLS0tLSA0IHUwX2ExMDEgdTBfYTEwMSA0MDk2IDIwMjYtMTAtMjMgMjI6MDMgLi4KYWJzZW50OmZpbGVzL2FnZW50YnJpZGdlL2ludGVyYWN0aW9uLXYxLzk3MWIxODZmLWU1MjktNGJkNi04YmFiLWMzYjU3ZjU3ZDAxNS9pbmJveC8wNGY2OTY0My1iMjNlLTRmOTUtYjNmNC04N2QyNmIwMDIyODcuanNvbgphYnNlbnQ6ZmlsZXMvYWdlbnRicmlkZ2UvaW50ZXJhY3Rpb24tdjEvOTcxYjE4NmYtZTUyOS00YmQ2LThiYWItYzNiNTdmNTdkMDE1L2luYm94LzA0ZjY5NjQzLWIyM2UtNGY5NS1iM2Y0LTg3ZDI2YjAwMjI4Ny5qc29uLnRtcAo=",
+    "readOnly": true
+  },
+  {
+    "name": "noclobber",
+    "command": "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'set -C; printf noclobber-ok' 'pico-diagnose' 'files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox/04f69643-b23e-4f95-b3f4-87d26b002287.json'",
+    "code": 0,
+    "stdout": "noclobber-ok",
+    "stderr": "",
+    "timedOut": false,
+    "stdoutBase64": "bm9jbG9iYmVyLW9r",
+    "readOnly": true
+  },
+  {
+    "name": "base64",
+    "command": "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'printf e30= | base64 -d; printf '\\'':base64-exit=%s'\\'' \"$?\"' 'pico-diagnose' 'files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox/04f69643-b23e-4f95-b3f4-87d26b002287.json'",
+    "code": 0,
+    "stdout": "{}:base64-exit=0",
+    "stderr": "",
+    "timedOut": false,
+    "stdoutBase64": "e306YmFzZTY0LWV4aXQ9MA==",
+    "readOnly": true
+  },
+  {
+    "name": "dirname",
+    "command": "'run-as' 'com.example.picofixture.iteration.debug' 'sh' '-c' 'dirname \"$1\"' 'pico-diagnose' 'files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox/04f69643-b23e-4f95-b3f4-87d26b002287.json'",
+    "code": 0,
+    "stdout": "files/agentbridge/interaction-v1/971b186f-e529-4bd6-8bab-c3b57f57d015/inbox\n",
+    "stderr": "",
+    "timedOut": false,
+    "stdoutBase64": "ZmlsZXMvYWdlbnRicmlkZ2UvaW50ZXJhY3Rpb24tdjEvOTcxYjE4NmYtZTUyOS00YmQ2LThiYWItYzNiNTdmNTdkMDE1L2luYm94Cg==",
+    "readOnly": true
+  }
+]

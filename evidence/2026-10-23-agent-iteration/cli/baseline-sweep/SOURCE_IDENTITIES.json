@@ -1,0 +1,29 @@
+{
+  "base": "1157f33",
+  "files": [
+    {
+      "path": "src/clicapabilities.ts",
+      "sha256": "4aa122925066a88ffc1bac724d06644ca3a8a3a22109b50e6514d291e33e1435",
+      "bytes": 40752,
+      "currentMatches": false
+    },
+    {
+      "path": "scripts/compare-picocli-surfaces.mjs",
+      "sha256": "d3251d747ac40742a8576c4da0814f0c7fe3badc426bb897f4bbc2ef83f8ed7c",
+      "bytes": 29300,
+      "currentMatches": true
+    },
+    {
+      "path": "test/picocli-sweep.mjs",
+      "sha256": "3bdac46d34a0cbfb37501e1de273308eb156289b0bc2feb4c19d8360be7fc4e4",
+      "bytes": 47861,
+      "currentMatches": true
+    },
+    {
+      "path": "test/fixtures/picocli/help/index.json",
+      "sha256": "c3303e96c808267061c2a0718362c31033d70f3238218cb09af9b87fedefb81e",
+      "bytes": 19355,
+      "currentMatches": true
+    }
+  ]
+}

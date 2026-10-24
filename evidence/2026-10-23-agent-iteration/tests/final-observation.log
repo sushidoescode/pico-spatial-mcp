@@ -1,0 +1,6 @@
+
+> pico-spatial-mcp@38.1.0 test:observation
+> node scripts/run-gate.mjs test:observation
+
+[run-gate] Build output is stale; run npm run build first. test:observation (scope fixture) reads emitted output.
+  - the source input identity changed since the build (6e482adb2be8 -> 1ab66faafed3)

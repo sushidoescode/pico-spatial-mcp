@@ -1,0 +1,76 @@
+{
+  "capturedAt": "2026-09-11T07:50:04Z",
+  "dockPolicy": "Display-sized Dock surface bounds do not establish opaque coverage. This structural app-window check must be paired with the required compositor sample.",
+  "dockSystemSurfaces": [
+    {
+      "alpha": 1,
+      "bounds": {
+        "Height": 1117,
+        "Width": 1728,
+        "X": 0,
+        "Y": 0
+      },
+      "id": 20,
+      "layer": 20,
+      "owner": "Dock",
+      "pid": 742,
+      "title": "Dock"
+    }
+  ],
+  "frontmost": true,
+  "frontmostName": "qemu-system-aarch64",
+  "frontmostPid": 87154,
+  "method": "Read-only CGWindowList front-to-back intersection and NSWorkspace frontmost PID. Does not move, resize or activate any window.",
+  "occludingWindows": [],
+  "ownedOverlayPolicy": "The emulator's own child toolbar windows are retained separately; foreign overlapping windows fail this gate.",
+  "ownedOverlays": [
+    {
+      "alpha": 1,
+      "bounds": {
+        "Height": 44,
+        "Width": 266,
+        "X": 712,
+        "Y": 995
+      },
+      "id": 28086,
+      "layer": 0,
+      "owner": "qemu-system-aarch64",
+      "pid": 87154,
+      "title": "Form"
+    },
+    {
+      "alpha": 1,
+      "bounds": {
+        "Height": 307,
+        "Width": 44,
+        "X": 6,
+        "Y": 67
+      },
+      "id": 28085,
+      "layer": 0,
+      "owner": "qemu-system-aarch64",
+      "pid": 87154,
+      "title": "Form"
+    }
+  ],
+  "pass": true,
+  "systemCursorPolicy": "Only a Window Server surface titled Cursor at the native cursor level with positive bounds no larger than 64x64 is classified as the pointer. It remains retained here. Other foreign windows and unknown system surfaces still fail.",
+  "systemCursorSurfaces": [],
+  "target": {
+    "alpha": 1,
+    "bounds": {
+      "Height": 1012,
+      "Width": 984,
+      "X": 0,
+      "Y": 33
+    },
+    "id": 28084,
+    "layer": 0,
+    "owner": "qemu-system-aarch64",
+    "pid": 87154,
+    "title": "PICO Emulator - 6.0.0"
+  },
+  "targetFound": true,
+  "targetZIndex": 17,
+  "unoccluded": true
+}

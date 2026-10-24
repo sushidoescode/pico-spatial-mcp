@@ -1,0 +1,21 @@
+Description:
+Manage Spatial Editor and package 3D assets
+
+Usage:
+  $ pico-cli editor <command> [options]
+
+Commands:
+  bootstrap  Start the Spatial Editor gateway MCP server
+  doctor     Check Spatial Editor installation and environment
+  install    Download and install Spatial Editor
+  pack       Package the managed Spatial Editor project into an app-consumable bundle and scenes
+             sidecar
+  start      Start Spatial Editor and MCP Server, piping stdio for upstream AI tools
+  status     Check Spatial Editor and MCP Server running status
+  stop       Stop the running Spatial Editor and MCP Server
+  sync       Sync Spatial app data into Spatial Editor; currently syncs a Kotlin ECS Component into
+             .Component/component.json
+  uninstall  Uninstall all or a selected Spatial Editor version
+
+Options:
+  -h, --help  Show this message and exit.

@@ -1,0 +1,13 @@
+Description:
+Check required environment for PICO Emulator development
+
+Usage:
+  $ pico-cli emulator doctor
+
+Options:
+  --format <format>  Output format (plain | json) (default: plain)
+  -h, --help         Display this message
+
+Examples:
+  $ pico-cli emulator doctor
+  $ pico-cli emulator doctor --format json

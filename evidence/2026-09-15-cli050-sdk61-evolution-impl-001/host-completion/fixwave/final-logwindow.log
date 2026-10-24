@@ -1,0 +1,41 @@
+# final battery: node --test test/logwindow.mjs (2026-09-16T12:42:52Z)
+
+✔ sliceAfterMarker returns only lines after the marker line (0.662375ms)
+✔ a missing marker is reported, never silently treated as an empty window (0.049583ms)
+✔ openLogWindow writes exactly one `log -t pico-mcp <marker>` and never a clear (0.917542ms)
+✔ readLogWindow always includes the marker tag in its filter and bounds the dump (0.127083ms)
+✔ assert_scene opens a window before its broadcast and matches only the dump inside it (3315.334542ms)
+✔ assert_scene reports an evicted marker as an inconclusive error, never as a dump (1618.14725ms)
+✔ assert_scene refuses when the window cannot be opened and reads no dump at all (69.489458ms)
+✔ probe_planes opens a window before its broadcast and parses only the inventory inside it (1618.394875ms)
+✔ probe_planes reports an evicted marker as inconclusive instead of reading the stale inventory (3142.476958ms)
+✔ live_scene_snapshot opens a window before its dump_scene broadcast and returns only the fresh scene (110.296875ms)
+✔ live_scene_snapshot reports an evicted marker as inconclusive rather than parsing the stale dump (8256.546583ms)
+✔ assert_logcat sinceMarker adopts a caller-written marker and matches only lines after it (1232.91975ms)
+✔ assert_logcat clearFirst opens a marker window instead of clearing, and an evicted marker is inconclusive (1283.342916ms)
+✔ the logcat tool's clear:true is the one destructive clear and requires an explicit serial (63.754708ms)
+✔ wait_for_log's default opens a marker window instead of clearing and reports the window it matched in (2212.313833ms)
+✔ assert_logcat reads with the long-poll bound (-t 20000) by default and sends an explicit maxLines verbatim (118.067375ms)
+✔ wait_for_log reads with the long-poll bound (-t 20000) by default and sends an explicit maxLines verbatim (130.127625ms)
+✔ the long-poll bounds are named constants of the module, and build_and_run's settle-long read uses one (0.261916ms)
+✔ unseenMarkerCause blames eviction only when a dump actually succeeded (0.080958ms)
+✔ assert_logcat names the dump failure when every poll's dump failed, instead of blaming eviction (1193.758792ms)
+✔ assert_logcat keeps the eviction finding, with the last failure appended, when a dump did succeed (2136.8285ms)
+✔ wait_for_log names the dump failure when every poll's dump failed, instead of blaming eviction (1107.205083ms)
+✔ probe_planes names the dump failure when every poll's dump failed, instead of blaming eviction (3140.019083ms)
+✔ live_scene_snapshot names the dump failure when every poll's dump failed, instead of blaming eviction (8232.739709ms)
+✔ pico_loop writes a marker through adb_shell before the build and scopes every assert_logcat to it (17.062083ms)
+✔ pico_loop treats an inconclusive (evicted-window) assert_logcat as unmeasurable, never as a fail to replan (1.276917ms)
+✔ the boundary prepare step opens a -b all window, writes its sidecar, and stops on an evicted marker (35.103167ms)
+✔ no src file clears logcat implicitly; the explicit logcat tool is the only clear (21.267375ms)
+✔ the inverted guard rejects a second clear, a clear outside adb.ts, and a clear without the explicit-serial refusal (72.753792ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 29
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 39216.775791
+
+exit=0

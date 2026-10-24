@@ -1,0 +1,56 @@
+# step3 npm run --silent test:eye (2026-09-16T13:12:38Z)
+  ok   visual judge discloses a rejected evidence write instead of saying recorded
+  ok   XR recenter helper sends xr_command RECENTER
+  ok   capture_canonical binds RECENTER and screencap to one requested serial
+  ok   capture_canonical reports the inspected frame's real dimensions
+  ok   capture_canonical refuses a malformed >1000-byte screencap and writes nothing (1400 bytes)
+  ok   capture_canonical's default path is a run-unique file under the observation root (/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/eye-default-capture-path-oKF6nZ/.pico-mcp/cli/observations/canonical/20260916T131238872Z-07e4b3f0-94e7-424a-8f19-a5ea30a1e7ac/canonical.png)
+  ok   capture_canonical's default path is never the fixed shared /tmp/pico-render file
+  ok   two default captures RETAIN both frames instead of one overwriting the other
+  ok   capture_canonical still defaults to the emulator-5554 target (["-s","emulator-5554"])
+  ok   visual_judge persists a canonical measured claim, never the caller's dragons prose
+  ok   visual_judge stores the exact predicate/checks and labels caller prose unverified context
+  ok   visual_judge measures and persists one immutable byte snapshot when the source path is overwritten
+  ok   judge PASSes when count matches (6==6)
+  ok   judge does NOT silently PASS an over-claim (3 objects claimed as 6)
+  ok   judge FAILs a mostly-black frame that should have content
+  ok   judge ESCALATEs on a near-miss (5 vs 6)
+  ok   judge never returns vision_verified (only PASS/FAIL/ESCALATE)
+  ok   THE HAZARD IS CLOSED: an in-band dark-island count on a passthrough frame must NOT auto-PASS
+  ok   passthrough: notMostlyBlack contributes ZERO confidence (no padding) and escalates
+  ok   passthrough: a zero dark-island count does not hardFail (count is meaningless, not absent content)
+  ok   passthrough + color-key 4/4 → PASS on the authored palette alone (the MR auto_judged lane)
+  ok   passthrough + color-key 0/4 → FAIL (authored content measurably absent)
+  ok   passthrough + color-key 3/4 (0.75 < 0.8) → ESCALATE
+  ok   passthrough + unavailable color-key (all-neutral palette) → ESCALATE, never PASS
+  ok   a single distinct authored color is too weak to auto-judge → ESCALATE
+  ok   non-passthrough frames keep the legacy lane untouched (6==6 still PASSes at coverage 0.06)
+  ok   Swan capture-derived swatches find all seven authored color keys (found 7: launchPad,rocket,earth,atmosphere,orbiter,orbitPath,telemetryPylons; missing none)
+  ok   (a) void frame: count path still counts the 4 bright primitives (measured 4)
+  ok   (a) void frame is NOT passthrough (coverage 0.092)
+  ok   (a) judge PASSes 4/4 on the void frame (legacy VR lane intact)
+  ok   (b) busy frame measures as passthrough (coverage 0.944)
+  ok   (b) count path ESCALATES on the passthrough frame — never PASS, never FAIL
+  ok   (b) passthrough confidence is 0 without a color-key path (advisory checks pad nothing)
+  ok   (b) color-key path finds all 4 authored colors on the passthrough frame (found 4: sphereOrange,sphereBlue,cubeGreen,tableTan)
+  ok   (b) judge PASSes via the color-keyed MR lane (conf 1)
+  ok   (b) an all-neutral authored palette degrades honestly (unavailable, names the neutrals)
+  ok   (b) all-neutral palette + passthrough → ESCALATE
+  ok   (c) hazard frame: high coverage (0.960) with dark islands IN the expected band (measured 2)
+  ok   (c) THE AUTO-PASS HAZARD: in-band dark islands on a high-coverage frame must NOT pass
+  ok   CALIBRATION: eye measures 6 objects on the human-verified 6-card golden (measured 6)
+  ok   CALIBRATION: golden is not mostly black
+  ok   CALIBRATION: eye PASSes the golden at high confidence (conf 1)
+
+Eye calibration test done. Failures: 0
+  ok   nonzero usdrecord exit rejects the attempt and preserves a stale requested output
+  ok   code-zero invalid output is rejected before publish
+  ok   too-small output is rejected before publish
+  ok   effectively black output is rejected before publish
+  ok   zero-object output is rejected before publish
+  ok   accepted render atomically publishes and records a canonical hash/measurement claim
+  ok   USD receipt binds exact measured fields and keeps caller prose explicitly unverified
+  ok   ledger rejection is surfaced as non-rendered evidence status with no durable composition proof
+
+USD render producer test done. Failures: 0
+exit=0

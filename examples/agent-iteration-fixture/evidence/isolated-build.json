@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "command": [
+    "/Users/sushantsrikrish/.gradle/wrapper/dists/gradle-8.13-bin/5xuhj0ry160q40clulazy9h7d/gradle-8.13/bin/gradle",
+    "--no-daemon",
+    "-Dorg.gradle.java.installations.auto-download=false",
+    "-Pandroid.builder.sdkDownload=false",
+    "-Pkotlin.compiler.execution.strategy=in-process",
+    "assembleDebug",
+    "assembleRelease",
+    "writeIterationInputs"
+  ],
+  "cwd": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/examples/agent-iteration-fixture",
+  "startedAt": "2026-10-23T20:59:12.073785+00:00",
+  "finishedAt": "2026-10-23T21:04:04.378587+00:00",
+  "exitCode": 0,
+  "timedOut": false,
+  "javaHome": "/Users/sushantsrikrish/.pico/primer-cli/jdk/jdk-21.0.12.1+1/Contents/Home",
+  "gradleUserHome": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/examples/agent-iteration-fixture/.gradle-user-home",
+  "dependencyNetwork": "authorized download into dedicated worktree cache only",
+  "sdkAutoDownload": false,
+  "nativeOperation": false,
+  "log": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/examples/agent-iteration-fixture/evidence/isolated-build.log"
+}

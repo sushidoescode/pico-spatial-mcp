@@ -1,0 +1,80 @@
+(node:85858) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:85869) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: timeout, spawn failure, and output truncation are fatal and atomic output is never ambiguous
+    # Subtest: timeout
+    ok 1 - timeout
+      ---
+      duration_ms: 950.914375
+      ...
+    # Subtest: timeout hard-settles and reaps a detached descendant that inherited stdio
+    ok 2 - timeout hard-settles and reaps a detached descendant that inherited stdio
+      ---
+      duration_ms: 2284.33675
+      ...
+    # Subtest: truncation
+    ok 3 - truncation
+      ---
+      duration_ms: 998.976625
+      ...
+    # Subtest: output cap reaps a detached inherited-stdio descendant after its parent exits
+    not ok 4 - output cap reaps a detached inherited-stdio descendant after its parent exits
+      ---
+      duration_ms: 1575.191917
+      location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/cli/baseline-sweep/test/picocli-sweep.mjs:718:11'
+      failureType: 'testCodeFailure'
+      error: |-
+        detached descendant 85945 survived output-cap cleanup
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/cli/baseline-sweep/test/picocli-sweep.mjs:735:14)
+        Test.runInAsyncScope (node:async_hooks:211:14)
+        Test.run (node:internal/test_runner/test:979:25)
+        Test.start (node:internal/test_runner/test:877:17)
+        TestContext.test (node:internal/test_runner/test:307:20)
+        TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/cli/baseline-sweep/test/picocli-sweep.mjs:718:11)
+        async Test.run (node:internal/test_runner/test:980:9)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: signal termination
+    ok 5 - signal termination
+      ---
+      duration_ms: 196.828625
+      ...
+    # Subtest: npm spawn error
+    ok 6 - npm spawn error
+      ---
+      duration_ms: 36.10625
+      ...
+    # Subtest: a preexisting output is preserved and no atomic temporary is leaked
+    ok 7 - a preexisting output is preserved and no atomic temporary is leaked
+      ---
+      duration_ms: 33.782209
+      ...
+    1..7
+not ok 1 - timeout, spawn failure, and output truncation are fatal and atomic output is never ambiguous
+  ---
+  duration_ms: 6077.418292
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/cli/baseline-sweep/test/picocli-sweep.mjs:667:1'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 8
+# suites 0
+# pass 6
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6131.853042

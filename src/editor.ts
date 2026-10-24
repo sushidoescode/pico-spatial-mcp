@@ -4,7 +4,14 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { expandHome, fail, image, ok, okJson, run, runBinary, sleep, tail } from "./util.js";
-import { pickVersion, resolveToolsRoot } from "./toolchain.js";
+import {
+  isToolchainFailure,
+  resolveOperationToolchain,
+  toolchainProvenance,
+  toolchainProvenanceLine,
+  type OperationToolchain,
+  ANDROID_PROJECT_ROOT_DESCRIPTION,
+} from "./toolchain.js";
 import { adb, adbPath, resolveSerial } from "./adb.js";
 
 /**
@@ -39,15 +46,28 @@ interface EditorPaths {
   scenePreviewApk: string;
   templateScene: string;
   editorVersion: string;
+  /** The one selection this operation resolved; every stage runs against it. */
+  toolchain: OperationToolchain;
 }
 
-function editorPaths(toolsVersion?: string): EditorPaths | { error: string } {
-  const { root } = resolveToolsRoot();
-  const sel = pickVersion(root, toolsVersion, "editor");
-  if (!sel) return { error: `No editor payload found under ${root} (version ${toolsVersion ?? "any"})` };
-  const macosDir = path.join(root, sel.version, "editor", "Spatial Editor.app", "Contents", "MacOS");
-  const editorBin = path.join(macosDir, "Spatial Editor");
-  if (!fs.existsSync(editorBin)) return { error: `Spatial Editor binary not found at ${editorBin}` };
+/**
+ * Resolve the Spatial Editor payload ONCE per operation.
+ *
+ * This asks for the `editor` component — the app bundle these tools actually launch — rather
+ * than for the packer. The two live under a shared `editor/` parent but are different binaries,
+ * and requesting one while launching the other is how a version could be reported that was never
+ * the version that ran.
+ */
+function editorPaths(toolsVersion?: string, androidProjectRoot?: string): EditorPaths | { error: string } {
+  const prepared = resolveOperationToolchain({
+    androidProjectRoot,
+    toolsVersion,
+    required: ["editor"],
+    primary: "editor",
+  });
+  if (isToolchainFailure(prepared)) return { error: `${prepared.code}: ${prepared.detail}` };
+  const editorBin = prepared.bin;
+  const macosDir = path.dirname(editorBin);
   let editorVersion = "unknown";
   try {
     editorVersion = JSON.parse(fs.readFileSync(path.join(macosDir, "version"), "utf8")).version ?? "unknown";
@@ -55,12 +75,13 @@ function editorPaths(toolsVersion?: string): EditorPaths | { error: string } {
     /* version file is informational only */
   }
   return {
-    version: sel.version,
+    version: prepared.selection!.version,
     macosDir,
     editorBin,
     scenePreviewApk: path.join(macosDir, "scene_preview", "ScenePreview.apk"),
     templateScene: path.join(macosDir, "resources", "builtin", "scenes", "scene.usda"),
     editorVersion,
+    toolchain: prepared,
   };
 }
 
@@ -142,10 +163,11 @@ export function registerEditorTools(server: McpServer) {
         specialScenes: z.array(z.string()).default([]).describe("Optional subset of scenes to build"),
         timeoutSec: z.number().int().default(300),
         toolsVersion: z.string().optional(),
+        androidProjectRoot: z.string().optional().describe(ANDROID_PROJECT_ROOT_DESCRIPTION),
       },
     },
-    async ({ projectDir, outputDir, resultName, specialScenes, timeoutSec, toolsVersion }) => {
-      const ep = editorPaths(toolsVersion);
+    async ({ projectDir, outputDir, resultName, specialScenes, timeoutSec, toolsVersion, androidProjectRoot }) => {
+      const ep = editorPaths(toolsVersion, androidProjectRoot);
       if ("error" in ep) return fail(ep.error);
       const dir = expandHome(projectDir);
       const projectFile = findProjectFile(dir);
@@ -196,11 +218,13 @@ export function registerEditorTools(server: McpServer) {
         exitCode: r.code,
         timedOut: r.timedOut,
         editorVersion: ep.editorVersion,
+        ...toolchainProvenance(ep.toolchain),
       };
       const log = tail((r.stdout + "\n" + r.stderr).trim(), 50);
+      const provenance = `Built with ${toolchainProvenanceLine(ep.toolchain)}`;
       return success
-        ? ok(`${JSON.stringify(summary, null, 2)}\n\nEditor output tail:\n${log}`)
-        : fail(`Headless editor build failed.\n${JSON.stringify(summary, null, 2)}\n\nEditor output tail:\n${log}`);
+        ? ok(`${JSON.stringify(summary, null, 2)}\n\n${provenance}\n\nEditor output tail:\n${log}`)
+        : fail(`Headless editor build failed.\n${JSON.stringify(summary, null, 2)}\n\n${provenance}\n\nEditor output tail:\n${log}`);
     },
   );
 

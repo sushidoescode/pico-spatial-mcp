@@ -1,0 +1,13 @@
+[1mDescription[22m:
+Record performance trace on device
+
+[1mUsage[22m:
+  $ [1mpico-cli perf trace record[22m [options]
+
+[1mOptions[22m:
+  [1m-p, --pbtx <name|path>[22m    PBTX preset name (default) or path to custom .pbtx
+                            file (default: "default")
+  [1m--adb <path>[22m              Path to adb executable (optional, overrides
+                            ADB_PATH/PROFILER_ADB/PATH)
+  [1m-d, --device <id>[22m         Target device ID
+  [1m-a, --package <package>[22m  

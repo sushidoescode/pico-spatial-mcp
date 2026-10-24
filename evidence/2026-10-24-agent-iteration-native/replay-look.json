@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-24T05:26:44.691663+00:00",
+  "reviewer": "root vision-capable agent",
+  "artifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/cd7b109a-432e-4cbc-9b01-89af33899e6a/recapture.png",
+  "sha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc",
+  "evidenceType": "vision_verified",
+  "claim": "After source-bound rebuild and semantic replay on emulator-5554, the dedicated fixture renders source revision 3, State transitions: 1, and Panel visible \u2014 fixture.panel.",
+  "attestation": "I opened the exact public MCP recapture.png frame. The visible rounded app window reads Agent iteration fixture (source revision 3), State transitions: 1, and Panel visible \u2014 fixture.panel. The capture used pico_look with explicit emulator-5554, bracketed by target/state validation in the new APK/generation. The immediate replay frame showed only the room even with a 2500 ms settle; this later read-only recapture establishes the rendered response. No action resend, physical headset, hand/controller or host UI parity is claimed.",
+  "targetBindingSha256": "03fcdb9756d2a10352cf63b7893d4b067233366a6a20ad8ac72b3caebd2e596e",
+  "actionRecord": "evidence/agent-iteration-example/a57e7dd3-dbee-4165-80c1-1e0fd45d366b/attempts/288a0539-b709-4446-bfeb-c931c8283350/result.json",
+  "actionRequestId": "88ce38ff-1520-433c-918a-41ff60a8d982",
+  "recaptureRecord": "evidence/agent-iteration-example/cd7b109a-432e-4cbc-9b01-89af33899e6a/recapture.json",
+  "ledgerRecordPending": true
+}

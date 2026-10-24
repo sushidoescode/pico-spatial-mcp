@@ -1,0 +1,383 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-15T09:12:09.398Z",
+  "from": {
+    "requested": "0.4.4",
+    "version": "0.4.4",
+    "commandCount": 69
+  },
+  "to": {
+    "requested": "0.5.0",
+    "version": "0.5.0",
+    "commandCount": 91
+  },
+  "addedCommands": [
+    "editor sync",
+    "knowledge",
+    "knowledge doctor",
+    "knowledge list",
+    "knowledge pull",
+    "knowledge server",
+    "perf daemon",
+    "perf doctor",
+    "perf live",
+    "perf session",
+    "perf trace",
+    "plugin install",
+    "plugin uninstall",
+    "project context",
+    "spatialml",
+    "spatialml doctor",
+    "spatialml model",
+    "spatialml model inspect",
+    "spatialml model visualize",
+    "spatialml onboard",
+    "spatialml pipeline",
+    "spatialml pipeline install",
+    "spatialml pipeline search",
+    "spatialml pipeline verify",
+    "spatialml setup"
+  ],
+  "removedCommands": [
+    "mcp",
+    "mcp dev-knowledge",
+    "mcp doctor"
+  ],
+  "changedHelp": [
+    {
+      "command": "app",
+      "fromSha256": "3638cf44e6f62d2b766eff0cb714b8b5fff8d2ebb0109d1d21476bdda28219d6",
+      "toSha256": "5ba86da9eff3918ab8b0faa55141a8a2159c4033f2a0c2c6317d4de04a3632d1"
+    },
+    {
+      "command": "app info",
+      "fromSha256": "6598b0ee05b1b15d4bd8d4a5e4bce6f78c433f514ce8befc527251747594a0ae",
+      "toSha256": "1a728d284d51e9b29e0e4162ac41d2ac30f741fed072317fce0ca0992588c5ec"
+    },
+    {
+      "command": "app install",
+      "fromSha256": "781285347086ffeb4ad4ac059aba017c2203a6f85fccb61131ff6c5b7c611a7a",
+      "toSha256": "73b3edccaa6b125b359bc973e1fa7f07e31f3a46d9641c6036b57246d1700c17"
+    },
+    {
+      "command": "app launch",
+      "fromSha256": "47c222c75e0d9e3ba405ad1b4b6166b6c76070bdd1f89183191521ffa9dd680a",
+      "toSha256": "641e54c82120b1a4134bf71e3916ec73c0f883cca9539368aa4a7da73d5de307"
+    },
+    {
+      "command": "app list",
+      "fromSha256": "f64c73f7cab35890d1d7a4b48bb345212b1eb6e8e8a13b3f3ceb3b8eee72d904",
+      "toSha256": "cb7fd714c3fecb003f6f0282762e5498a363315cca848ac3943d6a1cd76606b7"
+    },
+    {
+      "command": "app logcat",
+      "fromSha256": "62f68aeaf728821082b7547405f040517b828ce40985f87a46e6e40ad785b348",
+      "toSha256": "3e0300271e7c97ee78b20a627665799c2bf996abf1eb4cf586eded4157070bde"
+    },
+    {
+      "command": "app stop",
+      "fromSha256": "7ef847a29c0f8f23ab900f55948124b9820df3b116aaea3669b4bf69d72e51ca",
+      "toSha256": "0fc819b7cb10efcd61a392658c38689f33e0f67ec7c146bfbe32031237f418c5"
+    },
+    {
+      "command": "app uninstall",
+      "fromSha256": "b02e128d24982d070f320cabd9852c8e22d5f2040784d6e7a15bd03ef6457cba",
+      "toSha256": "c6ce239cf99020cc1b24120c572d9f634fa1e8be6738c824f6e29afcb20b4e48"
+    },
+    {
+      "command": "app watch-crash",
+      "fromSha256": "66665f115a9b01205d6f2cd361cd1bae20d9878e936c1f261f576a198f41d20c",
+      "toSha256": "7004a564f043c78505ea95e1b3291f3001b595fb14f854d6d989e666afa6aa8a"
+    },
+    {
+      "command": "capture",
+      "fromSha256": "2f2e3bc11bde7eb35c87b871fa77c0cf1d5cbae6ba32c2da87c28147205df3f0",
+      "toSha256": "405a5924ddafaa3b38d57a8cd4dc0d65f4af1fee0d671781c1f2dcb855a24609"
+    },
+    {
+      "command": "capture record",
+      "fromSha256": "edc531b100e9aab1873a6bf3c316dd755e96b52bc3c604fce1ab233b48ad2540",
+      "toSha256": "618d97626543b9fb43039b9a163ecec7a5167daefde127061d7e3c9d051712ea"
+    },
+    {
+      "command": "capture screenshot",
+      "fromSha256": "c06e28e7054360a926d2ae9ca593da42ae36f7407805455fc5eedb062b4f3cfc",
+      "toSha256": "d03c230f409555530e7c5c9bb360a9dfc6ef8ef4b94d23f7df012ec556017d27"
+    },
+    {
+      "command": "device",
+      "fromSha256": "481d9a4b23ad46c55db7871133b44ab6311bad33ae610772aab750d823bf8d0b",
+      "toSha256": "9e657e9dabb0b7a667b062fc102cc45d808b2115a14fde61423dd3ff1bf338f7"
+    },
+    {
+      "command": "device battery",
+      "fromSha256": "e7f6844ab240357a820577f921bce5437b54575a0b7ca942f0fb6af1e69f3caa",
+      "toSha256": "872770856f0f7907100269639e5c71434dfc1be28217099338da334108681f3c"
+    },
+    {
+      "command": "device connect",
+      "fromSha256": "c40bb20ff0b0d6f59ac3a21c0724dcb60c43bb4c98183c737eb57dee9913c4ec",
+      "toSha256": "a83bc0281eef0fde54595e3665f3f40e5e4247d00a699633ef81e3e0f3f19e35"
+    },
+    {
+      "command": "device disconnect",
+      "fromSha256": "b4db1bf1302ea0defb94396ce17badea39d6dda444238d7186219ec3a3ad5a47",
+      "toSha256": "8d2b6e51415f935e9811e7c29eede815c9425eb7346bea0867ccd5367037b99b"
+    },
+    {
+      "command": "device info",
+      "fromSha256": "30374af57380afa01c15ec60bd2e55de696c8ee6637efb60d5c7225bc09ba627",
+      "toSha256": "9ca98eaa794ce32561df17bc6be753b6b0563131fcbcc10ac96ce28800e8b2b8"
+    },
+    {
+      "command": "device list",
+      "fromSha256": "02c748b22ba2be6e1ca5261343d2881dfa220771b2d8c2ca9c9b5913864ab63a",
+      "toSha256": "00066ff9d4dcbce5240279da70cecefe64fae461e67a6758d004e8597c71d134"
+    },
+    {
+      "command": "device props",
+      "fromSha256": "b070d4eec6c6713f3f130a0970e3c2a68986242caa240ee440b9c484b272d69c",
+      "toSha256": "eeaf7d228609281e2d5981421b3d637a07f92dbf84134b9d788c7c72646df8ff"
+    },
+    {
+      "command": "device shell",
+      "fromSha256": "88272fc03c115bc65658176d1ccb65492066f47c1c8aa38338984a775b6101a0",
+      "toSha256": "44c1ae5a7afad7cb677d966442ba7840d8d9e710a5e2d6cb9e1d893976187664"
+    },
+    {
+      "command": "doctor",
+      "fromSha256": "b2073e7d78e7636e5e0a3e7eeb663bef5c38727b885b2288d7efeeed09fdc2aa",
+      "toSha256": "dd1580a096bfd1af17e8634ec2c51597249017160f2b9d633aa0a05c540acf45"
+    },
+    {
+      "command": "editor",
+      "fromSha256": "d1803678eddd8f53656a460e16e0d4146cded0c09409cba91255fae4cb97a209",
+      "toSha256": "c86f7dabc4a62b6ed3d1782bd8384eb3858af8e836984909f3dc3daa298685e7"
+    },
+    {
+      "command": "editor bootstrap",
+      "fromSha256": "32d87a12cc06c6ee849b03b48a0adbd83d17b7b98165d19d16fd993f9f1b3d66",
+      "toSha256": "c9c3275dd64caa25d5317215eb7e8e98c99b284e0d178a5da866697c55a1abce"
+    },
+    {
+      "command": "editor doctor",
+      "fromSha256": "e1a665a8d832a695446b77ea1be29bcc665b956105d33d66ba81b315679a5602",
+      "toSha256": "f3fea60cb31f113ba5d583a72d24d0287fc2f2ff979d577b9eff130b474249dc"
+    },
+    {
+      "command": "editor install",
+      "fromSha256": "5f69a5b53baae10465ec391c37888a7cc822d0903a42d0a000f511509eb50439",
+      "toSha256": "d0fe05ab9a059e6f801fca3217e3d8bff87fe50f53f1e1b3f761aa70ef50f003"
+    },
+    {
+      "command": "editor pack",
+      "fromSha256": "dc2e42de112aff10fa12330607c09abe2f93d2a95b5413d265abe3112e560bc3",
+      "toSha256": "666f6a11229903abc763caf2d4d9747ef3619eb1b098f31f9bb24d7809f696a6"
+    },
+    {
+      "command": "editor start",
+      "fromSha256": "53d62f29772a93d2691e1ba87df09e16beb31d3ebfc06fc4339b35b72a2b15a6",
+      "toSha256": "c235252ff04ba26f06c93d911ebffd3a0fd3553e5df5f77b4125bb5b3780d8e5"
+    },
+    {
+      "command": "editor status",
+      "fromSha256": "d41f1d25d7d39f26472f8a62901c5732954ca6cb4dda887fd529e4adbef19931",
+      "toSha256": "75d6c99daaa1919b1184571d59b1dfcc06acd977366d5959522fbc14189f732a"
+    },
+    {
+      "command": "editor stop",
+      "fromSha256": "7c448033776990a74f41ca8fd3dcfad1269aa071c338aea69af7a887113b0d89",
+      "toSha256": "c6db496c1487213e41e659445155cafa9c96da882e7ff4d29674affd54e3fbe1"
+    },
+    {
+      "command": "editor sync component",
+      "fromSha256": "ecda5a340afcb78a653041945a424165a89d856f24576ce6bb3272cf2b29d48c",
+      "toSha256": "be967b4ff33d09e99ce57fcdf0b2d22e88280fbae95922046db24c2f4288be30"
+    },
+    {
+      "command": "editor uninstall",
+      "fromSha256": "ebe875e9718835c08ba87cd68a6bc29d11c00080e116a2405eeaa1bfa3f929e5",
+      "toSha256": "313df649f116f6e80de512ff3cd6b39f1db11b5fb0fa4ab6be067d045bd520d6"
+    },
+    {
+      "command": "emulator",
+      "fromSha256": "fec175ab4f129700be2b07b9a9187157af077b507643086b7b7aca74b936aad5",
+      "toSha256": "d885fad4cf49a29fad0dcd149fabd026555fa97724bd5cd8b12543e065a71b04"
+    },
+    {
+      "command": "emulator create",
+      "fromSha256": "52e091466a545c9c2d596bca8cfd42b55d6a15d4a975c6c0d2b2b43cbf051386",
+      "toSha256": "5bc5287392f98e27e9b4f12740d76603a17b74ec4902ff79f42ed4b609279a42"
+    },
+    {
+      "command": "emulator delete",
+      "fromSha256": "a6719e739e827307d3b9f25414a8e4d523362b5e9902d8222740e248fa9c1fa6",
+      "toSha256": "b62ae00e3accdfc92133fe0be5c65e93afdc8d2f3cf6d4e5b6ea9704ef4aeae7"
+    },
+    {
+      "command": "emulator delete-image",
+      "fromSha256": "e9f2c3685a13fdbe908503c35f36122dadf9ce3ac2ad811f06a5b84467187fbd",
+      "toSha256": "e10a37b0e6f1f5a6b0c1de8498e2f62612217b61a87012d9220ef6207f692abf"
+    },
+    {
+      "command": "emulator doctor",
+      "fromSha256": "f8287382b96a34d7c1d1bf97a55abb1e5a8c784075518f332c6ec673830601ad",
+      "toSha256": "d5090b87c42757acf1069274dd2854b4530f970b6413641c43a377dbb3fe8c8c"
+    },
+    {
+      "command": "emulator dump-logs",
+      "fromSha256": "72de8636b0faf1645cb9cd6b3fd2582442edbe2de7f149f408eb66da7413d1d7",
+      "toSha256": "b09760586467b51a26a5224c62b34e7784848ef6f97248243d2b039f8d4d858d"
+    },
+    {
+      "command": "emulator install",
+      "fromSha256": "ef165eaeda9ad2c15633af097029bd3296e91fb2385a1a6b100e23df35ea83aa",
+      "toSha256": "d2247668f8994fe42559f59826595b0300d2f93ffacd78608da73d509130331e"
+    },
+    {
+      "command": "emulator list",
+      "fromSha256": "a5dce5a1b545ffe2fd640cbfd913cf325336e5853d24bd1fac9a782232056b64",
+      "toSha256": "62992e6fc38e378ac1164dac8434863d0bc0f2f381f7fa9e154c51416cd6248b"
+    },
+    {
+      "command": "emulator setup",
+      "fromSha256": "305017d82145c78d91f637b511b29df02cd4f74422a9608b23d3220b97b9a160",
+      "toSha256": "777be5a1c667636c0cd03815477d670b5a4dfd290b77a34b71069e2186c7d9d5"
+    },
+    {
+      "command": "emulator start",
+      "fromSha256": "96b7de300b79abd0aca6e51db3108cb637ca86d5c49b50c5c859a6b320e115a6",
+      "toSha256": "a4870874f9e0985e671189881ef892a0a5de6b7add9417876bf912bdb57c7c0d"
+    },
+    {
+      "command": "emulator status",
+      "fromSha256": "03e1af0ab85f065d8acbf7cd0e69298d5d005e875a92fd421f6451c7ef180005",
+      "toSha256": "218d8eff79cce17b9c74888f4eefbd3b451594dc45ce3e67911ff6fa16061e4c"
+    },
+    {
+      "command": "emulator stop",
+      "fromSha256": "2994c48daddd35bb084c314cff2facf837a56d1af1fe2f84f2dbf55d80787c8b",
+      "toSha256": "71f6a89f6c8d109604fb8fe735bf5d2c6ee2a9e1dfc96547488d71e42bf0bb98"
+    },
+    {
+      "command": "files",
+      "fromSha256": "0ee24338370485ca37f758a183d87d467a498df496c9b89d870340a845a1ce84",
+      "toSha256": "5e6d82ed58e1778d1cb47ce7a12f0895280dda0538f413efa20aaafca411e9f4"
+    },
+    {
+      "command": "files cat",
+      "fromSha256": "158d0bfb2ec3df4f57870e2653cde1b77827b2ec6566d24d4cf0b03c76a95877",
+      "toSha256": "d7256fdc130131b6d158df1dc903e1f7397fbf825a2d83ed5f8903f7a3708d20"
+    },
+    {
+      "command": "files ls",
+      "fromSha256": "dfda6f55b001a8203ea5ca38146aeb1479bf2d9db973fc59100270e082324584",
+      "toSha256": "76a460ca3a2b9472f135346ace4c20dfc10aac66c43c86c6c2df146fdb269a4e"
+    },
+    {
+      "command": "files mkdir",
+      "fromSha256": "994d0ef855692310bb0e21842475381b664d0a0f7df5d6d4ab6f527677aaa2ea",
+      "toSha256": "3a329ab6020ec2639e3461221db388c8c2fe838e83146d618af2279640cfe05b"
+    },
+    {
+      "command": "files pull",
+      "fromSha256": "4698d347d068c5a93c00a4637709ee6132bcbce484358c5558a7a1ea97cccc68",
+      "toSha256": "ff8fe3ac7f1ed6632a52498b58c5449d4714eece40939455d01b2571006da9e7"
+    },
+    {
+      "command": "files push",
+      "fromSha256": "4fcc14161f147de5271e90896d5fec0bc67b671fbe315d681149d270ec11dd7a",
+      "toSha256": "4381b77e51799b3f4696a3c6353e8f5bc4544a04dae79bc48077e6c7ac774a82"
+    },
+    {
+      "command": "files rm",
+      "fromSha256": "2afcb8d5ffdd196f05241a9c26f6be4f55f7183a9191bf4a8ad1b7e12d014a13",
+      "toSha256": "bdc5874f469cc39f1e13ca1bbd8336b05a344927341fb01e1162518e1c3dcdbd"
+    },
+    {
+      "command": "files stat",
+      "fromSha256": "8f1e14fb8545a6636daddcd2a193c6c00ad211ea47978b2f485f0669e236811f",
+      "toSha256": "4c91424ed926b90ee734032343c14e36e5ef3f5b309b0c3245cfd030ae72ae83"
+    },
+    {
+      "command": "log",
+      "fromSha256": "edf65124dfc1b0095ffc10ff79b8495cde967ffe76a23bb275c4a604414d07bf",
+      "toSha256": "6048395e9fb1ab38c1fcf49aae51c0f4578259412595885056b104c058e6d697"
+    },
+    {
+      "command": "perf",
+      "fromSha256": "d22fe9b905cc5a56866b8ea4d8e88fe33e0e640078a9678aa882c179df943477",
+      "toSha256": "6c5eb0447e727c79b51a94b280649c8d7a951aa9f1472ac9178aa56a03c00c0e"
+    },
+    {
+      "command": "pico-cli",
+      "fromSha256": "c78b513f95bd5ad1e1b3bb0867265d7d9743b81a7b6d6a27a5ae92c268cf5941",
+      "toSha256": "a0db6d6644f616bcab467fb02eae191754f2705b2314e275d6aafcbe240d9e32"
+    },
+    {
+      "command": "plugin",
+      "fromSha256": "364f964f8c14a9741de2984947bde3df88d3d491faa5939dae8061c5c6d0686d",
+      "toSha256": "4c511a5182c084476486644af697ea648c40c1863ef06ad3219ef1bee338829d"
+    },
+    {
+      "command": "plugin audit",
+      "fromSha256": "788c8b9862f84b1c6b81d6cf1b0244a9c2311316194cf5c996e10b48cd48a6e0",
+      "toSha256": "38b76a916c3aee6a7a6f2b1057292850fdde7d19763586ad487d5be57cdc52b5"
+    },
+    {
+      "command": "plugin doctor",
+      "fromSha256": "607da84b7fa9249c7e68869bf8e54b303f461dfc94b1f7d64ae43c3988fb0422",
+      "toSha256": "4c474566cfc98042d3b94f6bab96432aafeecc14c2ebceb7073fd6cf926e88e0"
+    },
+    {
+      "command": "plugin update",
+      "fromSha256": "f12daeb6cabc036f6f8117ec9199f824ff26c6605472310875db786bec5247d9",
+      "toSha256": "ced15f9c3bfcdf3626a93e4b975ae01176e59284d605715fa64ac63ab8c8c5ff"
+    },
+    {
+      "command": "project",
+      "fromSha256": "d3b2582ed1ffc364d30eeae116db35b3279ca8e637400d84e7aad459d325eb73",
+      "toSha256": "95d23440ba3e848d1251a25d75983b8ea99b1d6353aa7c774fe688203d3169eb"
+    },
+    {
+      "command": "project context doctor",
+      "fromSha256": "167790513e1c6a0b0cdb6747adf4695c01afeab12aa7cd381498c0629628d3e7",
+      "toSha256": "87a260f82aa6ec19289f213d49dff0ddd6d9e844f9a2a8da150b9c31ca9befc6"
+    },
+    {
+      "command": "project create",
+      "fromSha256": "d2bc7045b147ff1b60d36d2721cd2f8c7f763115dec006cf66cb06759b70062c",
+      "toSha256": "89f54278c8a46133cdc4fd17362033e7dcfe92ad76aaea555bdc0b0a88fc01db"
+    },
+    {
+      "command": "shell",
+      "fromSha256": "d624eb8d2ba9acc7de80397f2537cf4710197c9c5f0497e0775f4c1d37780ba0",
+      "toSha256": "0365a16a6ccc5a81e92cc0e2d7d3272c1f88d2883d8dc491e2f16b1498e0165d"
+    },
+    {
+      "command": "update",
+      "fromSha256": "257c4a1f72f2f0f246036d95ca79280d894cf4035802b7c81d46fd3b3d10c6b6",
+      "toSha256": "1132556a8b2c968879568b8d4242b5ee9ef4ea307bbc1b00d36dd34d4a2f5c06"
+    },
+    {
+      "command": "web",
+      "fromSha256": "5b1e8aa93465d58ba6b7727c241b037648329925bbb5cca1190e3c42800580c7",
+      "toSha256": "497b3bd3e4bfa6e8952eb89f8e090e0cd12f362da7e6d964500161661e363f55"
+    },
+    {
+      "command": "web launch",
+      "fromSha256": "8a0a48a4bbfd97b8820d21cf61c7b7c6a2e29b26f14aad9385dcebddb39c81e9",
+      "toSha256": "a6cbc006efd7a987c586a694bb51fb9aaf698c14630971bf60fa4c0a36d323b0"
+    },
+    {
+      "command": "web setup",
+      "fromSha256": "6cd939872b0cab6f276ca47c608bd9be2be692473525ed2c988d92fafd8d2630",
+      "toSha256": "3c755ab7848f007c18b845e836246a883ff34398eb5aefdd708ce7815a7ef386"
+    }
+  ],
+  "unchangedCommands": [],
+  "safety": {
+    "setupInvoked": false,
+    "nonHelpCommandsInvoked": false
+  }
+}

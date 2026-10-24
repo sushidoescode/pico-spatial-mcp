@@ -1,0 +1,15 @@
+{
+  "rawLog": "preinstall-debug042-gate-004.log",
+  "sha256": "e4e6447746ee15670cefe8f4880a29333b4cd7d9ec31f448c689ff8147048e1c",
+  "seconds": 20,
+  "earlyWarnings": 0,
+  "seethroughCount": 0,
+  "seethroughPerSecond": 0.0,
+  "pxrMetricSamples": 20,
+  "pxrMetricAverageFps": 65.15,
+  "cleanTimedWindow": true,
+  "hostBeforePass": true,
+  "hostAfterPass": true,
+  "scope": "Admission diagnostic; not app performance or visual evidence",
+  "pass": false
+}

@@ -1,0 +1,9 @@
+# build after the item-2 source changes (unseenMarkerCause; lastReadError at the four polling sites) (2026-09-16T12:34:02Z)
+
+
+> pico-spatial-mcp@38.0.0 build
+> node scripts/build-source.mjs
+
+build-source: published 192 file(s) for source e248e4f2cf9a
+
+exit=0

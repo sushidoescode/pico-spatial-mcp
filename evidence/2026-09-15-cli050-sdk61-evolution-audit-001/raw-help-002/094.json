@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 app stop --help",
+  "argv": [
+    "app",
+    "stop",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:02.085Z",
+  "endedAt": "2026-09-15T09:12:02.205Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "0fc819b7cb10efcd61a392658c38689f33e0f67ec7c146bfbe32031237f418c5",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

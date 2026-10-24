@@ -1,0 +1,5 @@
+Usage:
+  $ pico-cli mcp dev-knowledge
+
+Options:
+  -h, --help  Display this message 

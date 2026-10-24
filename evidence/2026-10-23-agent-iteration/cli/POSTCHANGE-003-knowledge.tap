@@ -1,0 +1,24 @@
+(node:84705) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:84716) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: managed knowledge transport spawns only the capability-proven route for each CLI identity
+ok 1 - managed knowledge transport spawns only the capability-proven route for each CLI identity
+  ---
+  duration_ms: 5254.867417
+  ...
+# Subtest: managed knowledge checks the actual child environment and selected project config before spawn
+ok 2 - managed knowledge checks the actual child environment and selected project config before spawn
+  ---
+  duration_ms: 4108.578
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9435.464292

@@ -1,0 +1,3249 @@
+
+> pico-spatial-mcp@38.1.0 test:bridge
+> node scripts/run-gate.mjs test:bridge
+
+  ok   no pidfile → not running
+  ok   stale pidfile → cleaned + not running
+  ok   live pid → running
+  ok   stopBridge kills pidfile process + cleans up
+(node:41329) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+pico-spatial-mcp ready (stdio)
+(node:41357) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok   tool registered: mouse_bridge_start
+  ok   tool registered: mouse_bridge_stop
+  ok   tool registered: mouse_bridge_status
+  ok   mouse_bridge_status returns shape (running=false)
+
+Mouse-bridge test done. Failures: 0
+(node:41379) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:41380) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: loads the sole versioned packaged measurement dataset
+ok 1 - loads the sole versioned packaged measurement dataset
+  ---
+  duration_ms: 5.339541
+  ...
+# Subtest: accepts the strict refresh extensions and content-addresses every refresh observation
+ok 2 - accepts the strict refresh extensions and content-addresses every refresh observation
+  ---
+  duration_ms: 10.328334
+  ...
+# Subtest: rejects malformed, incomplete, unpinned, and ineligible refresh extensions
+    # Subtest: reversed presence range
+    ok 1 - reversed presence range
+      ---
+      duration_ms: 2.48625
+      ...
+    # Subtest: never-observed cluster
+    ok 2 - never-observed cluster
+      ---
+      duration_ms: 2.3535
+      ...
+    # Subtest: non-positive cluster X
+    ok 3 - non-positive cluster X
+      ---
+      duration_ms: 1.111292
+      ...
+    # Subtest: negative cluster Y
+    ok 4 - negative cluster Y
+      ---
+      duration_ms: 0.986167
+      ...
+    # Subtest: non-finite cluster Z
+    ok 5 - non-finite cluster Z
+      ---
+      duration_ms: 0.990708
+      ...
+    # Subtest: empty TABLE clusters
+    ok 6 - empty TABLE clusters
+      ---
+      duration_ms: 3.793583
+      ...
+    # Subtest: guaranteed extent not represented by a cluster
+    ok 7 - guaranteed extent not represented by a cluster
+      ---
+      duration_ms: 0.791333
+      ...
+    # Subtest: optional cluster claimed as guaranteed
+    ok 8 - optional cluster claimed as guaranteed
+      ---
+      duration_ms: 0.655625
+      ...
+    # Subtest: unpinned evidence hash
+    ok 9 - unpinned evidence hash
+      ---
+      duration_ms: 0.54875
+      ...
+    # Subtest: refreshed entry missing guaranteed surfaces
+    ok 10 - refreshed entry missing guaranteed surfaces
+      ---
+      duration_ms: 0.575083
+      ...
+    # Subtest: refreshed entry missing clusters
+    ok 11 - refreshed entry missing clusters
+      ---
+      duration_ms: 0.541625
+      ...
+    # Subtest: extensions without refresh provenance
+    ok 12 - extensions without refresh provenance
+      ---
+      duration_ms: 0.456333
+      ...
+    # Subtest: Mesume Day carrying refresh extensions
+    ok 13 - Mesume Day carrying refresh extensions
+      ---
+      duration_ms: 0.575375
+      ...
+    1..13
+ok 3 - rejects malformed, incomplete, unpinned, and ineligible refresh extensions
+  ---
+  duration_ms: 18.516583
+  ...
+# Subtest: derives the exact refreshed Livingroom envelopes from all accepted read fixtures
+ok 4 - derives the exact refreshed Livingroom envelopes from all accepted read fixtures
+  ---
+  duration_ms: 0.850458
+  ...
+# Subtest: derives every Livingroom Day cluster presence envelope from all five accepted reads
+ok 5 - derives every Livingroom Day cluster presence envelope from all five accepted reads
+  ---
+  duration_ms: 0.912625
+  ...
+# Subtest: keeps historic v1 extension-absent datasets parseable and ranking from legacy surfaces
+ok 6 - keeps historic v1 extension-absent datasets parseable and ranking from legacy surfaces
+  ---
+  duration_ms: 6.909666
+  ...
+# Subtest: derives the Swan Mission Table tiers from its validated AppSpec
+ok 7 - derives the Swan Mission Table tiers from its validated AppSpec
+  ---
+  duration_ms: 3.609292
+  ...
+# Subtest: keeps explicit TABLE and FLOOR requirements simultaneous and X/Z ordered
+ok 8 - keeps explicit TABLE and FLOOR requirements simultaneous and X/Z ordered
+  ---
+  duration_ms: 3.161417
+  ...
+# Subtest: ranks measured-potential mission TABLE fits with stable dataset-order ties
+ok 9 - ranks measured-potential mission TABLE fits with stable dataset-order ties
+  ---
+  duration_ms: 2.669459
+  ...
+# Subtest: ranks explicit requirements from measured potential even when every Day cluster is optional
+ok 10 - ranks explicit requirements from measured potential even when every Day cluster is optional
+  ---
+  duration_ms: 5.744875
+  ...
+# Subtest: ranks every refreshed FLOOR and TABLE cluster as measured potential
+ok 11 - ranks every refreshed FLOOR and TABLE cluster as measured potential
+  ---
+  duration_ms: 1.294417
+  ...
+# Subtest: refreshed surfaces and extent-cluster representatives must match one-to-one
+    # Subtest: missing surface representative
+    ok 1 - missing surface representative
+      ---
+      duration_ms: 0.860958
+      ...
+    # Subtest: extra surface representative
+    ok 2 - extra surface representative
+      ---
+      duration_ms: 0.77125
+      ...
+    # Subtest: duplicate surface representative
+    ok 3 - duplicate surface representative
+      ---
+      duration_ms: 0.710875
+      ...
+    # Subtest: duplicate cluster representative
+    ok 4 - duplicate cluster representative
+      ---
+      duration_ms: 0.556167
+      ...
+    # Subtest: Cartesian-swapped surface representative
+    ok 5 - Cartesian-swapped surface representative
+      ---
+      duration_ms: 0.47175
+      ...
+    1..5
+ok 12 - refreshed surfaces and extent-cluster representatives must match one-to-one
+  ---
+  duration_ms: 4.639
+  ...
+# Subtest: guaranteed surfaces exactly project the duplicate-free clusters whose minimum presence is positive
+    # Subtest: missing required guarantee
+    ok 1 - missing required guarantee
+      ---
+      duration_ms: 0.63675
+      ...
+    # Subtest: extra optional guarantee
+    ok 2 - extra optional guarantee
+      ---
+      duration_ms: 0.434666
+      ...
+    # Subtest: duplicate required guarantee
+    ok 3 - duplicate required guarantee
+      ---
+      duration_ms: 0.40575
+      ...
+    # Subtest: Cartesian-swapped guarantee
+    ok 4 - Cartesian-swapped guarantee
+      ---
+      duration_ms: 0.387541
+      ...
+    1..4
+ok 13 - guaranteed surfaces exactly project the duplicate-free clusters whose minimum presence is positive
+  ---
+  duration_ms: 3.875667
+  ...
+# Subtest: uses FLOOR only when no mission TABLE candidate fits
+ok 14 - uses FLOOR only when no mission TABLE candidate fits
+  ---
+  duration_ms: 1.408625
+  ...
+# Subtest: orders explicit equal-minimum fits by descending fit-ratio sum
+ok 15 - orders explicit equal-minimum fits by descending fit-ratio sum
+  ---
+  duration_ms: 0.675125
+  ...
+# Subtest: returns no_fit when no eligible surface satisfies every requirement
+ok 16 - returns no_fit when no eligible surface satisfies every requirement
+  ---
+  duration_ms: 1.411292
+  ...
+# Subtest: classifies the CP1 Livingroom Day query from its complete mesh fingerprint
+ok 17 - classifies the CP1 Livingroom Day query from its complete mesh fingerprint
+  ---
+  duration_ms: 6.266458
+  ...
+# Subtest: uniquely accepts all five Day and both Night refreshed histogram/cluster observations
+ok 18 - uniquely accepts all five Day and both Night refreshed histogram/cluster observations
+  ---
+  duration_ms: 16.189209
+  ...
+# Subtest: requires the globally ranked mission tier live after identity and cluster checks
+ok 19 - requires the globally ranked mission tier live after identity and cluster checks
+  ---
+  duration_ms: 5.2055
+  ...
+# Subtest: keeps explicit TABLE and FLOOR requirements simultaneous for a cluster-compatible observation
+ok 20 - keeps explicit TABLE and FLOOR requirements simultaneous for a cluster-compatible observation
+  ---
+  duration_ms: 1.361959
+  ...
+# Subtest: fails closed before candidate-specific cluster or mission-tier fit when two histograms overlap
+ok 21 - fails closed before candidate-specific cluster or mission-tier fit when two histograms overlap
+  ---
+  duration_ms: 6.308333
+  ...
+# Subtest: rejects every terminal bridge status before attempting classification
+ok 22 - rejects every terminal bridge status before attempting classification
+  ---
+  duration_ms: 0.739709
+  ...
+# Subtest: rejects zero matches for extra labels, zero-valued missing labels, and raw totals outside observed ranges
+ok 23 - rejects zero matches for extra labels, zero-valued missing labels, and raw totals outside observed ranges
+  ---
+  duration_ms: 7.184875
+  ...
+# Subtest: accepts a missing label as zero when the candidate explicitly measures zero
+ok 24 - accepts a missing label as zero when the candidate explicitly measures zero
+  ---
+  duration_ms: 1.851583
+  ...
+# Subtest: requires the live query to cover measured FLOOR and TABLE labels
+ok 25 - requires the live query to cover measured FLOOR and TABLE labels
+  ---
+  duration_ms: 2.080875
+  ...
+# Subtest: rejects a unique histogram when its FLOOR or TABLE extents no longer match or fit
+ok 26 - rejects a unique histogram when its FLOOR or TABLE extents no longer match or fit
+  ---
+  duration_ms: 2.823375
+  ...
+# Subtest: enforces closed cluster cardinalities and X/Y/Z tolerance after unique identity
+    # Subtest: unknown third anchor
+    ok 1 - unknown third anchor
+      ---
+      duration_ms: 1.453833
+      ...
+    # Subtest: duplicate beyond maximum
+    ok 2 - duplicate beyond maximum
+      ---
+      duration_ms: 1.255791
+      ...
+    # Subtest: X outside tolerance
+    ok 3 - X outside tolerance
+      ---
+      duration_ms: 1.340458
+      ...
+    # Subtest: Y outside tolerance
+    ok 4 - Y outside tolerance
+      ---
+      duration_ms: 1.09425
+      ...
+    # Subtest: Z outside tolerance
+    ok 5 - Z outside tolerance
+      ---
+      duration_ms: 2.667583
+      ...
+    1..5
+ok 27 - enforces closed cluster cardinalities and X/Y/Z tolerance after unique identity
+  ---
+  duration_ms: 10.059959
+  ...
+# Subtest: rejects the next representable value outside either X/Y/Z tolerance endpoint
+    # Subtest: X above upper endpoint
+    ok 1 - X above upper endpoint
+      ---
+      duration_ms: 1.068
+      ...
+    # Subtest: X below lower endpoint
+    ok 2 - X below lower endpoint
+      ---
+      duration_ms: 0.993375
+      ...
+    # Subtest: Y above upper endpoint
+    ok 3 - Y above upper endpoint
+      ---
+      duration_ms: 1.218959
+      ...
+    # Subtest: Y below lower endpoint
+    ok 4 - Y below lower endpoint
+      ---
+      duration_ms: 1.504083
+      ...
+    # Subtest: Z above upper endpoint
+    ok 5 - Z above upper endpoint
+      ---
+      duration_ms: 2.476
+      ...
+    # Subtest: Z below lower endpoint
+    ok 6 - Z below lower endpoint
+      ---
+      duration_ms: 1.21425
+      ...
+    1..6
+ok 28 - rejects the next representable value outside either X/Y/Z tolerance endpoint
+  ---
+  duration_ms: 9.49
+  ...
+# Subtest: accepts cluster permutations and equality at both X/Y/Z tolerance endpoints
+ok 29 - accepts cluster permutations and equality at both X/Y/Z tolerance endpoints
+  ---
+  duration_ms: 3.236166
+  ...
+# Subtest: rejects an anchor that falls within more than one synthetic cluster
+ok 30 - rejects an anchor that falls within more than one synthetic cluster
+  ---
+  duration_ms: 2.816875
+  ...
+# Subtest: excludes invalid Mesume Day and keeps WALL_ART advisory to identity
+ok 31 - excludes invalid Mesume Day and keeps WALL_ART advisory to identity
+  ---
+  duration_ms: 3.097833
+  ...
+# (node:41381) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: the shared Swift matcher searches exact AX attributes and bound-window scope in strict order
+ok 32 - the shared Swift matcher searches exact AX attributes and bound-window scope in strict order
+  ---
+  duration_ms: 1208.432166
+  ...
+# Subtest: the complete macOS AX helper typechecks with the shared matcher
+ok 33 - the complete macOS AX helper typechecks with the shared matcher
+  ---
+  duration_ms: 478.525125
+  ...
+# Subtest: non-macOS returns a baseline-safe manual result before any host action
+ok 34 - non-macOS returns a baseline-safe manual result before any host action
+  ---
+  duration_ms: 0.779333
+  ...
+# Subtest: offline serial and ambiguous qemu bindings refuse before focus or AX actions
+    # Subtest: offline
+    ok 1 - offline
+      ---
+      duration_ms: 0.294875
+      ...
+    # Subtest: ambiguous
+    ok 2 - ambiguous
+      ---
+      duration_ms: 0.17
+      ...
+    1..2
+ok 35 - offline serial and ambiguous qemu bindings refuse before focus or AX actions
+  ---
+  duration_ms: 0.852541
+  ...
+# Subtest: successful binding payloads must still prove exact requested serial and discovery PID identity
+    # Subtest: wrong discovered serial
+    ok 1 - wrong discovered serial
+      ---
+      duration_ms: 0.320416
+      ...
+    # Subtest: requested serial offline
+    ok 2 - requested serial offline
+      ---
+      duration_ms: 0.441042
+      ...
+    # Subtest: null discovery PID
+    ok 3 - null discovery PID
+      ---
+      duration_ms: 0.274083
+      ...
+    # Subtest: mismatched discovery PID
+    ok 4 - mismatched discovery PID
+      ---
+      duration_ms: 0.219333
+      ...
+    1..4
+ok 36 - successful binding payloads must still prove exact requested serial and discovery PID identity
+  ---
+  duration_ms: 2.040583
+  ...
+# Subtest: single-window fallback is refused even when serial and positive discovery/window PIDs agree
+ok 37 - single-window fallback is refused even when serial and positive discovery/window PIDs agree
+  ---
+  duration_ms: 0.334834
+  ...
+# Subtest: Accessibility denial and a missing select_scene_button refuse before dialog probe or click
+    # Subtest: denied
+    ok 1 - denied
+      ---
+      duration_ms: 0.296292
+      ...
+    # Subtest: missing control
+    ok 2 - missing control
+      ---
+      duration_ms: 0.2075
+      ...
+    1..2
+ok 38 - Accessibility denial and a missing select_scene_button refuse before dialog probe or click
+  ---
+  duration_ms: 0.699667
+  ...
+# Subtest: successful picker openings record the exact AX attribute and search scope
+    # Subtest: bound_window_descendants/AXIdentifier
+    ok 1 - bound_window_descendants/AXIdentifier
+      ---
+      duration_ms: 0.607708
+      ...
+    # Subtest: bound_window_descendants/AXTitle
+    ok 2 - bound_window_descendants/AXTitle
+      ---
+      duration_ms: 0.113459
+      ...
+    # Subtest: application_tree/AXDescription
+    ok 3 - application_tree/AXDescription
+      ---
+      duration_ms: 0.35125
+      ...
+    1..3
+ok 39 - successful picker openings record the exact AX attribute and search scope
+  ---
+  duration_ms: 1.274666
+  ...
+# Subtest: malformed pre-click helper payloads return manual without a click
+    # Subtest: malformed open result
+    ok 1 - malformed open result
+      ---
+      duration_ms: 0.280959
+      ...
+    # Subtest: successful open missing match provenance
+    ok 2 - successful open missing match provenance
+      ---
+      duration_ms: 0.384875
+      ...
+    # Subtest: successful open with unknown attribute
+    ok 3 - successful open with unknown attribute
+      ---
+      duration_ms: 0.142416
+      ...
+    # Subtest: successful open with unknown scope
+    ok 4 - successful open with unknown scope
+      ---
+      duration_ms: 0.149292
+      ...
+    # Subtest: dialog probe query failure
+    ok 5 - dialog probe query failure
+      ---
+      duration_ms: 0.255875
+      ...
+    # Subtest: non-array dialog list
+    ok 6 - non-array dialog list
+      ---
+      duration_ms: 0.171416
+      ...
+    # Subtest: non-numeric frame
+    ok 7 - non-numeric frame
+      ---
+      duration_ms: 0.181333
+      ...
+    # Subtest: non-numeric label center
+    ok 8 - non-numeric label center
+      ---
+      duration_ms: 0.253959
+      ...
+    # Subtest: non-string close control
+    ok 9 - non-string close control
+      ---
+      duration_ms: 0.137917
+      ...
+    1..9
+ok 40 - malformed pre-click helper payloads return manual without a click
+  ---
+  duration_ms: 2.60825
+  ...
+# Subtest: focus exceptions return baseline-safe manual results before any click
+    # Subtest: attempt 1
+    ok 1 - attempt 1
+      ---
+      duration_ms: 0.192208
+      ...
+    # Subtest: attempt 2
+    ok 2 - attempt 2
+      ---
+      duration_ms: 0.160291
+      ...
+    1..2
+ok 41 - focus exceptions return baseline-safe manual results before any click
+  ---
+  duration_ms: 0.508666
+  ...
+# Subtest: a focus verification error stops before openPicker
+ok 42 - a focus verification error stops before openPicker
+  ---
+  duration_ms: 0.076292
+  ...
+# Subtest: wrong dialog PID, title, or geometry refuses before capture and click
+    # Subtest: pid
+    ok 1 - pid
+      ---
+      duration_ms: 0.159917
+      ...
+    # Subtest: title
+    ok 2 - title
+      ---
+      duration_ms: 0.066458
+      ...
+    # Subtest: width
+    ok 3 - width
+      ---
+      duration_ms: 0.122791
+      ...
+    # Subtest: height
+    ok 4 - height
+      ---
+      duration_ms: 0.07625
+      ...
+    1..4
+ok 43 - wrong dialog PID, title, or geometry refuses before capture and click
+  ---
+  duration_ms: 0.651625
+  ...
+# Subtest: missing, duplicate, or misplaced accessible labels refuse before capture and click
+    # Subtest: missing
+    ok 1 - missing
+      ---
+      duration_ms: 0.16125
+      ...
+    # Subtest: duplicate
+    ok 2 - duplicate
+      ---
+      duration_ms: 0.050208
+      ...
+    # Subtest: misplaced
+    ok 3 - misplaced
+      ---
+      duration_ms: 0.0425
+      ...
+    1..3
+ok 44 - missing, duplicate, or misplaced accessible labels refuse before capture and click
+  ---
+  duration_ms: 0.40325
+  ...
+# Subtest: raw AX enumeration ignores an unrelated main window and retains the one exact dialog
+ok 45 - raw AX enumeration ignores an unrelated main window and retains the one exact dialog
+  ---
+  duration_ms: 0.281167
+  ...
+# Subtest: capture preflight failure refuses before the CGEvent click
+ok 46 - capture preflight failure refuses before the CGEvent click
+  ---
+  duration_ms: 0.245541
+  ...
+# Subtest: the proven path clicks the dataset-relative center on the exact PID and closes the stored dialog
+ok 47 - the proven path clicks the dataset-relative center on the exact PID and closes the stored dialog
+  ---
+  duration_ms: 0.338417
+  ...
+# Subtest: a stale selected-dialog hash never reports an observed selection
+ok 48 - a stale selected-dialog hash never reports an observed selection
+  ---
+  duration_ms: 0.17375
+  ...
+# Subtest: post-click capture and close failures never report an observed selection
+    # Subtest: capture
+    ok 1 - capture
+      ---
+      duration_ms: 0.141792
+      ...
+    # Subtest: AX close
+    ok 2 - AX close
+      ---
+      duration_ms: 0.096584
+      ...
+    # Subtest: dialog remains
+    ok 3 - dialog remains
+      ---
+      duration_ms: 0.162125
+      ...
+    # Subtest: malformed AX close result
+    ok 4 - malformed AX close result
+      ---
+      duration_ms: 0.255917
+      ...
+    # Subtest: malformed disappearance result
+    ok 5 - malformed disappearance result
+      ---
+      duration_ms: 0.309166
+      ...
+    # Subtest: AX close query failure
+    ok 6 - AX close query failure
+      ---
+      duration_ms: 0.194334
+      ...
+    # Subtest: disappearance query failure
+    ok 7 - disappearance query failure
+      ---
+      duration_ms: 0.289292
+      ...
+    1..7
+ok 49 - post-click capture and close failures never report an observed selection
+  ---
+  duration_ms: 1.764833
+  ...
+# (node:41382) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: parses only a current Default Space WorldSpaceDB getSpace row
+ok 50 - parses only a current Default Space WorldSpaceDB getSpace row
+  ---
+  duration_ms: 2.345458
+  ...
+# Subtest: raw marker and WorldSpace parsers reject control separators and malformed process columns
+    # Subtest: marker embedded CR
+    ok 1 - marker embedded CR
+      ---
+      duration_ms: 0.137625
+      ...
+    # Subtest: marker embedded form feed
+    ok 2 - marker embedded form feed
+      ---
+      duration_ms: 0.116
+      ...
+    # Subtest: marker embedded vertical tab
+    ok 3 - marker embedded vertical tab
+      ---
+      duration_ms: 0.291708
+      ...
+    # Subtest: marker wrong priority
+    ok 4 - marker wrong priority
+      ---
+      duration_ms: 0.300917
+      ...
+    # Subtest: marker malformed PID
+    ok 5 - marker malformed PID
+      ---
+      duration_ms: 0.185792
+      ...
+    # Subtest: marker missing PID
+    ok 6 - marker missing PID
+      ---
+      duration_ms: 0.090583
+      ...
+    # Subtest: marker malformed TID
+    ok 7 - marker malformed TID
+      ---
+      duration_ms: 0.115541
+      ...
+    # Subtest: marker missing TID
+    ok 8 - marker missing TID
+      ---
+      duration_ms: 0.334708
+      ...
+    # Subtest: WorldSpace embedded CR
+    ok 9 - WorldSpace embedded CR
+      ---
+      duration_ms: 0.321875
+      ...
+    # Subtest: WorldSpace embedded form feed
+    ok 10 - WorldSpace embedded form feed
+      ---
+      duration_ms: 0.073
+      ...
+    # Subtest: WorldSpace embedded vertical tab
+    ok 11 - WorldSpace embedded vertical tab
+      ---
+      duration_ms: 0.073167
+      ...
+    # Subtest: WorldSpace wrong priority
+    ok 12 - WorldSpace wrong priority
+      ---
+      duration_ms: 0.033375
+      ...
+    # Subtest: WorldSpace malformed PID
+    ok 13 - WorldSpace malformed PID
+      ---
+      duration_ms: 0.02625
+      ...
+    # Subtest: WorldSpace missing PID
+    ok 14 - WorldSpace missing PID
+      ---
+      duration_ms: 0.028625
+      ...
+    # Subtest: WorldSpace malformed TID
+    ok 15 - WorldSpace malformed TID
+      ---
+      duration_ms: 0.063667
+      ...
+    # Subtest: WorldSpace missing TID
+    ok 16 - WorldSpace missing TID
+      ---
+      duration_ms: 0.032291
+      ...
+    1..16
+ok 51 - raw marker and WorldSpace parsers reject control separators and malformed process columns
+  ---
+  duration_ms: 3.6205
+  ...
+# Subtest: one-row guards reject all non-column C0/C1 controls while allowing horizontal-tab columns
+    # Subtest: horizontal tabs are accepted in the logcat columns
+    ok 1 - horizontal tabs are accepted in the logcat columns
+      ---
+      duration_ms: 0.315666
+      ...
+    # Subtest: WorldSpace payload rejects every disallowed control and payload tab
+    ok 2 - WorldSpace payload rejects every disallowed control and payload tab
+      ---
+      duration_ms: 0.361542
+      ...
+    # Subtest: marker and WorldSpace columns reject every non-tab control
+    ok 3 - marker and WorldSpace columns reject every non-tab control
+      ---
+      duration_ms: 0.196542
+      ...
+    # Subtest: marker payload rejects every non-tab control
+    ok 4 - marker payload rejects every non-tab control
+      ---
+      duration_ms: 0.127834
+      ...
+    1..4
+ok 52 - one-row guards reject all non-column C0/C1 controls while allowing horizontal-tab columns
+  ---
+  duration_ms: 1.500875
+  ...
+# Subtest: live marker creation returns only the exact newly observed emitted row
+    # Subtest: ignores a stale same-nonce row and returns the exact fresh row
+    ok 1 - ignores a stale same-nonce row and returns the exact fresh row
+      ---
+      duration_ms: 773.2415
+      ...
+    # Subtest: rejects when only a different row can be observed
+    ok 2 - rejects when only a different row can be observed
+      ---
+      duration_ms: 696.257917
+      ...
+    1..2
+ok 53 - live marker creation returns only the exact newly observed emitted row
+  ---
+  duration_ms: 1469.782791
+  ...
+# Subtest: live post observation ignores markerless rows at or before the durable boundary
+ok 54 - live post observation ignores markerless rows at or before the durable boundary
+  ---
+  duration_ms: 72.108042
+  ...
+# Subtest: rank is static and invokes no WorldSpace, bridge, marker, or host dependency
+ok 55 - rank is static and invokes no WorldSpace, bridge, marker, or host dependency
+  ---
+  duration_ms: 4.341375
+  ...
+# Subtest: returns no_fit without runtime work when no eligible measured surface fits
+ok 56 - returns no_fit without runtime work when no eligible measured surface fits
+  ---
+  duration_ms: 3.015458
+  ...
+# Subtest: manual baselines bind the exact canonical dataset contents
+ok 57 - manual baselines bind the exact canonical dataset contents
+  ---
+  duration_ms: 12.616833
+  ...
+# Subtest: verify rejects old or same-legacy-identity baselines from different dataset contents before dependencies
+    # Subtest: missing digest is an invalid request
+    ok 1 - missing digest is an invalid request
+      ---
+      duration_ms: 2.396792
+      ...
+    # Subtest: well-formed digest from dataset A mismatches dataset B
+    ok 2 - well-formed digest from dataset A mismatches dataset B
+      ---
+      duration_ms: 1.102875
+      ...
+    # Subtest: malformed digest is an invalid request
+    ok 3 - malformed digest is an invalid request
+      ---
+      duration_ms: 5.936542
+      ...
+    1..3
+ok 58 - verify rejects old or same-legacy-identity baselines from different dataset contents before dependencies
+  ---
+  duration_ms: 13.6515
+  ...
+# Subtest: canonical dataset identity ignores object key order and source whitespace
+ok 59 - canonical dataset identity ignores object key order and source whitespace
+  ---
+  duration_ms: 2.956125
+  ...
+# Subtest: extension-absent legacy datasets receive the same canonical receipt binding
+ok 60 - extension-absent legacy datasets receive the same canonical receipt binding
+  ---
+  duration_ms: 7.273417
+  ...
+# Subtest: every non-null validated baseline binds the top-level canonical dataset digest
+    # Subtest: manual success
+    ok 1 - manual success
+      ---
+      duration_ms: 2.386292
+      ...
+    # Subtest: selected success
+    ok 2 - selected success
+      ---
+      duration_ms: 3.444542
+      ...
+    # Subtest: verify no_fit
+    ok 3 - verify no_fit
+      ---
+      duration_ms: 0.251084
+      ...
+    # Subtest: verification failure
+    ok 4 - verification failure
+      ---
+      duration_ms: 3.1545
+      ...
+    # Subtest: verify prevalidation failure
+    ok 5 - verify prevalidation failure
+      ---
+      duration_ms: 0.174458
+      ...
+    1..5
+ok 61 - every non-null validated baseline binds the top-level canonical dataset digest
+  ---
+  duration_ms: 36.375667
+  ...
+# Subtest: verify validates its receipt-bound baseline and marker before an impossible fit can return no_fit
+    # Subtest: baseline mismatch
+    ok 1 - baseline mismatch
+      ---
+      duration_ms: 1.345958
+      ...
+    # Subtest: marker mismatch
+    ok 2 - marker mismatch
+      ---
+      duration_ms: 1.329541
+      ...
+    1..2
+ok 62 - verify validates its receipt-bound baseline and marker before an impossible fit can return no_fit
+  ---
+  duration_ms: 3.868708
+  ...
+# Subtest: rejects non-exclusive sources and action-specific runtime or baseline shapes before runtime calls
+    # Subtest: non-string action resembling rank
+    ok 1 - non-string action resembling rank
+      ---
+      duration_ms: 1.461708
+      ...
+    # Subtest: both sources
+    ok 2 - both sources
+      ---
+      duration_ms: 1.383125
+      ...
+    # Subtest: no source
+    ok 3 - no source
+      ---
+      duration_ms: 1.201708
+      ...
+    # Subtest: rank runtime
+    ok 4 - rank runtime
+      ---
+      duration_ms: 2.739875
+      ...
+    # Subtest: rank marker
+    ok 5 - rank marker
+      ---
+      duration_ms: 1.25875
+      ...
+    # Subtest: switch missing runtime
+    ok 6 - switch missing runtime
+      ---
+      duration_ms: 1.475208
+      ...
+    # Subtest: switch baseline
+    ok 7 - switch baseline
+      ---
+      duration_ms: 1.340375
+      ...
+    # Subtest: switch marker
+    ok 8 - switch marker
+      ---
+      duration_ms: 1.050708
+      ...
+    # Subtest: verify missing baseline
+    ok 9 - verify missing baseline
+      ---
+      duration_ms: 1.206417
+      ...
+    1..9
+ok 63 - rejects non-exclusive sources and action-specific runtime or baseline shapes before runtime calls
+  ---
+  duration_ms: 14.948625
+  ...
+# Subtest: switch takes a receipt-bound pre-baseline before the marker and returns it on a manual guard
+ok 64 - switch takes a receipt-bound pre-baseline before the marker and returns it on a manual guard
+  ---
+  duration_ms: 9.348541
+  ...
+# Subtest: manual host result cannot redirect the proposed target
+ok 65 - manual host result cannot redirect the proposed target
+  ---
+  duration_ms: 5.75225
+  ...
+# Subtest: host click/hash observation failure is verification_failed and never queries a post mesh
+ok 66 - host click/hash observation failure is verification_failed and never queries a post mesh
+  ---
+  duration_ms: 6.799458
+  ...
+# Subtest: unique target success preserves exact live call order and production query policy
+ok 67 - unique target success preserves exact live call order and production query policy
+  ---
+  duration_ms: 10.828875
+  ...
+# Subtest: mission selection verifies the globally ranked preferred tier against the live post mesh
+    # Subtest: fails when accepted identity and clusters expose only fallback FLOOR live
+    ok 1 - fails when accepted identity and clusters expose only fallback FLOOR live
+      ---
+      duration_ms: 16.080375
+      ...
+    # Subtest: passes the authoritative holdout shape when the preferred TABLE is live
+    ok 2 - passes the authoritative holdout shape when the preferred TABLE is live
+      ---
+      duration_ms: 13.649
+      ...
+    1..2
+ok 68 - mission selection verifies the globally ranked preferred tier against the live post mesh
+  ---
+  duration_ms: 30.712167
+  ...
+# Subtest: ordinary switch passes and retains the exact produced marker object
+ok 69 - ordinary switch passes and retains the exact produced marker object
+  ---
+  duration_ms: 10.126583
+  ...
+# Subtest: a complete live-derived label_absent pre snapshot can switch to selected_verified
+ok 70 - a complete live-derived label_absent pre snapshot can switch to selected_verified
+  ---
+  duration_ms: 10.0955
+  ...
+# Subtest: a complete label_absent pre snapshot propagates through manual and failure receipt frontiers
+    # Subtest: manual switch retains the complete baseline
+    ok 1 - manual switch retains the complete baseline
+      ---
+      duration_ms: 6.807458
+      ...
+    # Subtest: downstream host failure remains causally bound to the complete baseline
+    ok 2 - downstream host failure remains causally bound to the complete baseline
+      ---
+      duration_ms: 4.134417
+      ...
+    1..2
+ok 71 - a complete label_absent pre snapshot propagates through manual and failure receipt frontiers
+  ---
+  duration_ms: 11.380834
+  ...
+# Subtest: a complete label_absent snapshot remains a hard post-query failure
+ok 72 - a complete label_absent snapshot remains a hard post-query failure
+  ---
+  duration_ms: 7.958084
+  ...
+# Subtest: complete label_absent pre snapshots fail closed under completeness mutations
+    # Subtest: missing snapshot
+    ok 1 - missing snapshot
+      ---
+      duration_ms: 5.496125
+      ...
+    # Subtest: missing binding
+    ok 2 - missing binding
+      ---
+      duration_ms: 3.822042
+      ...
+    # Subtest: serial identity drift
+    ok 3 - serial identity drift
+      ---
+      duration_ms: 5.872416
+      ...
+    # Subtest: non-emulator boot identity
+    ok 4 - non-emulator boot identity
+      ---
+      duration_ms: 3.846125
+      ...
+    # Subtest: APK binding receipt mismatch
+    ok 5 - APK binding receipt mismatch
+      ---
+      duration_ms: 5.639542
+      ...
+    # Subtest: configured drift policy mismatch
+    ok 6 - configured drift policy mismatch
+      ---
+      duration_ms: 5.003834
+      ...
+    # Subtest: drift outside policy
+    ok 7 - drift outside policy
+      ---
+      duration_ms: 4.071084
+      ...
+    # Subtest: contradictory within-policy drift metrics
+    ok 8 - contradictory within-policy drift metrics
+      ---
+      duration_ms: 4.585042
+      ...
+    # Subtest: missing geometry
+    ok 9 - missing geometry
+      ---
+      duration_ms: 4.077208
+      ...
+    # Subtest: missing geometry publication
+    ok 10 - missing geometry publication
+      ---
+      duration_ms: 7.480583
+      ...
+    # Subtest: mismatched geometry publication
+    ok 11 - mismatched geometry publication
+      ---
+      duration_ms: 7.965166
+      ...
+    # Subtest: missing stable-read retry evidence
+    ok 12 - missing stable-read retry evidence
+      ---
+      duration_ms: 3.887417
+      ...
+    # Subtest: missing stable-read drift evidence
+    ok 13 - missing stable-read drift evidence
+      ---
+      duration_ms: 3.848625
+      ...
+    1..13
+ok 73 - complete label_absent pre snapshots fail closed under completeness mutations
+  ---
+  duration_ms: 66.963417
+  ...
+# Subtest: ready post snapshots fail closed under every receipt-completeness omission
+    # Subtest: missing monotonic query time
+    ok 1 - missing monotonic query time
+      ---
+      duration_ms: 9.550791
+      ...
+    # Subtest: missing running tracking state
+    ok 2 - missing running tracking state
+      ---
+      duration_ms: 9.918917
+      ...
+    # Subtest: missing stable-read retry evidence
+    ok 3 - missing stable-read retry evidence
+      ---
+      duration_ms: 9.702541
+      ...
+    # Subtest: missing requested-label coverage
+    ok 4 - missing requested-label coverage
+      ---
+      duration_ms: 7.737916
+      ...
+    # Subtest: non-emulator boot identity
+    ok 5 - non-emulator boot identity
+      ---
+      duration_ms: 7.786708
+      ...
+    # Subtest: missing lossless external geometry
+    ok 6 - missing lossless external geometry
+      ---
+      duration_ms: 8.26
+      ...
+    # Subtest: missing runtime-bind receipt
+    ok 7 - missing runtime-bind receipt
+      ---
+      duration_ms: 8.227167
+      ...
+    # Subtest: missing bridge-broadcast receipt
+    ok 8 - missing bridge-broadcast receipt
+      ---
+      duration_ms: 8.6685
+      ...
+    # Subtest: missing bridge-pull receipt
+    ok 9 - missing bridge-pull receipt
+      ---
+      duration_ms: 8.422542
+      ...
+    # Subtest: missing bridge-cleanup receipt
+    ok 10 - missing bridge-cleanup receipt
+      ---
+      duration_ms: 8.153084
+      ...
+    # Subtest: missing geometry-publication receipt
+    ok 11 - missing geometry-publication receipt
+      ---
+      duration_ms: 7.466792
+      ...
+    # Subtest: mismatched geometry-publication receipt
+    ok 12 - mismatched geometry-publication receipt
+      ---
+      duration_ms: 8.416792
+      ...
+    # Subtest: missing stable-read drift evidence
+    ok 13 - missing stable-read drift evidence
+      ---
+      duration_ms: 6.749541
+      ...
+    # Subtest: manual verify action enforces the same complete post-query receipt
+    ok 14 - manual verify action enforces the same complete post-query receipt
+      ---
+      duration_ms: 10.492084
+      ...
+    # Subtest: unchanged snapshot keeps its more specific causal code when also incomplete
+    ok 15 - unchanged snapshot keeps its more specific causal code when also incomplete
+      ---
+      duration_ms: 8.745791
+      ...
+    1..15
+ok 74 - ready post snapshots fail closed under every receipt-completeness omission
+  ---
+  duration_ms: 130.252
+  ...
+# Subtest: label_absent pre snapshots require coherent two-read drift and external geometry
+    # Subtest: all per-anchor drift transitions removed
+    ok 1 - all per-anchor drift transitions removed
+      ---
+      duration_ms: 4.001917
+      ...
+    # Subtest: one per-anchor drift transition removed
+    ok 2 - one per-anchor drift transition removed
+      ---
+      duration_ms: 3.388209
+      ...
+    # Subtest: top-level count delta contradicts anchor-count delta
+    ok 3 - top-level count delta contradicts anchor-count delta
+      ---
+      duration_ms: 5.287333
+      ...
+    # Subtest: anchor-count delta contradicts summary
+    ok 4 - anchor-count delta contradicts summary
+      ---
+      duration_ms: 3.238875
+      ...
+    # Subtest: anchor-count policy contradicts effective policy
+    ok 5 - anchor-count policy contradicts effective policy
+      ---
+      duration_ms: 4.953959
+      ...
+    # Subtest: summary maximum contradicts per-anchor deltas
+    ok 6 - summary maximum contradicts per-anchor deltas
+      ---
+      duration_ms: 5.083041
+      ...
+    # Subtest: per-anchor label-change flag contradicts its labels
+    ok 7 - per-anchor label-change flag contradicts its labels
+      ---
+      duration_ms: 3.776292
+      ...
+    # Subtest: duplicate per-anchor transition leaves incomplete previous coverage
+    ok 8 - duplicate per-anchor transition leaves incomplete previous coverage
+      ---
+      duration_ms: 5.228791
+      ...
+    # Subtest: relative geometry artifact path
+    ok 9 - relative geometry artifact path
+      ---
+      duration_ms: 4.149125
+      ...
+    # Subtest: repository-internal geometry artifact path
+    ok 10 - repository-internal geometry artifact path
+      ---
+      duration_ms: 5.668792
+      ...
+    1..10
+ok 75 - label_absent pre snapshots require coherent two-read drift and external geometry
+  ---
+  duration_ms: 45.9165
+  ...
+# Subtest: label_absent pre-query errors must be present and exact
+    # Subtest: null
+    ok 1 - null
+      ---
+      duration_ms: 2.565083
+      ...
+    # Subtest: wrong
+    ok 2 - wrong
+      ---
+      duration_ms: 2.152792
+      ...
+    # Subtest: missing
+    ok 3 - missing
+      ---
+      duration_ms: 3.778458
+      ...
+    # Subtest: null refined receipt
+    ok 4 - null refined receipt
+      ---
+      duration_ms: 1.258542
+      ...
+    # Subtest: wrong refined receipt
+    ok 5 - wrong refined receipt
+      ---
+      duration_ms: 1.33075
+      ...
+    # Subtest: missing refined receipt
+    ok 6 - missing refined receipt
+      ---
+      duration_ms: 2.905709
+      ...
+    1..6
+ok 76 - label_absent pre-query errors must be present and exact
+  ---
+  duration_ms: 23.622916
+  ...
+# Subtest: output schema strictly validates the classified environment receipt
+ok 77 - output schema strictly validates the classified environment receipt
+  ---
+  duration_ms: 11.945875
+  ...
+# Subtest: selected_verified schema rejects every incomplete post-query receipt class
+    # Subtest: missing monotonic query time
+    ok 1 - missing monotonic query time
+      ---
+      duration_ms: 3.671458
+      ...
+    # Subtest: missing running tracking state
+    ok 2 - missing running tracking state
+      ---
+      duration_ms: 1.690208
+      ...
+    # Subtest: missing stable-read retry evidence
+    ok 3 - missing stable-read retry evidence
+      ---
+      duration_ms: 1.421792
+      ...
+    # Subtest: missing requested-label coverage
+    ok 4 - missing requested-label coverage
+      ---
+      duration_ms: 1.705666
+      ...
+    # Subtest: non-emulator boot identity
+    ok 5 - non-emulator boot identity
+      ---
+      duration_ms: 1.967416
+      ...
+    # Subtest: missing lossless external geometry
+    ok 6 - missing lossless external geometry
+      ---
+      duration_ms: 3.536459
+      ...
+    # Subtest: missing runtime-bind receipt
+    ok 7 - missing runtime-bind receipt
+      ---
+      duration_ms: 1.740417
+      ...
+    # Subtest: missing bridge-broadcast receipt
+    ok 8 - missing bridge-broadcast receipt
+      ---
+      duration_ms: 1.422708
+      ...
+    # Subtest: missing bridge-pull receipt
+    ok 9 - missing bridge-pull receipt
+      ---
+      duration_ms: 1.525667
+      ...
+    # Subtest: missing bridge-cleanup receipt
+    ok 10 - missing bridge-cleanup receipt
+      ---
+      duration_ms: 3.239959
+      ...
+    # Subtest: missing geometry-publication receipt
+    ok 11 - missing geometry-publication receipt
+      ---
+      duration_ms: 1.6215
+      ...
+    # Subtest: mismatched geometry-publication receipt
+    ok 12 - mismatched geometry-publication receipt
+      ---
+      duration_ms: 1.555416
+      ...
+    # Subtest: missing stable-read drift evidence
+    ok 13 - missing stable-read drift evidence
+      ---
+      duration_ms: 0.987416
+      ...
+    1..13
+ok 78 - selected_verified schema rejects every incomplete post-query receipt class
+  ---
+  duration_ms: 36.153709
+  ...
+# Subtest: authoritative Livingroom holdout receipt satisfies the complete final output contract
+ok 79 - authoritative Livingroom holdout receipt satisfies the complete final output contract
+  ---
+  duration_ms: 14.800333
+  ...
+# Subtest: output schema rejects missing markers and forged pre/marker/post ordering
+    # Subtest: switch marker is not later than pre WorldSpace
+    ok 1 - switch marker is not later than pre WorldSpace
+      ---
+      duration_ms: 0.769709
+      ...
+    # Subtest: switch post WorldSpace is not later than marker
+    ok 2 - switch post WorldSpace is not later than marker
+      ---
+      duration_ms: 1.303542
+      ...
+    # Subtest: selected verify marker is missing
+    ok 3 - selected verify marker is missing
+      ---
+      duration_ms: 0.779958
+      ...
+    # Subtest: selected verify post epoch contradicts raw row
+    ok 4 - selected verify post epoch contradicts raw row
+      ---
+      duration_ms: 0.679583
+      ...
+    # Subtest: verify post failure marker is missing
+    ok 5 - verify post failure marker is missing
+      ---
+      duration_ms: 2.244292
+      ...
+    1..5
+ok 80 - output schema rejects missing markers and forged pre/marker/post ordering
+  ---
+  duration_ms: 28.934916
+  ...
+# Subtest: coarse-scene post failures require a coherent observation strictly newer than the exact marker
+    # Subtest: switch schema rejects a coherent equal-marker observation
+    ok 1 - switch schema rejects a coherent equal-marker observation
+      ---
+      duration_ms: 0.851666
+      ...
+    # Subtest: switch registered handler rejects a coherent equal-marker observation
+    ok 2 - switch registered handler rejects a coherent equal-marker observation
+      ---
+      duration_ms: 1.027333
+      ...
+    # Subtest: switch schema rejects a coherent before-marker observation
+    ok 3 - switch schema rejects a coherent before-marker observation
+      ---
+      duration_ms: 0.9695
+      ...
+    # Subtest: switch registered handler rejects a coherent before-marker observation
+    ok 4 - switch registered handler rejects a coherent before-marker observation
+      ---
+      duration_ms: 0.840208
+      ...
+    # Subtest: verify schema rejects a coherent equal-marker observation
+    ok 5 - verify schema rejects a coherent equal-marker observation
+      ---
+      duration_ms: 0.211791
+      ...
+    # Subtest: verify registered handler rejects a coherent equal-marker observation
+    ok 6 - verify registered handler rejects a coherent equal-marker observation
+      ---
+      duration_ms: 0.143708
+      ...
+    # Subtest: verify schema rejects a coherent before-marker observation
+    ok 7 - verify schema rejects a coherent before-marker observation
+      ---
+      duration_ms: 0.0725
+      ...
+    # Subtest: verify registered handler rejects a coherent before-marker observation
+    ok 8 - verify registered handler rejects a coherent before-marker observation
+      ---
+      duration_ms: 0.188833
+      ...
+    1..8
+ok 81 - coarse-scene post failures require a coherent observation strictly newer than the exact marker
+  ---
+  duration_ms: 16.183375
+  ...
+# Subtest: output schema enforces status, action, and receipt relationships
+    # Subtest: ranked cannot masquerade as no_fit
+    ok 1 - ranked cannot masquerade as no_fit
+      ---
+      duration_ms: 0.316083
+      ...
+    # Subtest: ranked cannot masquerade as invalid_request
+    ok 2 - ranked cannot masquerade as invalid_request
+      ---
+      duration_ms: 0.117917
+      ...
+    # Subtest: ranked cannot masquerade as manual_switch_required
+    ok 3 - ranked cannot masquerade as manual_switch_required
+      ---
+      duration_ms: 0.064208
+      ...
+    # Subtest: ranked cannot masquerade as selected_verified
+    ok 4 - ranked cannot masquerade as selected_verified
+      ---
+      duration_ms: 0.03975
+      ...
+    # Subtest: ranked cannot masquerade as verification_failed
+    ok 5 - ranked cannot masquerade as verification_failed
+      ---
+      duration_ms: 0.038667
+      ...
+    # Subtest: no_fit cannot masquerade as ranked
+    ok 6 - no_fit cannot masquerade as ranked
+      ---
+      duration_ms: 0.029709
+      ...
+    # Subtest: no_fit cannot masquerade as invalid_request
+    ok 7 - no_fit cannot masquerade as invalid_request
+      ---
+      duration_ms: 0.028334
+      ...
+    # Subtest: no_fit cannot masquerade as manual_switch_required
+    ok 8 - no_fit cannot masquerade as manual_switch_required
+      ---
+      duration_ms: 0.0255
+      ...
+    # Subtest: no_fit cannot masquerade as selected_verified
+    ok 9 - no_fit cannot masquerade as selected_verified
+      ---
+      duration_ms: 0.027958
+      ...
+    # Subtest: no_fit cannot masquerade as verification_failed
+    ok 10 - no_fit cannot masquerade as verification_failed
+      ---
+      duration_ms: 0.193167
+      ...
+    # Subtest: invalid_request cannot masquerade as ranked
+    ok 11 - invalid_request cannot masquerade as ranked
+      ---
+      duration_ms: 0.127042
+      ...
+    # Subtest: invalid_request cannot masquerade as no_fit
+    ok 12 - invalid_request cannot masquerade as no_fit
+      ---
+      duration_ms: 0.042334
+      ...
+    # Subtest: invalid_request cannot masquerade as manual_switch_required
+    ok 13 - invalid_request cannot masquerade as manual_switch_required
+      ---
+      duration_ms: 0.03625
+      ...
+    # Subtest: invalid_request cannot masquerade as selected_verified
+    ok 14 - invalid_request cannot masquerade as selected_verified
+      ---
+      duration_ms: 0.031833
+      ...
+    # Subtest: invalid_request cannot masquerade as verification_failed
+    ok 15 - invalid_request cannot masquerade as verification_failed
+      ---
+      duration_ms: 0.033
+      ...
+    # Subtest: manual_switch_required cannot masquerade as ranked
+    ok 16 - manual_switch_required cannot masquerade as ranked
+      ---
+      duration_ms: 0.729667
+      ...
+    # Subtest: manual_switch_required cannot masquerade as no_fit
+    ok 17 - manual_switch_required cannot masquerade as no_fit
+      ---
+      duration_ms: 0.609625
+      ...
+    # Subtest: manual_switch_required cannot masquerade as invalid_request
+    ok 18 - manual_switch_required cannot masquerade as invalid_request
+      ---
+      duration_ms: 0.6685
+      ...
+    # Subtest: manual_switch_required cannot masquerade as selected_verified
+    ok 19 - manual_switch_required cannot masquerade as selected_verified
+      ---
+      duration_ms: 0.801542
+      ...
+    # Subtest: manual_switch_required cannot masquerade as verification_failed
+    ok 20 - manual_switch_required cannot masquerade as verification_failed
+      ---
+      duration_ms: 0.975208
+      ...
+    # Subtest: selected_verified cannot masquerade as ranked
+    ok 21 - selected_verified cannot masquerade as ranked
+      ---
+      duration_ms: 1.574
+      ...
+    # Subtest: selected_verified cannot masquerade as no_fit
+    ok 22 - selected_verified cannot masquerade as no_fit
+      ---
+      duration_ms: 3.133666
+      ...
+    # Subtest: selected_verified cannot masquerade as invalid_request
+    ok 23 - selected_verified cannot masquerade as invalid_request
+      ---
+      duration_ms: 1.5825
+      ...
+    # Subtest: selected_verified cannot masquerade as manual_switch_required
+    ok 24 - selected_verified cannot masquerade as manual_switch_required
+      ---
+      duration_ms: 1.709209
+      ...
+    # Subtest: selected_verified cannot masquerade as verification_failed
+    ok 25 - selected_verified cannot masquerade as verification_failed
+      ---
+      duration_ms: 1.77475
+      ...
+    # Subtest: verification_failed cannot masquerade as ranked
+    ok 26 - verification_failed cannot masquerade as ranked
+      ---
+      duration_ms: 0.854542
+      ...
+    # Subtest: verification_failed cannot masquerade as no_fit
+    ok 27 - verification_failed cannot masquerade as no_fit
+      ---
+      duration_ms: 0.967542
+      ...
+    # Subtest: verification_failed cannot masquerade as invalid_request
+    ok 28 - verification_failed cannot masquerade as invalid_request
+      ---
+      duration_ms: 0.796042
+      ...
+    # Subtest: verification_failed cannot masquerade as manual_switch_required
+    ok 29 - verification_failed cannot masquerade as manual_switch_required
+      ---
+      duration_ms: 2.372625
+      ...
+    # Subtest: verification_failed cannot masquerade as selected_verified
+    ok 30 - verification_failed cannot masquerade as selected_verified
+      ---
+      duration_ms: 0.875875
+      ...
+    # Subtest: ranked rejects null action
+    ok 31 - ranked rejects null action
+      ---
+      duration_ms: 0.215709
+      ...
+    # Subtest: ranked rejects switch action
+    ok 32 - ranked rejects switch action
+      ---
+      duration_ms: 0.105208
+      ...
+    # Subtest: ranked rejects verify action
+    ok 33 - ranked rejects verify action
+      ---
+      duration_ms: 0.050333
+      ...
+    # Subtest: no_fit rejects null action
+    ok 34 - no_fit rejects null action
+      ---
+      duration_ms: 0.033667
+      ...
+    # Subtest: manual_switch_required rejects null action
+    ok 35 - manual_switch_required rejects null action
+      ---
+      duration_ms: 1.866667
+      ...
+    # Subtest: manual_switch_required rejects rank action
+    ok 36 - manual_switch_required rejects rank action
+      ---
+      duration_ms: 0.600041
+      ...
+    # Subtest: manual_switch_required rejects verify action
+    ok 37 - manual_switch_required rejects verify action
+      ---
+      duration_ms: 0.478125
+      ...
+    # Subtest: selected_verified rejects null action
+    ok 38 - selected_verified rejects null action
+      ---
+      duration_ms: 1.000084
+      ...
+    # Subtest: selected_verified rejects rank action
+    ok 39 - selected_verified rejects rank action
+      ---
+      duration_ms: 1.044042
+      ...
+    # Subtest: verification_failed rejects null action
+    ok 40 - verification_failed rejects null action
+      ---
+      duration_ms: 6.004334
+      ...
+    # Subtest: verification_failed rejects rank action
+    ok 41 - verification_failed rejects rank action
+      ---
+      duration_ms: 0.701458
+      ...
+    # Subtest: invalid_request with completed ranking
+    ok 42 - invalid_request with completed ranking
+      ---
+      duration_ms: 0.195917
+      ...
+    # Subtest: invalid_request with runtime success receipts
+    ok 43 - invalid_request with runtime success receipts
+      ---
+      duration_ms: 0.857125
+      ...
+    # Subtest: selected_verified with rank action
+    ok 44 - selected_verified with rank action
+      ---
+      duration_ms: 0.807125
+      ...
+    # Subtest: selected_verified without baseline
+    ok 45 - selected_verified without baseline
+      ---
+      duration_ms: 0.769458
+      ...
+    # Subtest: selected_verified without verification
+    ok 46 - selected_verified without verification
+      ---
+      duration_ms: 0.0675
+      ...
+    # Subtest: ranked with runtime receipts
+    ok 47 - ranked with runtime receipts
+      ---
+      duration_ms: 2.613792
+      ...
+    # Subtest: manual without baseline
+    ok 48 - manual without baseline
+      ---
+      duration_ms: 0.420167
+      ...
+    # Subtest: manual without host receipt
+    ok 49 - manual without host receipt
+      ---
+      duration_ms: 0.58675
+      ...
+    # Subtest: manual with observed host receipt
+    ok 50 - manual with observed host receipt
+      ---
+      duration_ms: 0.606042
+      ...
+    # Subtest: verification_failed without error receipt
+    ok 51 - verification_failed without error receipt
+      ---
+      duration_ms: 0.457167
+      ...
+    # Subtest: verification_failed without verification receipt
+    ok 52 - verification_failed without verification receipt
+      ---
+      duration_ms: 0.061292
+      ...
+    1..52
+ok 82 - output schema enforces status, action, and receipt relationships
+  ---
+  duration_ms: 75.680625
+  ...
+# Subtest: registered handler rejects an impossible refined output before structuredContent escapes
+ok 83 - registered handler rejects an impossible refined output before structuredContent escapes
+  ---
+  duration_ms: 1.270709
+  ...
+# Subtest: registered verify binds every returned marker field to the exact caller receipt
+    # Subtest: rejects a coherent same-nonce epoch/raw-row swap before content escapes
+    ok 1 - rejects a coherent same-nonce epoch/raw-row swap before content escapes
+      ---
+      duration_ms: 3.344875
+      ...
+    # Subtest: preserves a valid no-fit verify output with no marker receipt
+    ok 2 - preserves a valid no-fit verify output with no marker receipt
+      ---
+      duration_ms: 1.733125
+      ...
+    # Subtest: preserves a relational pre-validation failure with no marker receipt
+    ok 3 - preserves a relational pre-validation failure with no marker receipt
+      ---
+      duration_ms: 0.96625
+      ...
+    1..3
+ok 84 - registered verify binds every returned marker field to the exact caller receipt
+  ---
+  duration_ms: 18.455375
+  ...
+# Subtest: registered boundary binds the returned envelope to the exact parsed request
+    # Subtest: rejects a verify request paired with a schema-valid switch result
+    ok 1 - rejects a verify request paired with a schema-valid switch result
+      ---
+      duration_ms: 2.520709
+      ...
+    # Subtest: binds actions for non-verify calls too
+    ok 2 - binds actions for non-verify calls too
+      ---
+      duration_ms: 1.478208
+      ...
+    # Subtest: rejects a same-action verify runtime substitution
+    ok 3 - rejects a same-action verify runtime substitution
+      ---
+      duration_ms: 1.599334
+      ...
+    # Subtest: rejects a markerless no-fit baseline substitution
+    ok 4 - rejects a markerless no-fit baseline substitution
+      ---
+      duration_ms: 1.332666
+      ...
+    # Subtest: rejects a coherent dataset-digest substitution against the exact caller baseline
+    ok 5 - rejects a coherent dataset-digest substitution against the exact caller baseline
+      ---
+      duration_ms: 1.519709
+      ...
+    # Subtest: rejects a markerless relational-invalid baseline substitution
+    ok 6 - rejects a markerless relational-invalid baseline substitution
+      ---
+      duration_ms: 0.191417
+      ...
+    # Subtest: requires a returned baseline even for relational invalid_request
+    ok 7 - requires a returned baseline even for relational invalid_request
+      ---
+      duration_ms: 0.084708
+      ...
+    1..7
+ok 85 - registered boundary binds the returned envelope to the exact parsed request
+  ---
+  duration_ms: 14.462583
+  ...
+# Subtest: every real verification failure identifies its causal phase
+    # Subtest: pre_world_space
+    ok 1 - pre_world_space
+      ---
+      duration_ms: 0.268459
+      ...
+    # Subtest: pre_query
+    ok 2 - pre_query
+      ---
+      duration_ms: 0.124584
+      ...
+    # Subtest: marker
+    ok 3 - marker
+      ---
+      duration_ms: 0.62075
+      ...
+    # Subtest: host_selection
+    ok 4 - host_selection
+      ---
+      duration_ms: 2.323875
+      ...
+    # Subtest: post_world_space
+    ok 5 - post_world_space
+      ---
+      duration_ms: 0.929167
+      ...
+    # Subtest: post_query
+    ok 6 - post_query
+      ---
+      duration_ms: 1.197666
+      ...
+    # Subtest: classification
+    ok 7 - classification
+      ---
+      duration_ms: 1.284333
+      ...
+    # Subtest: verify_post_world_space
+    ok 8 - verify_post_world_space
+      ---
+      duration_ms: 0.158542
+      ...
+    # Subtest: verify_post_query
+    ok 9 - verify_post_query
+      ---
+      duration_ms: 0.468583
+      ...
+    # Subtest: verify_classification
+    ok 10 - verify_classification
+      ---
+      duration_ms: 0.950083
+      ...
+    1..10
+ok 86 - every real verification failure identifies its causal phase
+  ---
+  duration_ms: 58.237542
+  ...
+# Subtest: observation failure codes reject every pairwise swap at both real attempt phases
+    # Subtest: pre observation failed: world_space_observation_failed -> world_space_observation_invalid
+    ok 1 - pre observation failed: world_space_observation_failed -> world_space_observation_invalid
+      ---
+      duration_ms: 0.251583
+      ...
+    # Subtest: pre observation failed: world_space_observation_failed -> world_space_observation_missing
+    ok 2 - pre observation failed: world_space_observation_failed -> world_space_observation_missing
+      ---
+      duration_ms: 0.064708
+      ...
+    # Subtest: pre observation invalid: world_space_observation_invalid -> world_space_observation_failed
+    ok 3 - pre observation invalid: world_space_observation_invalid -> world_space_observation_failed
+      ---
+      duration_ms: 0.057959
+      ...
+    # Subtest: pre observation invalid: world_space_observation_invalid -> world_space_observation_missing
+    ok 4 - pre observation invalid: world_space_observation_invalid -> world_space_observation_missing
+      ---
+      duration_ms: 0.045125
+      ...
+    # Subtest: pre observation missing: world_space_observation_missing -> world_space_observation_failed
+    ok 5 - pre observation missing: world_space_observation_missing -> world_space_observation_failed
+      ---
+      duration_ms: 0.048292
+      ...
+    # Subtest: pre observation missing: world_space_observation_missing -> world_space_observation_invalid
+    ok 6 - pre observation missing: world_space_observation_missing -> world_space_observation_invalid
+      ---
+      duration_ms: 0.170416
+      ...
+    # Subtest: post observation failed: world_space_observation_failed -> world_space_observation_invalid
+    ok 7 - post observation failed: world_space_observation_failed -> world_space_observation_invalid
+      ---
+      duration_ms: 0.680208
+      ...
+    # Subtest: post observation failed: world_space_observation_failed -> world_space_observation_missing
+    ok 8 - post observation failed: world_space_observation_failed -> world_space_observation_missing
+      ---
+      duration_ms: 0.829875
+      ...
+    # Subtest: post observation invalid: world_space_observation_invalid -> world_space_observation_failed
+    ok 9 - post observation invalid: world_space_observation_invalid -> world_space_observation_failed
+      ---
+      duration_ms: 0.693791
+      ...
+    # Subtest: post observation invalid: world_space_observation_invalid -> world_space_observation_missing
+    ok 10 - post observation invalid: world_space_observation_invalid -> world_space_observation_missing
+      ---
+      duration_ms: 0.801542
+      ...
+    # Subtest: post observation missing: world_space_observation_missing -> world_space_observation_failed
+    ok 11 - post observation missing: world_space_observation_missing -> world_space_observation_failed
+      ---
+      duration_ms: 0.949416
+      ...
+    # Subtest: post observation missing: world_space_observation_missing -> world_space_observation_invalid
+    ok 12 - post observation missing: world_space_observation_missing -> world_space_observation_invalid
+      ---
+      duration_ms: 0.988834
+      ...
+    # Subtest: verify post observation missing: world_space_observation_missing -> world_space_observation_failed
+    ok 13 - verify post observation missing: world_space_observation_missing -> world_space_observation_failed
+      ---
+      duration_ms: 0.233958
+      ...
+    # Subtest: verify post observation missing: world_space_observation_missing -> world_space_observation_invalid
+    ok 14 - verify post observation missing: world_space_observation_missing -> world_space_observation_invalid
+      ---
+      duration_ms: 0.149875
+      ...
+    1..14
+ok 87 - observation failure codes reject every pairwise swap at both real attempt phases
+  ---
+  duration_ms: 308.908917
+  ...
+# Subtest: registered handler rejects every pairwise observation-code escape
+    # Subtest: pre observation failed: world_space_observation_failed -> world_space_observation_invalid
+    ok 1 - pre observation failed: world_space_observation_failed -> world_space_observation_invalid
+      ---
+      duration_ms: 0.404959
+      ...
+    # Subtest: pre observation failed: world_space_observation_failed -> world_space_observation_missing
+    ok 2 - pre observation failed: world_space_observation_failed -> world_space_observation_missing
+      ---
+      duration_ms: 0.266583
+      ...
+    # Subtest: pre observation invalid: world_space_observation_invalid -> world_space_observation_failed
+    ok 3 - pre observation invalid: world_space_observation_invalid -> world_space_observation_failed
+      ---
+      duration_ms: 0.179459
+      ...
+    # Subtest: pre observation invalid: world_space_observation_invalid -> world_space_observation_missing
+    ok 4 - pre observation invalid: world_space_observation_invalid -> world_space_observation_missing
+      ---
+      duration_ms: 0.079708
+      ...
+    # Subtest: pre observation missing: world_space_observation_missing -> world_space_observation_failed
+    ok 5 - pre observation missing: world_space_observation_missing -> world_space_observation_failed
+      ---
+      duration_ms: 0.063
+      ...
+    # Subtest: pre observation missing: world_space_observation_missing -> world_space_observation_invalid
+    ok 6 - pre observation missing: world_space_observation_missing -> world_space_observation_invalid
+      ---
+      duration_ms: 0.059291
+      ...
+    # Subtest: post observation failed: world_space_observation_failed -> world_space_observation_invalid
+    ok 7 - post observation failed: world_space_observation_failed -> world_space_observation_invalid
+      ---
+      duration_ms: 1.034542
+      ...
+    # Subtest: post observation failed: world_space_observation_failed -> world_space_observation_missing
+    ok 8 - post observation failed: world_space_observation_failed -> world_space_observation_missing
+      ---
+      duration_ms: 0.861792
+      ...
+    # Subtest: post observation invalid: world_space_observation_invalid -> world_space_observation_failed
+    ok 9 - post observation invalid: world_space_observation_invalid -> world_space_observation_failed
+      ---
+      duration_ms: 2.907625
+      ...
+    # Subtest: post observation invalid: world_space_observation_invalid -> world_space_observation_missing
+    ok 10 - post observation invalid: world_space_observation_invalid -> world_space_observation_missing
+      ---
+      duration_ms: 0.82175
+      ...
+    # Subtest: post observation missing: world_space_observation_missing -> world_space_observation_failed
+    ok 11 - post observation missing: world_space_observation_missing -> world_space_observation_failed
+      ---
+      duration_ms: 0.723542
+      ...
+    # Subtest: post observation missing: world_space_observation_missing -> world_space_observation_invalid
+    ok 12 - post observation missing: world_space_observation_missing -> world_space_observation_invalid
+      ---
+      duration_ms: 0.736167
+      ...
+    # Subtest: verify post observation missing: world_space_observation_missing -> world_space_observation_failed
+    ok 13 - verify post observation missing: world_space_observation_missing -> world_space_observation_failed
+      ---
+      duration_ms: 0.181
+      ...
+    # Subtest: verify post observation missing: world_space_observation_missing -> world_space_observation_invalid
+    ok 14 - verify post observation missing: world_space_observation_missing -> world_space_observation_invalid
+      ---
+      duration_ms: 0.218458
+      ...
+    1..14
+ok 88 - registered handler rejects every pairwise observation-code escape
+  ---
+  duration_ms: 9.526917
+  ...
+# Subtest: every real observation call records an action-appropriate strict attempt receipt
+    # Subtest: pre missing
+    ok 1 - pre missing
+      ---
+      duration_ms: 0.10775
+      ...
+    # Subtest: pre invalid
+    ok 2 - pre invalid
+      ---
+      duration_ms: 0.050042
+      ...
+    # Subtest: pre failed
+    ok 3 - pre failed
+      ---
+      duration_ms: 0.029167
+      ...
+    # Subtest: pre-query failure
+    ok 4 - pre-query failure
+      ---
+      duration_ms: 0.023667
+      ...
+    # Subtest: manual switch
+    ok 5 - manual switch
+      ---
+      duration_ms: 0.0195
+      ...
+    # Subtest: post missing
+    ok 6 - post missing
+      ---
+      duration_ms: 0.018542
+      ...
+    # Subtest: post invalid
+    ok 7 - post invalid
+      ---
+      duration_ms: 0.055458
+      ...
+    # Subtest: post failed
+    ok 8 - post failed
+      ---
+      duration_ms: 0.042875
+      ...
+    # Subtest: post-query failure
+    ok 9 - post-query failure
+      ---
+      duration_ms: 0.028584
+      ...
+    # Subtest: selected switch
+    ok 10 - selected switch
+      ---
+      duration_ms: 0.0465
+      ...
+    # Subtest: selected verify
+    ok 11 - selected verify
+      ---
+      duration_ms: 0.047833
+      ...
+    # Subtest: failed verify
+    ok 12 - failed verify
+      ---
+      duration_ms: 0.036792
+      ...
+    1..12
+ok 89 - every real observation call records an action-appropriate strict attempt receipt
+  ---
+  duration_ms: 19.518834
+  ...
+# Subtest: observation failure codes reject schema-valid attempt-outcome swaps
+    # Subtest: pre observation failed: failed -> invalid
+    ok 1 - pre observation failed: failed -> invalid
+      ---
+      duration_ms: 0.284667
+      ...
+    # Subtest: pre observation failed: failed -> missing
+    ok 2 - pre observation failed: failed -> missing
+      ---
+      duration_ms: 0.158792
+      ...
+    # Subtest: pre observation invalid: invalid -> failed
+    ok 3 - pre observation invalid: invalid -> failed
+      ---
+      duration_ms: 0.0605
+      ...
+    # Subtest: pre observation invalid: invalid -> missing
+    ok 4 - pre observation invalid: invalid -> missing
+      ---
+      duration_ms: 0.112958
+      ...
+    # Subtest: pre observation missing: missing -> failed
+    ok 5 - pre observation missing: missing -> failed
+      ---
+      duration_ms: 0.058917
+      ...
+    # Subtest: pre observation missing: missing -> invalid
+    ok 6 - pre observation missing: missing -> invalid
+      ---
+      duration_ms: 0.04775
+      ...
+    # Subtest: post observation failed: failed -> invalid
+    ok 7 - post observation failed: failed -> invalid
+      ---
+      duration_ms: 0.715916
+      ...
+    # Subtest: post observation failed: failed -> missing
+    ok 8 - post observation failed: failed -> missing
+      ---
+      duration_ms: 0.62525
+      ...
+    # Subtest: post observation invalid: invalid -> failed
+    ok 9 - post observation invalid: invalid -> failed
+      ---
+      duration_ms: 2.324209
+      ...
+    # Subtest: post observation invalid: invalid -> missing
+    ok 10 - post observation invalid: invalid -> missing
+      ---
+      duration_ms: 0.786666
+      ...
+    # Subtest: post observation missing: missing -> failed
+    ok 11 - post observation missing: missing -> failed
+      ---
+      duration_ms: 0.682708
+      ...
+    # Subtest: post observation missing: missing -> invalid
+    ok 12 - post observation missing: missing -> invalid
+      ---
+      duration_ms: 0.6665
+      ...
+    # Subtest: verify post observation missing: missing -> failed
+    ok 13 - verify post observation missing: missing -> failed
+      ---
+      duration_ms: 0.095042
+      ...
+    # Subtest: verify post observation missing: missing -> invalid
+    ok 14 - verify post observation missing: missing -> invalid
+      ---
+      duration_ms: 0.056166
+      ...
+    1..14
+ok 90 - observation failure codes reject schema-valid attempt-outcome swaps
+  ---
+  duration_ms: 7.431
+  ...
+# Subtest: observation attempt schema rejects phase, observation-presence, and diagnostic contradictions
+    # Subtest: observed without observation
+    ok 1 - observed without observation
+      ---
+      duration_ms: 1.43325
+      ...
+    # Subtest: observed with diagnostic
+    ok 2 - observed with diagnostic
+      ---
+      duration_ms: 1.490833
+      ...
+    # Subtest: missing with observation
+    ok 3 - missing with observation
+      ---
+      duration_ms: 0.153333
+      ...
+    # Subtest: missing with diagnostic
+    ok 4 - missing with diagnostic
+      ---
+      duration_ms: 2.467959
+      ...
+    # Subtest: invalid with observation
+    ok 5 - invalid with observation
+      ---
+      duration_ms: 0.258417
+      ...
+    # Subtest: invalid without diagnostic
+    ok 6 - invalid without diagnostic
+      ---
+      duration_ms: 0.648458
+      ...
+    # Subtest: failed with observation
+    ok 7 - failed with observation
+      ---
+      duration_ms: 0.126916
+      ...
+    # Subtest: failed without diagnostic
+    ok 8 - failed without diagnostic
+      ---
+      duration_ms: 0.633791
+      ...
+    # Subtest: pre field with post phase
+    ok 9 - pre field with post phase
+      ---
+      duration_ms: 1.720292
+      ...
+    # Subtest: post field with pre phase
+    ok 10 - post field with pre phase
+      ---
+      duration_ms: 1.551292
+      ...
+    # Subtest: oversized bounded diagnostic
+    ok 11 - oversized bounded diagnostic
+      ---
+      duration_ms: 0.228625
+      ...
+    1..11
+ok 91 - observation attempt schema rejects phase, observation-presence, and diagnostic contradictions
+  ---
+  duration_ms: 19.284125
+  ...
+# Subtest: observation failure diagnostics are deterministic, bounded, and redact thrown values
+ok 92 - observation failure diagnostics are deterministic, bounded, and redact thrown values
+  ---
+  duration_ms: 1.881917
+  ...
+# Subtest: real verification failures retain the runtime and selected-target receipts needed for relational validation
+ok 93 - real verification failures retain the runtime and selected-target receipts needed for relational validation
+  ---
+  duration_ms: 0.316459
+  ...
+# Subtest: failure receipt matrix rejects every error code when its observable receipt no longer exhibits that failure
+    # Subtest: pre observation failed
+    ok 1 - pre observation failed
+      ---
+      duration_ms: 0.186458
+      ...
+    # Subtest: pre observation invalid
+    ok 2 - pre observation invalid
+      ---
+      duration_ms: 0.080375
+      ...
+    # Subtest: pre observation missing
+    ok 3 - pre observation missing
+      ---
+      duration_ms: 0.065416
+      ...
+    # Subtest: pre bridge result invalid
+    ok 4 - pre bridge result invalid
+      ---
+      duration_ms: 0.707125
+      ...
+    # Subtest: pre terminal label_absent
+    ok 5 - pre terminal label_absent
+      ---
+      duration_ms: 2.393708
+      ...
+    # Subtest: pre terminal not_ready
+    ok 6 - pre terminal not_ready
+      ---
+      duration_ms: 0.874667
+      ...
+    # Subtest: pre terminal stage_not_open
+    ok 7 - pre terminal stage_not_open
+      ---
+      duration_ms: 0.715875
+      ...
+    # Subtest: pre terminal bridge_unavailable
+    ok 8 - pre terminal bridge_unavailable
+      ---
+      duration_ms: 0.703
+      ...
+    # Subtest: pre terminal stage_mismatch
+    ok 9 - pre terminal stage_mismatch
+      ---
+      duration_ms: 0.691
+      ...
+    # Subtest: pre terminal invalid_payload
+    ok 10 - pre terminal invalid_payload
+      ---
+      duration_ms: 0.639542
+      ...
+    # Subtest: pre terminal binding_failed
+    ok 11 - pre terminal binding_failed
+      ---
+      duration_ms: 0.783167
+      ...
+    # Subtest: pre identity binding
+    ok 12 - pre identity binding
+      ---
+      duration_ms: 1.038541
+      ...
+    # Subtest: pre identity serial
+    ok 13 - pre identity serial
+      ---
+      duration_ms: 1.054667
+      ...
+    # Subtest: pre identity package
+    ok 14 - pre identity package
+      ---
+      duration_ms: 1.131
+      ...
+    # Subtest: pre identity receipt
+    ok 15 - pre identity receipt
+      ---
+      duration_ms: 2.577125
+      ...
+    # Subtest: pre identity stage
+    ok 16 - pre identity stage
+      ---
+      duration_ms: 1.154958
+      ...
+    # Subtest: pre identity root
+    ok 17 - pre identity root
+      ---
+      duration_ms: 1.044958
+      ...
+    # Subtest: pre drift policy mismatch
+    ok 18 - pre drift policy mismatch
+      ---
+      duration_ms: 1.024833
+      ...
+    # Subtest: pre drift out of policy
+    ok 19 - pre drift out of policy
+      ---
+      duration_ms: 0.80425
+      ...
+    # Subtest: pre snapshot missing
+    ok 20 - pre snapshot missing
+      ---
+      duration_ms: 0.853958
+      ...
+    # Subtest: pre coarse scene mismatch
+    ok 21 - pre coarse scene mismatch
+      ---
+      duration_ms: 0.712125
+      ...
+    # Subtest: marker command failed
+    ok 22 - marker command failed
+      ---
+      duration_ms: 0.65275
+      ...
+    # Subtest: marker receipt mismatch
+    ok 23 - marker receipt mismatch
+      ---
+      duration_ms: 0.55575
+      ...
+    # Subtest: host result invalid
+    ok 24 - host result invalid
+      ---
+      duration_ms: 0.714042
+      ...
+    # Subtest: host target mismatch
+    ok 25 - host target mismatch
+      ---
+      duration_ms: 0.888375
+      ...
+    # Subtest: host selection not observed
+    ok 26 - host selection not observed
+      ---
+      duration_ms: 2.566625
+      ...
+    # Subtest: post observation failed
+    ok 27 - post observation failed
+      ---
+      duration_ms: 1.125375
+      ...
+    # Subtest: post observation invalid
+    ok 28 - post observation invalid
+      ---
+      duration_ms: 1.128
+      ...
+    # Subtest: post observation missing
+    ok 29 - post observation missing
+      ---
+      duration_ms: 1.22975
+      ...
+    # Subtest: post coarse scene mismatch
+    ok 30 - post coarse scene mismatch
+      ---
+      duration_ms: 0.94525
+      ...
+    # Subtest: post bridge result invalid
+    ok 31 - post bridge result invalid
+      ---
+      duration_ms: 1.828708
+      ...
+    # Subtest: post terminal label_absent
+    ok 32 - post terminal label_absent
+      ---
+      duration_ms: 2.001916
+      ...
+    # Subtest: post terminal not_ready
+    ok 33 - post terminal not_ready
+      ---
+      duration_ms: 3.150209
+      ...
+    # Subtest: post terminal stage_not_open
+    ok 34 - post terminal stage_not_open
+      ---
+      duration_ms: 1.6465
+      ...
+    # Subtest: post terminal bridge_unavailable
+    ok 35 - post terminal bridge_unavailable
+      ---
+      duration_ms: 1.451375
+      ...
+    # Subtest: post terminal stage_mismatch
+    ok 36 - post terminal stage_mismatch
+      ---
+      duration_ms: 1.401042
+      ...
+    # Subtest: post terminal invalid_payload
+    ok 37 - post terminal invalid_payload
+      ---
+      duration_ms: 3.122167
+      ...
+    # Subtest: post terminal binding_failed
+    ok 38 - post terminal binding_failed
+      ---
+      duration_ms: 1.553667
+      ...
+    # Subtest: post identity binding
+    ok 39 - post identity binding
+      ---
+      duration_ms: 2.085
+      ...
+    # Subtest: post identity serial
+    ok 40 - post identity serial
+      ---
+      duration_ms: 1.630334
+      ...
+    # Subtest: post identity package
+    ok 41 - post identity package
+      ---
+      duration_ms: 2.070292
+      ...
+    # Subtest: post identity receipt
+    ok 42 - post identity receipt
+      ---
+      duration_ms: 3.298167
+      ...
+    # Subtest: post identity boot
+    ok 43 - post identity boot
+      ---
+      duration_ms: 1.877542
+      ...
+    # Subtest: post identity stage
+    ok 44 - post identity stage
+      ---
+      duration_ms: 1.818416
+      ...
+    # Subtest: post identity root
+    ok 45 - post identity root
+      ---
+      duration_ms: 1.760625
+      ...
+    # Subtest: post drift policy mismatch
+    ok 46 - post drift policy mismatch
+      ---
+      duration_ms: 3.447167
+      ...
+    # Subtest: post drift out of policy
+    ok 47 - post drift out of policy
+      ---
+      duration_ms: 2.330375
+      ...
+    # Subtest: post snapshot missing
+    ok 48 - post snapshot missing
+      ---
+      duration_ms: 1.964709
+      ...
+    # Subtest: post snapshot unchanged
+    ok 49 - post snapshot unchanged
+      ---
+      duration_ms: 1.723625
+      ...
+    # Subtest: classification no match
+    ok 50 - classification no match
+      ---
+      duration_ms: 3.185792
+      ...
+    # Subtest: classification ambiguous
+    ok 51 - classification ambiguous
+      ---
+      duration_ms: 1.381458
+      ...
+    # Subtest: post ready receipt incomplete requested labels
+    ok 52 - post ready receipt incomplete requested labels
+      ---
+      duration_ms: 1.778916
+      ...
+    # Subtest: classification extent mismatch
+    ok 53 - classification extent mismatch
+      ---
+      duration_ms: 1.268125
+      ...
+    # Subtest: wrong unique environment
+    ok 54 - wrong unique environment
+      ---
+      duration_ms: 1.895625
+      ...
+    # Subtest: verify post observation missing
+    ok 55 - verify post observation missing
+      ---
+      duration_ms: 0.307
+      ...
+    # Subtest: verify post snapshot unchanged
+    ok 56 - verify post snapshot unchanged
+      ---
+      duration_ms: 2.8935
+      ...
+    # Subtest: verify wrong unique environment
+    ok 57 - verify wrong unique environment
+      ---
+      duration_ms: 1.290042
+      ...
+    1..57
+ok 94 - failure receipt matrix rejects every error code when its observable receipt no longer exhibits that failure
+  ---
+  duration_ms: 87.183292
+  ...
+# Subtest: phase prerequisite matrix rejects contradictory receipt contents
+    # Subtest: marker runtime serial must bind its baseline
+    ok 1 - marker runtime serial must bind its baseline
+      ---
+      duration_ms: 0.560375
+      ...
+    # Subtest: marker target scene must bind the observed context
+    ok 2 - marker target scene must bind the observed context
+      ---
+      duration_ms: 0.650709
+      ...
+    # Subtest: marker baseline dataset must bind the dataset receipt
+    ok 3 - marker baseline dataset must bind the dataset receipt
+      ---
+      duration_ms: 0.656459
+      ...
+    # Subtest: marker baseline serial must bind runtime
+    ok 4 - marker baseline serial must bind runtime
+      ---
+      duration_ms: 0.760375
+      ...
+    # Subtest: marker baseline package must bind runtime
+    ok 5 - marker baseline package must bind runtime
+      ---
+      duration_ms: 0.867583
+      ...
+    # Subtest: marker baseline build receipt must bind runtime
+    ok 6 - marker baseline build receipt must bind runtime
+      ---
+      duration_ms: 0.825708
+      ...
+    # Subtest: marker baseline boot must bind the ready pre-query
+    ok 7 - marker baseline boot must bind the ready pre-query
+      ---
+      duration_ms: 0.537917
+      ...
+    # Subtest: marker baseline snapshot must bind the ready pre-query
+    ok 8 - marker baseline snapshot must bind the ready pre-query
+      ---
+      duration_ms: 0.710291
+      ...
+    # Subtest: marker pre WorldSpace scene must match the selected target
+    ok 9 - marker pre WorldSpace scene must match the selected target
+      ---
+      duration_ms: 2.186
+      ...
+    # Subtest: marker pre-query serial identity must match runtime
+    ok 10 - marker pre-query serial identity must match runtime
+      ---
+      duration_ms: 0.712334
+      ...
+    # Subtest: marker pre-query package identity must match runtime
+    ok 11 - marker pre-query package identity must match runtime
+      ---
+      duration_ms: 0.511834
+      ...
+    # Subtest: marker pre-query build receipt must match runtime
+    ok 12 - marker pre-query build receipt must match runtime
+      ---
+      duration_ms: 0.464458
+      ...
+    # Subtest: marker pre-query boot must match baseline
+    ok 13 - marker pre-query boot must match baseline
+      ---
+      duration_ms: 0.448459
+      ...
+    # Subtest: marker pre-query stage must match runtime
+    ok 14 - marker pre-query stage must match runtime
+      ---
+      duration_ms: 0.436167
+      ...
+    # Subtest: marker pre-query root must remain stage
+    ok 15 - marker pre-query root must remain stage
+      ---
+      duration_ms: 0.518958
+      ...
+    # Subtest: marker pre-query configured drift policy must match
+    ok 16 - marker pre-query configured drift policy must match
+      ---
+      duration_ms: 0.702875
+      ...
+    # Subtest: marker pre-query echoed drift policy must match
+    ok 17 - marker pre-query echoed drift policy must match
+      ---
+      duration_ms: 0.683292
+      ...
+    # Subtest: marker pre-query drift must be within policy
+    ok 18 - marker pre-query drift must be within policy
+      ---
+      duration_ms: 0.679833
+      ...
+    # Subtest: host failure marker serial must bind runtime
+    ok 19 - host failure marker serial must bind runtime
+      ---
+      duration_ms: 1.07575
+      ...
+    # Subtest: host failure marker nonce must bind baseline snapshot
+    ok 20 - host failure marker nonce must bind baseline snapshot
+      ---
+      duration_ms: 2.39525
+      ...
+    # Subtest: host failure marker message must bind baseline snapshot
+    ok 21 - host failure marker message must bind baseline snapshot
+      ---
+      duration_ms: 0.886917
+      ...
+    # Subtest: post WorldSpace requires the exact selected-dialog hash receipt
+    ok 22 - post WorldSpace requires the exact selected-dialog hash receipt
+      ---
+      duration_ms: 0.80375
+      ...
+    # Subtest: post query requires a matching WorldSpace scene
+    ok 23 - post query requires a matching WorldSpace scene
+      ---
+      duration_ms: 1.443208
+      ...
+    # Subtest: classification requires post-query serial identity
+    ok 24 - classification requires post-query serial identity
+      ---
+      duration_ms: 1.722125
+      ...
+    # Subtest: classification requires post-query drift policy
+    ok 25 - classification requires post-query drift policy
+      ---
+      duration_ms: 1.487
+      ...
+    # Subtest: classification requires post-query drift within policy
+    ok 26 - classification requires post-query drift within policy
+      ---
+      duration_ms: 2.977334
+      ...
+    # Subtest: verify baseline serial must bind runtime
+    ok 27 - verify baseline serial must bind runtime
+      ---
+      duration_ms: 0.641958
+      ...
+    1..27
+ok 95 - phase prerequisite matrix rejects contradictory receipt contents
+  ---
+  duration_ms: 28.231125
+  ...
+# Subtest: registered handler rejects contradictory failure receipts before structuredContent escapes
+    # Subtest: marker serial is not receipt-bound
+    ok 1 - marker serial is not receipt-bound
+      ---
+      duration_ms: 1.213
+      ...
+    # Subtest: identity error has an identity-correct ready query
+    ok 2 - identity error has an identity-correct ready query
+      ---
+      duration_ms: 1.066417
+      ...
+    # Subtest: not-observed error carries a manual host result
+    ok 3 - not-observed error carries a manual host result
+      ---
+      duration_ms: 1.0505
+      ...
+    1..3
+ok 96 - registered handler rejects contradictory failure receipts before structuredContent escapes
+  ---
+  duration_ms: 3.886542
+  ...
+# Subtest: failure phases reject missing prerequisites and downstream receipts
+    # Subtest: pre WorldSpace cannot carry a post observation
+    ok 1 - pre WorldSpace cannot carry a post observation
+      ---
+      duration_ms: 0.291625
+      ...
+    # Subtest: pre query cannot carry a baseline
+    ok 2 - pre query cannot carry a baseline
+      ---
+      duration_ms: 0.211167
+      ...
+    # Subtest: marker cannot lose its baseline prerequisite
+    ok 3 - marker cannot lose its baseline prerequisite
+      ---
+      duration_ms: 0.541542
+      ...
+    # Subtest: marker cannot carry a downstream host receipt
+    ok 4 - marker cannot carry a downstream host receipt
+      ---
+      duration_ms: 2.51325
+      ...
+    # Subtest: host selection cannot lose its marker prerequisite
+    ok 5 - host selection cannot lose its marker prerequisite
+      ---
+      duration_ms: 0.528084
+      ...
+    # Subtest: post WorldSpace cannot carry post-query success evidence
+    ok 6 - post WorldSpace cannot carry post-query success evidence
+      ---
+      duration_ms: 1.268
+      ...
+    # Subtest: post query cannot carry a downstream successful classification
+    ok 7 - post query cannot carry a downstream successful classification
+      ---
+      duration_ms: 1.255083
+      ...
+    # Subtest: classification cannot lose its post-WorldSpace prerequisite
+    ok 8 - classification cannot lose its post-WorldSpace prerequisite
+      ---
+      duration_ms: 1.090583
+      ...
+    # Subtest: verify post WorldSpace cannot carry post-query success evidence
+    ok 9 - verify post WorldSpace cannot carry post-query success evidence
+      ---
+      duration_ms: 0.499208
+      ...
+    # Subtest: verify post query cannot carry a downstream successful classification
+    ok 10 - verify post query cannot carry a downstream successful classification
+      ---
+      duration_ms: 0.528542
+      ...
+    # Subtest: verify classification cannot lose its post-WorldSpace prerequisite
+    ok 11 - verify classification cannot lose its post-WorldSpace prerequisite
+      ---
+      duration_ms: 2.224209
+      ...
+    1..11
+ok 97 - failure phases reject missing prerequisites and downstream receipts
+  ---
+  duration_ms: 78.120208
+  ...
+# Subtest: registered handler blocks near-success failures with a missing prerequisite
+    # Subtest: baseline
+    ok 1 - baseline
+      ---
+      duration_ms: 1.1625
+      ...
+    # Subtest: post WorldSpace
+    ok 2 - post WorldSpace
+      ---
+      duration_ms: 1.198083
+      ...
+    1..2
+ok 98 - registered handler blocks near-success failures with a missing prerequisite
+  ---
+  duration_ms: 67.096125
+  ...
+# Subtest: verify accepts only the matching returned baseline and performs no host action
+    # Subtest: rejects dataset mismatch
+    ok 1 - rejects dataset mismatch
+      ---
+      duration_ms: 1.261667
+      ...
+    # Subtest: rejects serial mismatch
+    ok 2 - rejects serial mismatch
+      ---
+      duration_ms: 1.314042
+      ...
+    # Subtest: rejects package mismatch
+    ok 3 - rejects package mismatch
+      ---
+      duration_ms: 1.214917
+      ...
+    # Subtest: rejects receipt mismatch
+    ok 4 - rejects receipt mismatch
+      ---
+      duration_ms: 1.406042
+      ...
+    # Subtest: uses current evidence rather than inferring success from the earlier tile click
+    ok 5 - uses current evidence rather than inferring success from the earlier tile click
+      ---
+      duration_ms: 6.091209
+      ...
+    1..5
+ok 99 - verify accepts only the matching returned baseline and performs no host action
+  ---
+  duration_ms: 17.334375
+  ...
+# Subtest: missing or failed WorldSpace observation and marker operations fail closed
+    # Subtest: missing pre observation
+    ok 1 - missing pre observation
+      ---
+      duration_ms: 1.263667
+      ...
+    # Subtest: failed pre observation
+    ok 2 - failed pre observation
+      ---
+      duration_ms: 1.316958
+      ...
+    # Subtest: invalid pre observation
+    ok 3 - invalid pre observation
+      ---
+      duration_ms: 1.098959
+      ...
+    # Subtest: failed marker
+    ok 4 - failed marker
+      ---
+      duration_ms: 5.14875
+      ...
+    # Subtest: missing post observation
+    ok 5 - missing post observation
+      ---
+      duration_ms: 5.525834
+      ...
+    # Subtest: failed post observation
+    ok 6 - failed post observation
+      ---
+      duration_ms: 4.030625
+      ...
+    # Subtest: invalid post observation
+    ok 7 - invalid post observation
+      ---
+      duration_ms: 5.534542
+      ...
+    1..7
+ok 100 - missing or failed WorldSpace observation and marker operations fail closed
+  ---
+  duration_ms: 24.620917
+  ...
+# Subtest: manual verify carries a durable marker through a rotated log and changed mesh classification
+ok 101 - manual verify carries a durable marker through a rotated log and changed mesh classification
+  ---
+  duration_ms: 82.311542
+  ...
+# Subtest: verify requires a producer-consistent marker and rejects every identity or raw-row contradiction
+    # Subtest: missing marker
+    ok 1 - missing marker
+      ---
+      duration_ms: 1.236292
+      ...
+    # Subtest: serial
+    ok 2 - serial
+      ---
+      duration_ms: 3.81075
+      ...
+    # Subtest: nonce
+    ok 3 - nonce
+      ---
+      duration_ms: 1.601708
+      ...
+    # Subtest: message
+    ok 4 - message
+      ---
+      duration_ms: 1.188292
+      ...
+    # Subtest: tag
+    ok 5 - tag
+      ---
+      duration_ms: 0.830583
+      ...
+    # Subtest: epoch
+    ok 6 - epoch
+      ---
+      duration_ms: 1.019292
+      ...
+    # Subtest: raw line
+    ok 7 - raw line
+      ---
+      duration_ms: 1.073667
+      ...
+    # Subtest: non-exact raw line
+    ok 8 - non-exact raw line
+      ---
+      duration_ms: 1.010166
+      ...
+    # Subtest: malformed raw line
+    ok 9 - malformed raw line
+      ---
+      duration_ms: 1.2055
+      ...
+    1..9
+ok 102 - verify requires a producer-consistent marker and rejects every identity or raw-row contradiction
+  ---
+  duration_ms: 14.62025
+  ...
+# Subtest: verify rejects a WorldSpace observation at the durable marker boundary
+ok 103 - verify rejects a WorldSpace observation at the durable marker boundary
+  ---
+  duration_ms: 4.425833
+  ...
+# Subtest: verify rejects a forged post-WorldSpace epoch that contradicts its exact raw row
+ok 104 - verify rejects a forged post-WorldSpace epoch that contradicts its exact raw row
+  ---
+  duration_ms: 2.769209
+  ...
+# Subtest: marker receipt must bind the exact serial and pre-switch snapshot before host work
+    # Subtest: serial
+    ok 1 - serial
+      ---
+      duration_ms: 5.140667
+      ...
+    # Subtest: nonce
+    ok 2 - nonce
+      ---
+      duration_ms: 3.458792
+      ...
+    # Subtest: message
+    ok 3 - message
+      ---
+      duration_ms: 4.939458
+      ...
+    1..3
+ok 105 - marker receipt must bind the exact serial and pre-switch snapshot before host work
+  ---
+  duration_ms: 14.115916
+  ...
+# Subtest: every terminal bridge status fails before later switch or classification work
+    # Subtest: pre label_absent
+    ok 1 - pre label_absent
+      ---
+      duration_ms: 5.393375
+      ...
+    # Subtest: post label_absent
+    ok 2 - post label_absent
+      ---
+      duration_ms: 8.005917
+      ...
+    # Subtest: pre not_ready
+    ok 3 - pre not_ready
+      ---
+      duration_ms: 1.106583
+      ...
+    # Subtest: post not_ready
+    ok 4 - post not_ready
+      ---
+      duration_ms: 6.156458
+      ...
+    # Subtest: pre stage_not_open
+    ok 5 - pre stage_not_open
+      ---
+      duration_ms: 1.244
+      ...
+    # Subtest: post stage_not_open
+    ok 6 - post stage_not_open
+      ---
+      duration_ms: 5.113458
+      ...
+    # Subtest: pre bridge_unavailable
+    ok 7 - pre bridge_unavailable
+      ---
+      duration_ms: 1.252959
+      ...
+    # Subtest: post bridge_unavailable
+    ok 8 - post bridge_unavailable
+      ---
+      duration_ms: 4.492542
+      ...
+    # Subtest: pre stage_mismatch
+    ok 9 - pre stage_mismatch
+      ---
+      duration_ms: 2.485708
+      ...
+    # Subtest: post stage_mismatch
+    ok 10 - post stage_mismatch
+      ---
+      duration_ms: 3.165584
+      ...
+    # Subtest: pre invalid_payload
+    ok 11 - pre invalid_payload
+      ---
+      duration_ms: 1.563625
+      ...
+    # Subtest: post invalid_payload
+    ok 12 - post invalid_payload
+      ---
+      duration_ms: 5.399958
+      ...
+    # Subtest: pre binding_failed
+    ok 13 - pre binding_failed
+      ---
+      duration_ms: 1.711584
+      ...
+    # Subtest: post binding_failed
+    ok 14 - post binding_failed
+      ---
+      duration_ms: 4.59025
+      ...
+    1..14
+ok 106 - every terminal bridge status fails before later switch or classification work
+  ---
+  duration_ms: 52.683167
+  ...
+# Subtest: serial, package, receipt, boot, stage, and root identity drift fail at their live boundary
+    # Subtest: pre serial
+    ok 1 - pre serial
+      ---
+      duration_ms: 3.614
+      ...
+    # Subtest: post serial
+    ok 2 - post serial
+      ---
+      duration_ms: 7.990125
+      ...
+    # Subtest: pre package
+    ok 3 - pre package
+      ---
+      duration_ms: 4.604167
+      ...
+    # Subtest: post package
+    ok 4 - post package
+      ---
+      duration_ms: 8.140666
+      ...
+    # Subtest: pre receipt
+    ok 5 - pre receipt
+      ---
+      duration_ms: 3.422375
+      ...
+    # Subtest: post receipt
+    ok 6 - post receipt
+      ---
+      duration_ms: 8.82475
+      ...
+    # Subtest: post boot
+    ok 7 - post boot
+      ---
+      duration_ms: 8.662666
+      ...
+    # Subtest: pre stage
+    ok 8 - pre stage
+      ---
+      duration_ms: 2.783083
+      ...
+    # Subtest: post stage
+    ok 9 - post stage
+      ---
+      duration_ms: 7.4915
+      ...
+    # Subtest: pre root
+    ok 10 - pre root
+      ---
+      duration_ms: 5.549209
+      ...
+    # Subtest: post root
+    ok 11 - post root
+      ---
+      duration_ms: 8.084167
+      ...
+    1..11
+ok 107 - serial, package, receipt, boot, stage, and root identity drift fail at their live boundary
+  ---
+  duration_ms: 70.195083
+  ...
+# Subtest: selector drift limits and complete policy echoes are mandatory at both live boundaries
+    # Subtest: pre numeric drift
+    ok 1 - pre numeric drift
+      ---
+      duration_ms: 4.003584
+      ...
+    # Subtest: post numeric drift
+    ok 2 - post numeric drift
+      ---
+      duration_ms: 9.479167
+      ...
+    # Subtest: pre strict topology
+    ok 3 - pre strict topology
+      ---
+      duration_ms: 3.244167
+      ...
+    # Subtest: post strict topology
+    ok 4 - post strict topology
+      ---
+      duration_ms: 8.760334
+      ...
+    # Subtest: pre drift policy echo
+    ok 5 - pre drift policy echo
+      ---
+      duration_ms: 4.8695
+      ...
+    # Subtest: post drift policy echo
+    ok 6 - post drift policy echo
+      ---
+      duration_ms: 8.55275
+      ...
+    # Subtest: pre binding policy echo
+    ok 7 - pre binding policy echo
+      ---
+      duration_ms: 4.640292
+      ...
+    # Subtest: post binding policy echo
+    ok 8 - post binding policy echo
+      ---
+      duration_ms: 7.606833
+      ...
+    1..8
+ok 108 - selector drift limits and complete policy echoes are mandatory at both live boundaries
+  ---
+  duration_ms: 52.059875
+  ...
+# Subtest: coarse scene ID is consistency-only and never disambiguates a changed context
+    # Subtest: pre-switch mismatch stops before marker or host work
+    ok 1 - pre-switch mismatch stops before marker or host work
+      ---
+      duration_ms: 3.493
+      ...
+    # Subtest: post-switch mismatch stops before mesh classification
+    ok 2 - post-switch mismatch stops before mesh classification
+      ---
+      duration_ms: 5.783458
+      ...
+    1..2
+ok 109 - coarse scene ID is consistency-only and never disambiguates a changed context
+  ---
+  duration_ms: 9.774167
+  ...
+# Subtest: an unchanged receipt-bound snapshot fails before the clicked target can be inferred
+ok 110 - an unchanged receipt-bound snapshot fails before the clicked target can be inferred
+  ---
+  duration_ms: 6.919291
+  ...
+# Subtest: zero, multiple, extent-mismatched, and wrong unique fingerprints fail closed
+    # Subtest: zero matches
+    ok 1 - zero matches
+      ---
+      duration_ms: 9.750375
+      ...
+    # Subtest: multiple matches
+    ok 2 - multiple matches
+      ---
+      duration_ms: 8.367042
+      ...
+    # Subtest: incomplete requested-label receipt stops before classification
+    ok 3 - incomplete requested-label receipt stops before classification
+      ---
+      duration_ms: 8.286833
+      ...
+    # Subtest: extent mismatch after one histogram match
+    ok 4 - extent mismatch after one histogram match
+      ---
+      duration_ms: 9.630583
+      ...
+    # Subtest: cluster cardinality mismatch after one histogram match
+    ok 5 - cluster cardinality mismatch after one histogram match
+      ---
+      duration_ms: 9.326
+      ...
+    # Subtest: cluster Y mismatch after one histogram match
+    ok 6 - cluster Y mismatch after one histogram match
+      ---
+      duration_ms: 9.493208
+      ...
+    # Subtest: wrong unique environment
+    ok 7 - wrong unique environment
+      ---
+      duration_ms: 7.994417
+      ...
+    1..7
+ok 111 - zero, multiple, extent-mismatched, and wrong unique fingerprints fail closed
+  ---
+  duration_ms: 63.708667
+  ...
+# pico-spatial-mcp ready (stdio)
+# (node:41540) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# pico-spatial-mcp ready (stdio)
+# (node:41544) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: select_home_environment is registered only on the full surface
+ok 112 - select_home_environment is registered only on the full surface
+  ---
+  duration_ms: 875.932
+  ...
+# (node:41383) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: navigation-guide revision catches an accidental scene-snapshot revision bump or overload
+ok 113 - navigation-guide revision catches an accidental scene-snapshot revision bump or overload
+  ---
+  duration_ms: 0.7895
+  ...
+# Subtest: Museum fixture expectations are ranges and tolerate re-selection count instability
+ok 114 - Museum fixture expectations are ranges and tolerate re-selection count instability
+  ---
+  duration_ms: 0.551083
+  ...
+# Subtest: versioned bridge parser preserves a would-be-truncated per-face assignment payload losslessly
+ok 115 - versioned bridge parser preserves a would-be-truncated per-face assignment payload losslessly
+  ---
+  duration_ms: 9.11725
+  ...
+# Subtest: ready is derived from consecutive unfiltered non-empty reads and returns every ambiguous label match
+ok 116 - ready is derived from consecutive unfiltered non-empty reads and returns every ambiguous label match
+  ---
+  duration_ms: 17.036625
+  ...
+# Subtest: Full-space fixture also returns every same-label candidate instead of hiding ambiguity
+ok 117 - Full-space fixture also returns every same-label candidate instead of hiding ambiguity
+  ---
+  duration_ms: 18.053709
+  ...
+# Subtest: label filtering occurs after readiness, producing label_absent instead of not_ready
+ok 118 - label filtering occurs after readiness, producing label_absent instead of not_ready
+  ---
+  duration_ms: 11.860917
+  ...
+# Subtest: not_ready is returned when RUNNING reads never establish an unfiltered non-empty streak
+ok 119 - not_ready is returned when RUNNING reads never establish an unfiltered non-empty streak
+  ---
+  duration_ms: 0.527125
+  ...
+# Subtest: stage_not_open is a distinct terminal status
+ok 120 - stage_not_open is a distinct terminal status
+  ---
+  duration_ms: 0.8715
+  ...
+# Subtest: stage_mismatch is returned from the app-observed style, never inferred from the scenario
+ok 121 - stage_mismatch is returned from the app-observed style, never inferred from the scenario
+  ---
+  duration_ms: 11.920625
+  ...
+# Subtest: bridge_unavailable retains the resolved application binding and transport refusal
+ok 122 - bridge_unavailable retains the resolved application binding and transport refusal
+  ---
+  duration_ms: 2.610583
+  ...
+# Subtest: invalid_payload covers malformed bytes and contradictory producer readiness
+    # Subtest: malformed JSON
+    ok 1 - malformed JSON
+      ---
+      duration_ms: 0.471
+      ...
+    # Subtest: contradictory readiness
+    ok 2 - contradictory readiness
+      ---
+      duration_ms: 2.963583
+      ...
+    # Subtest: not_ready error after a satisfied streak
+    ok 3 - not_ready error after a satisfied streak
+      ---
+      duration_ms: 2.14625
+      ...
+    # Subtest: stage_not_open error while Stage is open
+    ok 4 - stage_not_open error while Stage is open
+      ---
+      duration_ms: 0.318459
+      ...
+    # Subtest: read trace retries, ordering, and time are versioned invariants
+    ok 5 - read trace retries, ordering, and time are versioned invariants
+      ---
+      duration_ms: 19.843083
+      ...
+    # Subtest: reads after first readiness satisfaction are rejected
+    ok 6 - reads after first readiness satisfaction are rejected
+      ---
+      duration_ms: 6.028167
+      ...
+    # Subtest: coordinate frame is pinned to bridge revision 41
+    ok 7 - coordinate frame is pinned to bridge revision 41
+      ---
+      duration_ms: 1.860458
+      ...
+    1..7
+ok 123 - invalid_payload covers malformed bytes and contradictory producer readiness
+  ---
+  duration_ms: 34.604458
+  ...
+# Subtest: binding_failed stops before bridge fetch
+ok 124 - binding_failed stops before bridge fetch
+  ---
+  duration_ms: 0.221583
+  ...
+# Subtest: bridge-reported missing root identity is binding_failed and persists no geometry
+ok 125 - bridge-reported missing root identity is binding_failed and persists no geometry
+  ---
+  duration_ms: 0.25525
+  ...
+# Subtest: foreground binding tolerates a foreign OS shell but refuses same-package ambiguity
+ok 126 - foreground binding tolerates a foreign OS shell but refuses same-package ambiguity
+  ---
+  duration_ms: 0.273875
+  ...
+# Subtest: normalized snapshot hashes ignore bounded float formatting jitter while exact drift still reports it
+ok 127 - normalized snapshot hashes ignore bounded float formatting jitter while exact drift still reports it
+  ---
+  duration_ms: 0.397958
+  ...
+# Subtest: float normalization is hash-only and does not determine trace-local ordering
+ok 128 - float normalization is hash-only and does not determine trace-local ordering
+  ---
+  duration_ms: 0.967833
+  ...
+# Subtest: fixture-driven drift reports exact change and policy-bounded count/transform/extent/topology deltas
+ok 129 - fixture-driven drift reports exact change and policy-bounded count/transform/extent/topology deltas
+  ---
+  duration_ms: 3.987375
+  ...
+# Subtest: strict topology detects same-length index connectivity changes
+ok 130 - strict topology detects same-length index connectivity changes
+  ---
+  duration_ms: 0.135792
+  ...
+# Subtest: advisory topology cannot hide a transform beyond the numeric policy
+ok 131 - advisory topology cannot hide a transform beyond the numeric policy
+  ---
+  duration_ms: 0.079375
+  ...
+# Subtest: geometric re-match exposes label swaps under strict and advisory topology policies
+ok 132 - geometric re-match exposes label swaps under strict and advisory topology policies
+  ---
+  duration_ms: 0.185042
+  ...
+# Subtest: multi-read readiness drift retains an earlier policy violation
+ok 133 - multi-read readiness drift retains an earlier policy violation
+  ---
+  duration_ms: 2.589916
+  ...
+# Subtest: geometric re-match reports equidistant ambiguity instead of choosing silently
+ok 134 - geometric re-match reports equidistant ambiguity instead of choosing silently
+  ---
+  duration_ms: 0.499125
+  ...
+# Subtest: quaternion drift arithmetic reports degrees and enforces its numeric bound
+ok 135 - quaternion drift arithmetic reports degrees and enforces its numeric bound
+  ---
+  duration_ms: 0.368667
+  ...
+# Subtest: raw geometry is published to a private external session artifact with lossless semantics
+ok 136 - raw geometry is published to a private external session artifact with lossless semantics
+  ---
+  duration_ms: 13.888333
+  ...
+1..136
+# tests 630
+# suites 0
+# pass 630
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4497.414583

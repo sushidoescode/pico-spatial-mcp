@@ -1,0 +1,16 @@
+{
+  "label": "0.4.4 project --help",
+  "argv": [
+    "project",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:48.895Z",
+  "endedAt": "2026-09-15T09:11:48.991Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "d3b2582ed1ffc364d30eeae116db35b3279ca8e637400d84e7aad459d325eb73",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

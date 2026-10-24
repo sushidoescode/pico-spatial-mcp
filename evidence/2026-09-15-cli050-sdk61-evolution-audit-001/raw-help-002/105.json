@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 device shell --help",
+  "argv": [
+    "device",
+    "shell",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:03.252Z",
+  "endedAt": "2026-09-15T09:12:03.355Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "44c1ae5a7afad7cb677d966442ba7840d8d9e710a5e2d6cb9e1d893976187664",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

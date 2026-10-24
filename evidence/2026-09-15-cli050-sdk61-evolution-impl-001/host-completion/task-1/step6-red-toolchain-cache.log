@@ -1,0 +1,69 @@
+# RED — Task 1 Step 6 — 2026-09-16T09:43:10Z — HEAD 641ec84 + uncommitted test/toolchain-cache.mjs; dist/ built from the unchanged src/adb.ts ({"current":true,"reasons":[]})
+# cmd: PICO_ADB=/fixture/no/such/adb node --test test/toolchain-cache.mjs
+✔ IdentityCache reloads when the identity changes (0.388709ms)
+✔ IdentityCache publishes nothing when the loader throws, and never returns a stale value (0.149084ms)
+✔ IdentityCache.getOr lets a caller refuse to cache an unavailable result (0.259166ms)
+✔ IdentityCache.clear empties the entry (0.041334ms)
+✔ adb resolution prefers an explicit PICO_ADB and discloses its identity (0.546959ms)
+✔ adb resolution searches PATH before the bundled platform-tools payload (0.18125ms)
+✔ adb resolution falls back to the SELECTED toolchain's bundled adb, not a hardcoded 0.13 path (0.369833ms)
+✔ a set-but-unusable PICO_ADB FAILS CLOSED and probes nothing else (0.150125ms)
+✖ a set-but-blank PICO_ADB is an explicit override that fails closed, probing nothing (0.606292ms)
+✔ adbExecutable THROWS on an unusable explicit override, naming the path and the reason (0.228958ms)
+✔ an explicit override whose bytes cannot be read is refused, not silently identity-less (0.091125ms)
+✔ a corrected PICO_ADB is honoured immediately: a refusal is never cached (0.088875ms)
+✔ a replaced adb at the same path is observed inside one process (0.0985ms)
+✔ an unchanged adb is not re-hashed on every call (0.151166ms)
+✔ adb absence is never cached: a later-provisioned adb is found without a restart (0.200833ms)
+✔ adbExecutable keeps the historical bare-name last resort so no consumer control flow changes (0.050416ms)
+✔ adb resolution honours win32 executable naming (0.114458ms)
+✔ loadProto for 6.1 does not return the 6.0 schema it already loaded (7.355583ms)
+✔ loadProto reloads when a TRANSITIVE .proto import changes bytes (2.241041ms)
+✔ loadProto returns the identical object while nothing changed (1.462459ms)
+✔ a failed proto load is not cached (1.554792ms)
+✔ JDK discovery revalidates its candidates on every call (0.124583ms)
+✔ a removed bin/java is observed without restarting (0.061584ms)
+✔ an absent JDK that later appears is found without restarting (0.039834ms)
+✔ the bundled JBR candidates are preserved, user-home candidate included (0.086334ms)
+✔ replacing Android Studio's bundled JBR is observed with an unchanged environment (0.062083ms)
+✔ a higher-priority JAVA_HOME appearing after a fallback was selected wins immediately (0.05375ms)
+✔ an unusable JAVA_HOME falls through to the bundled JBR, exactly as before (0.036125ms)
+✔ gradleEnv and detectJavaHome answer from the same injected context (0.149791ms)
+✔ a real consumer surfaces the refusal through its own error path, spawning no adb (0.412959ms)
+✔ the loud-runner fixture would actually catch a spawn (0.089917ms)
+✔ no consumer resolves adb at module load (14.120333ms)
+✔ a broken $PICO_ADB cannot break server startup or tool registration (192.127416ms)
+ℹ tests 33
+ℹ suites 0
+ℹ pass 32
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 333.289625
+
+✖ failing tests:
+
+test at test/toolchain-cache.mjs:158:1
+✖ a set-but-blank PICO_ADB is an explicit override that fails closed, probing nothing (0.606292ms)
+  AssertionError [ERR_ASSERTION]: ""
+  + actual - expected
+  
+  + 'ok'
+  - 'unavailable'
+  
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/toolchain-cache.mjs:169:12)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'ok',
+    expected: 'unavailable',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+# exit=1

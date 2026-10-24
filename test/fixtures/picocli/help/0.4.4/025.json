@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 app watch-crash --help",
+  "argv": [
+    "app",
+    "watch-crash",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:49.978Z",
+  "endedAt": "2026-09-15T09:11:50.076Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "66665f115a9b01205d6f2cd361cd1bae20d9878e936c1f261f576a198f41d20c",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

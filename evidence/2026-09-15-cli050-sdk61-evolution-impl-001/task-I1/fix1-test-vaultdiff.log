@@ -1,0 +1,29 @@
+
+> pico-spatial-mcp@37.0.0 test:vaultdiff
+> node scripts/run-gate.mjs test:vaultdiff
+
+  ok   typesAdded catches the new fixture type
+  ok   typesRemoved catches the deleted type
+  ok   removed type carries a migration hint
+  ok   member rename shows as removed+added on Entity
+  ok   1:1 member swap hints the likely rename
+  ok   ctor arity drift caught (2 removed, 3 added)
+  ok   arity hint names the broken construction site
+  ok   removed property caught (angularDamping)
+  ok   unchanged types produce no drift noise
+  ok   real workspaces enumerate (0.13:54md)
+  ok   vault_workspaces public schema/result routes setup through the managed absolute path
+  ok   S5: workspaces enumerate under the given base by directory label
+  ok   S5: packageRevision comes from package.xml only — the 6.1 label declares nothing
+  ok   S5: a numeric label resolves to <tools root>/<label>/agent-vault
+  ok   S5: an explicit root is an explicitly identified source
+  ok   S5: ~/ explicit roots expand to the home directory
+  ok   S5: traversal, relative roots, free text, and padded labels are refused as version arguments
+  ok   S5: a relative spec with separators is neither a version nor an acceptable explicit root
+  ok   S5: vault_diff refuses a traversal version argument before touching the filesystem
+  ok   S5: a drift report is labeled historical and disclaims target authority
+  ok   S5: each side reports its declaration identity — the fixtures declare no revision
+  ok   S5: a side with package.xml reports its declared revision
+  ok   S5: vault_workspaces names its base and separates labels from declared revisions
+
+Vault-diff test done. Failures: 0

@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "osascript",
+    "-e",
+    "tell application \"System Events\" to tell process \"qemu-system-aarch64\" to perform action \"AXRaise\" of window \"PICO Emulator - 6.1.0\"",
+    "-e",
+    "tell application \"System Events\" to set frontmost of process \"qemu-system-aarch64\" to true"
+  ],
+  "startedAt": "2026-09-17T00:15:36.589537+00:00",
+  "endedAt": "2026-09-17T00:15:36.876645+00:00",
+  "exit": 0,
+  "stdout": "",
+  "stderr": ""
+}

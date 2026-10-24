@@ -5,7 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { auditProjectConfig } from "./projectconfig.js";
-import { defaultVaultRoot, loadVaultIndex, runVaultCheck } from "./vault.js";
+import { defaultVaultRoot, describeDeclarationAuthority, loadVaultIndex, runVaultCheck } from "./vault.js";
 import type { VaultFinding, VaultIndex } from "./vault.js";
 import { sharedKnowledgeBridge } from "./knowledge.js";
 import type { KnowledgeCaller, KnowledgeResult } from "./knowledge.js";
@@ -946,19 +946,39 @@ export function registerLintTools(
       if (vaultSymbols === false) {
         vault = { status: "skipped", note: "agent-vault symbol pass disabled by vaultSymbols:false." };
       } else if (wantVault) {
-        const index = loadVaultIndex();
+        const vaultRoot = defaultVaultRoot();
+        const index = loadVaultIndex(vaultRoot);
         if (!index) {
-          vault = { status: "unavailable", note: `agent-vault not found (default ${defaultVaultRoot()}, override with PICO_AGENT_VAULT) — SDK symbol validation skipped. ${managedSetupGuidance}` };
+          vault = { status: "unavailable", note: `agent-vault not found (default ${vaultRoot}, override with PICO_AGENT_VAULT) — SDK symbol validation skipped. ${managedSetupGuidance}` };
         } else {
           const findings = runVaultSymbolStage(content, index);
+          // Task S5 — declaration authority stays explicit inside the advisory block. With a project
+          // root the vault's declaration identity and the project's declared identity are read
+          // (statically, never Gradle) and reviewed evidence is verified against them; without a
+          // verified linkage the findings are HISTORICAL symbol lookups and are labeled so. None of
+          // this touches `clean`, which stays derived from violations and project errors only.
+          const authority = describeDeclarationAuthority(vaultRoot, projectDir ? { projectRoot: projectDir } : {});
+          const linkage = authority.context?.status ?? "unavailable";
+          const targetVerified = linkage === "target-compatible";
+          const revision = authority.identity.status === "ok" ? authority.identity.identity.packageRevision ?? "undeclared revision" : "unavailable identity";
+          const authorityNote = targetVerified
+            ? `Declarations are target-verified for the listed verifiedSymbols only (${authority.report.note})`
+            : `These are HISTORICAL declaration lookups (package revision ${revision}); they do not validate the project's target SDK — target linkage is ${linkage}. ${authority.report.note}`;
           vault = {
             status: "ok",
             sdkVersion: index.sdkVersion,
             typesIndexed: index.typeCount,
             findings,
+            declarationIdentity: authority.report.declarationIdentity,
+            target: authority.report.target,
+            compatibilityIndex: authority.report.compatibilityIndex,
+            declarationContext: authority.report.context ? { ...authority.report.context, rejected: authority.report.evidence?.rejected ?? [] } : { status: "unavailable", rejected: [] },
+            authorityNote,
             note: findings.length
-              ? "ADVISORY agent-vault findings — each is an unresolved symbol (with the nearest vault match when one exists), unknown enum value/constant, or constructor-arity mismatch, with the authoritative vault declaration cited. Check the citation (vault_api gives the full signature) before writing; ui.* composables are not validated."
-              : "Emitted SDK usage resolves against the agent-vault api-reference (types, enum values, ctor arity; ui.* composables not validated).",
+              ? "ADVISORY agent-vault findings — each is an unresolved symbol (with the nearest vault match when one exists), unknown enum value/constant, or constructor-arity mismatch, with the vault declaration cited. Check the citation (vault_api gives the full signature) before writing; ui.* composables are not validated. " + authorityNote
+              : (targetVerified
+                ? "Emitted SDK usage resolves against the agent-vault api-reference (types, enum values, ctor arity; ui.* composables not validated). " + authorityNote
+                : "Emitted SDK usage resolves against the HISTORICAL agent-vault api-reference (types, enum values, ctor arity; ui.* composables not validated) — a symbol lookup, not a target SDK validation. " + authorityNote),
           };
         }
       }

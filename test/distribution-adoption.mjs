@@ -7,6 +7,14 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createManagedRuntimeHarness, publishManagedFixtureVersion } from "./helpers/picocli-managed-fixture.mjs";
+import { writeReceipt } from "../scripts/build-identity.mjs";
+import {
+  GATES,
+  gateInventoryCounts,
+  gateScriptCommand,
+  parseWorkflowLanes,
+  validateGateInventory,
+} from "../scripts/gate-inventory.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -14,6 +22,82 @@ function writeExecutable(file, body) {
   fs.writeFileSync(file, body, { mode: 0o755 });
   fs.chmodSync(file, 0o755);
 }
+
+/**
+ * A plugin cache as a host actually leaves one: the three bootstrap scripts plus the sources,
+ * config and lockfile the freshness decision is read from. The bootstrap now imports build-identity
+ * and build-source, so copying only plugin-bootstrap.mjs would not even load.
+ */
+function writeSourceCheckout(root, entrySource = "export const value = 1;\n") {
+  fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  for (const script of ["plugin-bootstrap.mjs", "build-identity.mjs", "build-source.mjs"]) {
+    fs.copyFileSync(path.join(repoRoot, "scripts", script), path.join(root, "scripts", script));
+  }
+  fs.writeFileSync(path.join(root, "package.json"), `${JSON.stringify({ name: "fixture", version: "0.0.0", type: "module" })}\n`);
+  fs.writeFileSync(path.join(root, "package-lock.json"), `${JSON.stringify({ name: "fixture", lockfileVersion: 3 })}\n`);
+  fs.writeFileSync(path.join(root, "tsconfig.json"), `${JSON.stringify({ compilerOptions: { outDir: "dist", rootDir: "src" }, include: ["src/**/*.ts"] })}\n`);
+  fs.writeFileSync(path.join(root, "src", "index.ts"), entrySource);
+}
+
+/**
+ * An installed package as `npm install <tarball>` leaves one: `dist/` and `scripts/`, no `src/`,
+ * no tsconfig and no lockfile. Its payload is accounted for by the receipt that shipped beside it,
+ * which is the only freshness question a tarball consumer can answer — and the only one it is asked.
+ */
+function writePackagedPayload(root, entrySource) {
+  fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
+  fs.mkdirSync(path.join(root, "dist"), { recursive: true });
+  for (const script of ["plugin-bootstrap.mjs", "build-identity.mjs", "build-source.mjs"]) {
+    fs.copyFileSync(path.join(repoRoot, "scripts", script), path.join(root, "scripts", script));
+  }
+  fs.writeFileSync(path.join(root, "package.json"), `${JSON.stringify({ name: "pico-spatial-mcp", version: "0.0.0", type: "module" })}\n`);
+  fs.writeFileSync(path.join(root, "dist", "index.js"), entrySource);
+  writeReceipt(root, path.join(root, "dist"));
+}
+
+/**
+ * An installed plugin root that really runs this repo's server: the bootstrap scripts as real files
+ * (so the child resolves its root to here, not to the checkout) beside the published `dist/` and the
+ * installed `node_modules`. No `src/`, no tsconfig and no lockfile — the shape a consumer has.
+ */
+function createLaunchableCacheRoot(tempRoot) {
+  const root = path.join(tempRoot, "installed plugin ü 漢字");
+  fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
+  for (const script of ["plugin-bootstrap.mjs", "build-identity.mjs", "build-source.mjs"]) {
+    fs.copyFileSync(path.join(repoRoot, "scripts", script), path.join(root, "scripts", script));
+  }
+  fs.copyFileSync(path.join(repoRoot, "package.json"), path.join(root, "package.json"));
+  const linkType = process.platform === "win32" ? "junction" : "dir";
+  fs.symlinkSync(path.join(repoRoot, "dist"), path.join(root, "dist"), linkType);
+  fs.symlinkSync(path.join(repoRoot, "node_modules"), path.join(root, "node_modules"), linkType);
+  return root;
+}
+
+/** A PATH whose `npm` fails loudly, so "this must not install" is proven rather than assumed. */
+function npmMustNotRun(tempRoot) {
+  const binDir = path.join(tempRoot, "no npm here");
+  fs.mkdirSync(binDir, { recursive: true });
+  if (process.platform === "win32") {
+    fs.writeFileSync(path.join(binDir, "npm.cmd"), "@echo off\r\n>&2 echo FORBIDDEN npm %*\r\nexit /b 66\r\n");
+  } else {
+    writeExecutable(path.join(binDir, "npm"), '#!/bin/sh\necho "FORBIDDEN npm $*" >&2\nexit 66\n');
+  }
+  return `${binDir}${path.delimiter}${process.env.PATH ?? ""}`;
+}
+
+/** What the fake `npm ci` provisions: a compiler entry that really emits one .js per source. */
+const STAND_IN_COMPILER = `const fs = require("node:fs");
+const path = require("node:path");
+const outDir = process.argv[process.argv.indexOf("--outDir") + 1];
+fs.mkdirSync(outDir, { recursive: true });
+for (const name of fs.readdirSync(path.join(process.cwd(), "src"))) {
+  if (!name.endsWith(".ts")) continue;
+  fs.writeFileSync(path.join(outDir, name.replace(/\\.ts$/, ".js")), fs.readFileSync(path.join(process.cwd(), "src", name)));
+}
+fs.appendFileSync(process.env.FAKE_TSC_LOG, JSON.stringify(outDir) + "\\n");
+process.stdout.write("TSC_STDOUT\\n");
+`;
 
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", `'"'"'`)}'`;
@@ -716,8 +800,10 @@ test("setup-required wrapper results stay source/freshness-neutral and never exe
       const invocations = [
         ["perf_diagnose", { packageName: "com.example.fixture", durationSec: 5 }],
         ["perf_trace", { action: "record", packageName: "com.example.fixture", durationSec: 5, outputPath: path.join(harness.root, "trace.perfetto-trace") }],
-        ["watch_crash", { packageName: "com.example.fixture", durationSec: 5 }],
-        ["capture_record", { durationSec: 1, outputPath: path.join(harness.root, "capture.mp4") }],
+        ["watch_crash", { packageName: "com.example.fixture", durationSec: 5, device: "fixture-watch-0001" }],
+        // An explicit target is required since 38.0.0; without it the refusal is the device
+        // error, which would mask the setup-required classification this case is about.
+        ["capture_record", { device: "fixture-record-0001", durationSec: 1, outputPath: path.join(harness.root, "capture.mp4") }],
       ];
       for (const [name, args] of invocations) {
         const response = await client.callTool({ name, arguments: args });
@@ -852,7 +938,7 @@ process.stdout.write(JSON.stringify(result));
 });
 
 test("bootstrap root/platform/prerequisite decisions are independent of the caller cwd", async () => {
-  const { resolvePluginRoot, npmExecutable, needsSourceBuild, sourceSetupPlan } =
+  const { resolvePluginRoot, npmExecutable, isSourceCheckout, sourceSetupPlan } =
     await import("../scripts/plugin-bootstrap.mjs");
 
   const pluginRoot = path.resolve("/tmp", "hostile cwd", "PICO plugin ü 漢字");
@@ -862,28 +948,51 @@ test("bootstrap root/platform/prerequisite decisions are independent of the call
   assert.equal(npmExecutable("darwin"), "npm");
   assert.equal(npmExecutable("linux"), "npm");
 
-  assert.equal(needsSourceBuild({ nodeModulesPresent: true, distEntryPresent: true }), false);
-  assert.equal(needsSourceBuild({ nodeModulesPresent: false, distEntryPresent: true }), true);
-  assert.equal(needsSourceBuild({ nodeModulesPresent: true, distEntryPresent: false }), true);
-  assert.equal(needsSourceBuild({ nodeModulesPresent: false, distEntryPresent: false }), true);
+  // A host plugin cache is a source checkout and can be made current; a path with no sources
+  // (an installed tarball, or nothing at all) is only ever checked against its own receipt.
+  assert.equal(isSourceCheckout(repoRoot), true);
+  assert.equal(isSourceCheckout(pluginRoot), false);
 
+  // Setup is decided by whether the receipts still account for the tree, never by whether
+  // node_modules/ and dist/index.js merely exist — those answer "was this ever built", and a
+  // cache whose source or lockfile moved underneath it answers yes while serving stale output.
   const ci = ["ci", "--no-audit", "--no-fund"];
   const build = ["run", "build"];
-  assert.deepEqual(sourceSetupPlan({ nodeModulesPresent: true, distEntryPresent: true }), []);
-  assert.deepEqual(sourceSetupPlan({ nodeModulesPresent: false, distEntryPresent: true }), [ci]);
-  assert.deepEqual(sourceSetupPlan({ nodeModulesPresent: true, distEntryPresent: false }), [build]);
-  assert.deepEqual(sourceSetupPlan({ nodeModulesPresent: false, distEntryPresent: false }), [ci, build]);
+  assert.deepEqual(sourceSetupPlan({ dependenciesCurrent: true, buildCurrent: true }), []);
+  assert.deepEqual(sourceSetupPlan({ dependenciesCurrent: false, buildCurrent: true }), [ci]);
+  assert.deepEqual(sourceSetupPlan({ dependenciesCurrent: true, buildCurrent: false }), [build]);
+  assert.deepEqual(sourceSetupPlan({ dependenciesCurrent: false, buildCurrent: false }), [ci, build]);
 });
 
 test("Windows bootstrap runs fixed npm scripts through ComSpec without shell interpolation", async () => {
   const { runBootstrap } = await import("../scripts/plugin-bootstrap.mjs");
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico windows bootstrap "));
+  // Canonical on purpose: the setup lease resolves symlinks, so a /var -> /private/var temp dir
+  // would publish under a different spelling of the same directory than the one asserted here.
+  const tempRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pico windows bootstrap ")));
+  const root = path.join(tempRoot, "plugin cache ü 漢字");
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  fs.writeFileSync(path.join(root, "package.json"), `${JSON.stringify({ name: "fixture", version: "0.0.0", type: "module" })}\n`);
+  fs.writeFileSync(path.join(root, "package-lock.json"), `${JSON.stringify({ name: "fixture", lockfileVersion: 3 })}\n`);
+  fs.writeFileSync(path.join(root, "tsconfig.json"), `${JSON.stringify({ compilerOptions: { outDir: "dist", rootDir: "src" }, include: ["src/**/*.ts"] })}\n`);
+  fs.writeFileSync(path.join(root, "src", "index.ts"), "export const value = 1;\n");
+
   const comspec = "C:\\Windows\\System32\\cmd.exe";
   const execPath = "C:\\Program Files\\nodejs\\node.exe";
   const env = { ComSpec: comspec, PICO_HOME: "C:\\PICO Home" };
+  const tscEntry = path.join(root, "node_modules", "typescript", "bin", "tsc");
   const launches = [];
   const spawnImpl = (command, args, options) => {
     launches.push({ command, args, options });
+    // Each stand-in does what the real child would, so the receipts and the publication are real.
+    if (args.includes("npm.cmd ci --no-audit --no-fund")) {
+      fs.mkdirSync(path.dirname(tscEntry), { recursive: true });
+      fs.writeFileSync(path.join(root, "node_modules", "typescript", "package.json"), `${JSON.stringify({ name: "typescript", version: "5.6.2" })}\n`);
+      fs.writeFileSync(tscEntry, "// stand-in for the real compiler entry\n");
+    } else if (args[0] === tscEntry) {
+      const outDir = args[args.indexOf("--outDir") + 1];
+      fs.mkdirSync(outDir, { recursive: true });
+      fs.writeFileSync(path.join(outDir, "index.js"), fs.readFileSync(path.join(root, "src", "index.ts")));
+    }
     const child = new EventEmitter();
     child.exitCode = null;
     child.signalCode = null;
@@ -895,26 +1004,27 @@ test("Windows bootstrap runs fixed npm scripts through ComSpec without shell int
     return child;
   };
 
-  await runBootstrap({ root, platform: "win32", env, execPath, spawnImpl });
+  try {
+    await runBootstrap({ root, platform: "win32", env, execPath, spawnImpl });
 
-  assert.deepEqual(launches.map(({ command, args }) => ({ command, args })), [
-    {
-      command: comspec,
-      args: ["/d", "/s", "/c", "npm.cmd ci --no-audit --no-fund"],
-    },
-    {
-      command: comspec,
-      args: ["/d", "/s", "/c", "npm.cmd run build"],
-    },
-    {
-      command: execPath,
-      args: [path.join(root, "dist", "index.js")],
-    },
-  ]);
-  assert.deepEqual(launches.map(({ options }) => options.stdio), [["ignore", 2, 2], ["ignore", 2, 2], "inherit"]);
-  assert.ok(launches.every(({ options }) => options.cwd === root));
-  assert.ok(launches.every(({ options }) => options.env === env));
-  assert.ok(launches.every(({ options }) => options.shell !== true));
+    assert.deepEqual(launches.map(({ command }) => command), [comspec, process.execPath, execPath]);
+    assert.deepEqual(launches[0].args, ["/d", "/s", "/c", "npm.cmd ci --no-audit --no-fund"]);
+    // The build runs in-process on the lease the install already holds: a second `npm run build`
+    // would spawn a process that queues for the very lock this one is standing on.
+    assert.equal(launches.some(({ args }) => args.some((token) => String(token).includes("run build"))), false);
+    assert.deepEqual(launches[1].args.slice(0, 4), [tscEntry, "-p", path.join(root, "tsconfig.json"), "--outDir"]);
+    assert.equal(path.dirname(launches[1].args[4]), root, "the compiler emits into scratch this checkout owns");
+    assert.deepEqual(launches[2].args, [path.join(root, "dist", "index.js")]);
+
+    assert.deepEqual(launches.map(({ options }) => options.stdio), [["ignore", 2, 2], ["ignore", "pipe", "pipe"], "inherit"]);
+    assert.ok(launches.every(({ options }) => options.cwd === root));
+    assert.ok(launches.every(({ options }) => options.shell !== true));
+    assert.equal(launches[0].options.env, env);
+    assert.equal(launches[2].options.env, env);
+    assert.deepEqual(fs.readdirSync(root).filter((name) => name.startsWith(".dist-") || name.endsWith(".lock")), []);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("a non-timeout npm failure is nonzero and never launches MCP", () => {
@@ -927,7 +1037,7 @@ test("a non-timeout npm failure is nonzero and never launches MCP", () => {
   fs.mkdirSync(path.join(pluginRoot, "scripts"), { recursive: true });
   fs.mkdirSync(hostileCwd, { recursive: true });
   fs.mkdirSync(fakeBin, { recursive: true });
-  fs.copyFileSync(path.join(repoRoot, "scripts", "plugin-bootstrap.mjs"), path.join(pluginRoot, "scripts", "plugin-bootstrap.mjs"));
+  writeSourceCheckout(pluginRoot);
 
   const fakeNpm = path.join(fakeBin, process.platform === "win32" ? "npm.cmd" : "npm");
   writeExecutable(fakeNpm, `#!/usr/bin/env node
@@ -963,11 +1073,16 @@ test("cold bootstrap keeps npm on stderr, uses absolute child argv, and propagat
   const hostileCwd = path.join(tempRoot, "unrelated caller cwd");
   const fakeBin = path.join(tempRoot, "fake bin");
   const npmLog = path.join(tempRoot, "npm.jsonl");
+  const tscLog = path.join(tempRoot, "tsc.jsonl");
   const childLog = path.join(tempRoot, "child.json");
-  fs.mkdirSync(path.join(pluginRoot, "scripts"), { recursive: true });
   fs.mkdirSync(hostileCwd, { recursive: true });
   fs.mkdirSync(fakeBin, { recursive: true });
-  fs.copyFileSync(path.join(repoRoot, "scripts", "plugin-bootstrap.mjs"), path.join(pluginRoot, "scripts", "plugin-bootstrap.mjs"));
+  writeSourceCheckout(pluginRoot, `import fs from "node:fs";
+fs.writeFileSync(process.env.FAKE_CHILD_LOG, JSON.stringify({ argv: process.argv.slice(1), cwd: process.cwd(), execPath: process.execPath }));
+process.stdout.write("MCP_STDOUT\\n");
+process.stderr.write("MCP_STDERR\\n");
+process.exit(Number(process.env.FAKE_CHILD_EXIT ?? 0));
+`);
 
   const fakeNpm = path.join(fakeBin, process.platform === "win32" ? "npm.cmd" : "npm");
   writeExecutable(fakeNpm, `#!/usr/bin/env node
@@ -976,15 +1091,11 @@ const path = require("node:path");
 fs.appendFileSync(process.env.FAKE_NPM_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");
 process.stdout.write("NPM_STDOUT\\n");
 process.stderr.write("NPM_STDERR\\n");
-if (process.argv[2] === "ci") fs.mkdirSync(path.join(process.cwd(), "node_modules"), { recursive: true });
-if (process.argv[2] === "run" && process.argv[3] === "build") {
-  fs.mkdirSync(path.join(process.cwd(), "dist"), { recursive: true });
-  fs.writeFileSync(path.join(process.cwd(), "dist", "index.js"), ${JSON.stringify(`import fs from "node:fs";
-fs.writeFileSync(process.env.FAKE_CHILD_LOG, JSON.stringify({ argv: process.argv.slice(1), cwd: process.cwd(), execPath: process.execPath }));
-process.stdout.write("MCP_STDOUT\\n");
-process.stderr.write("MCP_STDERR\\n");
-process.exit(Number(process.env.FAKE_CHILD_EXIT ?? 0));
-`)});
+if (process.argv[2] === "ci") {
+  const typescript = path.join(process.cwd(), "node_modules", "typescript");
+  fs.mkdirSync(path.join(typescript, "bin"), { recursive: true });
+  fs.writeFileSync(path.join(typescript, "package.json"), JSON.stringify({ name: "typescript", version: "5.6.2" }));
+  fs.writeFileSync(path.join(typescript, "bin", "tsc"), ${JSON.stringify(STAND_IN_COMPILER)});
 }
 `);
 
@@ -992,6 +1103,7 @@ process.exit(Number(process.env.FAKE_CHILD_EXIT ?? 0));
     ...process.env,
     PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
     FAKE_NPM_LOG: npmLog,
+    FAKE_TSC_LOG: tscLog,
     FAKE_CHILD_LOG: childLog,
     FAKE_CHILD_EXIT: "7",
   };
@@ -1001,15 +1113,19 @@ process.exit(Number(process.env.FAKE_CHILD_EXIT ?? 0));
     encoding: "utf8",
     timeout: 10_000,
   });
+  const tscRuns = () => (fs.existsSync(tscLog) ? fs.readFileSync(tscLog, "utf8").trim().split("\n").filter(Boolean).length : 0);
+
   assert.equal(first.status, 7, first.stderr);
+  // stdout belongs to the MCP protocol: npm's and the compiler's chatter must both be elsewhere.
   assert.equal(first.stdout, "MCP_STDOUT\n");
   assert.match(first.stderr, /NPM_STDOUT/);
   assert.match(first.stderr, /NPM_STDERR/);
+  assert.match(first.stderr, /TSC_STDOUT/);
   assert.match(first.stderr, /MCP_STDERR/);
   assert.deepEqual(fs.readFileSync(npmLog, "utf8").trim().split("\n").map(JSON.parse), [
     ["ci", "--no-audit", "--no-fund"],
-    ["run", "build"],
   ]);
+  assert.equal(tscRuns(), 1, "the cold build compiles exactly once");
   const canonicalPluginRoot = fs.realpathSync(pluginRoot);
   assert.deepEqual(JSON.parse(fs.readFileSync(childLog, "utf8")), {
     argv: [path.join(canonicalPluginRoot, "dist", "index.js")],
@@ -1025,13 +1141,34 @@ process.exit(Number(process.env.FAKE_CHILD_EXIT ?? 0));
     timeout: 10_000,
   });
   assert.equal(warm.status, 0, warm.stderr);
-  assert.equal(fs.readFileSync(npmLog, "utf8"), "");
+  assert.equal(fs.readFileSync(npmLog, "utf8"), "", "an unchanged cache must not run npm");
+  assert.equal(tscRuns(), 1, "an unchanged cache must not run the compiler either");
+
+  // The trap this whole decision exists to close: an edited source used to be served stale forever.
+  fs.appendFileSync(path.join(pluginRoot, "src", "index.ts"), "// edited after the first start\n");
+  const edited = spawnSync(process.execPath, [path.join(pluginRoot, "scripts", "plugin-bootstrap.mjs")], {
+    cwd: hostileCwd,
+    env: { ...env, FAKE_CHILD_EXIT: "0" },
+    encoding: "utf8",
+    timeout: 10_000,
+  });
+  assert.equal(edited.status, 0, edited.stderr);
+  assert.equal(fs.readFileSync(npmLog, "utf8"), "", "a source edit is not a dependency change");
+  assert.equal(tscRuns(), 2, "a source edit must rebuild before the server starts");
+  assert.match(fs.readFileSync(path.join(pluginRoot, "dist", "index.js"), "utf8"), /\/\/ edited after the first start/);
 });
 
 test("documented portable and Claude token contracts launch from a hostile cwd", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pico manifest launcher "));
   const hostileCwd = path.join(tempRoot, "unrelated caller cwd ü 漢字");
   fs.mkdirSync(hostileCwd, { recursive: true });
+  // The token expands to an INSTALLED plugin root, not to this working checkout. Pointing it at the
+  // checkout would ask the bootstrap to make the repo current — a real `npm ci` inside a test, into
+  // the developer's own node_modules, under a 10s spawn timeout. The shadow root is the shape a
+  // consumer actually has (dist/ + scripts/, no sources), so the real server still starts here;
+  // `npmMustNotRun` turns any future attempt to install into a loud failure instead of a mutation.
+  const launchRoot = createLaunchableCacheRoot(tempRoot);
+  const launchEnv = { ...process.env, PATH: npmMustNotRun(tempRoot) };
 
   for (const [file, token, typed] of [["mcp.json", "${PLUGIN_ROOT}", true], [".mcp.claude.json", "${CLAUDE_PLUGIN_ROOT}", false]]) {
     const manifest = readJson(file);
@@ -1040,11 +1177,11 @@ test("documented portable and Claude token contracts launch from a hostile cwd",
     assert.deepEqual(launcher.args, [`${token}/scripts/plugin-bootstrap.mjs`]);
     assert.equal(Object.hasOwn(launcher, "type"), typed);
 
-    const hostResolvedArgs = launcher.args.map((arg) => arg.replaceAll(token, repoRoot));
+    const hostResolvedArgs = launcher.args.map((arg) => arg.replaceAll(token, launchRoot));
     assert.notDeepEqual(hostResolvedArgs, [path.resolve(hostileCwd, "scripts/plugin-bootstrap.mjs")]);
     const result = spawnSync(launcher.command, hostResolvedArgs, {
       cwd: hostileCwd,
-      env: { ...process.env, [token.slice(2, -1)]: repoRoot },
+      env: { ...launchEnv, [token.slice(2, -1)]: launchRoot },
       input: "",
       encoding: "utf8",
       timeout: 10_000,
@@ -1053,13 +1190,15 @@ test("documented portable and Claude token contracts launch from a hostile cwd",
     assert.equal(result.status, 0, `${file}: ${result.stderr}`);
     assert.equal(result.signal, null, `${file}: ${result.stderr}`);
     assert.equal(result.stdout, "", `${file}: MCP bootstrap must not contaminate stdout before EOF shutdown`);
+    assert.doesNotMatch(result.stderr, /FORBIDDEN npm/, `${file}: launching a consumer's cache must never run npm`);
   }
 
   const cursor = readJson("mcp.cursor.json").mcpServers["pico-spatial-mcp"];
   assert.deepEqual(cursor.args, ["${CURSOR_PLUGIN_ROOT}/scripts/plugin-bootstrap.mjs"]);
-  const cursorResolvedArgs = cursor.args.map((arg) => arg.replaceAll("${CURSOR_PLUGIN_ROOT}", repoRoot));
+  const cursorResolvedArgs = cursor.args.map((arg) => arg.replaceAll("${CURSOR_PLUGIN_ROOT}", launchRoot));
   const cursorResult = spawnSync(cursor.command, cursorResolvedArgs, {
     cwd: hostileCwd,
+    env: launchEnv,
     input: "",
     encoding: "utf8",
     timeout: 10_000,
@@ -1086,12 +1225,8 @@ test("bootstrap forwards SIGTERM to the MCP child", { skip: process.platform ===
   const hostileCwd = path.join(tempRoot, "hostile cwd");
   const readyFile = path.join(tempRoot, "ready");
   const signalFile = path.join(tempRoot, "signal");
-  fs.mkdirSync(path.join(pluginRoot, "scripts"), { recursive: true });
-  fs.mkdirSync(path.join(pluginRoot, "node_modules"), { recursive: true });
-  fs.mkdirSync(path.join(pluginRoot, "dist"), { recursive: true });
   fs.mkdirSync(hostileCwd, { recursive: true });
-  fs.copyFileSync(path.join(repoRoot, "scripts", "plugin-bootstrap.mjs"), path.join(pluginRoot, "scripts", "plugin-bootstrap.mjs"));
-  fs.writeFileSync(path.join(pluginRoot, "dist", "index.js"), `import fs from "node:fs";
+  writePackagedPayload(pluginRoot, `import fs from "node:fs";
 fs.writeFileSync(process.env.FAKE_READY_FILE, "ready");
 process.on("SIGTERM", () => { fs.writeFileSync(process.env.FAKE_SIGNAL_FILE, "SIGTERM"); process.exit(0); });
 setInterval(() => {}, 1000);
@@ -1720,6 +1855,12 @@ test("preflight prints the verified emulator-bundle install route but never runs
     now: () => Date.now(),
     home: "/fake-home",
     detectJavaHome: () => "/fake-jdk",
+    // Declared, not inherited: every host-environment-derived PreflightIO field is pinned so the
+    // adb and jdk rows answer from this fixture instead of reading this machine's $PICO_ADB /
+    // $JAVA_HOME. Without adbOverride an exported PICO_ADB makes the adb row fail and the emulator
+    // row degrade to "cannot check without adb".
+    adbOverride: null,
+    javaHomeEnv: null,
   };
   const emulator = runPreflightChecks(io).find((check) => check.name === "emulator");
   assert.equal(emulator.status, "fail", JSON.stringify(emulator));
@@ -1987,34 +2128,40 @@ test("public docs do not use ignored .dev files as evidence", () => {
   assert.deepEqual(acceptedMutations, [], `public evidence guard accepted: ${acceptedMutations.join(", ")}`);
 });
 
-test("the 47 named gate invocations are assigned to 44 Linux, one native-Windows, and two native-macOS lanes", () => {
+test("every named gate invocation is assigned to one workflow lane whose runner OS matches the inventory", () => {
+  // scripts/gate-inventory.mjs is the single declaration; this test asserts the *shape* (set
+  // equality, one lane each, matching runner OS) and derives every published number from it, so
+  // adding a gate can never leave a stale literal behind here.
   const pkg = readJson("package.json");
-  const all = ["smoke", ...Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"))];
   const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");
-  const job = (name) => {
-    const start = new RegExp(`^  ${name}:\\n`, "m").exec(workflow);
-    assert.ok(start, `workflow job ${name} must exist`);
-    const bodyStart = start.index + start[0].length;
-    const remainder = workflow.slice(bodyStart);
-    const next = /^  [A-Za-z0-9_-]+:\n/m.exec(remainder);
-    return next ? remainder.slice(0, next.index) : remainder;
-  };
-  const namedCommands = (body) => [...body.matchAll(/^\s+run:\s+npm run (\S+)\s*$/gm)]
-    .map((match) => match[1]).filter((name) => all.includes(name));
-  const assigned = {
-    linux: namedCommands(job("gates")),
-    windows: namedCommands(job("picocli-windows")),
-    macos: namedCommands(job("vcam-native")),
-  };
+  assert.deepEqual(validateGateInventory(pkg, workflow), []);
+
+  const lanes = parseWorkflowLanes(workflow);
+  const assigned = Object.fromEntries(["linux", "windows", "macos"].map((host) => [
+    host,
+    lanes.filter((lane) => lane.host === host).flatMap((lane) => lane.gates),
+  ]));
+  const { invocations, suites, hosts } = gateInventoryCounts();
   assert.deepEqual(
     Object.fromEntries(Object.entries(assigned).map(([host, names]) => [host, names.length])),
-    { linux: 44, windows: 1, macos: 2 },
+    hosts,
   );
-  assert.deepEqual([...new Set(Object.values(assigned).flat())].sort(), [...all].sort(), "each named invocation must be assigned to a host lane");
-  assert.equal(Object.values(assigned).flat().length, all.length, "named invocations must not be duplicated across host lanes");
+  assert.deepEqual(
+    [...new Set(Object.values(assigned).flat())].sort(),
+    Object.keys(GATES).sort(),
+    "each named invocation must be assigned to a host lane",
+  );
+  assert.equal(Object.values(assigned).flat().length, invocations, "named invocations must not be duplicated across host lanes");
+  assert.equal(suites + 1, invocations, "smoke is the one named invocation that is not a test: suite");
 
   const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8").replaceAll("\n", " ");
-  assert.match(readme, /47 gate invocations[\s\S]{0,220}44[\s\S]{0,80}Linux[\s\S]{0,120}(?:one|1)[\s\S]{0,80}(?:native )?Windows[\s\S]{0,120}(?:two|2)[\s\S]{0,80}(?:native )?macOS/i);
+  const spelled = (value) => ({ 1: "(?:one|1)", 2: "(?:two|2)" })[value] ?? String(value);
+  assert.match(readme, new RegExp(
+    `${invocations} gate invocations[\\s\\S]{0,220}${spelled(hosts.linux)}[\\s\\S]{0,80}Linux`
+    + `[\\s\\S]{0,120}${spelled(hosts.windows)}[\\s\\S]{0,80}(?:native )?Windows`
+    + `[\\s\\S]{0,120}${spelled(hosts.macos)}[\\s\\S]{0,80}(?:native )?macOS`,
+    "i",
+  ));
 });
 
 test("pico-cli 0.4.2 docs state the measured scope and corrected deltas", () => {
@@ -2085,16 +2232,20 @@ test("official-samples guidance retracts the untracked 8\/8 runtime claim", () =
   assert.match(samples, /local workaround/i);
 });
 
-test("distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and 46 test suites plus smoke", () => {
+test("distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and an inventory-derived gate battery", () => {
   const pkg = readJson("package.json");
   const testScripts = Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"));
-  assert.equal(testScripts.length, 46, testScripts.join("\n"));
-  assert.equal(pkg.scripts["test:distribution-adoption"], "node --test test/distribution-adoption.mjs");
+  assert.deepEqual(
+    [...testScripts].sort(),
+    Object.keys(GATES).filter((name) => name.startsWith("test:")).sort(),
+    "package.json test: scripts and the gate inventory must be the same set",
+  );
+  // The script is a dispatcher; the argv it resolves to lives in the inventory.
+  assert.equal(pkg.scripts["test:distribution-adoption"], gateScriptCommand("test:distribution-adoption"));
+  assert.deepEqual(GATES["test:distribution-adoption"].commands, [["node", "--test", "test/distribution-adoption.mjs"]]);
 
   const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");
-  for (const script of testScripts) {
-    assert.match(workflow, new RegExp(`run: npm run ${script.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s|$)`), script);
-  }
+  assert.deepEqual(validateGateInventory(pkg, workflow), []);
   assert.equal((workflow.match(/run: npm run smoke\s/g) ?? []).length, 1);
 
   const tarball = fs.readFileSync(path.join(repoRoot, "scripts", "verify-tarball.mjs"), "utf8");

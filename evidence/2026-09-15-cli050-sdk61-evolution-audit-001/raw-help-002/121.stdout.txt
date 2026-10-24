@@ -1,0 +1,15 @@
+Description:
+List available Android emulators (AVDs) from the Android SDK
+
+Usage:
+  $ pico-cli emulator list
+
+Options:
+  --format <format>  Output format (table | json | plain) (default: table)
+  --managed-only     Only show CLI-created PICO emulators
+  -h, --help         Display this message
+
+Examples:
+  $ pico-cli emulator list
+  $ pico-cli emulator list --managed-only
+  $ pico-cli emulator list --format json

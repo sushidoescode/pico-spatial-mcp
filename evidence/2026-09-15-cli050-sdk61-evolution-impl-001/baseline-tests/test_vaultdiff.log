@@ -1,0 +1,21 @@
+# npm run test:vaultdiff
+# exit=0 signal= elapsedMs=110
+
+## stdout
+  ok   typesAdded catches the new fixture type
+  ok   typesRemoved catches the deleted type
+  ok   removed type carries a migration hint
+  ok   member rename shows as removed+added on Entity
+  ok   1:1 member swap hints the likely rename
+  ok   ctor arity drift caught (2 removed, 3 added)
+  ok   arity hint names the broken construction site
+  ok   removed property caught (angularDamping)
+  ok   unchanged types produce no drift noise
+  ok   real workspaces enumerate (0.13:54md)
+  ok   vault_workspaces public schema/result routes setup through the managed absolute path
+
+Vault-diff test done. Failures: 0
+
+
+## stderr
+

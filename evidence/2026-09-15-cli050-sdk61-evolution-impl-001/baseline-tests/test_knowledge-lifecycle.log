@@ -1,0 +1,35 @@
+# npm run test:knowledge-lifecycle
+# exit=0 signal= elapsedMs=16102
+
+## stdout
+✔ KnowledgeBridge retires an inherited-stdio descendant and starts a fresh generation after timeout (915.483375ms)
+✔ KnowledgeBridge retires its exact root before restart when that root removed the ownership token (1391.267125ms)
+✔ KnowledgeBridge blocks replacement when retirement cannot prove the old generation ended (341.281541ms)
+✔ KnowledgeBridge never signals a reused root PID whose birth identity changed (221.178125ms)
+✔ KnowledgeBridge prevents SDK teardown from signalling a PID after root identity reuse (2473.078ms)
+✔ KnowledgeBridge prevents SDK-internal startup cleanup from signalling a reused PID (2558.021375ms)
+✔ KnowledgeBridge refuses a reused root row when the exact child handle reports exit before capture (71.756792ms)
+✔ KnowledgeBridge snapshots a token-stripped descendant before requesting root EOF (286.992292ms)
+✔ KnowledgeBridge never signals a remembered descendant PID after birth-identity reuse (195.082958ms)
+✔ KnowledgeBridge requires the generation token before signalling a same-birth remembered descendant (91.8455ms)
+✔ KnowledgeBridge does not signal or replace when POSIX process identity is unavailable (95.336875ms)
+✔ KnowledgeBridge bounds a hung process-table provider and blocks replacement (339.057292ms)
+✔ KnowledgeBridge simulated Windows retirement fails closed without numeric-PID signals (90.363625ms)
+✔ KnowledgeBridge rechecks a retirement block before a managed identity transition can spawn (1425.721375ms)
+✔ KnowledgeBridge returns provenance and classification for managed startup drift (783.585166ms)
+✔ KnowledgeBridge returns provenance and classification for managed startup timeout (1391.482125ms)
+✔ KnowledgeBridge returns provenance and classification for managed call timeout (1247.654084ms)
+✔ KnowledgeBridge returns provenance and classification for managed protocol failure (929.864917ms)
+✔ KnowledgeBridge retains managed execution guards through process retirement (1103.987416ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 15999.263333
+
+
+## stderr
+

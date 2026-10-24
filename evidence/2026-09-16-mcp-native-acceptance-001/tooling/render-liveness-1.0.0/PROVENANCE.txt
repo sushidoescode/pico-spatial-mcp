@@ -1,0 +1,14 @@
+source repo HEAD: 59f72794365bd324d3447e8bff853acbf974b7a2
+source root: /Users/sushantsrikrish/AndroidStudioProjects/rocketsim-mission-replay/evidence/2026-09-09-replay-cp15
+copied: 2026-09-16T21:40:29Z by pico-spatial-mcp native-acceptance session; originals untouched; sha256 list: PROVENANCE.sha256
+
+ADAPTED FILES: window-state.swift, host-move.swift, host-click.swift, runtime_gate.py differ from their PROVENANCE.sha256 entries by exactly the one-string title change recorded in ADAPTATION.md (so 'shasum -c PROVENANCE.sha256' reports those four as mismatches by design). The current tree's hashes are in PROVENANCE.adapted.sha256. The reference samples reference041-gate-002.* and preinstall-debug042-gate-004.* were added for gate_selftest_v1.py (22/22 in this location).
+
+NOT COPIED, deliberately: `selftest.py` (and its receipts), which the copied README still mentions.
+It is the SUPERSEDED self-test — the one whose SPR>=11/s requirement render-liveness/1.0.0 replaced.
+The current self-test, `gate_selftest_v1.py`, is here and passes 22/22 in this location. Its 22 cases
+are package-agnostic host-only policy checks driven by two retained real samples from the source
+repository (`reference041-*`, `preinstall-debug042-*`, copied here with their hashes); they validate
+the GATE's logic, not the demo package, which is what a self-test is for. Likewise `runtime_gate.py`
+is present only for its `raise` mode; its legacy `gate` mode still hardcodes emulator-5554 and the
+superseded SPR threshold and was not used.

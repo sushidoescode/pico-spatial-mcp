@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "validation": [
+    {
+      "path": "examples/agent-iteration-fixture/host-configs/claude.json",
+      "sha256": "b326b62d1702a576b6f5922fe4169d32ebc7bb574f1e5a36ef7889ff8a312061",
+      "parsed": true,
+      "hostLoaded": false,
+      "active": false
+    },
+    {
+      "path": "examples/agent-iteration-fixture/host-configs/codex.toml",
+      "sha256": "95bd99a3a582a388959b8e68b7a5e6c23b69ba160a5a260256b3318736756689",
+      "parsed": true,
+      "hostLoaded": false,
+      "active": false
+    },
+    {
+      "path": "examples/agent-iteration-fixture/host-configs/gemini-settings.json",
+      "sha256": "0b1c2a5645cdb29bd167c2b6068181668b88460135ba13548335038061cde7ed",
+      "parsed": true,
+      "hostLoaded": false,
+      "active": false
+    }
+  ],
+  "nativeOperations": 0,
+  "modelRequests": 0,
+  "hostSessionsStarted": 0
+}

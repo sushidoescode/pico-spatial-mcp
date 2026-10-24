@@ -1,0 +1,401 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-23T21:39:58.799597+00:00",
+  "sourceCommit": "9ca38de2f7652d49e0bd620cf1d22ce884f616fb",
+  "sourceSha256": "a2085a54b1729b026b5b3b0fb3f7f6818786c9c92b318dfc91268c6a961d3cc7",
+  "distOutputSha256": "3b64d954bf1ea4d064cd9f21bdd0c48befae5d14f62468295e032c799873647a",
+  "fixtureAdb": "/fixture/no/such/adb",
+  "allGatesGreen": false,
+  "runs": [
+    {
+      "name": "test:interaction",
+      "exitCode": 0,
+      "outcome": "pass",
+      "buildBinding": "final build7",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/build7-interaction.log",
+        "bytes": 17448,
+        "sha256": "fb40be9b223f30ca9c6032547cd5bff91a563a8eb67a3ab6d1544e397b794850"
+      },
+      "tapCounts": {
+        "tests": 74,
+        "pass": 74,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "name": "test:observation",
+      "exitCode": 0,
+      "outcome": "pass",
+      "buildBinding": "final build7",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/build7-observation.log",
+        "bytes": 19341,
+        "sha256": "339bac8ffb834ad3fc2889681c510d314a4b54962ce8ee3c0248e7acb7d1799a"
+      },
+      "tapCounts": {
+        "tests": 83,
+        "pass": 83,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "name": "test:docsmeta",
+      "exitCode": 0,
+      "outcome": "pass",
+      "buildBinding": "final build7 before final handoff links",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/build7-docsmeta.log",
+        "bytes": 6837,
+        "sha256": "6911e25bf2cf78c965d08c8fbcc7012acc0a0ac5dfdac8f507a1ddd582a09ca3"
+      },
+      "tapCounts": {
+        "tests": 26,
+        "pass": 26,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "name": "test:lint",
+      "exitCode": 0,
+      "outcome": "pass",
+      "buildBinding": "final build7",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/build7-lint.log",
+        "bytes": 16939,
+        "sha256": "c425b4945012fbb069046938afd718b4860cc74079b114e634f7a39f6566079a"
+      },
+      "tapCounts": {
+        "tests": 63,
+        "pass": 63,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "name": "CLI observations + agent contracts",
+      "exitCode": 0,
+      "outcome": "pass",
+      "buildBinding": "final build7; direct node --test with explicit fixture ADB",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/build7-cli-contracts.log",
+        "bytes": 7643,
+        "sha256": "d8188e84fb5d5d902d726dc4e625d77658581df44783ed78c72de3ceab79e9e8"
+      },
+      "tapCounts": {
+        "tests": 33,
+        "pass": 33,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "name": "smoke",
+      "exitCode": 0,
+      "outcome": "pass",
+      "buildBinding": "final build7",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/build7-smoke.log",
+        "bytes": 8413,
+        "sha256": "f1bad78e0e7d1ef683b1460910c5a41e921a8060eef6d038146b940b55e7d09f"
+      },
+      "smokeSummary": [
+        {
+          "name": "tool registration",
+          "status": "ok"
+        },
+        {
+          "name": "typed outputSchema",
+          "status": "ok"
+        },
+        {
+          "name": "preflight_env structuredContent",
+          "status": "ok"
+        },
+        {
+          "name": "diagnose structuredContent",
+          "status": "ok"
+        },
+        {
+          "name": "capability_report structuredContent",
+          "status": "ok"
+        },
+        {
+          "name": "capability_report rejects caller-forged producer tiers",
+          "status": "ok"
+        },
+        {
+          "name": "verify structuredContent success path",
+          "status": "ok"
+        },
+        {
+          "name": "build_and_run structuredContent success path",
+          "status": "ok"
+        },
+        {
+          "name": "fixture invocation log targets only the fixture",
+          "status": "ok"
+        },
+        {
+          "name": "no npm invocation",
+          "status": "ok"
+        },
+        {
+          "name": "no global log clear",
+          "status": "ok"
+        },
+        {
+          "name": "build_and_run window dump carries the long-poll bound",
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "name": "test:tarball",
+      "exitCode": 0,
+      "outcome": "pass",
+      "buildBinding": "same final source, prepack rebuilt identical dist",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/build7-tarball.log",
+        "bytes": 8295,
+        "sha256": "a6c48042cf9814918205b9ca123380f02c184f1538ced5a94ddb07d1b251fc19"
+      },
+      "tapCounts": {
+        "tests": 11,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "installedChecksPassed": 51,
+      "limitations": [
+        "macOS arm64 only",
+        "ephemeral npm sandbox only; no installed host activation",
+        "no native or rendered acceptance"
+      ]
+    },
+    {
+      "name": "test:doors",
+      "exitCode": 0,
+      "outcome": "pass",
+      "buildBinding": "pre-final build6",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/final-doors.log",
+        "bytes": 13387,
+        "sha256": "20d9a0f18b461cb9d6450ab9f230423d650ccfebc399b91c3d9673349811c33e"
+      },
+      "tapCounts": {
+        "tests": 17,
+        "pass": 17,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "name": "test:bridge",
+      "exitCode": 0,
+      "outcome": "pass",
+      "buildBinding": "pre-final build6",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/final-bridge.log",
+        "bytes": 103510,
+        "sha256": "5b4de15cedf1b882b3be25f12383a4fc46fe3962d0e39a934c3a8f061cb4ea9f"
+      },
+      "tapCounts": {
+        "tests": 630,
+        "pass": 630,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "name": "test:emulator-restart",
+      "exitCode": 0,
+      "outcome": "pass",
+      "buildBinding": "pre-final build6",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/final-emulator-restart.log",
+        "bytes": 136962,
+        "sha256": "be71ce8f45a1c7908518febf7a4425da7a50754370eb4a109411192501d16136"
+      },
+      "tapCounts": {
+        "tests": 690,
+        "pass": 689,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1,
+        "todo": 0
+      }
+    },
+    {
+      "name": "test:runreceipt",
+      "exitCode": 0,
+      "outcome": "pass",
+      "buildBinding": "pre-final build6",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/final-runreceipt.log",
+        "bytes": 79544,
+        "sha256": "6dd1f561d748eca1b276094d81069be287314a242103bd0eddd85a7253fa527e"
+      },
+      "tapCounts": {
+        "tests": 337,
+        "pass": 337,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "name": "test:runrevision",
+      "exitCode": 0,
+      "outcome": "pass",
+      "buildBinding": "pre-final build6",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/final-runrevision.log",
+        "bytes": 62123,
+        "sha256": "5c2a581a9a2647cc90487a1594d797647d40389e64b1a892fc87407c002e22c3"
+      },
+      "tapCounts": {
+        "tests": 327,
+        "pass": 327,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "name": "test:picocli",
+      "exitCode": 1,
+      "outcome": "fail",
+      "buildBinding": "final build7",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/build7-picocli.log",
+        "bytes": 48847,
+        "sha256": "7e87ed2a3471be8fd37afe317a552daf65b39d96b90529ed54a1766726484f10"
+      },
+      "tapCounts": {
+        "tests": 160,
+        "pass": 158,
+        "fail": 2,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "failure": "One detached-descendant output-cap cleanup assertion plus parent subtest failure; unchanged scan exceeds 4 MiB; reproduced on isolated baseline. Final CLI contracts segment executed separately."
+    },
+    {
+      "name": "test:knowledge-lifecycle",
+      "exitCode": 1,
+      "outcome": "fail",
+      "buildBinding": "pre-final build6; exact owned worker cleanup after assertions",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/final-knowledge-lifecycle.log",
+        "bytes": 12532,
+        "sha256": "010df4cf58cf2c190ce41d4ab362dbd6fc219b998b9898885b773ff6c96b2eef"
+      },
+      "tapCounts": {
+        "tests": 27,
+        "pass": 23,
+        "fail": 4,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "failure": "Four process-table retirement timeouts, all directly reproduced on isolated main; unchanged 250 ms provider budget."
+    },
+    {
+      "name": "test:distribution-adoption",
+      "exitCode": 1,
+      "outcome": "fail",
+      "buildBinding": "pre-final build6; exact owned fixture cleanup after assertions",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/final-distribution-adoption.log",
+        "bytes": 15180,
+        "sha256": "703853d6997b38fbf19da800d07eb61c220a12e329fe76cdfc0981dd1fcefdce"
+      },
+      "tapCounts": {
+        "tests": 43,
+        "pass": 40,
+        "fail": 3,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "failure": "Three retirement failures attributed by unchanged code/stack to same provider timeout; exact distribution cases not rerun on main (inference)."
+    },
+    {
+      "name": "test:docsmeta final handoff links",
+      "exitCode": 0,
+      "outcome": "pass",
+      "buildBinding": "final build7; after handoff additions",
+      "log": {
+        "path": "evidence/2026-10-23-agent-iteration/tests/final-handoff-docsmeta.log",
+        "bytes": 6845,
+        "sha256": "8138f9628537c6aca9f8c802f7a3ea5803227ac93223cea39cdcf0439a7684fb"
+      },
+      "tapCounts": {
+        "tests": 26,
+        "pass": 26,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    }
+  ],
+  "failedEvidencePreserved": true,
+  "renderedFramesReviewed": 0,
+  "interactiveHostTrials": {
+    "Claude": "untested",
+    "Codex": "untested",
+    "Gemini": "untested"
+  },
+  "baselineDiagnostics": [
+    {
+      "path": "evidence/2026-10-23-agent-iteration/cli/SWEEP_SCAN_DIAGNOSIS.json",
+      "bytes": 610,
+      "sha256": "be096a47bbd500ab97561b508d419fe0e9bce5a1755193e902098dfb77eab3e3"
+    },
+    {
+      "path": "evidence/2026-10-23-agent-iteration/cli/LIFECYCLE_TRIAGE.json",
+      "bytes": 4530,
+      "sha256": "4868d3b473c68d3b612ce2453336697e3460730561f0ea476b1713555715b7dc"
+    }
+  ],
+  "rebuildExperiment": {
+    "path": "evidence/2026-10-23-agent-iteration/REBUILD_EXPERIMENT.json",
+    "bytes": 7566,
+    "sha256": "5857000369962688c656c8d289f19b9a2a2b3b1f9a895cea675ce64e06b197fd"
+  },
+  "review": {
+    "path": "evidence/2026-10-23-agent-iteration/REVIEW_RESULT.json",
+    "bytes": 2096,
+    "sha256": "879fce0ba9e0629eb76617bc9df6b5c68e0d0e76923e4d9224382fe7535b3a3c"
+  },
+  "incident": {
+    "path": "examples/agent-iteration-fixture/evidence/scaffold-observation.json",
+    "bytes": 1909,
+    "sha256": "60e695f465f8b466f63883c9ddfac107bc3c116693b2374f2f34da5f47e41c49"
+  },
+  "nativeMutations": 0
+}

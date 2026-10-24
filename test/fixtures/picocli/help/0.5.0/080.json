@@ -1,0 +1,16 @@
+{
+  "label": "0.5.0 knowledge --help",
+  "argv": [
+    "knowledge",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:00.604Z",
+  "endedAt": "2026-09-15T09:12:00.713Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "1461c9b77721cd7c2186a71f98964550d1e6421d7d45587b852ac5db51f763ab",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

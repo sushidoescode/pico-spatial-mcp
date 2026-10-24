@@ -1,0 +1,40 @@
+
+> pico-spatial-mcp@38.0.0 test:plugin-bootstrap-freshness
+> node scripts/run-gate.mjs test:plugin-bootstrap-freshness
+
+✔ the setup plan is decided by dependency and build freshness, not by directory existence (0.5895ms)
+✔ a source checkout is recognised by its sources and tsconfig, and an installed payload is not (3.855542ms)
+✔ the dependency identity is a digest over the lockfile bytes and this Node major (1.358541ms)
+✔ an install is only current when its receipt accounts for the lockfile on disk (2.704709ms)
+✔ npm's own record of the install is accepted when our receipt cannot speak (3.175167ms)
+✔ a packaged payload is verified from its receipt without any source (4.944792ms)
+✔ an unchanged cache starts the server with no npm, no compiler and no setup lock (2.298208ms)
+✔ a deleted dist is rebuilt without reinstalling dependencies (3.267458ms)
+✔ a source edit rebuilds before the server starts (3.194375ms)
+✔ a lockfile edit reinstalls, rebuilds and records the new dependency identity (3.835458ms)
+✔ a cache with neither a receipt nor npm's own record installs once (2.28075ms)
+✔ a cache npm installed and we did not starts with no npm, records it once, then is receipt-fast (2.254583ms)
+✔ a single changed package in npm's record sends the cache through one install (2.275875ms)
+✔ a record npm wrote for another lockfile version, or no record we can parse, is not evidence (4.315709ms)
+✔ an install that changes the installed TypeScript rebuilds output that was current before it (3.032959ms)
+✔ restoring a deleted node_modules does not recompile output the install makes current again (2.894667ms)
+✔ the install and the build it feeds share one setup lease (1.488959ms)
+✔ the planned build runs the checkout's own TypeScript through this node binary with an explicit outDir (2.459584ms)
+✔ a failed install ends bootstrap and never compiles or launches (0.713ms)
+✔ a failed compilation ends bootstrap, keeps the previous output and never launches (1.913291ms)
+✔ a lockfile that changes during installation is rejected instead of recorded (0.827375ms)
+✔ an installed package with an intact payload launches without npm or a compiler (2.037917ms)
+✔ an installed package whose payload was tampered with refuses to launch and asks for a reinstall (1.668542ms)
+✔ two cold bootstraps against one cache install once, build once, and never overlap (53.357875ms)
+bootstrap timings: warm 0.432792ms, e2e cold 198ms, e2e warm 48ms, e2e source-edit 77ms
+✔ two changed-lock bootstraps against one cache reinstall once and rebuild once (52.592667ms)
+✔ a waiter that times out on the setup lease launches nothing (5.858333ms)
+✔ a real cold bootstrap compiles, keeps npm and compiler chatter off stdout, then starts warm (325.552ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 563.336416

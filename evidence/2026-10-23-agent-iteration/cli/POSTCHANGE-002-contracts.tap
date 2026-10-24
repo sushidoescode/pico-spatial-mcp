@@ -1,0 +1,69 @@
+(node:37717) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:37777) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: exit-zero help ending mid-option is unknown even when usage names the requested operation
+ok 1 - exit-zero help ending mid-option is unknown even when usage names the requested operation
+  ---
+  duration_ms: 1.199084
+  ...
+# Subtest: exit-zero usage-only prefix cannot establish a complete help contract
+ok 2 - exit-zero usage-only prefix cannot establish a complete help contract
+  ---
+  duration_ms: 0.252167
+  ...
+# Subtest: unknown flags are unavailable and a newer version never promotes incomplete output
+ok 3 - unknown flags are unavailable and a newer version never promotes incomplete output
+  ---
+  duration_ms: 0.48775
+  ...
+# Subtest: schema-1 records are retained for inspection but cannot authorize dispatch without selection identity
+ok 4 - schema-1 records are retained for inspection but cannot authorize dispatch without selection identity
+  ---
+  duration_ms: 1.343708
+  ...
+# Subtest: selected utility bytes and nearest project environment invalidate an unchanged package identity
+ok 5 - selected utility bytes and nearest project environment invalidate an unchanged package identity
+  ---
+  duration_ms: 3.571958
+  ...
+# Subtest: command-specific JSON distinguishes raw workflow arrays from tool-result PARTIAL exit four
+ok 6 - command-specific JSON distinguishes raw workflow arrays from tool-result PARTIAL exit four
+  ---
+  duration_ms: 12.312666
+  ...
+# Subtest: CLI run references verify retained command, path, hash and revision; a local scenario cannot revise them
+ok 7 - CLI run references verify retained command, path, hash and revision; a local scenario cannot revise them
+  ---
+  duration_ms: 5.011375
+  ...
+# Subtest: retained 0.6.1 streams reproduce pipe uncertainty and PTY declaration without runtime promotion
+ok 8 - retained 0.6.1 streams reproduce pipe uncertainty and PTY declaration without runtime promotion
+  ---
+  duration_ms: 11.676709
+  ...
+# Subtest: external CLI imported package helpers are part of its execution identity
+ok 9 - external CLI imported package helpers are part of its execution identity
+  ---
+  duration_ms: 6.740084
+  ...
+# Subtest: retained current Workflow JSON is command specific and PARTIAL read is never success
+ok 10 - retained current Workflow JSON is command specific and PARTIAL read is never success
+  ---
+  duration_ms: 0.651
+  ...
+# Subtest: a capability record cannot survive selected utility drift even at the same CLI version
+ok 11 - a capability record cannot survive selected utility drift even at the same CLI version
+  ---
+  duration_ms: 1.240417
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 95.037708

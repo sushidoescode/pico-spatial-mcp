@@ -1,0 +1,16 @@
+{
+  "label": "0.4.4 shell --help",
+  "argv": [
+    "shell",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:48.991Z",
+  "endedAt": "2026-09-15T09:11:49.087Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "d624eb8d2ba9acc7de80397f2537cf4710197c9c5f0497e0775f4c1d37780ba0",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

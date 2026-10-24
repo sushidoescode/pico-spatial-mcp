@@ -1,0 +1,3 @@
+(node:3709) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Error: Command failed with exit code 1: /Users/sushantsrikrish/Library/PICO/sdk/6.1/emulator/system-images/platform-tools/adb -s emulator-5554 shell pm path com.example.picofixture.iteration.debug

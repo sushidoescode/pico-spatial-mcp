@@ -1,0 +1,73 @@
+✔ portable core and host overlays use only their documented MCP contracts (1.094917ms)
+✔ all host marketplaces use their exact source descriptor and synchronized metadata (27.43675ms)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+✔ installed tarball keeps default startup, tools/list, and pico_doctor read-only (3030.549625ms)
+✔ installed tarball wrapper lazily uses exact managed latest without touching ambient CLI or PATH (1580.883375ms)
+✔ setup-required wrapper results stay source/freshness-neutral and never execute setup (4009.858875ms)
+✔ public schemas and missing-vault results route setup through ensure_pico_cli (292.780375ms)
+✔ KnowledgeBridge classifies setup refusal anywhere in bounded startup stderr (1533.795625ms)
+✔ bootstrap root/platform/prerequisite decisions are independent of the caller cwd (0.911375ms)
+✔ Windows bootstrap runs fixed npm scripts through ComSpec without shell interpolation (3.732875ms)
+✔ a non-timeout npm failure is nonzero and never launches MCP (164.875875ms)
+✔ cold bootstrap keeps npm on stderr, uses absolute child argv, and propagates child exit (330.270875ms)
+✔ documented portable and Claude token contracts launch from a hostile cwd (527.912083ms)
+✔ bounded bootstrap children are killed after timeout (82.46625ms)
+✔ bootstrap forwards SIGTERM to the MCP child (51.981209ms)
+✔ knowledge_api exposes all eight strict grounded action schemas (1.390667ms)
+✔ KnowledgeBridge calls every action through one persistent serialized stdio MCP client (260.774458ms)
+✔ KnowledgeBridge returns remote tool errors without retiring switched workspace state (262.003ms)
+✔ KnowledgeBridge deduplicates concurrent startup and caps returned text (267.527666ms)
+✔ KnowledgeBridge production environment forwards the full host environment (257.725875ms)
+✔ KnowledgeBridge observes a timed-out generation exit before starting its replacement (3669.752625ms)
+✔ KnowledgeBridge resets after startup timeout, call timeout, and protocol failure, then recovers (2333.964084ms)
+✔ KnowledgeBridge reports a missing pico-cli command as unavailable (1.189667ms)
+✔ KnowledgeBridge custom injected command bypasses managed resolution (260.104125ms)
+✔ KnowledgeBridge production child follows managed path/version changes and retires on disabled (1945.808166ms)
+✔ registered knowledge_api keeps the flattened union strict (265.219125ms)
+✔ preflight_lint queries only an opt-in advisory graph second opinion without changing clean (3.42125ms)
+✔ missing pico-cli leaves opt-in preflight_lint clean and labels knowledge unavailable (1.343959ms)
+✖ preflight prints the verified emulator-bundle install route but never runs it (2.283041ms)
+✔ public adoption docs keep bundle installation, AVD creation, and build tooling distinct (0.361875ms)
+✔ operational docs publish one exact canonical managed CLI policy block (4.450542ms)
+✔ managed CLI policy gate rejects alternate modes and automatic mutation claims (8.955917ms)
+✔ managed CLI policy gate accepts external and global prose that does not define resolution policy (3.021208ms)
+✔ managed-latest finding distinguishes live ledger proof from isolated synthetic battery calls (0.200541ms)
+✔ managed CLI implementation plan no longer teaches a freshness-overclaiming setup note (0.12675ms)
+✔ answers-by-measurement publishes exactly seven narrow answers backed by tracked citations (17.014959ms)
+✔ public docs do not use ignored .dev files as evidence (17.044625ms)
+✔ every named gate invocation is assigned to one workflow lane whose runner OS matches the inventory (0.9895ms)
+✔ pico-cli 0.4.2 docs state the measured scope and corrected deltas (0.334959ms)
+✔ the scene-understanding ceiling does not resurrect the superseded zero-mesh claim (0.093958ms)
+✔ public guidance does not resurrect refuted capture, scene-understanding, or mesh-collider absolutes (43.285917ms)
+✔ published schema-token measurements name the tokenizer and context boundary (0.27925ms)
+✔ official-samples guidance retracts the untracked 8/8 runtime claim (0.222417ms)
+✔ distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and an inventory-derived gate battery (1.150416ms)
+ℹ tests 43
+ℹ suites 0
+ℹ pass 42
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 21318.770167
+
+✖ failing tests:
+
+test at test/distribution-adoption.mjs:1836:1
+✖ preflight prints the verified emulator-bundle install route but never runs it (2.283041ms)
+  AssertionError [ERR_ASSERTION]: {"name":"emulator","status":"unknown","detail":"cannot check without adb","fix":"Fix the adb check first, then re-run preflight_env."}
+  
+  'unknown' !== 'fail'
+  
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/distribution-adoption.mjs:1858:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'unknown',
+    expected: 'fail',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

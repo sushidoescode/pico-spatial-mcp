@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 emulator dump-logs --help",
+  "argv": [
+    "emulator",
+    "dump-logs",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:52.239Z",
+  "endedAt": "2026-09-15T09:11:52.337Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "72de8636b0faf1645cb9cd6b3fd2582442edbe2de7f149f408eb66da7413d1d7",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

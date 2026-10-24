@@ -1,13 +1,15 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import * as path from "node:path";
-import * as os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { okJson } from "./util.js";
+import { adbExecutable } from "./adb.js";
 
 const run = promisify(execFile);
-const ADB = process.env.PICO_ADB ?? path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools. Resolved PER CALL (identity-keyed, so a hit costs a stat) rather
+ *  than frozen into a module constant at import time. */
+const ADB = () => adbExecutable();
 const SERIAL = "emulator-5554";
 const BROWSER = "com.picoxr.browser";
 
@@ -26,7 +28,7 @@ const BROWSER = "com.picoxr.browser";
  */
 
 async function browserPid(): Promise<string | null> {
-  const r = await run(ADB, ["-s", SERIAL, "shell", "pidof", BROWSER], { timeout: 10_000 }).catch(() => null);
+  const r = await run(ADB(), ["-s", SERIAL, "shell", "pidof", BROWSER], { timeout: 10_000 }).catch(() => null);
   const pid = r?.stdout.trim();
   return pid || null;
 }
@@ -36,7 +38,7 @@ async function cdpEval(expr: string, opts: { urlIncludes?: string; port?: number
   const pid = await browserPid();
   if (!pid) throw new Error("SpaceBrowser is not running — open a page first (drive_browser url=...).");
   const port = opts.port ?? 9222;
-  await run(ADB, ["-s", SERIAL, "forward", `tcp:${port}`, `localabstract:weblayer_devtools_remote_${pid}`], { timeout: 10_000 });
+  await run(ADB(), ["-s", SERIAL, "forward", `tcp:${port}`, `localabstract:weblayer_devtools_remote_${pid}`], { timeout: 10_000 });
   const pages = await (await fetch(`http://localhost:${port}/json`)).json();
   const page = (pages as any[]).find((p) => p.type === "page" && (!opts.urlIncludes || (p.url ?? "").includes(opts.urlIncludes)))
     ?? (pages as any[]).find((p) => p.type === "page");
@@ -73,7 +75,7 @@ export function registerWebBrowserTools(server: McpServer) {
     async ({ url, evalJs, urlIncludes, settleSec }) => {
       const steps: string[] = [];
       if (url) {
-        await run(ADB, ["-s", SERIAL, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url, BROWSER], { timeout: 30_000 });
+        await run(ADB(), ["-s", SERIAL, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url, BROWSER], { timeout: 30_000 });
         steps.push(`opened ${url}`);
         await new Promise((r) => setTimeout(r, (settleSec ?? 6) * 1000));
       }
@@ -97,7 +99,7 @@ export function registerWebBrowserTools(server: McpServer) {
     },
     async ({ url }) => {
       if (url) {
-        await run(ADB, ["-s", SERIAL, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url, BROWSER], { timeout: 30_000 });
+        await run(ADB(), ["-s", SERIAL, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url, BROWSER], { timeout: 30_000 });
         await new Promise((r) => setTimeout(r, 6000));
       }
       const probe = `(async () => {

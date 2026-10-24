@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-23T21:33:18.854409+00:00",
+  "worker": {
+    "pid": 47861,
+    "parentPid": 47848,
+    "birthIdentity": "Fri Oct 23 14:31:13 2026",
+    "command": "/usr/local/bin/node --test-name-pattern=KnowledgeBridge retires an inherited|KnowledgeBridge retires its exact|managed startup timeout|canonical managed route test/knowledge-lifecycle.mjs"
+  },
+  "parent": {
+    "pid": 47848,
+    "parentPid": 87722,
+    "birthIdentity": "Fri Oct 23 14:31:12 2026",
+    "command": "node --test --test-name-pattern=KnowledgeBridge retires an inherited|KnowledgeBridge retires its exact|managed startup timeout|canonical managed route test/knowledge-lifecycle.mjs"
+  },
+  "cwd": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-23-agent-iteration/cli/baseline-lifecycle",
+  "childrenAtSignal": [],
+  "signal": "SIGTERM",
+  "exited": true,
+  "scope": "Only own baseline reproduction worker after all four assertions and fixture finally blocks; no group/ancestor signals",
+  "priorGuardRefusal": "First attempt sent no signal: expected argv omitted Node propagated test-name-pattern. Actual exact argv was then inspected and bound."
+}

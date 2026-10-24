@@ -1,0 +1,48 @@
+{
+  "at": "2026-10-24T09:41:26.516864+00:00",
+  "files": [
+    {
+      "path": "/Users/sushantsrikrish/.codex-account-b/config.toml",
+      "beforeSha256": "dba170dd669ef59bf71948e35e668f6f6a0d12bcfc68239bcb7f2dd209849667",
+      "afterSha256": "dba170dd669ef59bf71948e35e668f6f6a0d12bcfc68239bcb7f2dd209849667",
+      "unchanged": true,
+      "baseline": "settings-before.json"
+    },
+    {
+      "path": "/Users/sushantsrikrish/.claude.json",
+      "beforeSha256": "8fcacf8b86f07bb4c4f40b444990572cc6def888847e782307848322eda77f2d",
+      "afterSha256": "8fcacf8b86f07bb4c4f40b444990572cc6def888847e782307848322eda77f2d",
+      "unchanged": true,
+      "baseline": "settings-before.json"
+    },
+    {
+      "path": "/Users/sushantsrikrish/.claude/settings.json",
+      "beforeSha256": "479605bb338b3d5ee4f99241c5db81ee7394dba1fd4829d54b2f454fd15a99fa",
+      "afterSha256": "479605bb338b3d5ee4f99241c5db81ee7394dba1fd4829d54b2f454fd15a99fa",
+      "unchanged": true,
+      "baseline": "settings-before.json"
+    },
+    {
+      "path": "/Users/sushantsrikrish/.gemini/settings.json",
+      "beforeSha256": "b803ec3aeb38ac7d383762e6f37283e3a94b36cff83c9301047ae484aa93bd6d",
+      "afterSha256": "b803ec3aeb38ac7d383762e6f37283e3a94b36cff83c9301047ae484aa93bd6d",
+      "unchanged": true,
+      "baseline": "settings-before.json"
+    },
+    {
+      "path": "/Users/sushantsrikrish/.claude-account-b/settings.json",
+      "beforeSha256": "a48295f11795b42add3745959e9f98067fb24df89d07313b6d9ea324de8b0ace",
+      "afterSha256": "a48295f11795b42add3745959e9f98067fb24df89d07313b6d9ea324de8b0ace",
+      "unchanged": true,
+      "baseline": "claude-settings-before.json"
+    },
+    {
+      "path": "/Users/sushantsrikrish/.claude-account-b/.claude.json",
+      "beforeSha256": "652e3eed6afd9d8e59a84b79fbfd2c78c9a4f0363ef7b2e78d7b7fbac1e0c73a",
+      "afterSha256": "652e3eed6afd9d8e59a84b79fbfd2c78c9a4f0363ef7b2e78d7b7fbac1e0c73a",
+      "unchanged": true,
+      "baseline": "claude-settings-before.json"
+    }
+  ],
+  "note": "Selected configuration fingerprints, not all runtime state. Gemini state.json and model-host caches can change during ordinary startup/session use."
+}

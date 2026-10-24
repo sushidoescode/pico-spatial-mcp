@@ -1,0 +1,7 @@
+Usage:
+  $ pico-cli files stat <remote>
+
+Options:
+  -d, --device <device>  Target device id 
+  --format <format>      Output format (plain, json) (default: plain)
+  -h, --help             Display this message 

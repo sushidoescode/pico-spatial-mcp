@@ -1,0 +1,415 @@
+{
+  "base": "1157f33",
+  "files": [
+    {
+      "path": "src/knowledge.ts",
+      "sha256": "cf49f6bc0a4fa862f8c97d87518f611869f97d9e7336f156ea40d0054a35a689",
+      "bytes": 62236
+    },
+    {
+      "path": "src/util.ts",
+      "sha256": "6433d2d59e4a64d79d7cec62aef42721d2e5fe7806c6963ec5fe83ab448758a9",
+      "bytes": 5353
+    },
+    {
+      "path": "src/picocli.ts",
+      "sha256": "6c435356e9b61aa96a7bad401de6269bae6aa7edd7cd4d59c59be967850a11aa",
+      "bytes": 50905
+    },
+    {
+      "path": "src/picoclimanaged.ts",
+      "sha256": "52e27f2bf2886d72c50b7a99b5ee72c7d3162ffe0a7163bbab1b63a62eb0ae64",
+      "bytes": 87597
+    },
+    {
+      "path": "src/clicapabilities.ts",
+      "sha256": "4aa122925066a88ffc1bac724d06644ca3a8a3a22109b50e6514d291e33e1435",
+      "bytes": 40752
+    },
+    {
+      "path": "package.json",
+      "sha256": "26948a05df0e7c3cae2f4cd85a8e85f7da6215a7c072ab749a05d1c376839c7f",
+      "bytes": 5305
+    },
+    {
+      "path": "test/knowledge-lifecycle.mjs",
+      "sha256": "0e53ca5650006cc2c31ea5a9ba5c29d28035e8a6ccc3fa4fbf89227033de2d60",
+      "bytes": 69529
+    },
+    {
+      "path": "test/helpers/picocli-managed-fixture.mjs",
+      "sha256": "3df95132d23c7b89f4aa33041e6da7fc930f30c4fb596ecaef6a65e01932a869",
+      "bytes": 29366
+    },
+    {
+      "path": "test/fixtures/fake-knowledge-server.mjs",
+      "sha256": "4c70385a4baa91b6b3286e1832d1e39a7ef301123900f422c6bfb76da4320203",
+      "bytes": 5071
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/001.json",
+      "sha256": "3cae89bd8908f799e4ce8c760ca2ce09137ee3d7f2fead67e504d5e5dbe143af",
+      "bytes": 432
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/001.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/001.stdout.txt",
+      "sha256": "99ca71c8950c00f8295b9e1cccfd0ff6fcafd3acb17cf8a7aa82dc752f4eb4a6",
+      "bytes": 50
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/002.json",
+      "sha256": "711283684b971ea04b5f1ee4c75d7618fe096684d94925bf42e09dfa8654f823",
+      "bytes": 427
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/002.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/002.stdout.txt",
+      "sha256": "c78b513f95bd5ad1e1b3bb0867265d7d9743b81a7b6d6a27a5ae92c268cf5941",
+      "bytes": 1007
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/011.json",
+      "sha256": "d6ceea502de2389ebbdfd4daacdf021f810799fa964b0b71ad504b590ce0de13",
+      "bytes": 433
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/011.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/011.stdout.txt",
+      "sha256": "f767b20cb09e821855cfc9c53943438ee254afc6c8351498832784dcaf3c90e7",
+      "bytes": 229
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/012.json",
+      "sha256": "bcb619ef16089a9e9f971e03906670140543f658461c794a9e0a056c5b5fcb89",
+      "bytes": 435
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/012.stderr.txt",
+      "sha256": "d22fe9b905cc5a56866b8ea4d8e88fe33e0e640078a9678aa882c179df943477",
+      "bytes": 80
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/012.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/025.json",
+      "sha256": "aed1d5668a0d815fca4cf50552263b910e8f1dcb04f9b92102306cc0e5829bd3",
+      "bytes": 464
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/025.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/025.stdout.txt",
+      "sha256": "66665f115a9b01205d6f2cd361cd1bae20d9878e936c1f261f576a198f41d20c",
+      "bytes": 533
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/026.json",
+      "sha256": "a68e351533c5513d079577d8d2befe183722629c7e52286dba1f07edc5f6a9f0",
+      "bytes": 462
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/026.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/026.stdout.txt",
+      "sha256": "edc531b100e9aab1873a6bf3c316dd755e96b52bc3c604fce1ab233b48ad2540",
+      "bytes": 253
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/053.json",
+      "sha256": "eb895b856af20e42df59277c3561cc0067edb92caa9b540627ee0f5c48766c61",
+      "bytes": 464
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/053.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/053.stdout.txt",
+      "sha256": "03e1af0ab85f065d8acbf7cd0e69298d5d005e875a92fd421f6451c7ef180005",
+      "bytes": 358
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/062.json",
+      "sha256": "7b0769ab293493fc4936eca851f29806dcdd1446f4e3f7adab25bf1e34f707a9",
+      "bytes": 468
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/062.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/062.stdout.txt",
+      "sha256": "33b0e8a01533cfd426d699e41f003193a45efa03e99af617c759b8bf6625ce55",
+      "bytes": 84
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/067.json",
+      "sha256": "542b3a968a981d00b426385ca8c5e44346fc43a5c742507c4881e612080f3b7b",
+      "bytes": 485
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/067.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.4.4/067.stdout.txt",
+      "sha256": "167790513e1c6a0b0cdb6747adf4695c01afeab12aa7cd381498c0629628d3e7",
+      "bytes": 857
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/071.json",
+      "sha256": "b7347bee991d311bc5dd01baa9de15655e2a0d5c109a4ae8a99c5c07025ee3ca",
+      "bytes": 432
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/071.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/071.stdout.txt",
+      "sha256": "c6ae8abc9aaa50b0cf693d085f9f2f7bf1704fdf32b64378e04cbeefe0f11c9f",
+      "bytes": 50
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/072.json",
+      "sha256": "8d274f5c956797970d82025143ac981e0885de88394a15f83e0b943ca1df0ced",
+      "bytes": 427
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/072.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/072.stdout.txt",
+      "sha256": "a0db6d6644f616bcab467fb02eae191754f2705b2314e275d6aafcbe240d9e32",
+      "bytes": 2446
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/080.json",
+      "sha256": "d3126e1eb3885d1b40ddaef0932294215992b4240c4f0377ea3727f350ed58f6",
+      "bytes": 445
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/080.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/080.stdout.txt",
+      "sha256": "1461c9b77721cd7c2186a71f98964550d1e6421d7d45587b852ac5db51f763ab",
+      "bytes": 447
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/082.json",
+      "sha256": "5afcaef6d02b46a29dff133ee4420dd06f971d4b4460ac640117a1d778f4d312",
+      "bytes": 435
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/082.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/082.stdout.txt",
+      "sha256": "6c5eb0447e727c79b51a94b280649c8d7a951aa9f1472ac9178aa56a03c00c0e",
+      "bytes": 395
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/096.json",
+      "sha256": "f19d3f6c2e1c31b9ddc0b0efa8ab20dd7f609d86537d38933ac24ae08a9c9b91",
+      "bytes": 464
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/096.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/096.stdout.txt",
+      "sha256": "7004a564f043c78505ea95e1b3291f3001b595fb14f854d6d989e666afa6aa8a",
+      "bytes": 768
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/097.json",
+      "sha256": "3c4e365583debdd9b5e60e6b4cec9beae101b6004d9fb98b6b5fd349d217310d",
+      "bytes": 462
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/097.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/097.stdout.txt",
+      "sha256": "618d97626543b9fb43039b9a163ecec7a5167daefde127061d7e3c9d051712ea",
+      "bytes": 388
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/124.json",
+      "sha256": "54b741432a97f80e3abf6f5346b7755c4c4e32241bbe8e138e18005223747ad7",
+      "bytes": 464
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/124.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/124.stdout.txt",
+      "sha256": "218d8eff79cce17b9c74888f4eefbd3b451594dc45ce3e67911ff6fa16061e4c",
+      "bytes": 414
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/136.json",
+      "sha256": "563a9d8c5a45ec42fb7f61d86a76eb5b2292d1f48b27069e880d7f2ad2715855",
+      "bytes": 466
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/136.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/136.stdout.txt",
+      "sha256": "95956385ff8dbc5a563d3720feec198eb24551724daa6cfe6977b6a8e716537b",
+      "bytes": 144
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/137.json",
+      "sha256": "2591807daba4caa1cb73de2314740017b1b83c752466e89862c3cbcca2ec3a80",
+      "bytes": 456
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/137.stderr.txt",
+      "sha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "bytes": 80
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/137.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/138.json",
+      "sha256": "f9965346c12bc3078cfd2a5ff4f13334529bb4292cd3be77b65d41e3c1b10d60",
+      "bytes": 456
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/138.stderr.txt",
+      "sha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "bytes": 80
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/138.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/139.json",
+      "sha256": "c6a3d6c828faf75bdc5d89fe35fe3f22e4b663862f950dc0be4b3f1fcb218404",
+      "bytes": 452
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/139.stderr.txt",
+      "sha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "bytes": 80
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/139.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/140.json",
+      "sha256": "f4b685291b269381932acef08b0c3f431735eafe67bbe7ab5dff938b0349e732",
+      "bytes": 458
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/140.stderr.txt",
+      "sha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "bytes": 80
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/140.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/141.json",
+      "sha256": "8967df64bd72afb4d2b94b68382416c7c7860494066735ba04c85d0b5c3c6f52",
+      "bytes": 454
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/141.stderr.txt",
+      "sha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "bytes": 80
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/141.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/147.json",
+      "sha256": "8cf16182b5a595e32686eaa5a50e691a5a8a7a4770c6a8e4d0635c25b8009c47",
+      "bytes": 464
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/147.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/147.stdout.txt",
+      "sha256": "9a24bc5a0f774873a02583742818a9e972526ccbbb4b6802bb62fb6e6c0b8e7e",
+      "bytes": 240
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/157.json",
+      "sha256": "5a725710005cf77222f5c769d15da44f4e7ea2454def667a406830964e3e1715",
+      "bytes": 485
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/157.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "test/fixtures/picocli/help/0.5.0/157.stdout.txt",
+      "sha256": "87a260f82aa6ec19289f213d49dff0ddd6d9e844f9a2a8da150b9c31ca9befc6",
+      "bytes": 754
+    },
+    {
+      "path": "test/fixtures/picocli/help/index.json",
+      "sha256": "c3303e96c808267061c2a0718362c31033d70f3238218cb09af9b87fedefb81e",
+      "bytes": 19355
+    }
+  ]
+}

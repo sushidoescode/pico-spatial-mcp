@@ -1,0 +1,16 @@
+{
+  "label": "0.5.0 update --help",
+  "argv": [
+    "update",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:01.346Z",
+  "endedAt": "2026-09-15T09:12:01.449Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "1132556a8b2c968879568b8d4242b5ee9ef4ea307bbc1b00d36dd34d4a2f5c06",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

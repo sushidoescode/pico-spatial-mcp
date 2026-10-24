@@ -1298,6 +1298,9 @@ test("Round 2: reservation leftovers are bounded evidence and malformed records 
     const slots = fs.readdirSync(reservations);
     assert.equal(slots.length, 1);
     assert.match(slots[0], /^reservation-[0-9]{2}\.json$/);
+    const reservationPath = path.join(reservations, slots[0]);
+    const reservationBytes = fs.readFileSync(reservationPath);
+    const committedHeadBytes = fs.readFileSync(headPath(fixture.root));
     const fresh = fixtureStore(fixture.root);
     let chain = fresh.store.readCommittedRun(RUN_ID, validators);
     assert.equal(chain.head.revision, 0);
@@ -1305,14 +1308,54 @@ test("Round 2: reservation leftovers are bounded evidence and malformed records 
     assert.equal(fs.readdirSync(reservations).length, 1);
     const revisions = path.dirname(revisionPath(fixture.root, 0));
     const occupied = fs.readdirSync(revisions).length;
-    const reserved = JSON.parse(fs.readFileSync(path.join(reservations, slots[0]), "utf8")).revisionEntries;
+    const reserved = JSON.parse(reservationBytes.toString("utf8")).revisionEntries;
     for (let index = 0; index < 1024 - occupied - reserved; index += 1) {
       writeStaging(revisions, "1.json", 61000 + index);
     }
-    chain = fresh.store.readCommittedRun(RUN_ID, validators);
-    assert.equal(chain.issues.some((issue) => issue.code === "reservation-preserved"), true);
+    assert.equal(fs.readdirSync(revisions).length + reserved, 1024);
+    // Filesystems need not enumerate reservations before the staging leftovers.
+    // Exercise both orders while retaining the real directory handle and checks.
+    function withReservationOrder(first, read) {
+      const originalOpendir = fs.opendirSync;
+      let rootScans = 0;
+      fs.opendirSync = (directory, ...args) => {
+        const handle = originalOpendir(directory, ...args);
+        if (path.resolve(String(directory)) !== fixture.root) return handle;
+        rootScans += 1;
+        const entries = [];
+        for (let entry = handle.readSync(); entry !== null; entry = handle.readSync()) entries.push(entry);
+        entries.sort((left, right) => (Number(left.name === "reservations") - Number(right.name === "reservations")) * (first ? -1 : 1));
+        let index = 0;
+        handle.readSync = () => entries[index++] ?? null;
+        return handle;
+      };
+      try {
+        return read();
+      } finally {
+        fs.opendirSync = originalOpendir;
+        assert.ok(rootScans > 0, "root enumeration order was exercised");
+      }
+    }
+    for (const first of [true, false]) {
+      chain = withReservationOrder(first, () => fresh.store.readCommittedRun(RUN_ID, validators));
+      // At this volume the 64-issue cap can omit the reservation diagnostic.
+      // Its bytes and quota charge must survive regardless of diagnostic order.
+      assert.equal(chain.issues.length, 64);
+      assert.deepEqual(chain.head, JSON.parse(committedHeadBytes.toString("utf8")));
+      assert.deepEqual(fs.readdirSync(reservations), slots);
+      assert.deepEqual(fs.readFileSync(reservationPath), reservationBytes);
+      assert.deepEqual(fs.readFileSync(headPath(fixture.root)), committedHeadBytes);
+    }
     writeStaging(revisions, "1.json", 62050);
-    expectStoreStatus(() => fresh.store.readCommittedRun(RUN_ID, validators), "limit-exceeded", /reserved revision-entry/i);
+    assert.equal(fs.readdirSync(revisions).length + reserved, 1025);
+    for (const first of [true, false]) {
+      withReservationOrder(first, () => expectStoreStatus(
+        () => fresh.store.readCommittedRun(RUN_ID, validators), "limit-exceeded", /reserved revision-entry/i,
+      ));
+      assert.deepEqual(fs.readdirSync(reservations), slots);
+      assert.deepEqual(fs.readFileSync(reservationPath), reservationBytes);
+      assert.deepEqual(fs.readFileSync(headPath(fixture.root)), committedHeadBytes);
+    }
   });
 
   await t.test("partial reservation records are never skipped", () => {

@@ -11,6 +11,8 @@ const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
 
 const { runPreflightChecks } = await import("../dist/preflight.js");
+const { detectJavaHome, gradleEnv } = await import("../dist/toolchain.js");
+const { toolchainIOFromTree } = await import("./helpers/toolchain-fixture.mjs");
 
 // A fully-broken fake environment: every runner fails.
 const brokenIO = {
@@ -187,7 +189,7 @@ const picoCalls = [];
 const structuredStatusIO = { ...healthyIO, exec: (cmd, args) => {
   picoCalls.push([cmd, args]);
   if (cmd === "pico-cli" && args[0] === "-v") return { ok: true, stdout: "pico-cli/0.3.0\n" };
-  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: true, stdout: '{"tool_status":"SUCCESS","data":{},"errors":[]}' };
+  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: true, code: 0, stdout: '{"tool_name":"emulator.status","tool_status":"SUCCESS","data":{},"errors":[]}' };
   return healthyIO.exec(cmd, args);
 } };
 const structuredStatus = runPreflightChecks(structuredStatusIO).find((c) => c.name === "pico-cli-emulator-status");
@@ -196,7 +198,7 @@ structuredStatus?.status === "pass" && picoCalls.some(([cmd, args]) => cmd === "
   : fail(`structured pico-cli status wrong: ${JSON.stringify({ structuredStatus, picoCalls })}`);
 const nestedFixIO = { ...healthyIO, exec: (cmd, args) => {
   if (cmd === "pico-cli" && args[0] === "-v") return { ok: true, stdout: "pico-cli/0.3.0\n" };
-  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: true, stdout: JSON.stringify({ tool_status: "FAILED", errors: [{ fix: "Start the Spatial Editor" }], checks: [{ nextAction: "Retry after boot" }] }) };
+  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: false, code: 3, stdout: JSON.stringify({ tool_name: "emulator.status", tool_status: "FAILED", errors: [{ fix: "Start the Spatial Editor" }], checks: [{ nextAction: "Retry after boot" }] }) };
   return healthyIO.exec(cmd, args);
 } };
 const nestedFix = runPreflightChecks(nestedFixIO).find((c) => c.name === "pico-cli-emulator-status");
@@ -214,6 +216,7 @@ const failedEnvelopeIO = { ...healthyIO, exec: (cmd, args) => {
     return {
       ok: false,
       stdout: JSON.stringify({
+        tool_name: "emulator.status",
         tool_status: "FAILED",
         summary: "The emulator status check found a missing bundle.",
         errors: [{
@@ -345,9 +348,9 @@ for (const policyCase of [
   const harness = createManagedRuntimeHarness();
   const externalCli = path.join(harness.root, process.platform === "win32" ? "external-pico-cli.cmd" : "external-pico-cli");
   if (process.platform === "win32") {
-    fs.writeFileSync(externalCli, "@echo off\r\nif \"%1\"==\"-v\" (echo pico-cli/0.2.9& exit /b 0)\r\necho {\"tool_status\":\"SUCCESS\",\"data\":{},\"errors\":[]}& exit /b 0\r\n");
+    fs.writeFileSync(externalCli, "@echo off\r\nif \"%1\"==\"-v\" (echo pico-cli/0.2.9& exit /b 0)\r\necho {\"tool_name\":\"emulator.status\",\"tool_status\":\"SUCCESS\",\"data\":{},\"errors\":[]}& exit /b 0\r\n");
   } else {
-    fs.writeFileSync(externalCli, "#!/bin/sh\nif [ \"$1\" = \"-v\" ]; then printf 'pico-cli/0.2.9\\n'; else printf '{\"tool_status\":\"SUCCESS\",\"data\":{},\"errors\":[]}\\n'; fi\n", { mode: 0o755 });
+    fs.writeFileSync(externalCli, "#!/bin/sh\nif [ \"$1\" = \"-v\" ]; then printf 'pico-cli/0.2.9\\n'; else printf '{\"tool_name\":\"emulator.status\",\"tool_status\":\"SUCCESS\",\"data\":{},\"errors\":[]}\\n'; fi\n", { mode: 0o755 });
   }
   harness.env.PICO_MCP_CLI_POLICY = "external";
   harness.env.PICO_MCP_CLI_PATH = externalCli;
@@ -378,12 +381,319 @@ if (cachedCli?.status === "pass"
     && cachedCalls.some((call) => call.role === "managed-cli" && call.args.join(" ") === "0.4.2 -v")
     && cachedCalls.some((call) => call.role === "managed-cli" && call.args.join(" ") === "0.4.2 emulator status --format json")
     && cachedCalls.filter((call) => call.role === "npm").length === 0
+    && !cachedCalls.some((call) => call.role === "managed-cli" && call.args.at(-1) === "--help")
+    && !cachedCalls.some((call) => call.role === "managed-cli" && call.args.slice(1).join(" ") === "setup")
+    && !fs.existsSync(path.join(cachedManaged.managedRoot, "capabilities"))
     && published.shimPath.includes(path.join("versions", "0.4.2")))
-  ok("preflight_env inspects cached managed CLI and emulator status without registry/install");
+  ok("preflight_env inspects cached managed CLI and emulator status without registry/install/setup or capability discovery");
 else fail(`preflight_env cached managed-store contract broken: ${JSON.stringify({ cachedCli, cachedStatus, cachedCalls }).slice(0, 500)}`);
 
 fs.rmSync(emptyManaged.root, { recursive: true, force: true });
 fs.rmSync(cachedManaged.root, { recursive: true, force: true });
+
+// ===========================================================================================
+// Task S2 block — the pico-sdk row comes from the injected structural toolchain selection.
+// (Appended as one delimited block; the CLI track appends its own after this one.)
+// ===========================================================================================
+{
+  // The brief's regression, verbatim: a host whose selection is 6.1 must not be described
+  // through the legacy hardcoded 0.13 directory.
+  const checks = runPreflightChecks({...healthyIO, toolchainInspection:{
+    status:"ok", root:"/sdk", rootSource:"PICO_HOME", version:"6.1",
+    reason:"newest-usable", files:{packer:{path:"/sdk/6.1/packer",sha256:"a".repeat(64)}}, identity:"b".repeat(64)
+  }});
+  const row = checks.find((x) => x.name === "pico-sdk");
+  if (row && row.status === "pass" && /6\.1/.test(row.detail) && !/0\.13/.test(row.detail)) {
+    ok("pico-sdk row reports the SELECTED version, not the legacy 0.13 directory");
+  } else {
+    fail(`pico-sdk row did not report the injected 6.1 selection: ${JSON.stringify(row)}`);
+  }
+  if (row && /PICO_HOME/.test(row.detail)) ok("pico-sdk row names the selected root source");
+  else fail(`pico-sdk row does not name the root source: ${JSON.stringify(row)}`);
+}
+
+{
+  // An existing (empty) 0.13 directory used to be the whole check. statMtimeMs() returning a
+  // number for EVERY path is exactly that machine; an unavailable selection must still fail.
+  const checks = runPreflightChecks({...healthyIO, toolchainInspection:{
+    status:"unavailable", code:"unavailable/component-missing",
+    detail:"No toolchain under /fake-home/Library/PICO/sdk provides every required component (packer); inspected 0.13",
+  }});
+  const row = checks.find((x) => x.name === "pico-sdk");
+  if (row && row.status === "fail" && /component-missing/.test(row.detail) && typeof row.fix === "string" && row.fix.length > 10) {
+    ok("an empty 0.13 directory no longer makes an unavailable selection pass");
+  } else {
+    fail(`unavailable selection did not fail the pico-sdk row: ${JSON.stringify(row)}`);
+  }
+}
+
+{
+  // Split install: the packer is 6.1 and the emulator payload is 6.0. Each component reports its
+  // OWN version instead of the pair collapsing to one "unavailable".
+  const checks = runPreflightChecks({...healthyIO,
+    toolchainInspection:{
+      status:"ok", root:"/sdk", rootSource:"local.properties", version:"6.1", reason:"newest-usable",
+      files:{packer:{path:"/sdk/6.1/editor/spatialbundle/spatialbundle",sha256:"c".repeat(64)}}, identity:"d".repeat(64),
+    },
+    emulatorInspection:{
+      status:"ok", root:"/sdk", rootSource:"local.properties", version:"6.0", reason:"newest-usable",
+      files:{emulator:{path:"/sdk/6.0/emulator/emulator",sha256:"e".repeat(64)}}, identity:"f".repeat(64),
+    },
+  });
+  const row = checks.find((x) => x.name === "pico-sdk");
+  if (row && row.status === "pass" && /packer 6\.1/.test(row.detail) && /emulator 6\.0/.test(row.detail)) {
+    ok("pico-sdk row reports packer and emulator versions separately");
+  } else {
+    fail(`split 6.1/6.0 install was not reported per component: ${JSON.stringify(row)}`);
+  }
+}
+
+{
+  // A packer-only host is still buildable; the missing emulator payload is disclosed, not hidden.
+  const checks = runPreflightChecks({...healthyIO,
+    toolchainInspection:{
+      status:"ok", root:"/sdk", rootSource:"PICO_HOME", version:"6.1", reason:"newest-usable",
+      files:{packer:{path:"/sdk/6.1/editor/spatialbundle/spatialbundle",sha256:"c".repeat(64)}}, identity:"d".repeat(64),
+    },
+    emulatorInspection:{ status:"unavailable", code:"unavailable/component-missing", detail:"no emulator payload under /sdk" },
+  });
+  const row = checks.find((x) => x.name === "pico-sdk");
+  if (row && row.status === "pass" && /packer 6\.1/.test(row.detail) && /emulator unavailable/.test(row.detail)) {
+    ok("pico-sdk row discloses a missing emulator payload without failing the build SDK");
+  } else {
+    fail(`packer-only host mis-reported: ${JSON.stringify(row)}`);
+  }
+}
+
+{
+  // Fixtures that describe no structural inspection get an honest "unknown", never a pass and
+  // never a silent 0.13 claim.
+  const row = runPreflightChecks(healthyIO).find((x) => x.name === "pico-sdk");
+  if (row && row.status === "unknown" && !/0\.13/.test(row.detail) && typeof row.fix === "string" && row.fix.length > 10) {
+    ok("pico-sdk row is unknown (not pass) when no structural selection was supplied");
+  } else {
+    fail(`pico-sdk row without an inspection is wrong: ${JSON.stringify(row)}`);
+  }
+}
+
+// ── Task S4: the adb row's candidate ordering, provenance and override validation ─────────────
+// S2 gave this row an adbInspection but shipped no assertions for it. The precedence the adapter
+// in src/adb.ts implements is explicit $PICO_ADB -> PATH -> the SELECTED toolchain's bundled
+// platform-tools, with the legacy 0.13 location retained only as a last candidate; the row must
+// agree, and an override that does not answer `adb version` must never be reported as the answer.
+{
+  const SELECTED = "/sdk/6.1/emulator/system-images/platform-tools/adb";
+  const adbInspection = {
+    status: "ok", root: "/sdk", rootSource: "PICO_HOME", version: "6.1", reason: "newest-usable",
+    files: { adb: { path: SELECTED, sha256: "a".repeat(64) } }, identity: "b".repeat(64),
+  };
+  // `working` names every candidate this fake machine answers `adb version` for.
+  const adbIO = (working, extra = {}) => {
+    const probed = [];
+    return {
+      io: {
+        ...healthyIO,
+        adbInspection,
+        // Declared explicitly so these rows never read this HOST's $PICO_ADB: without it a
+        // developer machine that exports one would silently change which candidates are probed.
+        adbOverride: null,
+        exec: (cmd, args) => {
+          if (args[0] === "version") { probed.push(cmd); return { ok: working.includes(cmd), stdout: working.includes(cmd) ? "Android Debug Bridge version 1.0.41" : "", stderr: "" }; }
+          return healthyIO.exec(cmd, args);
+        },
+        ...extra,
+      },
+      probed,
+    };
+  };
+
+  {
+    const { io, probed } = adbIO(["/opt/pinned/adb", "adb", SELECTED], { adbOverride: "/opt/pinned/adb" });
+    const row = runPreflightChecks(io).find((x) => x.name === "adb");
+    row && row.status === "pass" && /\/opt\/pinned\/adb/.test(row.detail) && /PICO_ADB|explicit/i.test(row.detail)
+      ? ok("adb row reports an explicit PICO_ADB with its provenance")
+      : fail(`explicit PICO_ADB not reported: ${JSON.stringify(row)}`);
+    // Fail-closed precedence: when an override is configured it is the ONLY candidate, so the row
+    // can never report an adb that src/adb.ts would refuse to run.
+    JSON.stringify(probed) === JSON.stringify(["/opt/pinned/adb"])
+      ? ok("adb row probes the explicit override and nothing else")
+      : fail(`override was not the only probe: ${JSON.stringify(probed)}`);
+  }
+
+  {
+    const { io, probed } = adbIO(["adb", SELECTED]);
+    const row = runPreflightChecks(io).find((x) => x.name === "adb");
+    row && row.status === "pass" && /^adb\b/.test(row.detail) && /PATH/i.test(row.detail)
+      ? ok("adb row prefers PATH over the bundled payload")
+      : fail(`PATH-first ordering not reported: ${JSON.stringify(row)}`);
+    probed.indexOf("adb") < probed.indexOf(SELECTED) || !probed.includes(SELECTED)
+      ? ok("adb row probes PATH before the selected payload")
+      : fail(`candidate order wrong: ${JSON.stringify(probed)}`);
+  }
+
+  {
+    const { io, probed } = adbIO([SELECTED]);
+    const row = runPreflightChecks(io).find((x) => x.name === "adb");
+    row && row.status === "pass" && row.detail.startsWith(SELECTED)
+      ? ok("adb row falls back to the SELECTED toolchain's bundled adb")
+      : fail(`bundled fallback not reported: ${JSON.stringify(row)}`);
+    !/0\.13/.test(probed.slice(0, probed.indexOf(SELECTED) + 1).join(" "))
+      ? ok("the legacy 0.13 path is not probed before the selected payload")
+      : fail(`0.13 probed too early: ${JSON.stringify(probed)}`);
+  }
+
+  {
+    // An override whose bytes do not answer `adb version` FAILS CLOSED: it is never replaced by a
+    // PATH adb the operator did not ask for. A working PATH adb is present here precisely so the
+    // row cannot pass by falling through to it.
+    const { io, probed } = adbIO(["adb", SELECTED], { adbOverride: "/opt/broken/adb" });
+    const row = runPreflightChecks(io).find((x) => x.name === "adb");
+    row && row.status === "fail" && /\/opt\/broken\/adb/.test(row.detail) && /never replaced/i.test(row.detail)
+      && typeof row.fix === "string" && /unset it/i.test(row.fix)
+      ? ok("an unusable PICO_ADB fails closed and is disclosed")
+      : fail(`invalid override mishandled: ${JSON.stringify(row)}`);
+    JSON.stringify(probed) === JSON.stringify(["/opt/broken/adb"])
+      ? ok("a rejected override stops the probe: no PATH or bundled candidate is consulted")
+      : fail(`fallback was probed after a rejected override: ${JSON.stringify(probed)}`);
+  }
+
+  {
+    // With NO override configured the row still lists every candidate it tried.
+    const { io } = adbIO([]);
+    const row = runPreflightChecks(io).find((x) => x.name === "adb");
+    row && row.status === "fail" && /\badb\b/.test(row.detail) && /\/sdk\/6\.1\//.test(row.detail) && /0\.13/.test(row.detail)
+      && typeof row.fix === "string" && row.fix.length > 10
+      ? ok("a failing adb row with no override lists every probed candidate and carries a fix")
+      : fail(`adb failure detail incomplete: ${JSON.stringify(row)}`);
+  }
+}
+
+// ── Task S4: JDK inspection and gradleEnv answer from ONE injected context ────────────────────
+{
+  const jdkIO = (home, executable) => toolchainIOFromTree({
+    platform: "darwin", home: "/fixture",
+    env: { JAVA_HOME: home }, files: { [`${home}/bin/java`]: { bytes: "fixture-java", executable } },
+  });
+  for (const [home, executable, expected] of [["/jdk-a", true, "/jdk-a"], ["/jdk-b", true, "/jdk-b"], ["/jdk-b", false, null]]) {
+    const context = jdkIO(home, executable);
+    const detected = detectJavaHome(context);
+    const injected = gradleEnv(context);
+    const row = runPreflightChecks({ ...healthyIO, detectJavaHome: () => detectJavaHome(context), javaHomeEnv: context.env.JAVA_HOME ?? null })
+      .find((x) => x.name === "jdk");
+    detected === expected
+      ? ok(`jdk inspection follows the injected context (${home}, executable=${executable})`)
+      : fail(`jdk inspection ignored the injected context: got ${JSON.stringify(detected)}, want ${JSON.stringify(expected)}`);
+    JSON.stringify(injected) === JSON.stringify(expected ? { JAVA_HOME: expected } : {})
+      ? ok(`gradleEnv agrees with the same context (${home})`)
+      : fail(`gradleEnv disagreed with detectJavaHome: ${JSON.stringify(injected)} vs ${JSON.stringify(detected)}`);
+    const rowAgrees = expected ? row.status === "pass" && row.detail.includes(expected) : row.status === "fail";
+    rowAgrees
+      ? ok(`the jdk row reports exactly what the Gradle lane would get (${home})`)
+      : fail(`jdk row disagrees with the build lane: ${JSON.stringify(row)}`);
+  }
+  const declared = jdkIO("/jdk-a", true);
+  const declaredRow = runPreflightChecks({ ...healthyIO, detectJavaHome: () => detectJavaHome(declared), javaHomeEnv: "/jdk-a" }).find((x) => x.name === "jdk");
+  /JAVA_HOME=\/jdk-a/.test(declaredRow?.detail ?? "")
+    ? ok("the jdk row names JAVA_HOME as the source when the injected environment declares it")
+    : fail(`jdk row source wrong: ${JSON.stringify(declaredRow)}`);
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// C1 emulator-status consumer block (appended; keep at the end of this file).
+// pico-cli's shared serializer emits tool_name/tool_status and maps SUCCESS:0, FAILED:3, PARTIAL:4
+// (source-inspected CLI_RESULT_SCHEMA / EMULATOR_STATUS_RESULT excerpts, 2026-09-15 audit). The
+// consumer must require tool_name emulator.status and check exit/envelope consistency, while every
+// independent gate (node, adb, jdk, ...) keeps its own verdict.
+{
+  const fixtureText = (name) => fs.readFileSync(new URL(`./fixtures/picocli/emulator-status-${name}.json`, import.meta.url), "utf8");
+  const statusIO = (emulator) => ({
+    ...healthyIO,
+    exec: (cmd, args) => {
+      if (cmd === "pico-cli" && args[0] === "-v") return { ok: true, code: 0, stdout: "pico-cli/0.5.0\n" };
+      if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return emulator;
+      return healthyIO.exec(cmd, args);
+    },
+  });
+  const cases = [
+    { label: "SUCCESS with exit 0", result: { ok: true, code: 0, stdout: fixtureText("success"), stderr: "" }, want: "pass" },
+    { label: "SUCCESS with exit 3 is inconsistent", result: { ok: false, code: 3, stdout: fixtureText("success"), stderr: "" }, want: "warn", detail: /exit.*3|3.*exit/i },
+    { label: "SUCCESS without an observed exit code but a failed process", result: { ok: false, stdout: fixtureText("success"), stderr: "" }, want: "warn", detail: /non-zero|exit/i },
+    { label: "wrong tool envelope", result: { ok: true, code: 0, stdout: fixtureText("success").replace('"emulator.status"', '"device.list"'), stderr: "" }, want: "warn", detail: /tool_name/ },
+    { label: "missing tool_name", result: { ok: true, code: 0, stdout: fixtureText("success").replace(/"tool_name": "emulator.status",\n/, ""), stderr: "" }, want: "warn", detail: /tool_name/ },
+    { label: "PARTIAL with exit 4", result: { ok: false, code: 4, stdout: fixtureText("partial"), stderr: "" }, want: "warn", detail: /degraded/, notDetail: /mismatch|inconsistent/i },
+    { label: "FAILED with exit 3", result: { ok: false, code: 3, stdout: fixtureText("failed"), stderr: "" }, want: "warn", detail: /failed/, notDetail: /mismatch|inconsistent/i },
+    { label: "malformed JSON", result: { ok: true, code: 0, stdout: "not-json", stderr: "" }, want: "warn", detail: /structured emulator status unavailable/ },
+    { label: "timeout", result: { ok: false, code: null, timedOut: true, stdout: "", stderr: "" }, want: "warn", detail: /timed out/i },
+    { label: "spawn error", result: { ok: false, code: null, spawnError: "spawn ENOENT", stdout: "", stderr: "" }, want: "warn", detail: /spawn ENOENT/ },
+    { label: "managed integrity rejection", result: { ok: false, code: null, spawnError: "pre-spawn validation failed: managed pico-cli publication identity could not be revalidated: managed publication content changed after resolution", stdout: "", stderr: "" }, want: "warn", detail: /integrity/i, fix: /ensure_pico_cli/ },
+  ];
+  for (const item of cases) {
+    const checks = runPreflightChecks(statusIO(item.result));
+    const row = checks.find((check) => check.name === "pico-cli-emulator-status");
+    const cliRow = checks.find((check) => check.name === "pico-cli");
+    const independent = ["node", "adb", "jdk", "emulator", "calibration"].every((name) => checks.find((check) => check.name === name)?.status === "pass");
+    const detailOk = !item.detail || item.detail.test(row?.detail ?? "");
+    const notDetailOk = !item.notDetail || !item.notDetail.test(row?.detail ?? "");
+    const fixOk = item.want === "pass" ? row?.fix === null : (typeof row?.fix === "string" && row.fix.length > 10 && (!item.fix || item.fix.test(row.fix)));
+    if (row?.status === item.want && detailOk && notDetailOk && fixOk && cliRow?.status === "pass" && independent) ok(`emulator-status consumer: ${item.label} => ${item.want}`);
+    else fail(`emulator-status consumer (${item.label}): ${JSON.stringify({ row, cliRow: cliRow?.status, independent })}`);
+  }
+  // The PARTIAL warning keeps the envelope's own remediation with deterministic precedence.
+  const partialWithFix = JSON.parse(fixtureText("partial"));
+  partialWithFix.errors = [{ message: "guest properties unavailable", fix: "Wait for boot completion, then re-run preflight_env" }];
+  const partialRow = runPreflightChecks(statusIO({ ok: false, code: 4, stdout: JSON.stringify(partialWithFix), stderr: "" }))
+    .find((check) => check.name === "pico-cli-emulator-status");
+  partialRow?.status === "warn" && partialRow.fix === "Wait for boot completion, then re-run preflight_env" && /degraded/.test(partialRow.detail)
+    ? ok("PARTIAL/4 keeps the expected degraded warning and the envelope's remediation")
+    : fail(`PARTIAL remediation lost: ${JSON.stringify(partialRow)}`);
+}
+// ── Task 1 fold (host completion, 2026-09-16): a set-but-blank PICO_ADB is an override the doctor refuses ──
+// src/adb.ts refuses an empty or whitespace PICO_ADB and probes nothing; this row used to trim it
+// to "" and read that as "unset", probing PATH and then running `adb devices` behind it. The row
+// must classify the variable exactly as the adapter does: fail with the set-but-empty reason,
+// probe NO PATH or bundled candidate, and leave the emulator row unable to run `devices`. A working
+// PATH adb and a working bundled adb are present precisely so the row cannot pass by falling
+// through to either.
+{
+  const SELECTED = "/sdk/6.1/emulator/system-images/platform-tools/adb";
+  const adbInspection = {
+    status: "ok", root: "/sdk", rootSource: "PICO_HOME", version: "6.1", reason: "newest-usable",
+    files: { adb: { path: SELECTED, sha256: "a".repeat(64) } }, identity: "b".repeat(64),
+  };
+  for (const blank of ["", "   ", "\t"]) {
+    const label = JSON.stringify(blank);
+    const probed = [];
+    const calls = [];
+    const io = {
+      ...healthyIO,
+      adbInspection,
+      adbOverride: blank,
+      exec: (cmd, args) => {
+        calls.push([cmd, ...args]);
+        if (args[0] === "version") { probed.push(cmd); return { ok: true, stdout: "Android Debug Bridge version 1.0.41", stderr: "" }; }
+        return healthyIO.exec(cmd, args);
+      },
+    };
+    const checks = runPreflightChecks(io);
+    const row = checks.find((x) => x.name === "adb");
+    const emulator = checks.find((x) => x.name === "emulator");
+    row && row.status === "fail" && /\$PICO_ADB=""/.test(row.detail) && /is set but empty/.test(row.detail)
+      && /nothing else was probed/i.test(row.detail) && typeof row.fix === "string" && /unset/i.test(row.fix)
+      ? ok(`adb row refuses a blank PICO_ADB (${label}) with the adapter's set-but-empty reason`)
+      : fail(`adb row mishandled a blank PICO_ADB (${label}): ${JSON.stringify(row)}`);
+    probed.length === 0
+      ? ok(`a blank PICO_ADB (${label}) probes no PATH or bundled candidate`)
+      : fail(`a blank PICO_ADB (${label}) still probed ${JSON.stringify(probed)}`);
+    const devices = calls.filter((argv) => argv.includes("devices"));
+    devices.length === 0
+      ? ok(`no adb devices runs behind a refused blank PICO_ADB (${label})`)
+      : fail(`adb devices ran behind a blank PICO_ADB (${label}): ${JSON.stringify(devices)}`);
+    emulator && emulator.status === "unknown" && /without adb/i.test(emulator.detail)
+      ? ok(`the emulator row (${label}) stays unknown: cannot check without adb`)
+      : fail(`the emulator row (${label}) did not stay unknown: ${JSON.stringify(emulator)}`);
+  }
+}
 
 console.log(`\nPreflight test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

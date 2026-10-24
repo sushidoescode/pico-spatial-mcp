@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 files mkdir --help",
+  "argv": [
+    "files",
+    "mkdir",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:05.697Z",
+  "endedAt": "2026-09-15T09:12:05.800Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "3a329ab6020ec2639e3461221db388c8c2fe838e83146d618af2279640cfe05b",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

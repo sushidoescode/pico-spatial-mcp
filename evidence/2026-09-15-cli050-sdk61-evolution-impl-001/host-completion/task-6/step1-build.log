@@ -1,0 +1,7 @@
+# step1 npm run build (descriptions edit) (2026-09-16T13:05:02Z)
+
+> pico-spatial-mcp@38.0.0 build
+> node scripts/build-source.mjs
+
+build-source: published 192 file(s) for source bafeb2712c5b
+exit=0

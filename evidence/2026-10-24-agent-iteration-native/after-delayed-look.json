@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-24T05:21:33.487332+00:00",
+  "reviewer": "root vision-capable agent",
+  "artifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/after-delayed.png",
+  "sha256": "a47573759f44babe72a7af4318413a8ac7f1a9f0966ccdd9b281fda4a62649c7",
+  "evidenceType": "vision_verified",
+  "claim": "The dedicated fixture on emulator-5554 renders source revision 2, State transitions: 1, and Panel visible \u2014 fixture.panel after acknowledged semantic panel.show.",
+  "attestation": "I opened the exact after-delayed.png capture. The same rounded app window now visibly reads source revision 2, State transitions: 1, and Panel visible \u2014 fixture.panel. The target was independently rebound before and after capture to the original boot/APK/PID/start/generation. This later frame establishes the visible result; the immediate action frame did not. No hand/controller input is claimed.",
+  "targetBindingSha256": "c69a64e0562bec8ca6e9c0433655179963792fe48143393f88d757bb31860a66",
+  "actionRecord": "evidence/agent-iteration-example/3d765143-2305-4cd5-9dc8-bf87eab17baf/attempts/8f380859-a019-4613-9e1f-2a01864345af/result.json",
+  "actionRequestId": "749487cc-b353-41cc-8614-c83f3144c35d",
+  "ledgerRecordPending": true
+}

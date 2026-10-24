@@ -1,0 +1,18 @@
+{
+  "label": "0.4.4 project context doctor --help",
+  "argv": [
+    "project",
+    "context",
+    "doctor",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:54.114Z",
+  "endedAt": "2026-09-15T09:11:54.212Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "167790513e1c6a0b0cdb6747adf4695c01afeab12aa7cd381498c0629628d3e7",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

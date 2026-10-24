@@ -1,0 +1,87 @@
+battery checkout: /Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16
+host: macos
+log: /Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/integration/battery-38.1.0.log (a fresh file is reserved if that name is taken)
+
+PASS 1/55 smoke (1.2s)
+PASS 2/55 test:tarball (16.3s)
+PASS 3/55 test:smoke-isolation (2.3s)
+PASS 4/55 test:sdk-integration (0.2s)
+PASS 5/55 test:lint (1.3s)
+PASS 6/55 test:projectgen (0.3s)
+PASS 7/55 test:unitygen (0.2s)
+PASS 8/55 test:surfaceplace (0.2s)
+PASS 9/55 test:vault (0.3s)
+PASS 10/55 test:semantic (0.3s)
+PASS 11/55 test:ledger (28.7s)
+PASS 12/55 test:eye (2.3s)
+PASS 13/55 test:assetgate (0.2s)
+PASS 14/55 test:worldenv (0.2s)
+PASS 15/55 test:referring (0.2s)
+PASS 16/55 test:doors (19.6s)
+PASS 17/55 test:prompts (0.8s)
+PASS 18/55 test:archetype (2.5s)
+PASS 19/55 test:claims (0.5s)
+PASS 20/55 test:bench (0.5s)
+PASS 21/55 test:affordance (0.2s)
+PASS 22/55 test:occupancy (0.4s)
+PASS 23/55 test:copilot (0.1s)
+PASS 24/55 test:vaultdiff (0.2s)
+PASS 25/55 test:preflight (1.6s)
+PASS 26/55 test:provision (4.1s)
+PASS 27/55 test:bridge (3.2s)
+PASS 28/55 test:vcam (1.6s)
+PASS 29/55 test:vcamtransport (0.6s)
+PASS 30/55 test:vcamboundary (0.2s)
+PASS 31/55 test:vcamreader (0.2s)
+PASS 32/55 test:vcamthroughput (0.2s)
+PASS 33/55 test:vcammaterialize (0.2s)
+PASS 34/55 test:vcamtransport-native (1.9s)
+PASS 35/55 test:vcamreader-native (2.0s)
+PASS 36/55 test:briefroute (1.2s)
+PASS 37/55 test:emulator-restart (26.9s)
+PASS 38/55 test:modelmeasure (0.2s)
+FAIL 39/55 test:docsmeta (0.2s)
+
+> pico-spatial-mcp@38.1.0 test:docsmeta
+> node scripts/run-gate.mjs test:docsmeta
+
+package.json version: 38.1.0
+
+  ok   plugin.json carries version 38.1.0
+  ok   .claude-plugin/plugin.json carries version 38.1.0
+  ok   .claude-plugin/marketplace.json carries version 38.1.0
+  ok   .claude-plugin/marketplace.json carries version 38.1.0
+  ok   .codex-plugin/plugin.json carries version 38.1.0
+  ok   .agents/plugins/marketplace.json carries version 38.1.0
+  ok   .cursor-plugin/plugin.json carries version 38.1.0
+  ok   .cursor-plugin/marketplace.json carries version 38.1.0
+  ok   .github/plugin/marketplace.json carries version 38.1.0
+  ok   .github/plugin/marketplace.json carries version 38.1.0
+  FAIL package-lock.json version is "38.0.0" != package.json 38.1.0 — run `npm version --no-git-tag-version <version>` rather than editing package.json by hand
+  FAIL package-lock.json packages[''].version is "38.0.0" != package.json 38.1.0 — run `npm version --no-git-tag-version <version>` rather than editing package.json by hand
+  ok   plugin.json targets Agent Plugins 1.0.0
+  ok   portable and Claude manifests carry one plugin identity
+  ok   sync-metadata --check: no stale version/tool-count literals
+  ok   all 190 relative markdown links resolve (77 git-tracked files: root *.md + docs/**)
+  WARN homepage/origin check skipped: ENOTDIR: not a directory, open '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/.git/config'
+
+Docs/metadata gate done. Failures: 2
+
+PASS 40/55 test:picocli (103.2s)
+PASS 41/55 test:runreceipt (57.1s)
+PASS 42/55 test:runrevision (127.6s)
+PASS 43/55 test:sdkselection (0.6s)
+PASS 44/55 test:swan (0.5s)
+PASS 45/55 test:placeonsurface (0.2s)
+PASS 46/55 test:menuactions (0.2s)
+PASS 47/55 test:adoption-safety (3.0s)
+PASS 48/55 test:spatialui-adoption (0.2s)
+PASS 49/55 test:distribution-adoption (22.4s)
+PASS 50/55 test:knowledge-lifecycle (27.9s)
+PASS 51/55 test:conformance (1.8s)
+PASS 52/55 test:buildfreshness (0.8s)
+PASS 53/55 test:plugin-bootstrap-freshness (0.7s)
+PASS 54/55 test:observation (44.6s)
+PASS 55/55 test:picocli-win (93.2s)
+BATTERY FAIL 54/55 passed; 1 failed: test:docsmeta [exit 1]
+Full log: /Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16/evidence/2026-09-16-mcp-native-acceptance-001/integration/battery-38.1.0.log

@@ -1,0 +1,37 @@
+{
+  "checkedAtUtc": "2026-09-15T09:30:58.698143+00:00",
+  "sourceBaseline": "308c898e9c33975b5a21ecb78fed245fab17a0ed",
+  "observedHead": "308c898e9c33975b5a21ecb78fed245fab17a0ed",
+  "branch": "main",
+  "scope": "Handoff links, retained archive/help/excerpt integrity and unchanged audited production paths; no MCP build, regression battery or native acceptance.",
+  "status": "pass",
+  "documentCount": 14,
+  "resolvedRelativeLinks": 48,
+  "verifiedPackageArchives": 2,
+  "verifiedSourceExcerpts": 41,
+  "verifiedVersionHelpInvocations": 162,
+  "preservedNonzeroHelpResults": 6,
+  "productionPathsUnchanged": true,
+  "documentHashes": [
+    {
+      "path": "docs/CLI_050_SDK61_EVOLUTION_HANDOFF_2026-09-15.md",
+      "sha256": "db41a099e95ceb37111a076e3766187974ef5256027fe0ebe5b980bd1623b9df"
+    },
+    {
+      "path": "docs/CLI_050_SDK61_FRESH_CHAT_PROMPT_2026-09-15.md",
+      "sha256": "906bc35f9530b9636d9a0610d483a02a37ced6bdf1a7bae3e9dd809ea8da641c"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-15-cli050-sdk61-evolution.md",
+      "sha256": "b5eca445f0dd5611507483e01296ca3089bb05ea7d965cab55906a93b3d7a424"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-15-mcp-release-reliability.md",
+      "sha256": "b819596b004127fe83b2b6f44ce191c58dfdcda6e02aff26500418b4b113779b"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-15-sdk61-toolchain-knowledge.md",
+      "sha256": "8553d8025ff13050f0bfe446d478f5e51537c65dcf73c1598ec2e79bdfb76757"
+    }
+  ]
+}

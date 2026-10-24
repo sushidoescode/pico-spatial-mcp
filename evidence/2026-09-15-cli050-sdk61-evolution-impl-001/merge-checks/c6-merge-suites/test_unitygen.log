@@ -1,0 +1,52 @@
+# npm run test:unitygen
+# exit=0 signal= elapsedMs=167
+
+## stdout
+  ok   payload: Packages/manifest.json
+  ok   payload: ProjectSettings/ProjectVersion.txt
+  ok   payload: Assets/PicoAgent/picoagent-config.json
+  ok   payload: Assets/PicoAgent/PicoAgentBridge.cs
+  ok   payload: Assets/PicoAgent/SpatialAdapterSlot.cs
+  ok   payload: Assets/Scripts/HelloSpatialRuntime.cs
+  ok   payload: Assets/Plugins/Android/PicoDebugCmdReceiver.java
+  ok   payload: Assets/Editor/PicoBuild.cs
+  ok   payload: _immersive/Assets/Editor/PicoXrSetup.cs
+  ok   payload: _immersive/Assets/Editor/ControllerlessManifestPatch.cs
+  ok   payload: _gitignore
+  ok   ugui 2.0.0 declared (settling-test gotcha)
+  ok   windowed base has NO XR dependency
+  ok   editor pinned 6000.4.9f1
+  ok   PicoBuild.Apk entrypoint present
+  ok   build writes build-result.json
+  ok   PicoBuild has no compile-time XR references (windowed-safe)
+  ok   shader ships via a scene-referenced material asset (anti-stripping)
+  ok   bridge GameObject/UnitySendMessage contract
+  ok   java shim: DEBUG_CMD + exported + UnitySendMessage
+  ok   no machine-local strings in the payload
+  ok   gitignore stored dot-less
+  ok   verifyUnitySkeleton ok (11 canaries)
+  ok   default mode windowed
+  ok   buildEntry contract
+  ok   config substituted
+  ok   windowed scaffold has no XR dep
+  ok   emits .gitignore from _gitignore
+  ok   no immersive overlay in windowed scaffold
+  ok   immersive adds the pinned XR git dep verbatim
+  ok   immersive overlay files land in Assets/Editor
+  ok   immersive flag lands in config
+  ok   adapter registry injected
+  ok   adapter dependency injected
+  ok   adapter define lands in config extraDefines
+  ok   refuses existing targetDir
+  ok   rejects invalid packageName
+  ok   deterministic (9 files)
+  ok   resolver prefers the ProjectVersion pin
+  ok   resolver falls back with a mismatch warning
+  ok   UNITY_EDITOR_PATH honored
+  ok   no editor -> null
+
+Unitygen test done. Failures: 0
+
+
+## stderr
+

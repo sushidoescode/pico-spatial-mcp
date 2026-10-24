@@ -1,0 +1,606 @@
+{
+  "schemaVersion": 1,
+  "description": "Byte-for-byte copies of retained pico-cli help observations. Each entry records the source invocation number in RAW_HELP_INDEX_002.json, the observed CLI version, exit code and the sha256 of the copied stdout/stderr bytes. These are help-observed fixtures from one macOS arm64 host on 2026-09-15; they do not establish runtime behavior, provisioned-profiler help, or behavior on other hosts. Never edit or replace these files; add new invocations under a new evidence identifier instead.",
+  "sourceIndex": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/RAW_HELP_INDEX_002.json",
+  "capturedFrom": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002",
+  "nonzeroInvocations": [
+    "012",
+    "137",
+    "138",
+    "139",
+    "140",
+    "141"
+  ],
+  "entries": [
+    {
+      "version": "0.4.4",
+      "invocation": "001",
+      "label": "@picoxr/pico-cli@0.4.4 version",
+      "argv": [
+        "-v"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "99ca71c8950c00f8295b9e1cccfd0ff6fcafd3acb17cf8a7aa82dc752f4eb4a6",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 50,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/001",
+      "files": {
+        "json": "0.4.4/001.json",
+        "stdout.txt": "0.4.4/001.stdout.txt",
+        "stderr.txt": "0.4.4/001.stderr.txt"
+      }
+    },
+    {
+      "version": "0.4.4",
+      "invocation": "002",
+      "label": "0.4.4 pico-cli --help",
+      "argv": [
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "c78b513f95bd5ad1e1b3bb0867265d7d9743b81a7b6d6a27a5ae92c268cf5941",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 1007,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/002",
+      "files": {
+        "json": "0.4.4/002.json",
+        "stdout.txt": "0.4.4/002.stdout.txt",
+        "stderr.txt": "0.4.4/002.stderr.txt"
+      }
+    },
+    {
+      "version": "0.4.4",
+      "invocation": "011",
+      "label": "0.4.4 mcp --help",
+      "argv": [
+        "mcp",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "f767b20cb09e821855cfc9c53943438ee254afc6c8351498832784dcaf3c90e7",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 229,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/011",
+      "files": {
+        "json": "0.4.4/011.json",
+        "stdout.txt": "0.4.4/011.stdout.txt",
+        "stderr.txt": "0.4.4/011.stderr.txt"
+      }
+    },
+    {
+      "version": "0.4.4",
+      "invocation": "012",
+      "label": "0.4.4 perf --help",
+      "argv": [
+        "perf",
+        "--help"
+      ],
+      "code": 1,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "d22fe9b905cc5a56866b8ea4d8e88fe33e0e640078a9678aa882c179df943477",
+      "stdoutBytes": 0,
+      "stderrBytes": 80,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/012",
+      "files": {
+        "json": "0.4.4/012.json",
+        "stdout.txt": "0.4.4/012.stdout.txt",
+        "stderr.txt": "0.4.4/012.stderr.txt"
+      }
+    },
+    {
+      "version": "0.4.4",
+      "invocation": "025",
+      "label": "0.4.4 app watch-crash --help",
+      "argv": [
+        "app",
+        "watch-crash",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "66665f115a9b01205d6f2cd361cd1bae20d9878e936c1f261f576a198f41d20c",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 533,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/025",
+      "files": {
+        "json": "0.4.4/025.json",
+        "stdout.txt": "0.4.4/025.stdout.txt",
+        "stderr.txt": "0.4.4/025.stderr.txt"
+      }
+    },
+    {
+      "version": "0.4.4",
+      "invocation": "026",
+      "label": "0.4.4 capture record --help",
+      "argv": [
+        "capture",
+        "record",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "edc531b100e9aab1873a6bf3c316dd755e96b52bc3c604fce1ab233b48ad2540",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 253,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/026",
+      "files": {
+        "json": "0.4.4/026.json",
+        "stdout.txt": "0.4.4/026.stdout.txt",
+        "stderr.txt": "0.4.4/026.stderr.txt"
+      }
+    },
+    {
+      "version": "0.4.4",
+      "invocation": "053",
+      "label": "0.4.4 emulator status --help",
+      "argv": [
+        "emulator",
+        "status",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "03e1af0ab85f065d8acbf7cd0e69298d5d005e875a92fd421f6451c7ef180005",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 358,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/053",
+      "files": {
+        "json": "0.4.4/053.json",
+        "stdout.txt": "0.4.4/053.stdout.txt",
+        "stderr.txt": "0.4.4/053.stderr.txt"
+      }
+    },
+    {
+      "version": "0.4.4",
+      "invocation": "062",
+      "label": "0.4.4 mcp dev-knowledge --help",
+      "argv": [
+        "mcp",
+        "dev-knowledge",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "33b0e8a01533cfd426d699e41f003193a45efa03e99af617c759b8bf6625ce55",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 84,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/062",
+      "files": {
+        "json": "0.4.4/062.json",
+        "stdout.txt": "0.4.4/062.stdout.txt",
+        "stderr.txt": "0.4.4/062.stderr.txt"
+      }
+    },
+    {
+      "version": "0.4.4",
+      "invocation": "067",
+      "label": "0.4.4 project context doctor --help",
+      "argv": [
+        "project",
+        "context",
+        "doctor",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "167790513e1c6a0b0cdb6747adf4695c01afeab12aa7cd381498c0629628d3e7",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 857,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/067",
+      "files": {
+        "json": "0.4.4/067.json",
+        "stdout.txt": "0.4.4/067.stdout.txt",
+        "stderr.txt": "0.4.4/067.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "071",
+      "label": "@picoxr/pico-cli@0.5.0 version",
+      "argv": [
+        "-v"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "c6ae8abc9aaa50b0cf693d085f9f2f7bf1704fdf32b64378e04cbeefe0f11c9f",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 50,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/071",
+      "files": {
+        "json": "0.5.0/071.json",
+        "stdout.txt": "0.5.0/071.stdout.txt",
+        "stderr.txt": "0.5.0/071.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "072",
+      "label": "0.5.0 pico-cli --help",
+      "argv": [
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "a0db6d6644f616bcab467fb02eae191754f2705b2314e275d6aafcbe240d9e32",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 2446,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/072",
+      "files": {
+        "json": "0.5.0/072.json",
+        "stdout.txt": "0.5.0/072.stdout.txt",
+        "stderr.txt": "0.5.0/072.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "080",
+      "label": "0.5.0 knowledge --help",
+      "argv": [
+        "knowledge",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "1461c9b77721cd7c2186a71f98964550d1e6421d7d45587b852ac5db51f763ab",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 447,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/080",
+      "files": {
+        "json": "0.5.0/080.json",
+        "stdout.txt": "0.5.0/080.stdout.txt",
+        "stderr.txt": "0.5.0/080.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "082",
+      "label": "0.5.0 perf --help",
+      "argv": [
+        "perf",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "6c5eb0447e727c79b51a94b280649c8d7a951aa9f1472ac9178aa56a03c00c0e",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 395,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/082",
+      "files": {
+        "json": "0.5.0/082.json",
+        "stdout.txt": "0.5.0/082.stdout.txt",
+        "stderr.txt": "0.5.0/082.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "096",
+      "label": "0.5.0 app watch-crash --help",
+      "argv": [
+        "app",
+        "watch-crash",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "7004a564f043c78505ea95e1b3291f3001b595fb14f854d6d989e666afa6aa8a",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 768,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/096",
+      "files": {
+        "json": "0.5.0/096.json",
+        "stdout.txt": "0.5.0/096.stdout.txt",
+        "stderr.txt": "0.5.0/096.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "097",
+      "label": "0.5.0 capture record --help",
+      "argv": [
+        "capture",
+        "record",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "618d97626543b9fb43039b9a163ecec7a5167daefde127061d7e3c9d051712ea",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 388,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/097",
+      "files": {
+        "json": "0.5.0/097.json",
+        "stdout.txt": "0.5.0/097.stdout.txt",
+        "stderr.txt": "0.5.0/097.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "124",
+      "label": "0.5.0 emulator status --help",
+      "argv": [
+        "emulator",
+        "status",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "218d8eff79cce17b9c74888f4eefbd3b451594dc45ce3e67911ff6fa16061e4c",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 414,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/124",
+      "files": {
+        "json": "0.5.0/124.json",
+        "stdout.txt": "0.5.0/124.stdout.txt",
+        "stderr.txt": "0.5.0/124.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "136",
+      "label": "0.5.0 knowledge server --help",
+      "argv": [
+        "knowledge",
+        "server",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "95956385ff8dbc5a563d3720feec198eb24551724daa6cfe6977b6a8e716537b",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 144,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/136",
+      "files": {
+        "json": "0.5.0/136.json",
+        "stdout.txt": "0.5.0/136.stdout.txt",
+        "stderr.txt": "0.5.0/136.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "137",
+      "label": "0.5.0 perf daemon --help",
+      "argv": [
+        "perf",
+        "daemon",
+        "--help"
+      ],
+      "code": 3,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "stdoutBytes": 0,
+      "stderrBytes": 80,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/137",
+      "files": {
+        "json": "0.5.0/137.json",
+        "stdout.txt": "0.5.0/137.stdout.txt",
+        "stderr.txt": "0.5.0/137.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "138",
+      "label": "0.5.0 perf doctor --help",
+      "argv": [
+        "perf",
+        "doctor",
+        "--help"
+      ],
+      "code": 3,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "stdoutBytes": 0,
+      "stderrBytes": 80,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/138",
+      "files": {
+        "json": "0.5.0/138.json",
+        "stdout.txt": "0.5.0/138.stdout.txt",
+        "stderr.txt": "0.5.0/138.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "139",
+      "label": "0.5.0 perf live --help",
+      "argv": [
+        "perf",
+        "live",
+        "--help"
+      ],
+      "code": 3,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "stdoutBytes": 0,
+      "stderrBytes": 80,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/139",
+      "files": {
+        "json": "0.5.0/139.json",
+        "stdout.txt": "0.5.0/139.stdout.txt",
+        "stderr.txt": "0.5.0/139.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "140",
+      "label": "0.5.0 perf session --help",
+      "argv": [
+        "perf",
+        "session",
+        "--help"
+      ],
+      "code": 3,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "stdoutBytes": 0,
+      "stderrBytes": 80,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/140",
+      "files": {
+        "json": "0.5.0/140.json",
+        "stdout.txt": "0.5.0/140.stdout.txt",
+        "stderr.txt": "0.5.0/140.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "141",
+      "label": "0.5.0 perf trace --help",
+      "argv": [
+        "perf",
+        "trace",
+        "--help"
+      ],
+      "code": 3,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "stdoutBytes": 0,
+      "stderrBytes": 80,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/141",
+      "files": {
+        "json": "0.5.0/141.json",
+        "stdout.txt": "0.5.0/141.stdout.txt",
+        "stderr.txt": "0.5.0/141.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "147",
+      "label": "0.5.0 project context --help",
+      "argv": [
+        "project",
+        "context",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "9a24bc5a0f774873a02583742818a9e972526ccbbb4b6802bb62fb6e6c0b8e7e",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 240,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/147",
+      "files": {
+        "json": "0.5.0/147.json",
+        "stdout.txt": "0.5.0/147.stdout.txt",
+        "stderr.txt": "0.5.0/147.stderr.txt"
+      }
+    },
+    {
+      "version": "0.5.0",
+      "invocation": "157",
+      "label": "0.5.0 project context doctor --help",
+      "argv": [
+        "project",
+        "context",
+        "doctor",
+        "--help"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "87a260f82aa6ec19289f213d49dff0ddd6d9e844f9a2a8da150b9c31ca9befc6",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdoutBytes": 754,
+      "stderrBytes": 0,
+      "source": "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/157",
+      "files": {
+        "json": "0.5.0/157.json",
+        "stdout.txt": "0.5.0/157.stdout.txt",
+        "stderr.txt": "0.5.0/157.stderr.txt"
+      }
+    }
+  ]
+}

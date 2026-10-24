@@ -1,0 +1,55 @@
+{
+  "adbDevicesRaw": "List of devices attached\nemulator-5554          device product:swan model:swan_arm64 device:pico_spaceos_emulator_arm64 transport_id:1\n\n",
+  "devices": [
+    {
+      "serial": "emulator-5554",
+      "state": "device",
+      "raw": "emulator-5554          device product:swan model:swan_arm64 device:pico_spaceos_emulator_arm64 transport_id:1"
+    }
+  ],
+  "candidates": [
+    {
+      "serial": "emulator-5554",
+      "identity": {
+        "ro.product.model": "swan_arm64",
+        "ro.product.manufacturer": "Pico",
+        "ro.product.brand": "Pico",
+        "ro.product.name": "swan",
+        "ro.product.device": "pico_spaceos_emulator_arm64",
+        "ro.build.fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+        "ro.build.display.id": "6.1.0",
+        "ro.build.id": "BQ2A.260122.002-BP2A.250705.008",
+        "ro.build.version.release": "16",
+        "ro.build.version.sdk": "36",
+        "ro.product.cpu.abilist": "arm64-v8a",
+        "ro.product.cpu.abi": "arm64-v8a",
+        "ro.boot.qemu": "1",
+        "ro.kernel.qemu": "1",
+        "ro.serialno": "PA8A1311973709461",
+        "ro.build.characteristics": "emulator",
+        "persist.pxr.device.type": "",
+        "ro.pxr.device.name": "",
+        "ro.pxr.sdk.version": "",
+        "ro.pxr.os.version": "",
+        "ro.build.version.incremental": "4766",
+        "_allPxrProps": {
+          "ro.picovr.bootanima.splitscreen": "0",
+          "ro.pxr.controler.absolutekey": "1",
+          "ro.pxr.station.upgrade.flag": "2",
+          "ro.pxr.usebuildinfo": "3"
+        }
+      },
+      "emulatorMarkers": [
+        "ro.boot.qemu=1",
+        "ro.kernel.qemu=1",
+        "ro.build.fingerprint contains emulator/qemu",
+        "ro.product.device contains emulator/qemu",
+        "serial has the emulator- prefix"
+      ],
+      "isPhysicalCandidate": false
+    }
+  ],
+  "target": null,
+  "unauthorized": [],
+  "verdict": "no physical device attached \u2014 every online device carries emulator markers. Connect the headset over USB, enable developer mode + USB debugging on it, and accept the 'Allow USB debugging' prompt inside the headset."
+}

@@ -1,0 +1,2 @@
+# Real frames remain retained locally; ARTIFACTS.json and LOOK records pin exact bytes.
+*.png

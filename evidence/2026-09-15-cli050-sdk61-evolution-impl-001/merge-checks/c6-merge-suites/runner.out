@@ -1,0 +1,12 @@
+test:doors: exit=0 19605ms
+test:eye: exit=0 1948ms
+test:picocli: exit=0 98500ms
+test:prompts: exit=0 770ms
+test:unitygen: exit=0 167ms
+test:sdkselection: exit=0 441ms
+test:preflight: exit=0 1466ms
+test:ledger: exit=0 28027ms
+test:runreceipt: exit=0 43919ms
+test:lint: exit=0 1299ms
+test:docsmeta: exit=0 392ms
+DONE

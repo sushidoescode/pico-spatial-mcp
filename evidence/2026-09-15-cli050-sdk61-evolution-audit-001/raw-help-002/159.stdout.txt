@@ -1,0 +1,13 @@
+Description:
+Visualize a LiteRT model with pyspatialml
+
+Usage:
+  $ pico-cli spatialml model visualize <model> [--format plain|json]
+
+Options:
+  --format <format>  Output format (plain | json) (default: plain)
+  -h, --help         Display this message
+
+Examples:
+  $ pico-cli spatialml model visualize model.tflite
+  $ pico-cli spatialml model visualize model.tflite --format json

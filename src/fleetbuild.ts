@@ -12,6 +12,7 @@ import { appSpecSchema, isSafeIblAssetPath } from "./appspec.js";
 import { resolveAnchors } from "./semanticplace.js";
 import { proceduralUsda } from "./procedural.js";
 import { bakeTexturedModel } from "./bundle.js";
+import { adbExecutable } from "./adb.js";
 import { startBridgeDetached } from "./mousebridge.js";
 import { classifyBriefExecution } from "./briefroute.js";
 import { fileURLToPath } from "node:url";
@@ -37,7 +38,11 @@ const run = promisify(execFile);
  * split holds unattended), while panel readiness never becomes a visual verdict.
  */
 
-const ADB = path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools. Resolved PER CALL (identity-keyed, so a hit costs a stat) rather
+ *  than frozen into a module constant at import time. `$PICO_ADB` is honoured inside the
+ *  adapter, so the `process.env.PICO_ADB ?? ADB` pairs this replaced are no longer needed. */
+const ADB = () => adbExecutable();
 // v29.3: apps are GENERATED from the packaged skeleton (src/projectgen.ts / appskeleton/) — the
 // old clone-of-~/AndroidStudioProjects/galleryxr-native path existed only on the author's machine,
 // so every tarball install died at `scaffold failed`. The GameMenu bundle ships in the package too.
@@ -305,7 +310,7 @@ export async function pushSplatAssets(
   if (!/^emulator-\d+$/.test(serial)) {
     return { ok: false, assets: pushed, errors: [`splat delivery is emulator-only; refusing serial '${serial}'`] };
   }
-  const adbPath = options.adbPath ?? process.env.PICO_ADB ?? ADB;
+  const adbPath = options.adbPath ?? ADB();
   const runner = options.runner ?? (run as unknown as CommandRunner);
 
   for (const asset of plans) {
@@ -1214,7 +1219,7 @@ export function registerFleetBuildTools(server: McpServer) {
                 settleMs: settle,
                 afterInstall: async () => {
                   const delivery = await pushSplatAssets(splatPlan.assets, {
-                    adbPath: process.env.PICO_ADB ?? ADB,
+                    adbPath: ADB(),
                     serial: "emulator-5554",
                   });
                   if (!delivery.ok) {
@@ -1235,7 +1240,7 @@ export function registerFleetBuildTools(server: McpServer) {
               // Only override the configured adb path. The producer supplies its own correctly
               // shaped runText/runBinary/Gradle dependencies; fleet's promisified execFile runner
               // is intentionally not passed through this boundary.
-              nativeRun: { adbPath: process.env.PICO_ADB ?? ADB } as NativeFleetReceiptDependencies,
+              nativeRun: { adbPath: ADB() } as NativeFleetReceiptDependencies,
               visualJudge: (judgeInput) => call("visual_judge", judgeInput),
             });
             rec.built = receiptStage.built;
@@ -1284,7 +1289,7 @@ export function registerFleetBuildTools(server: McpServer) {
               const launchErrors: string[] = [];
               for (const activity of panelPlan.activities) {
                 try {
-                  await run(ADB, ["-s", "emulator-5554", "shell", "am", "start", "-n", `${pkg}/${activity}`], { timeout: 30_000 });
+                  await run(ADB(), ["-s", "emulator-5554", "shell", "am", "start", "-n", `${pkg}/${activity}`], { timeout: 30_000 });
                 } catch (e: any) {
                   launchErrors.push(`${activity}: ${String(e?.message ?? e)}`);
                 }
@@ -1338,7 +1343,7 @@ export function registerFleetBuildTools(server: McpServer) {
               try {
                 await new Promise((r) => setTimeout(r, 800));
                 const panelShot = path.join(shotDir, "panel-time.png");
-                const panelPng = await run(ADB, ["-s", "emulator-5554", "exec-out", "screencap", "-p"], { timeout: 30_000, encoding: "buffer" as any, maxBuffer: 32 * 1024 * 1024 });
+                const panelPng = await run(ADB(), ["-s", "emulator-5554", "exec-out", "screencap", "-p"], { timeout: 30_000, encoding: "buffer" as any, maxBuffer: 32 * 1024 * 1024 });
                 const bytes = panelPng.stdout as any;
                 if (bytes?.length >= 1000) {
                   fs.writeFileSync(panelShot, bytes);

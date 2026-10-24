@@ -1,0 +1,139 @@
+# step3 npm run --silent test:lint (2026-09-16T13:11:10Z)
+Testing 38 built-in lint rules (positive + negative fixtures each)...
+
+  ok   compose-fork-direct-dependency [error]
+  ok   displayColor-flat-white [error]
+  ok   mesh-collider-alignment [warn]
+  ok   collisioncomponent-no-arg [error]
+  ok   raycast-without-physicsworld [error]
+  ok   menu-dispatch-missing-move-route [error]
+  ok   collisioncasthitmode-closest [error]
+  ok   spotlight-cone-radians [error]
+  ok   physics-ccd-continuous [error]
+  ok   physics-destroy-respawn [error]
+  ok   physics-kinematic-flip [error]
+  ok   rotation-rotateVector [error]
+  ok   transform-scale-property [warn]
+  ok   particlecomponent-ctor [error]
+  ok   text-component [error]
+  ok   raw-glb-runtime-load [error]
+  ok   usd-glb-reference [error]
+  ok   stage-lighting-in-mixed [warn]
+  ok   dynamic-full-stage-emulator-safety [warn]
+  ok   defaultstage-windowcontainer-metadata [warn]
+  ok   bundle-md5-diff [error]
+  ok   am-start-without-forcestop [warn]
+  ok   compose-material-in-spatial-ui [error]
+  ok   compose-setcontent-without-picotheme [error]
+  ok   entityquerycondition-custom [error]
+  ok   ecs-system-nonexistent-override [error]
+  ok   registersystem-without-unregister [error]
+  ok   animationresource-never-closed [error]
+  ok   assetbundle-never-closed [error]
+  ok   toglobal-without-close [error]
+  ok   vibrant-encoding-destroyed [warn]
+  ok   picotheme-colortokens-restricted [error]
+  ok   resource-closed-without-toglobal [warn]
+  ok   mediaplayer-never-closed [error]
+  ok   trackingmanager-never-stopped [error]
+  ok   subscription-never-cancelled [error]
+  ok   interactable-collider-full [error]
+  ok   scaffold-log-tag-drift [warn]
+
+  ok   integration blob surfaced 5 violations
+
+  ok   published gate-battery size agrees across scripts/gate-inventory.mjs, package.json, gates.yml, README.md, and docs/COLLABORATORS.md (55 invocations / 54 test: suites; linux 52, windows 1, macos 2)
+  ok   S5: vault findings stay advisory beside an unavailable declaration identity that names package.xml
+  ok   S5: the project identity is read from projectDir and reported in the advisory block
+  ok   S5: unavailable linkage is stated without any target-validation wording
+  ok   S5: clean is derived from violations and project errors only (vault linkage does not enter)
+  ok   S5: without a project hint an unknown-symbol finding still leaves clean true and reports no target
+  ok   S5: a retained-lessons violation still makes clean false, independent of the vault block
+  ok   S5: a declared 0.13.3 vault against a 6.1.0 project reports unknown linkage
+  ok   S5: the no-findings note calls the lookup historical, not a target SDK validation
+  ok   S5: the packaged index has no records, so nothing is verified and nothing is rejected
+  ok   S5: the advisory block reports the packaged index as present with no records, distinct from missing
+  ok   S5: clean semantics unchanged with a declared vault and a project hint
+
+Lint fixture test done. Failures: 0
+[run-gate] node test/eye.mjs failed: ENOENT
+[run-gate] node test/eye.mjs was terminated by SIGTERM
+[run-gate] node missing.mjs failed: spawn failed
+✔ GATES declares a host, a scope, and at least one argv array for every gate (0.514958ms)
+✔ the repository's package.json and gates.yml agree with the inventory (0.797708ms)
+✔ every public gate script is routed through run-gate, and nothing else is (0.150125ms)
+✔ the native Windows lane keeps its exact three constituent suites (0.073208ms)
+✔ macOS keeps both native CMIO contracts, and only those (0.086542ms)
+✔ test:runrevision is a Linux gate, not an orphan script (0.043166ms)
+✔ the build-freshness and plugin-bootstrap-freshness suites are named Linux fixture gates (0.055875ms)
+✔ multi-command gates keep every && tail as its own sequential argv array (0.048834ms)
+✔ every argv target file that the inventory names exists in the checkout (0.402625ms)
+✔ a gate the workflow stops invoking is reported as missing (0.268792ms)
+✔ a gate invoked twice is reported as a duplicate (0.24825ms)
+✔ a workflow step invoking an unknown gate is reported (0.446292ms)
+✔ a gate run by a lane whose runner OS disagrees with its host is reported (0.295708ms)
+✔ a package script with no host assignment is reported (0.179417ms)
+✔ an inventory entry with no package script is reported (0.252541ms)
+✔ a lane whose runner OS cannot be recognized is reported rather than silently trusted (0.155958ms)
+✔ workflow lanes carry their job name, runner, host family, and gate invocations (0.128625ms)
+✔ runner labels map to host families, and an unknown label maps to null (0.027542ms)
+✔ published counts are derived from the inventory, never typed (0.063875ms)
+✔ the shape checks survive a synthetic inventory, so no repository total is baked in (0.111959ms)
+✔ a stale build fails the gate before any child is spawned (0.2385ms)
+✔ an installed-artifact gate is freshness-checked too (0.07475ms)
+✔ a native-contract gate skips the freshness check, because it never loads dist/ (0.218209ms)
+✔ commands run sequentially, with no shell, inheriting stdio, in the given root (0.0765ms)
+✔ FIXTURE_NO_ADB is the exact literal the checkpoint's runs exported, and names no file (0.024875ms)
+✔ a fixture gate child gets PICO_ADB=FIXTURE_NO_ADB when the caller set none (0.045459ms)
+✔ an installed-artifact gate child gets the same default (0.0495ms)
+✔ an inherited PICO_ADB is replaced by the pin, whatever it holds: a real adb, empty, or whitespace (0.135834ms)
+✔ a native-contract gate child gets no PICO_ADB default (0.040125ms)
+✔ the default is built into the child env, never written to process.env (0.051833ms)
+✔ an inherited real PICO_ADB is replaced by the fixture pin in fixture gates (0.024833ms)
+✔ an empty or whitespace PICO_ADB is replaced, never passed through (0.028458ms)
+✔ installed-artifact gates are pinned exactly like fixture gates (0.016958ms)
+✔ native-contract gates get the identical env object and no pin (0.015917ms)
+✔ the harness override passes an explicit fake executable through as PICO_ADB (1.356125ms)
+✔ an invalid harness override refuses to spawn the gate instead of falling back (0.123958ms)
+✔ a fake adb in a directory on no lookup path passes the hatch (0.942ms)
+✔ the same fake placed first on the caller's PATH is refused as a real adb (1.294ms)
+✔ a symlink to a PATH adb is refused by realpath, not by spelling (0.787125ms)
+✔ an adb up to three levels under $PICO_HOME or ~/Library/PICO is refused; deeper is not searched (2.29875ms)
+✔ native-contract gates are untouched by the hatch hardening (0.359458ms)
+✔ run-gate refuses a harness override that is an adb on the caller's PATH: exit 2, the fix says never a real adb, nothing spawned (0.577084ms)
+✔ run-gate hands a valid harness override to the child as PICO_ADB, replacing the inherited value (0.631541ms)
+✔ run-gate refuses a gate whose harness override is invalid: exit 2, the fix printed, nothing spawned (0.067083ms)
+✔ gates.yml carries the same literal at workflow level, covering the one raw node --test step (0.20025ms)
+✔ the first nonzero exit propagates and stops the remaining commands (0.037417ms)
+✔ a spawn error and a killed child are both nonzero, and stop the gate (0.276334ms)
+✔ an unknown gate name is refused by name (0.051917ms)
+✔ runArgv resolves nonzero without throwing when the child cannot start (0.04025ms)
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-yMctEW/ignores-sigterm.mjs exceeded 0s; sending SIGTERM
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-yMctEW/ignores-sigterm.mjs ignored SIGTERM for 1s; sending SIGKILL
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-yMctEW/ignores-sigterm.mjs was terminated by SIGKILL after exceeding 0s
+✔ a real child that ignores SIGTERM is still bounded: SIGKILL lands after the grace (1004.5615ms)
+[run-gate] node test/eye.mjs exceeded 0s; sending SIGTERM
+[run-gate] node test/eye.mjs ignored SIGTERM for 0s; sending SIGKILL
+[run-gate] node test/eye.mjs was terminated by SIGKILL after exceeding 0s
+✔ a timed-out gate stops before its remaining commands (23.4975ms)
+✔ only npm goes through the Windows launch shim; node and sh are spawned directly (0.221333ms)
+✔ the battery plan skips by scope, not by lane: only another OS's native contracts are off-limits (0.568333ms)
+✔ the repository plan derives from the inventory, not from package-script discovery (0.156292ms)
+✔ a reserved log never overwrites previous evidence (0.849834ms)
+✔ runBattery reserves a new log rather than replacing the one already there (0.752584ms)
+✔ runBattery continues after failures, retains every section, and summarizes (0.499416ms)
+✔ the summary states how many gates were skipped off-platform, so a short PASS cannot read as a full one (0.363333ms)
+✔ null status, spawn error, and signal count as one failure without aborting (0.427583ms)
+✔ battery npm launch is argv-safe and portable across POSIX and Windows (0.345416ms)
+✔ default battery log path is rooted in the host temp directory (0.066417ms)
+✔ battery CLI runs the planned gates and writes the requested aggregate log (27.780791ms)
+✔ all-pass run reports an exact zero-failure summary (0.495708ms)
+ℹ tests 63
+ℹ suites 0
+ℹ pass 63
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1078.539542
+exit=0

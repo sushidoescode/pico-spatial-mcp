@@ -1,0 +1,45 @@
+{
+  "tool_name": "emulator.status",
+  "tool_status": "SUCCESS",
+  "summary": "Collected emulator runtime status.",
+  "data": {
+    "processRunning": false,
+    "adbOnline": true,
+    "adbDeviceId": "emulator-5554",
+    "selectedCandidate": {
+      "adbDeviceId": "emulator-5554",
+      "adbState": "device",
+      "model": "swan_arm64",
+      "device": "pico_spaceos_emulator_arm64",
+      "product": "swan",
+      "isPico": true,
+      "isCliManaged": false,
+      "score": 0,
+      "source": "adb"
+    },
+    "candidates": [
+      {
+        "adbDeviceId": "emulator-5554",
+        "adbState": "device",
+        "model": "swan_arm64",
+        "device": "pico_spaceos_emulator_arm64",
+        "product": "swan",
+        "isPico": true,
+        "isCliManaged": false,
+        "score": 0,
+        "source": "adb"
+      }
+    ],
+    "guestProperties": {
+      "roBootQemu": "1",
+      "cpuAbi": "arm64-v8a"
+    }
+  },
+  "errors": [],
+  "resources": [],
+  "meta": {
+    "format": "json",
+    "truncated": false,
+    "candidateCount": 1
+  }
+}

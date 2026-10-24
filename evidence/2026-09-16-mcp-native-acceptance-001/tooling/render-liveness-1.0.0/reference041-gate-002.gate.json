@@ -1,0 +1,15 @@
+{
+  "rawLog": "reference041-gate-002.log",
+  "sha256": "86b4ca271f793d47717664d8fe526e72e59ecafd35ce32dd3fbba1c1e00499c0",
+  "seconds": 20,
+  "earlyWarnings": 0,
+  "seethroughCount": 0,
+  "seethroughPerSecond": 0.0,
+  "pxrMetricSamples": 20,
+  "pxrMetricAverageFps": 60.0,
+  "cleanTimedWindow": true,
+  "hostBeforePass": true,
+  "hostAfterPass": true,
+  "scope": "Admission diagnostic; not app performance or visual evidence",
+  "pass": false
+}

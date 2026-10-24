@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 emulator install --help",
+  "argv": [
+    "emulator",
+    "install",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:04.849Z",
+  "endedAt": "2026-09-15T09:12:04.954Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "d2247668f8994fe42559f59826595b0300d2f93ffacd78608da73d509130331e",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

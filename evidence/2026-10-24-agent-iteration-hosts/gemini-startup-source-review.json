@@ -1,0 +1,68 @@
+{
+  "reviewDate": "2026-10-24",
+  "scope": "Read-only installed Gemini source review and selected non-secret incident metadata; no host launched, settings changed, rollback, or credential contents inspected by this reviewer.",
+  "installedPackage": "@google/gemini-cli@0.64.0",
+  "bundleRoot": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/lib/node_modules/@google/gemini-cli/bundle",
+  "actualInteractiveImportChain": ["gemini.js", "gemini-Q2GRYIAK.js", "interactiveCli-66E5CZDR.js"],
+  "sourceIdentities": [
+    {"file":"gemini.js","bytes":5092,"sha256":"ab113d84c8f1692fd6c95081366718897876d8664328c7bf0ccf9437d688145f"},
+    {"file":"gemini-Q2GRYIAK.js","bytes":647965,"sha256":"7702da31cf099ca3e1d64fd195f15b7726b2c2829ec21e955558eb9dbfba47da"},
+    {"file":"interactiveCli-66E5CZDR.js","bytes":1309714,"sha256":"3c51144d6951cc0549c92acac3c37e0d6dbc5d5ff54481d6400fc39f26210c77"},
+    {"file":"chunk-DPNFVVVC.js","bytes":13659,"sha256":"dc8e05dd6bdfff42fa29962b9745bd21882564203e30569a7918857d66d726ad"},
+    {"file":"chunk-FLKY6NH5.js","bytes":668695,"sha256":"f6a4ddd46350dad40515218069d369aaa0025f194c552400b69925b941098bc8"},
+    {"file":"chunk-NR7L3FXV.js","bytes":16719030,"sha256":"d566e81b1df8d4d44a91bf7aeea96a58ec0e6c8934fa424315ef060507dcbb8c"},
+    {"file":"chunk-MA35JFUP.js","bytes":3675652,"sha256":"5afb745a6015fcdd0108c6fa33112e8250bb93774e73634641f458e89f990985"}
+  ],
+  "updater": {
+    "actualCommandFromSelectedNpmFields": "npm install --global @google/gemini-cli@0.65.0",
+    "logPath": "/Users/sushantsrikrish/.npm/_logs/2026-10-24T09_09_48_637Z-debug-0.log",
+    "logBytes": 9250,
+    "logSha256": "a9bbecef3b8e6307c914797a7557a317e5cdd8c3073c636a5027a8853407449f",
+    "logCwdMatchesTaskWorkspace": true,
+    "selectedFailureFields": {"code":"EACCES","syscall":"mkdir","path":"/usr/local/lib/node_modules/@google","errno":-13,"exit":-13},
+    "rawLogCopied": false,
+    "spawn": {"stdio":"ignore","shell":true,"detached":true,"unref":true},
+    "sourceReferences": ["chunk-DPNFVVVC.js:131", "chunk-DPNFVVVC.js:177", "chunk-DPNFVVVC.js:241", "interactiveCli-66E5CZDR.js:31375", "interactiveCli-66E5CZDR.js:34844"],
+    "limitation": "A failed update and unchanged selected entry/package hashes do not establish whole-install immutability or absence of cache/log changes. This review did not establish a pre-run whole-tree baseline."
+  },
+  "pretrustGuard": {
+    "cause": "mergeSettings omits workspace settings until trusted, while interactive startup starts checkForUpdates before trust approval.",
+    "sourceReferences": ["chunk-FLKY6NH5.js:16333", "interactiveCli-66E5CZDR.js:31375", "interactiveCli-66E5CZDR.js:34844"],
+    "requiredAdmittedScopeSetting": {"general":{"enableAutoUpdate":false,"enableAutoUpdateNotification":false}},
+    "notificationFlagEffect": "An admitted pretrust false value returns before registry lookup; enableAutoUpdate=false alone prevents only installer spawn.",
+    "ordinaryDedicatedDisableEnvironmentVariableFound": false,
+    "nodeEnvDevelopmentBlocksCheck": false,
+    "taskLocalSystemDefaults": {
+      "environmentVariable": "GEMINI_CLI_SYSTEM_DEFAULTS_PATH",
+      "precedence": "schema defaults, system defaults, user, trusted workspace, system settings",
+      "ordinaryTaskOwnedFileAccepted": false,
+      "reason": "This installed version requires system settings/defaults files and all ancestor directories to be root-owned and not group/world writable on POSIX. A task-owned file is skipped.",
+      "sourceReferences": ["chunk-FLKY6NH5.js:16280", "chunk-FLKY6NH5.js:16725", "chunk-NR7L3FXV.js:367485", "chunk-NR7L3FXV.js:367631"]
+    },
+    "existingScopes": {
+      "managedSystemSettingsExists": false,
+      "managedSystemDefaultsExists": false,
+      "userUpdateKeysPresent": []
+    },
+    "alternativesNotRun": [
+      "IS_BINARY=true suppresses installer selection but changes launcher argument/relaunch semantics; not recommended for npm-host conformance.",
+      "A genuine sandbox profile prevents installer spawn but still permits registry lookup and changes host mode; not validated here."
+    ],
+    "recommendation": "Keep Gemini actual MCP discovery/tool/image/consent/reconnect/cancellation unverified. Do not repeat interactive startup under the same workspace-only update guards. A future run needs an authorized admitted pretrust guard and supported authentication."
+  },
+  "screenReader": {
+    "flagWritesSettings": false,
+    "flagConfigReference": "gemini-Q2GRYIAK.js:8472",
+    "genericUiSettingsPathTextReference": "interactiveCli-66E5CZDR.js:9878",
+    "startupCanWritePersistentState": true,
+    "startupStateReferences": ["interactiveCli-66E5CZDR.js:9937", "interactiveCli-66E5CZDR.js:9952", "interactiveCli-66E5CZDR.js:10152", "chunk-MA35JFUP.js:73689"],
+    "legacyNudgeMarkerPresentAtReview": false,
+    "currentState": {"path":"/Users/sushantsrikrish/.gemini/state.json","bytes":92,"sha256":"f71598284ce8e327cd8c35e4316b0d40d9b93809ae893eee1707b8e386d96993","mtimeNs":"1792832988301930764"},
+    "currentBackup": {"path":"/Users/sushantsrikrish/.gemini/state.json.bak","bytes":92,"sha256":"fd74737e80d256255a133274cad30f45872077b7abcb5b9d7e31ec5fa96544fa","mtimeNs":"1792832988306882522"},
+    "keyNamesOnly": ["hasSeenScreenReaderNudge", "terminalSetupPromptShown", "tipsShown"],
+    "currentVersusBackupChangedKeyNames": ["tipsShown"],
+    "comparisonLimitation": "This compares current state with its current backup, not a pre-run baseline. No state values are recorded."
+  },
+  "runtimeTestsPerformedByReviewer": [],
+  "installedFilesChangedByReviewer": []
+}

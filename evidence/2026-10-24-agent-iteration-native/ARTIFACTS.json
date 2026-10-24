@@ -1,0 +1,302 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-24T05:33:55.038342+00:00",
+  "branch": "feature/cli-agent-iteration-2026-10-23",
+  "preNativeHead": "e903f330da0bdceaf5dccd873748aa0f636a5b51",
+  "packageVersion": "38.1.0",
+  "versionReleased": false,
+  "installedHostActivated": false,
+  "server": {
+    "buildReceipt": {
+      "path": "evidence/2026-10-24-agent-iteration-native/server-build-receipt.json",
+      "bytes": 56336,
+      "sha256": "74503c2a744aef93961bbc382bff192aea570673eabfefad3f00e2cb70e56dc2"
+    },
+    "inputSha256": "582931b34ae81d120cbebef26caf371fc113474a589bb21cca3129c5cf51fe3c",
+    "outputSha256": "03de2991ae22bfd5cf9d045fb59f553c6e272b0d6ab258c517c4329219627249",
+    "index": {
+      "path": "dist/index.js",
+      "bytes": 20204,
+      "sha256": "ba22e8e3a6b41aa5d661d1317a674f3602079b1070d776cfa1a09536f4dd8b4a"
+    }
+  },
+  "tarball": {
+    "path": "evidence/2026-10-24-agent-iteration-native/artifacts/pico-spatial-mcp-38.1.0.tgz",
+    "bytes": 2217659,
+    "sha256": "9265d1e35152f31869cc0ff1be590a156d9642ae907fbd54d9b4a2fac08cbdbb",
+    "verificationLog": {
+      "path": "evidence/2026-10-24-agent-iteration-native/tests/final-tarball.stdout.txt",
+      "bytes": 6406,
+      "sha256": "07a0d8bf442ef99cbd467b95155dccf39c0df9219a6653baf660b835a2bb0dfd"
+    },
+    "disposition": "exact gate-produced bytes retained locally; not published, activated or version-released",
+    "supersedesInitialHostSnapshotForNativeFixes": "c75843e2c034adb4e44b913eef9e0dbf2aee8451ba9ea39063a340579190d3e3"
+  },
+  "cli": {
+    "version": "0.6.1",
+    "package": {
+      "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/package.json",
+      "bytes": 1205,
+      "sha256": "44c2ba62b978d28b62f7f22471f7b9a23c20011008371d7ec3435d5072913144"
+    },
+    "executionRecords": [
+      {
+        "path": "evidence/agent-iteration-example/a57e7dd3-dbee-4165-80c1-1e0fd45d366b/cli-9ed230cf-18d1-49e8-8457-bde83597dc6c/1.json",
+        "bytes": 827,
+        "sha256": "a62cae5423f636ff5013dee90f89d7fc54f97adb2845a8eee7ce3e81997596b7"
+      },
+      {
+        "path": "evidence/agent-iteration-example/a57e7dd3-dbee-4165-80c1-1e0fd45d366b/cli-9ed230cf-18d1-49e8-8457-bde83597dc6c/2.json",
+        "bytes": 1151,
+        "sha256": "4f0135a543f279c0297b65fcb6bded2444ee06ee6aac1bfb7349aef3bc2254f6"
+      },
+      {
+        "path": "evidence/agent-iteration-example/a57e7dd3-dbee-4165-80c1-1e0fd45d366b/cli-9ed230cf-18d1-49e8-8457-bde83597dc6c/3.json",
+        "bytes": 1045,
+        "sha256": "75a1b224c0b1a07753f03e941d4c9ba1f65152fbf32761e66b28ceb9ff00cfdb"
+      },
+      {
+        "path": "evidence/agent-iteration-example/a57e7dd3-dbee-4165-80c1-1e0fd45d366b/cli-9ed230cf-18d1-49e8-8457-bde83597dc6c/4.json",
+        "bytes": 717,
+        "sha256": "a3d176eea44baae41a00918c74c06a4ed5a30e774a6b28f979218c59bbe1608c"
+      },
+      {
+        "path": "evidence/agent-iteration-example/a57e7dd3-dbee-4165-80c1-1e0fd45d366b/cli-9ed230cf-18d1-49e8-8457-bde83597dc6c/5.json",
+        "bytes": 1098,
+        "sha256": "90083899c6175cb6e20f81040358b536f73ff640d5217a805da3699eb35c9366"
+      },
+      {
+        "path": "evidence/agent-iteration-example/a57e7dd3-dbee-4165-80c1-1e0fd45d366b/cli-9ed230cf-18d1-49e8-8457-bde83597dc6c/6.json",
+        "bytes": 848,
+        "sha256": "2d3b41507990bfcaaf3604cfd8336bb886308f269a57d4972ddd949f4ff27dec"
+      }
+    ],
+    "initialImmutablePackageIdentity": {
+      "version": "0.6.1",
+      "observation": {
+        "path": "evidence/2026-10-23-agent-iteration/cli/READ_ONLY_CONTRACTS.json",
+        "bytes": 22228,
+        "sha256": "2975b9e7e18bc33800bca3bc8a25d19f744a30aa84112a32faeab0eb89871b7a"
+      },
+      "binary": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+      "realpath": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/index.js",
+      "files": [
+        {
+          "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/package.json",
+          "bytes": 1205,
+          "sha256": "44c2ba62b978d28b62f7f22471f7b9a23c20011008371d7ec3435d5072913144"
+        },
+        {
+          "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/index.js",
+          "bytes": 944008,
+          "sha256": "6daf24579469fd00e69d7e389f241fc6efec6ffde526dea0e4949fe7a38e4542"
+        },
+        {
+          "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/workflows/catalog.json",
+          "bytes": 69,
+          "sha256": "39d8368d68c7f5e0c9f4e10c62167394897e0b9ae039c05fa399682071c2a648"
+        },
+        {
+          "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/workflows/registered-workflows.v1.json",
+          "bytes": 152968,
+          "sha256": "e48fd8a14f7fb58c9d1590693b360ea57854f87cc1ea96ae57a03c5d1083c6f4"
+        },
+        {
+          "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/profiler-worker.js",
+          "bytes": 761,
+          "sha256": "e3319250a0b2526a10fb7322f94c93edc5f9294591a4b476fdbb0691b7bd272f"
+        }
+      ],
+      "note": "Observed package identity; no timeless latest claim and no lifecycle mutation."
+    },
+    "executable": {
+      "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/index.js",
+      "bytes": 944008,
+      "sha256": "6daf24579469fd00e69d7e389f241fc6efec6ffde526dea0e4949fe7a38e4542"
+    }
+  },
+  "adb": {
+    "path": "/Users/sushantsrikrish/Library/Android/sdk/platform-tools/adb",
+    "bytes": 19993936,
+    "sha256": "9fdf861259dc807937b13afdd5f053c7fda9f3b7726933fe0e0f45130ecb8dc7"
+  },
+  "native": {
+    "authority": {
+      "path": "evidence/2026-10-24-agent-iteration-native/AUTHORITY.json",
+      "bytes": 1202,
+      "sha256": "7a382615c3ff985bb57807a6a3f10e4afa22bd7c74ff68563f75464d91ba9b43"
+    },
+    "release": {
+      "path": "evidence/2026-10-24-agent-iteration-native/RELEASE.json",
+      "bytes": 3865,
+      "sha256": "66a81bd48d29b1306c7292c033707323ccea56626deab5a1d134c54e38bbffaa"
+    },
+    "iteration": {
+      "path": "evidence/agent-iteration-example/a57e7dd3-dbee-4165-80c1-1e0fd45d366b/iteration-55050185-56cb-49a3-8ae6-6000304bdf85.json",
+      "bytes": 21806,
+      "sha256": "d53f3951da6c9d0c529a4ae9d2c20f318b58e5aea03340397cb6679ef9b8a096"
+    },
+    "previousTarget": {
+      "apkSha256": "24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04",
+      "appGeneration": "971b186f-e529-4bd6-8bab-c3b57f57d015",
+      "bindingSha256": "c69a64e0562bec8ca6e9c0433655179963792fe48143393f88d757bb31860a66",
+      "bootId": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+      "bootQemu": "1",
+      "enforcementScope": "interaction-session-only",
+      "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+      "model": "swan_arm64",
+      "observedAt": "2026-10-24T05:23:03.984Z",
+      "packageName": "com.example.picofixture.iteration.debug",
+      "pid": 4296,
+      "pidStartTicks": "44574",
+      "schemaVersion": 1,
+      "serial": "emulator-5554"
+    },
+    "target": {
+      "apkSha256": "9e311dc104d70a3997832162d6597d45805692f22f729ca869c86bdff45d9a12",
+      "appGeneration": "659e3ad2-39ed-42cf-bdc8-90a73810de4d",
+      "bindingSha256": "03fcdb9756d2a10352cf63b7893d4b067233366a6a20ad8ac72b3caebd2e596e",
+      "bootId": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+      "bootQemu": "1",
+      "enforcementScope": "interaction-session-only",
+      "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+      "model": "swan_arm64",
+      "observedAt": "2026-10-24T05:24:10.448Z",
+      "packageName": "com.example.picofixture.iteration.debug",
+      "pid": 8478,
+      "pidStartTicks": "170913",
+      "schemaVersion": 1,
+      "serial": "emulator-5554"
+    },
+    "previousApk": {
+      "path": "evidence/agent-iteration-example/build-4eaa05fa-1a7d-4f30-96a9-2477820d21ba/app-debug.apk",
+      "bytes": 32813306,
+      "sha256": "24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04"
+    },
+    "rebuiltApk": {
+      "path": "evidence/agent-iteration-example/a57e7dd3-dbee-4165-80c1-1e0fd45d366b/build-059d4282-f668-43f2-b7b9-6f9f99ec23b0/app-debug.apk",
+      "bytes": 32813306,
+      "sha256": "9e311dc104d70a3997832162d6597d45805692f22f729ca869c86bdff45d9a12"
+    },
+    "buildRecord": {
+      "path": "evidence/agent-iteration-example/a57e7dd3-dbee-4165-80c1-1e0fd45d366b/build-059d4282-f668-43f2-b7b9-6f9f99ec23b0/build.json",
+      "bytes": 9176,
+      "sha256": "1224ecd84e1e17105903201bca3f58cee91985089a9be44736048d966b94af70"
+    },
+    "resolvedBefore": {
+      "path": "evidence/agent-iteration-example/a57e7dd3-dbee-4165-80c1-1e0fd45d366b/build-059d4282-f668-43f2-b7b9-6f9f99ec23b0/resolved-inputs-before.json",
+      "bytes": 3364763,
+      "sha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4"
+    },
+    "resolvedAfter": {
+      "path": "evidence/agent-iteration-example/a57e7dd3-dbee-4165-80c1-1e0fd45d366b/build-059d4282-f668-43f2-b7b9-6f9f99ec23b0/resolved-inputs.json",
+      "bytes": 3364763,
+      "sha256": "a0c896cf5348fcac52054763edf593be1b9f483daed3c71687534815820097a4"
+    },
+    "resolvedInputCount": 12342,
+    "inputSha256": "4caf221d0df5e87084ec7900bf4514fb3397e4168ac2c90c635d5f4ef6f6e4b7",
+    "sourceDelta": [
+      {
+        "path": "app/src/main/java/com/example/picofixture/iteration/content/HomePage.kt",
+        "before": "2c2b40fc30d291a4e8a1df35ec1b5e25fa92bbf2a9ec8e89b21fab07b1427a6c",
+        "after": "e59d7bd66e4bd62bdee285d6bd6da4d1b9494e54f3ba13244bdaddcebe571950"
+      }
+    ],
+    "projectOwner": {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/examples/agent-iteration-fixture/.gradle-user-home/pico-iteration-build.owner.json",
+      "scope": "interaction-fixture-build-only",
+      "state": "released",
+      "token": "d0240f89-b049-45e7-85bc-c9d0a73247dd"
+    },
+    "frames": [
+      {
+        "look": {
+          "path": "evidence/2026-10-24-agent-iteration-native/before-look.json",
+          "bytes": 892,
+          "sha256": "8a709ba8cf74f304ebea31bf0d8395a632dca8f41a0414aef0a81bfc8d43072d"
+        },
+        "frame": {
+          "path": "evidence/2026-10-24-agent-iteration-native/before.png",
+          "bytes": 2985664,
+          "sha256": "29c8678a1cafac010350fc99eab67487a3fa8b2fde4c828f08e962fc6dc88cad"
+        },
+        "outcome": "pass"
+      },
+      {
+        "look": {
+          "path": "evidence/2026-10-24-agent-iteration-native/immediate-look.json",
+          "bytes": 1055,
+          "sha256": "813486d37cd644e3b8cf0f4a5493c8e099f6ed5b0fd567de86c3cf526ce58a9d"
+        },
+        "frame": {
+          "path": "evidence/agent-iteration-example/3d765143-2305-4cd5-9dc8-bf87eab17baf/attempts/8f380859-a019-4613-9e1f-2a01864345af/frame.png",
+          "bytes": 2985664,
+          "sha256": "29c8678a1cafac010350fc99eab67487a3fa8b2fde4c828f08e962fc6dc88cad"
+        },
+        "outcome": "failed"
+      },
+      {
+        "look": {
+          "path": "evidence/2026-10-24-agent-iteration-native/after-delayed-look.json",
+          "bytes": 1302,
+          "sha256": "9e06edfac64bd0e028e4c6f89c42cdd97d6ad5288f1ef42d023edd18af96fc16"
+        },
+        "frame": {
+          "path": "evidence/2026-10-24-agent-iteration-native/after-delayed.png",
+          "bytes": 2988830,
+          "sha256": "a47573759f44babe72a7af4318413a8ac7f1a9f0966ccdd9b281fda4a62649c7"
+        },
+        "outcome": "pass"
+      },
+      {
+        "look": {
+          "path": "evidence/2026-10-24-agent-iteration-native/replay-immediate-look.json",
+          "bytes": 1064,
+          "sha256": "e4ac985fe944044f3d99344044ebf953d7c01c9376fbc8d1514bf13028288c9a"
+        },
+        "frame": {
+          "path": "evidence/agent-iteration-example/a57e7dd3-dbee-4165-80c1-1e0fd45d366b/attempts/288a0539-b709-4446-bfeb-c931c8283350/frame.png",
+          "bytes": 3946281,
+          "sha256": "3d706f2f3a9a166b498e22b7dafab33ec7911416d4560c11c61570a4a31beee2"
+        },
+        "outcome": "failed"
+      },
+      {
+        "look": {
+          "path": "evidence/2026-10-24-agent-iteration-native/replay-look.json",
+          "bytes": 1578,
+          "sha256": "a0d6b672ec451fbaf2f356348d6f01c2a620c29b0ab12300d843915080d60605"
+        },
+        "frame": {
+          "path": "evidence/agent-iteration-example/cd7b109a-432e-4cbc-9b01-89af33899e6a/recapture.png",
+          "bytes": 2988825,
+          "sha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc"
+        },
+        "outcome": "pass"
+      }
+    ]
+  },
+  "hostConfigurations": [
+    {
+      "path": "examples/agent-iteration-fixture/host-configs/claude.json",
+      "bytes": 338,
+      "sha256": "e338fd9280d16d796c2494a68dd54bf567d94a8f912a30f94b22015299085b97"
+    },
+    {
+      "path": "examples/agent-iteration-fixture/host-configs/codex.toml",
+      "bytes": 506,
+      "sha256": "da043600c8bc4e40f2d56d181d44f36b2d3053f006dcef55c93e20776edf19b4"
+    },
+    {
+      "path": "examples/agent-iteration-fixture/host-configs/gemini-settings.json",
+      "bytes": 444,
+      "sha256": "b464d853051be0487c96e5afc36ce2d333f4949af0fb385750ac9fe0376b1cab"
+    }
+  ],
+  "limitations": [
+    "one dedicated planar fixture, one macOS host and PICO_6.1 emulator",
+    "immediate frames failed LOOK; later bound captures passed",
+    "2500 ms settle is not a render-readiness guarantee",
+    "no physical input, hardware parity, interactive host UI or multi-cycle native watch claim"
+  ]
+}

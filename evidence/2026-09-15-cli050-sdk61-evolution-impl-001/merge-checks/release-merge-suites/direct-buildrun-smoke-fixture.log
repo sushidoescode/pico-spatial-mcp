@@ -1,0 +1,23 @@
+✔ Windows smoke-fixture contract selects cmd/bat wrappers without claiming build_and_run execution (0.48975ms)
+✔ POSIX smoke-fixture contract retains the executable build_and_run success path (0.078666ms)
+✔ Windows fixture materializes quoted adb.cmd and gradlew.bat launchers (1.949959ms)
+✔ the native Windows CI lane owns the tracked wrapper-selection contract (0.515125ms)
+✔ the fixture environment names only fixture paths and cannot provision a CLI (0.123333ms)
+✔ the fixture adb serves one serial, refuses every other target, and logs what it was asked (369.412125ms)
+✔ assemble task parsing binds one module and variant (0.26225ms)
+✔ APK resolution trusts only requested AGP metadata and package (2.178167ms)
+✔ launch success requires exit zero and a positive am/monkey signal (0.268375ms)
+✔ runtime analysis scopes render markers to the app PID and correlates multiline crashes (0.267459ms)
+✔ public build_and_run contract is explicitly POSIX-only (0.142ms)
+pico-spatial-mcp ready (stdio)
+✔ POSIX MCP path rejects failed launch and never reports installed/running success (540.972667ms)
+pico-spatial-mcp ready (stdio)
+✔ POSIX MCP path rejects an acknowledged launch with no live package PID (5804.841041ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6805.953875

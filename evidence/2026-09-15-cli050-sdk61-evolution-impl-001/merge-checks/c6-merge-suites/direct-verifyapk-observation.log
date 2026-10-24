@@ -1,0 +1,34 @@
+✔ a clean observation records every identity field as OBSERVED and is not a receipt (21.384167ms)
+✔ identity that could not be observed is explicitly MISSING with a reason, never synthesised (14.588083ms)
+✔ installed APK digest ≠ local APK digest → mismatch, and nothing is launched (0.724167ms)
+✔ a FOREIGN app in the foreground is a conflict with the observed package — and is never stopped (10.083625ms)
+✔ a boot identity that changes across the observation is INCONCLUSIVE (13.025042ms)
+✔ a PID that changes across the observation is INCONCLUSIVE (14.061041ms)
+✔ a process START that changes under the SAME PID is INCONCLUSIVE — PID reuse is not continuity (12.974542ms)
+✔ capture bytes substituted after the observation → tampered, and the frame is not evidence (13.978833ms)
+✔ a malformed image larger than 1000 bytes is INVALID MEDIA, not a capture (9.866167ms)
+✔ arbitrary nonempty bytes above the size floor are also invalid media (9.960208ms)
+✔ a capture that FAILED is capture:'unavailable' and never status ok/observed (9.921209ms)
+✔ a valid DARK frame is an inconclusive capture route, not a rendering failure (15.126334ms)
+✔ a boot identity that was never observed is INCONCLUSIVE, not a clean observation (13.883167ms)
+✔ a foreground that was never observed is INCONCLUSIVE — the frame is unattributable (12.927625ms)
+✔ an UNKNOWN crash state is INCONCLUSIVE — unknown is not 'no crash' (12.989ms)
+✔ logcat is never cleared, is bounded, and is scoped to the observed PID (12.974791ms)
+✔ a FATAL with no attribution to this package or PID is NOT this app's crash (12.977583ms)
+✔ a FATAL naming this package IS attributed (12.962792ms)
+✔ a log read that fails leaves logs unavailable and never implies 'no crash' (13.046125ms)
+✔ each observation gets a unique run directory under the observation root, and refuses replacement (41.918ms)
+✔ no capture is written to the old mutable package-keyed /tmp path (13.126792ms)
+✔ the serial is REQUIRED — there is no emulator-5554 default to leak into (1.548917ms)
+✔ an unresolvable adb is refused before any device command runs (0.407666ms)
+✔ the loud-runner fixture would actually catch a spawn (0.270375ms)
+✔ capture_frame refuses to capture without an explicit serial, before resolving adb (0.634292ms)
+✔ capture_record refuses to record without an explicit device, before any CLI work (0.990417ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 364.290125

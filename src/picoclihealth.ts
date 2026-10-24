@@ -14,8 +14,11 @@ export function registerPicoCliHealthTool(server: McpServer) {
       description:
         "Force-refresh the registry-latest MCP-owned @picoxr/pico-cli and return its exact absolute path, version, " +
         `freshness, and policy. Provisioning is bounded (default ${PICO_CLI_INSTALL_TIMEOUT_MS / 1000}s), immutable, ` +
-        "non-global, and never changes PATH or runs pico-cli setup/update --check. The deprecated update input is " +
-        "accepted through 37.x but is inert: this explicit tool always force-refreshes.",
+        "non-global, and never changes PATH or runs pico-cli setup/update --check. It also runs bounded " +
+        "per-operation capability discovery on the refreshed package: at most 8 `<route> --help` probes, each " +
+        "time- and output-capped, whose raw bytes and classified report are retained under the managed store and " +
+        "returned as capabilities. The deprecated update input is accepted through 37.x but is inert: this " +
+        "explicit tool always force-refreshes.",
       inputSchema: {
         update: z.boolean().optional().describe("Deprecated compatibility input; accepted but inert. The tool always force-refreshes managed-latest."),
       },

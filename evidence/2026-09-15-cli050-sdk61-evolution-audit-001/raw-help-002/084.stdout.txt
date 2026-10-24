@@ -1,0 +1,12 @@
+Description:
+Create PICO projects and inspect project context
+
+Usage:
+  $ pico-cli project <command> [options]
+
+Commands:
+  context  Check project-local agent context routing
+  create   Create a new PICO project
+
+Options:
+  -h, --help  Show this message and exit.

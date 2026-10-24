@@ -1,0 +1,9 @@
+Usage:
+  pico-cli web <command> [options]
+
+Commands:
+  launch  Launch a WebApp on the current emulator or device
+  setup   Prepare the local web environment
+
+Options:
+  -h, --help  Show this message and exit.

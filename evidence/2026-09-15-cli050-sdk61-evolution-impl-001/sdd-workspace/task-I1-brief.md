@@ -1,0 +1,15 @@
+## I1: Register the merged tracks' suites, ship the SDK compatibility payload, wire the cross-track tarball canaries
+
+Controller-authored integration task (not in the plans). Scope is exactly the cross-track handoffs the tracks were forbidden to make themselves. Source of truth for each item is the named report section.
+
+**Files:** `package.json` (scripts + `files[]`), `scripts/gate-inventory.mjs`, `.github/workflows/gates.yml`, `scripts/verify-tarball.mjs`, derived doc counts in `README.md`, `docs/COLLABORATORS.md`, `AGENTS.md` (outside the byte-pinned policy blocks), `test/distribution-adoption.mjs` only if a derived expectation genuinely needs a code change.
+
+- [ ] Register the six SDK-track suites as ONE Linux `fixture` gate `test:sdkselection` running `node --test test/toolchain-resolution.mjs test/toolchain-consumers.mjs test/projectidentity.mjs test/toolchain-cache.mjs test/declarationcontext.mjs test/declarationcontext-installed.mjs` (S6 report, "Handoff C").
+- [ ] Register `test/cliobservations.mjs` by appending `node --test test/cliobservations.mjs` to the existing `test:picocli` gate command list (C3 report) and `test/innerclient.mjs` by appending to the existing `test:doors` gate (C5 report). No new gate names for those two.
+- [ ] Add `"data/sdk-compatibility"` to `package.json` `files[]` immediately after `"dist"` (S6 report, "Handoff A"). Do not add `docs/`, `test/`, or the whole `data/` tree.
+- [ ] Add the `[M6]` SDK payload canary to `scripts/verify-tarball.mjs` exactly as described in the S6 report ("Handoff B"): after the `[M1]` sibling loop, `await import` the INSTALLED copy of `scripts/verify-sdk-compatibility-payload.mjs` from the extracted package, call `verifySdkCompatibilityPayload(installedRoot)`, and fail the gate on `!payload.ok`, listing `payload.errors`.
+- [ ] Add the two tarball assertions the C5 report suggested for the release track: (a) `pico_look` through the installed doors surface with `PICO_ADB` pointed at an exit-1 stub returns `isError: true` (never `status:"ok"` wrapping a screencap failure); (b) a 20-way concurrent first-call burst against the installed doors server creates exactly one inner child (reuse the counting method from `test/doors.mjs`).
+- [ ] Recompute and update the derived doc counts through R3's mechanism (`README.md`, `docs/COLLABORATORS.md`, `AGENTS.md` gate paragraph) and re-measure the AGENTS.md test-file sentence with the command it publishes.
+- [ ] Build (`npm run build`), then: `node --test test/gate-inventory.mjs`, `npm run test:lint`, `npm run test:distribution-adoption`, `npm run test:docsmeta`, `node scripts/run-gate.mjs test:sdkselection`, `npm run test:picocli`, `npm run test:doors`, and `npm run test:tarball` (must be GREEN now, with the M6 canary and the two doors assertions passing). Commit with `chore: register merged suites and ship the SDK compatibility payload`.
+
+**Acceptance:** `validateGateInventory` → `[]`; every new suite runs in a CI lane; the installed tarball carries and verifies `data/sdk-compatibility`; the doors assertions hold against the installed artifact; no policy block byte changes; prior evidence untouched.

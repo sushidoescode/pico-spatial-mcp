@@ -1,0 +1,344 @@
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/006.stdout.txt:7: trailing whitespace.
++  --tool <tool>          Agent host to inspect (codex, traecli, claude-code, cursor, copilot, all) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/006.stdout.txt:8: trailing whitespace.
++  --project <path>       Project directory to enable the project context check (skipped when omitted) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/006.stdout.txt:10: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/010.stdout.txt:5: trailing whitespace.
++  -d, --device <device>     Target device id (overrides PICO_CLI_DEVICE) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/010.stdout.txt:7: trailing whitespace.
++  -t, --tag <tag>           Filter by tag 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/010.stdout.txt:8: trailing whitespace.
++  -l, --level <level>       Minimum log level: V|D|I|W|E|F 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/010.stdout.txt:9: trailing whitespace.
++  -F, --filter <filter>     Filter expressions in tag:priority format 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/010.stdout.txt:11: trailing whitespace.
++  -b, --buffer <buffer>     Log buffer: main|system|crash|radio|events|all|default 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/010.stdout.txt:12: trailing whitespace.
++  --pid <pid>               Filter by process ID 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/010.stdout.txt:13: trailing whitespace.
++  -e, --regex <regex>       Regex pattern to filter log messages 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/010.stdout.txt:16: trailing whitespace.
++  -h, --help                Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/015.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id (overrides PICO_CLI_DEVICE) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/015.stdout.txt:6: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/016.stdout.txt:8: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/018.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id (overrides automatic selection) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/018.stdout.txt:7: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/019.stdout.txt:5: trailing whitespace.
++  -d, --device <device>    Target device id (overrides automatic selection) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/019.stdout.txt:6: trailing whitespace.
++  -r, --replace            Replace an existing application 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/019.stdout.txt:7: trailing whitespace.
++  --downgrade              Allow version code downgrade (adb install -d) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/019.stdout.txt:8: trailing whitespace.
++  -t, --test               Allow test packages 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/019.stdout.txt:9: trailing whitespace.
++  -g, --grant-permissions  Grant runtime permissions on install 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/019.stdout.txt:10: trailing whitespace.
++  -h, --help               Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/020.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id (overrides automatic selection) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/020.stdout.txt:6: trailing whitespace.
++  --activity <activity>  Optional activity (e.g. .MainActivity) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/020.stdout.txt:7: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/021.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id (overrides automatic selection) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/021.stdout.txt:7: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/022.stdout.txt:5: trailing whitespace.
++  -d, --device <device>     Target device id (overrides automatic selection) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/022.stdout.txt:7: trailing whitespace.
++  -t, --tag <tag>           Filter by tag 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/022.stdout.txt:8: trailing whitespace.
++  -l, --level <level>       Minimum log level: V|D|I|W|E|F 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/022.stdout.txt:9: trailing whitespace.
++  -F, --filter <filter>     Filter expressions in tag:priority format 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/022.stdout.txt:11: trailing whitespace.
++  -b, --buffer <buffer>     Log buffer: main|system|crash|radio|events|all|default 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/022.stdout.txt:12: trailing whitespace.
++  --pid <pid>               Filter by process ID 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/022.stdout.txt:13: trailing whitespace.
++  -e, --regex <regex>       Regex pattern to filter log messages 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/022.stdout.txt:16: trailing whitespace.
++  -h, --help                Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/023.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id (overrides automatic selection) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/023.stdout.txt:6: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/024.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id (overrides automatic selection) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/024.stdout.txt:6: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/025.stdout.txt:5: trailing whitespace.
++  -d, --device <device>       Target device id (overrides PICO_CLI_DEVICE) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/025.stdout.txt:7: trailing whitespace.
++  --activity <activity>       Optional activity (e.g. .MainActivity) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/025.stdout.txt:10: trailing whitespace.
++  -h, --help                  Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/026.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/026.stdout.txt:6: trailing whitespace.
++  -o, --out <path>       Local output path 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/026.stdout.txt:8: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/027.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/027.stdout.txt:6: trailing whitespace.
++  -o, --out <path>       Local output path 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/027.stdout.txt:7: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/028.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/028.stdout.txt:7: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/029.stdout.txt:5: trailing whitespace.
++  -h, --help  Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/030.stdout.txt:5: trailing whitespace.
++  -h, --help  Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/031.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/031.stdout.txt:7: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/032.stdout.txt:7: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/033.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/033.stdout.txt:7: trailing whitespace.
++  -e, --filter <filter>  Filter keys or values by substring 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/033.stdout.txt:8: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/034.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/034.stdout.txt:6: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/035.stdout.txt:5: trailing whitespace.
++  -h, --help  Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/036.stdout.txt:7: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/037.stdout.txt:5: trailing whitespace.
++  --editor-version <version>    Preferred editor version to download 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/037.stdout.txt:6: trailing whitespace.
++  --config-url <url>            Debug: override plugin-style remote config URL for editor downloads 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/037.stdout.txt:7: trailing whitespace.
++  --artifact-url <url>          Download editor directly from this URL 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/037.stdout.txt:8: trailing whitespace.
++  --artifact-checksum <sha256>  Optional SHA-256 checksum for --artifact-url 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/037.stdout.txt:10: trailing whitespace.
++  -h, --help                    Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/038.stdout.txt:5: trailing whitespace.
++  --workspace-root <path>     Workspace root used to resolve the editor project 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/038.stdout.txt:6: trailing whitespace.
++  --project <path>            Existing Spatial Editor project (.spatialproject or project directory) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/038.stdout.txt:7: trailing whitespace.
++  --scene-files <items>       Comma-separated scene files to package. If omitted, editor defaults are used. 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/038.stdout.txt:8: trailing whitespace.
++  --target-app-root <path>    Spatial app root. Spatial app projects must write to app/src/main/assets/<bundle-name>.bundle. 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/038.stdout.txt:9: trailing whitespace.
++  --output-path <path>        Bundle output file path or output directory 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/038.stdout.txt:11: trailing whitespace.
++  --sidecar-dir <path>        Directory for .scenes.json. Defaults to the bundle directory. 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/038.stdout.txt:12: trailing whitespace.
++  --editor-version <version>  Preferred editor version to download 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/038.stdout.txt:15: trailing whitespace.
++  -h, --help                  Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.stdout.txt:5: trailing whitespace.
++  --install-path <path>         Override editor installation path 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.stdout.txt:6: trailing whitespace.
++  --project <path>              Open an existing Spatial Editor project (.spatialproject or project directory) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.stdout.txt:7: trailing whitespace.
++  --create-project <path>       Create a new Spatial Editor project in an empty directory before launch 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.stdout.txt:8: trailing whitespace.
++  --project-name <name>         Project name used with --create-project 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.stdout.txt:9: trailing whitespace.
++  --port <port>                 Editor IPC port (default: auto-detect or 6400) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.stdout.txt:10: trailing whitespace.
++  --editor-version <version>    Preferred editor version to download 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.stdout.txt:11: trailing whitespace.
++  --config-url <url>            Debug: override plugin-style remote config URL for editor downloads 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.stdout.txt:12: trailing whitespace.
++  --artifact-url <url>          Download editor directly from this URL 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.stdout.txt:13: trailing whitespace.
++  --artifact-checksum <sha256>  Optional SHA-256 checksum for --artifact-url 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.stdout.txt:15: trailing whitespace.
++  --log-file <path>             Write editor and MCP Server logs to this file 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/039.stdout.txt:18: trailing whitespace.
++  -h, --help                    Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/040.stdout.txt:6: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/041.stdout.txt:5: trailing whitespace.
++  --pid <editorPid>  Stop a specific editor instance by its editor PID (required when multiple CLI-managed instances exist) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/041.stdout.txt:7: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/042.stdout.txt:5: trailing whitespace.
++  --component <name>       Kotlin Component class name, for example PadBtnComponent 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/042.stdout.txt:6: trailing whitespace.
++  --app-root <path>        Spatial app root. Defaults to the current working directory. 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/042.stdout.txt:7: trailing whitespace.
++  --editor-project <path>  Spatial Editor project directory or .spatialproject file. Defaults to the unique project under editor-asset/src/main/res3d. 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/042.stdout.txt:8: trailing whitespace.
++  --file <path>            Explicit Kotlin file path when multiple same-name candidates exist. 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/042.stdout.txt:11: trailing whitespace.
++  -h, --help               Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/043.stdout.txt:6: trailing whitespace.
++  -h, --help  Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/044.stdout.txt:6: trailing whitespace.
++  --avd <name>                AVD name to create 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/044.stdout.txt:8: trailing whitespace.
++  --bundle-version <version>  Preferred emulator bundle version to download 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/044.stdout.txt:9: trailing whitespace.
++  --config-url <url>          Override remote sdk_config URL for emulator downloads 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/044.stdout.txt:10: trailing whitespace.
++  --artifact-url <url>        Download emulator bundle directly from this archive URL 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/044.stdout.txt:11: trailing whitespace.
++  --artifact-checksum <sha1>  Optional SHA-1 checksum for --artifact-url 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/044.stdout.txt:13: trailing whitespace.
++  -h, --help                  Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/045.stdout.txt:6: trailing whitespace.
++  --avd <name>       Delete a specific CLI-created PICO AVD 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/045.stdout.txt:9: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/046.stdout.txt:7: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/047.stdout.txt:6: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/048.stdout.txt:5: trailing whitespace.
++  --adb-device <id>  Target adb device id (e.g. emulator-5554) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/048.stdout.txt:8: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/049.stdout.txt:7: trailing whitespace.
++  --config-url <url>          Override remote sdk_config URL for emulator downloads 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/049.stdout.txt:8: trailing whitespace.
++  --artifact-url <url>        Download emulator bundle directly from this archive URL 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/049.stdout.txt:9: trailing whitespace.
++  --artifact-checksum <sha1>  Optional SHA-1 checksum for --artifact-url 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/049.stdout.txt:11: trailing whitespace.
++  -h, --help                  Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/050.stdout.txt:7: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/051.stdout.txt:7: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/052.stdout.txt:6: trailing whitespace.
++  --avd <name>                AVD name to start; omit it to use an existing managed/default AVD 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/052.stdout.txt:7: trailing whitespace.
++  --emulator-path <path>      Override emulator binary path 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/052.stdout.txt:8: trailing whitespace.
++  --adb-device <id>           Preferred adb device id after start (e.g. emulator-5554) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/052.stdout.txt:10: trailing whitespace.
++  --bundle-version <version>  Preferred emulator bundle version to download 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/052.stdout.txt:11: trailing whitespace.
++  --config-url <url>          Override remote sdk_config URL for emulator downloads 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/052.stdout.txt:12: trailing whitespace.
++  --artifact-url <url>        Download emulator bundle directly from this archive URL 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/052.stdout.txt:13: trailing whitespace.
++  --artifact-checksum <sha1>  Optional SHA-1 checksum for --artifact-url 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/052.stdout.txt:17: trailing whitespace.
++  --log-file <path>           Write emulator stdout/stderr to this file 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/052.stdout.txt:21: trailing whitespace.
++  -h, --help                  Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/053.stdout.txt:5: trailing whitespace.
++  --adb-device <id>  Target adb device id (e.g. emulator-5554) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/053.stdout.txt:7: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/054.stdout.txt:6: trailing whitespace.
++  --adb-device <id>  Target adb device id (e.g. emulator-5554) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/054.stdout.txt:7: trailing whitespace.
++  --avd <name>       Target managed AVD name (e.g. Pico_Emulator_0_11) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/054.stdout.txt:8: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/055.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/055.stdout.txt:6: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/056.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/056.stdout.txt:7: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/057.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/057.stdout.txt:7: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/058.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/058.stdout.txt:6: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/059.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/059.stdout.txt:6: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/060.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/060.stdout.txt:8: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/061.stdout.txt:5: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/061.stdout.txt:7: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/062.stdout.txt:5: trailing whitespace.
++  -h, --help  Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/063.stdout.txt:6: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/064.stdout.txt:5: trailing whitespace.
++  --cwd <path>    Project directory to inspect (defaults to current working directory) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/064.stdout.txt:6: trailing whitespace.
++  --out <path>    Output directory for the support bundle 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/064.stdout.txt:7: trailing whitespace.
++  --transcript    Include the selected Claude Code session transcript and usage extraction 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/064.stdout.txt:8: trailing whitespace.
++  --yes           Confirm that transcript export is authorized and privacy-reviewed 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/064.stdout.txt:9: trailing whitespace.
++  --session <id>  Claude Code session id to export; defaults to newest transcript for the project 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/064.stdout.txt:10: trailing whitespace.
++  -h, --help      Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/065.stdout.txt:5: trailing whitespace.
++  --tool <tool>      Tool to inspect; defaults to all available tools (all | claude-code | codex | cursor | copilot | traecli) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/065.stdout.txt:6: trailing whitespace.
++  --plugin <name>    Plugin name to inspect; omit to inspect the default/current plugin selection (pico-spatial-agentic-tools | pico-unity-agentic-tools) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/065.stdout.txt:9: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/066.stdout.txt:5: trailing whitespace.
++  --tool <tool>     Tool to update plugins for; defaults to all tools (all | claude-code | codex | cursor | copilot | traecli) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/066.stdout.txt:6: trailing whitespace.
++  --plugin <name>   Plugin name to update; omit to update the default/current plugin selection (pico-spatial-agentic-tools | pico-unity-agentic-tools) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/066.stdout.txt:7: trailing whitespace.
++  --cwd <path>      Override the global plugin workspace parent directory 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/066.stdout.txt:8: trailing whitespace.
++  --project <path>  Project directory where plugin context should be linked from selected agent context files 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/066.stdout.txt:9: trailing whitespace.
++  -h, --help        Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/067.stdout.txt:5: trailing whitespace.
++  --project <path>   [required] Project directory to inspect 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/067.stdout.txt:8: trailing whitespace.
++  --source <path>    Plugin workspace/source root containing published plugin context 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/067.stdout.txt:11: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/068.stdout.txt:5: trailing whitespace.
++  --dir <path>       Output directory (default: current directory) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/068.stdout.txt:6: trailing whitespace.
++  --name <text>      [required] Project name 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/068.stdout.txt:7: trailing whitespace.
++  --package <text>   [required] Package name, e.g. com.example.app 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/068.stdout.txt:8: trailing whitespace.
++  --sdk-type <text>  Override the SDK type; defaults to the platform recorded in .pico-env.json (spatial | unity) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/068.stdout.txt:9: trailing whitespace.
++  --template <text>  [required] Template mode (spatial: planar/volumetric/stage; unity: OpenXR/PICOXR) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/068.stdout.txt:10: trailing whitespace.
++  --sdk <text>       Spatial SDK BOM version (optional) 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/068.stdout.txt:12: trailing whitespace.
++  -h, --help         Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/069.stdout.txt:5: trailing whitespace.
++  --manifest-url <url>   Manifest URL of the WebApp to launch 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/069.stdout.txt:6: trailing whitespace.
++  --url <url>            Page URL to open on the emulator or device 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/069.stdout.txt:7: trailing whitespace.
++  -d, --device <device>  Target device id 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/069.stdout.txt:8: trailing whitespace.
++  -h, --help             Display this message 
+evidence/2026-09-15-cli050-sdk61-evolution-audit-001/raw-help-002/070.stdout.txt:5: trailing whitespace.
++  -h, --help  Display this message 

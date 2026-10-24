@@ -1,0 +1,14 @@
+installedVersions() on the PRODUCTION default io (hostToolchainIO + real fs), PICO_HOME pointed at a
+scratch root carrying BOTH 0.13 and 6.1 emulator payloads with different declared revisions.
+Read-only; ~/Library/PICO was never read or written. 2026-09-16T11:27:44Z
+
+$ PICO_HOME=<scratch> node -e 'installedVersions()'
+{
+  "emulator": "6.1.0",
+  "editor": "unknown",
+  "sdkMaven": "6.0.0",
+  "selection": {
+    "version": "6.1",
+    "rootSource": "PICO_HOME"
+  }
+}

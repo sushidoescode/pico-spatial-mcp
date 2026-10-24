@@ -1,0 +1,114 @@
+(node:84545) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:84557) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ordinary MCP interaction service is implemented
+not ok 1 - ordinary MCP interaction service is implemented
+  ---
+  duration_ms: 0.961834
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactiontools.mjs:7:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    [32mactual[39m [31mexpected[39m
+    
+    [39m'[39m[31mf[39m[39mu[39m[39mn[39m[32md[39m[32me[39m[32mf[39m[31mc[39m[31mt[39m[39mi[39m[31mo[39m[39mn[39m[32me[39m[32md[39m[39m'[39m
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'function'
+  actual: 'undefined'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactiontools.mjs:7:67)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.start (node:internal/test_runner/test:877:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: offline describe does not resolve a target or CLI; physical target refused before connect
+not ok 2 - offline describe does not resolve a target or CLI; physical target refused before connect
+  ---
+  duration_ms: 0.120583
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactiontools.mjs:8:1'
+  failureType: 'testCodeFailure'
+  error: 'api.createInteractionService is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactiontools.mjs:10:21)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+    Test.postRun (node:internal/test_runner/test:1090:19)
+    Test.run (node:internal/test_runner/test:1018:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: public observe/action result delivers structured text, image and exact record link; stop releases only session
+not ok 3 - public observe/action result delivers structured text, image and exact record link; stop releases only session
+  ---
+  duration_ms: 54.846625
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactiontools.mjs:16:1'
+  failureType: 'testCodeFailure'
+  error: 'api.createInteractionService is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactiontools.mjs:18:21)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: public uncertainty propagates isError and cannot be cleared by stop or retry
+not ok 4 - public uncertainty propagates isError and cannot be cleared by stop or retry
+  ---
+  duration_ms: 11.787791
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactiontools.mjs:32:1'
+  failureType: 'testCodeFailure'
+  error: 'api.createInteractionService is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactiontools.mjs:34:21)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: MCP delivery never reuses changed capture bytes
+not ok 5 - MCP delivery never reuses changed capture bytes
+  ---
+  duration_ms: 22.57675
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactiontools.mjs:42:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /capture|hash|changed/. Input:
+    
+    'TypeError: api.interactionToolResult is not a function'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+  error: 'api.interactionToolResult is not a function'
+  name: 'TypeError'
+  stack: |-
+    file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactiontools.mjs:47:25
+    getActual (node:assert:840:5)
+    Function.throws (node:assert:986:24)
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactiontools.mjs:47:10)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  operator: 'throws'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactiontools.mjs:47:10)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 0
+# fail 5
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 139.938792

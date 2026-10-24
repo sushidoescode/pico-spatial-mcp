@@ -1,0 +1,8 @@
+Usage:
+  $ pico-cli web setup
+
+Options:
+  -h, --help  Display this message 
+
+Examples:
+  $ pico-cli web setup

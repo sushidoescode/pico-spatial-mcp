@@ -148,13 +148,13 @@ This table describes code routing, not hardware validation:
 |---|---|
 | `deploy_to_device` | Selects one live-probed PICO-shaped candidate; accepts explicit `deviceSerial`; no override. |
 | `swan_verify_matrix` | Same identity selection; returns pending tests until effective passing device evidence exists. |
-| `capture_frame` | Accepts `serial` (defaults to `emulator-5554`); a black adb frame is inconclusive. |
+| `capture_frame` | Requires an explicit `serial` since 38.0.0 — no default target; a black adb frame is inconclusive. |
 | `assert_scene` | Accepts `serial`; requires the Agent Bridge in the APK. |
 | `logcat`, `assert_logcat`, `app_broadcast`, and basic adb tools | Accept an explicit serial or use their documented sole-device resolution. |
 | `screenrecord`, `wait_for_log`, `check_crash`, `ui_dump` | Accept serial through the agent-loop adb path; no Swan run has validated them. |
 | `verify_baseline`, `verify_visual`, `capture_canonical` | Accept a serial but default to the emulator. |
 | `visual_judge` | Reads a saved image and performs no adb operation. |
-| `verify_pico_apk` | Currently hardcodes `emulator-5554`; it cannot target hardware. |
+| `verify_pico_apk` | Requires an explicit `serial` since 38.0.0 — no hardcoded emulator; it can be pointed at hardware, but no hardware run has been performed. It force-stops only the package it installs, stops no foreign app, and clears no logcat buffer. |
 | `gui_capture`, `gui_camera`, `gui_find_window` | macOS host-window tools for the emulator/editor; not hardware capture tools. |
 | emulator lifecycle, snapshots, free-camera, and mapped-controller tools | Emulator-only. |
 | `record_verification` | Uses live adb identity and capture probes only for `device_verified`; lower tiers do not use adb. |

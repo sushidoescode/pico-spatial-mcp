@@ -1,13 +1,15 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import * as path from "node:path";
-import * as os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fail, okJson, ok } from "./util.js";
+import { adbExecutable } from "./adb.js";
 
 const run = promisify(execFile);
-const ADB = process.env.PICO_ADB ?? path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools. Resolved PER CALL (identity-keyed, so a hit costs a stat) rather
+ *  than frozen into a module constant at import time. */
+const ADB = () => adbExecutable();
 const SERIAL = "emulator-5554";
 
 const PANEL_DOES_NOT_PROVE = [
@@ -439,7 +441,7 @@ export function registerWebWorkspaceTools(server: McpServer) {
       const device = serial ?? SERIAL;
       let stdout: string;
       try {
-        const result = await run(ADB, ["-s", device, "shell", "dumpsys", "window", "windows"], {
+        const result = await run(ADB(), ["-s", device, "shell", "dumpsys", "window", "windows"], {
           timeout: 20_000,
           maxBuffer: 16 * 1024 * 1024,
         });

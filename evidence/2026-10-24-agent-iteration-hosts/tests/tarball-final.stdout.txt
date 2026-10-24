@@ -1,0 +1,126 @@
+
+> pico-spatial-mcp@38.1.0 test:tarball
+> node scripts/run-gate.mjs test:tarball
+
+TAP version 13
+# (node:78202) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: publishes a verified tarball alongside prior versions, leaving every one of them untouched
+ok 1 - publishes a verified tarball alongside prior versions, leaving every one of them untouched
+  ---
+  duration_ms: 8.390209
+  ...
+# Subtest: refuses to replace an existing artifact, and the prior bytes and directory listing do not move
+ok 2 - refuses to replace an existing artifact, and the prior bytes and directory listing do not move
+  ---
+  duration_ms: 6.48575
+  ...
+# Subtest: refuses a source whose digest is not the digest that passed verification, and writes nothing
+ok 3 - refuses a source whose digest is not the digest that passed verification, and writes nothing
+  ---
+  duration_ms: 1.296334
+  ...
+# Subtest: an interrupted copy removes its own temporary and never creates the destination
+ok 4 - an interrupted copy removes its own temporary and never creates the destination
+  ---
+  duration_ms: 1.846959
+  ...
+# Subtest: re-reads the staged bytes and refuses to publish a copy that does not hash to the verified digest
+ok 5 - re-reads the staged bytes and refuses to publish a copy that does not hash to the verified digest
+  ---
+  duration_ms: 5.31575
+  ...
+# Subtest: refuses to publish where hard links are unavailable instead of falling back to rename
+ok 6 - refuses to publish where hard links are unavailable instead of falling back to rename
+  ---
+  duration_ms: 4.536125
+  ...
+# Subtest: every link-unsupported errno refuses publication, and the refusal names the cause
+ok 7 - every link-unsupported errno refuses publication, and the refusal names the cause
+  ---
+  duration_ms: 25.928125
+  ...
+# Subtest: creates a missing destination directory, and refuses malformed arguments before touching disk
+ok 8 - creates a missing destination directory, and refuses malformed arguments before touching disk
+  ---
+  duration_ms: 4.520875
+  ...
+# Subtest: writes the receipt beside the artifact and never overwrites an existing one
+ok 9 - writes the receipt beside the artifact and never overwrites an existing one
+  ---
+  duration_ms: 8.63875
+  ...
+# Subtest: the publication module contains no directory enumeration and no recursive removal
+ok 10 - the publication module contains no directory enumeration and no recursive removal
+  ---
+  duration_ms: 0.431459
+  ...
+# Subtest: verify-tarball publishes through the helper and removes nothing but its own sandbox
+ok 11 - verify-tarball publishes through the helper and removes nothing but its own sandbox
+  ---
+  duration_ms: 0.572041
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 107.176416
+sandbox: /private/tmp/pico-host-tarball-m7pw337e/pico mcp tester é wI2Bcl
+
+  ok   packed pico-spatial-mcp-38.1.0.tgz (2176 kB, sha256 db8384db4054ca7bfdd6861b8b9b60d9769be3ee5b1649a18a2354e1483122f0)
+  ok   installed into a clean directory with --omit=dev
+  ok   installed home environment dataset directory contains exactly the versioned JSON
+  ok   installed home environment dataset bytes match the exact packed source dataset
+  ok   home environment dataset ships in the installed package
+  ok   installed dataset keeps Mesume Day excluded for its zero-geometry public-parser failure
+  ok   installed dataset keeps both Livingroom refresh surface extensions
+  ok   installed dataset keeps the evidence-falsified Day guarantees and optional cluster ranges
+  ok   installed dataset retains complete one-to-one measured-potential Livingroom ranking inputs
+  ok   installed dataset carries only accepted, syntactically pinned refresh evidence
+  ok   installed selector ranks complete Day/Night potential and receipts the canonical dataset hash
+  ok   derived out-of-dist dependencies from the build: appskeleton, assets, briefs, data, package.json, scripts, tools, unityskeleton
+  ok   payload present: appskeleton/
+  ok   payload present: assets/
+  ok   payload present: briefs/
+  ok   payload present: data/
+  ok   payload present: package.json/
+  ok   payload present: scripts/
+  ok   payload present: tools/
+  ok   payload present: unityskeleton/
+  ok   reviewed SDK-compatibility payload verified (3 files, index + every referenced record/basis)
+  ok   briefs/ carries 22 briefs
+  ok   brief canary parses: gallery.json
+  ok   brief canary parses: knockdown.json
+  ok   no build droppings anywhere in the package
+  ok   no absolute home paths in any shipped file
+  ok   TESTERS.md ships
+  ok   reader-facing doc ships: SKILLS.md
+  ok   reader-facing doc ships: DESIGN.md
+  ok   reader-facing doc ships: GETTING_STARTED.md
+  ok   app skeleton ships complete and non-empty (17 canaries)
+  ok   appskeleton/gradlew kept its exec bit through pack+install
+  ok   gradle wrapper jar ships intact
+  ok   dot-less _gitignore survived packing (npm drops files named .gitignore)
+  ok   menu.bundle ships for GameMenu briefs
+  ok   unity skeleton ships complete (11 canaries)
+  ok   unityskeleton _gitignore survived packing
+  ok   bin entry has a shebang
+  ok   installed server listed exactly 255 tools for darwin (255 on the full macOS surface)
+  ok   all 43 anchor tools present
+  ok   preflight_env ran from the installed copy (14 checks, status: problems)
+  ok   preflight fixes contain no repo-only commands
+  ok   doors surface registered all 18 door tools
+  ok   a door tool completed its inner self-client spawn from a path containing a space
+  ok   20 concurrent first door calls on the installed artifact started exactly one inner server (all unavailable)
+  ok   installed pico_look forwards the inner screencap failure as isError, never as status ok (stub adb ran: 1 invocation(s), screencap argv recorded)
+  ok   PICO_MCP_SURFACE unset serves the 18-tool doors surface (full stays explicit opt-in)
+  ok   dedicated iteration fixture policy ships with exact reviewed bytes
+  ok   installed doors opt-in discovery lists 19 tools and describes semantic actions offline
+  ok   installed full opt-in discovery lists 256 tools and describes semantic actions offline
+  ok   packed dist/build-receipt.json binds the payload to source 582931b34ae8 / output 03de2991ae22
+
+Tarball verification done. Failures: 0

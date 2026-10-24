@@ -1,0 +1,33 @@
+{
+  "input": {
+    "app": "com.example.picofixture.iteration.debug",
+    "claim": "After source-bound rebuild and semantic replay on emulator-5554, the dedicated fixture renders source revision 3, State transitions: 1, and Panel visible — fixture.panel.",
+    "evidenceType": "vision_verified",
+    "artifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/cd7b109a-432e-4cbc-9b01-89af33899e6a/recapture.png",
+    "attestation": "I opened the exact public MCP recapture.png frame. The visible rounded app window reads Agent iteration fixture (source revision 3), State transitions: 1, and Panel visible — fixture.panel. The capture used pico_look with explicit emulator-5554, bracketed by target/state validation in the new APK/generation. The immediate replay frame showed only the room even with a 2500 ms settle; this later read-only recapture establishes the rendered response. No action resend, physical headset, hand/controller or host UI parity is claimed.",
+    "cClass": "C0_emulator"
+  },
+  "captureSha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc",
+  "result": {
+    "status": "recorded",
+    "entry": {
+      "seq": 2,
+      "claim": "After source-bound rebuild and semantic replay on emulator-5554, the dedicated fixture renders source revision 3, State transitions: 1, and Panel visible — fixture.panel.",
+      "evidenceType": "vision_verified",
+      "artifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/ledger/artifacts/e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc.png",
+      "sourceArtifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/cd7b109a-432e-4cbc-9b01-89af33899e6a/recapture.png",
+      "attestation": "I opened the exact public MCP recapture.png frame. The visible rounded app window reads Agent iteration fixture (source revision 3), State transitions: 1, and Panel visible — fixture.panel. The capture used pico_look with explicit emulator-5554, bracketed by target/state validation in the new APK/generation. The immediate replay frame showed only the room even with a 2500 ms settle; this later read-only recapture establishes the rendered response. No action resend, physical headset, hand/controller or host UI parity is claimed.",
+      "cClass": "C0_emulator",
+      "capture": {
+        "sha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc",
+        "width": 2160,
+        "height": 2158,
+        "bytes": 2988825,
+        "format": "png"
+      },
+      "reproHash": null
+    },
+    "totalEntries": 3,
+    "app": "com.example.picofixture.iteration.debug"
+  }
+}

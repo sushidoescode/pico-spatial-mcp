@@ -1,0 +1,38 @@
+[
+  {
+    "name": "test:interaction",
+    "startedAt": "2026-10-23T21:24:49.783Z",
+    "finishedAt": "2026-10-23T21:24:55.558Z",
+    "status": 0,
+    "signal": null,
+    "error": null,
+    "log": "evidence/2026-10-23-agent-iteration/tests/final-interaction.log"
+  },
+  {
+    "name": "test:doors",
+    "startedAt": "2026-10-23T21:24:55.559Z",
+    "finishedAt": "2026-10-23T21:25:17.429Z",
+    "status": 0,
+    "signal": null,
+    "error": null,
+    "log": "evidence/2026-10-23-agent-iteration/tests/final-doors.log"
+  },
+  {
+    "name": "test:bridge",
+    "startedAt": "2026-10-23T21:25:17.429Z",
+    "finishedAt": "2026-10-23T21:25:22.951Z",
+    "status": 0,
+    "signal": null,
+    "error": null,
+    "log": "evidence/2026-10-23-agent-iteration/tests/final-bridge.log"
+  },
+  {
+    "name": "test:emulator-restart",
+    "startedAt": "2026-10-23T21:25:22.951Z",
+    "finishedAt": "2026-10-23T21:26:01.736Z",
+    "status": 0,
+    "signal": null,
+    "error": null,
+    "log": "evidence/2026-10-23-agent-iteration/tests/final-emulator-restart.log"
+  }
+]

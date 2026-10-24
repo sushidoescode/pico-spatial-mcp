@@ -1,0 +1,16 @@
+{
+  "label": "0.4.4 device --help",
+  "argv": [
+    "device",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:48.017Z",
+  "endedAt": "2026-09-15T09:11:48.117Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "481d9a4b23ad46c55db7871133b44ab6311bad33ae610772aab750d823bf8d0b",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

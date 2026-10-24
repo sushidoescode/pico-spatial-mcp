@@ -1,0 +1,23 @@
+[
+  {
+    "name": "codex",
+    "path": "/Users/sushantsrikrish/.local/bin/codex",
+    "realpath": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/lib/node_modules/@openai/codex/bin/codex.js",
+    "bytes": 8790,
+    "sha256": "61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70"
+  },
+  {
+    "name": "claude",
+    "path": "/Users/sushantsrikrish/.local/bin/claude",
+    "realpath": "/Users/sushantsrikrish/.local/share/claude/versions/2.1.288",
+    "bytes": 229255312,
+    "sha256": "bbe93063f7a0879a1021b2891e5c9354e5b3b98433e32efe6750f7710afed750"
+  },
+  {
+    "name": "gemini",
+    "path": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/bin/gemini",
+    "realpath": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/lib/node_modules/@google/gemini-cli/bundle/gemini.js",
+    "bytes": 5092,
+    "sha256": "ab113d84c8f1692fd6c95081366718897876d8664328c7bf0ccf9437d688145f"
+  }
+]

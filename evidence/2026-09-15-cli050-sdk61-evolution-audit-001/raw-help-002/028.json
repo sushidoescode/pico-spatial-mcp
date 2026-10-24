@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 device battery --help",
+  "argv": [
+    "device",
+    "battery",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:50.271Z",
+  "endedAt": "2026-09-15T09:11:50.367Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "e7f6844ab240357a820577f921bce5437b54575a0b7ca942f0fb6af1e69f3caa",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

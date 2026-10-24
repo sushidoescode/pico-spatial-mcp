@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "app": "com.example.fixture",
+    "report_id": "synthetic-0100-complete",
+    "durationSeconds": 15,
+    "totalSamples": 15,
+    "timestamp": "2026-09-15T00:00:00.000Z"
+  },
+  "diagnosis": {
+    "result": "PASS",
+    "category": "NO_ISSUE",
+    "suggestion": ""
+  },
+  "summary": {
+    "appFps": { "avg": 70.5, "max": 72, "min": 57, "p5": 61, "p10": 65, "p50": 71, "dropsCount": 2 },
+    "sysFps": { "avg": 89.1, "max": 90, "min": 83, "p5": 85, "p10": 87, "p50": 90 },
+    "gpuUsage": { "avg": 39.2, "max": 64 },
+    "gpuFreq": { "avg": 470, "max": 690 },
+    "systemCpu": { "avg": 27.3, "max": 52 },
+    "appCpu": { "avg": 11.9, "max": 22 },
+    "gpuTemp": { "start": 37, "end": 43, "max": 44, "trend": "rising" }
+  },
+  "jankWindows": [],
+  "rawData": []
+}

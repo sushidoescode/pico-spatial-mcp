@@ -1,0 +1,47 @@
+{
+  "at": "2026-10-24T12:29:43.141512+00:00",
+  "reviewer": "/root/independent_review",
+  "disposition": "All six source/test/workflow files reviewed; no material findings. Native Windows and Linux CI confirmation pending at this commit.",
+  "observedCi": "https://github.com/sushidoescode/pico-spatial-mcp/actions/runs/40093280336",
+  "fixes": [
+    "Tolerate Windows EPERM only when flushing an opened, fstat-confirmed directory; return explicit unsupported durability. File sync and POSIX errors remain strict.",
+    "Exercise LF and CRLF workflow boundaries in Windows gate assertion.",
+    "Drain crash-fixture stdin before exit 1 to avoid a transport EPIPE race; no production receipt changes.",
+    "Install NumPy/Pillow/SciPy on Linux CI and select distro Python for the eye gate; preserve mandatory seven-color assertion and expose detector errors."
+  ],
+  "validation": {
+    "build": "source 2a0d8786b3dd",
+    "directorySyncFocused": "14/14 passed",
+    "fullPicocli": "174/174 plus 33/33 passed",
+    "receiptPortability": "115/115 passed",
+    "lint": "passed",
+    "eye": "passed locally; CI dependency fix awaits Linux run"
+  },
+  "fixtureAdb": "/fixture/no/such/adb",
+  "files": [
+    {
+      "path": ".github/workflows/gates.yml",
+      "sha256": "276c6f7bff20b2be5c80b2f1acd5df9899bd6b3c0f94e2aebe2ffa5fc594b32c"
+    },
+    {
+      "path": "src/picoclimanaged.ts",
+      "sha256": "d3f86598ef664bf63e282f222e0d9cdef4215e07bd46aee9014819099241594c"
+    },
+    {
+      "path": "test/buildrun-smoke-fixture.mjs",
+      "sha256": "faf7b19fff707dd412c9d33464b9eeb96b687a24c824c0be2648b33de6be10f8"
+    },
+    {
+      "path": "test/eye.mjs",
+      "sha256": "4bc8f0ea77e4bad610609ecf8dea6d7dfec6478d8e43e84c3afd8daf2c9f8de9"
+    },
+    {
+      "path": "test/picocli-autoinstall.mjs",
+      "sha256": "eaf3fde56eb9328c55cf8ef2c10f4a08e3a3fdfcfd72c73cf884694ba135a7f4"
+    },
+    {
+      "path": "test/runreceipt-portability.mjs",
+      "sha256": "5b39f5ab6eede97bfb53ac4448d1b7a492a9e31a338a367e228e90b842649f2c"
+    }
+  ]
+}

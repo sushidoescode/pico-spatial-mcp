@@ -1,0 +1,8 @@
+# npm run build — Task 1 fold — 2026-09-16T10:02:09Z — HEAD 313c03a + uncommitted src/adb.ts, src/preflight.ts, src/nativefleetreceipt.ts, src/runrevisiontypes.ts, test/preflight.mjs, test/nativefleetreceipt.mjs
+
+> pico-spatial-mcp@38.0.0 build
+> node scripts/build-source.mjs
+
+build-source: published 190 file(s) for source afc8c6907105
+# exit=0
+verifyBuild: {"current":true,"reasons":[]}

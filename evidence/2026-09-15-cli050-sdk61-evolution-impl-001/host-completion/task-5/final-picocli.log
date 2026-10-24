@@ -1,0 +1,389 @@
+  ok   legacy picoCliPath remains an inert compatibility export
+  ok   drift classified: "error: unknown option '--nope'\nUsage: pe"
+  ok   drift classified: "Usage: perf trace record [options]"
+  ok   drift classified: "error: missing required argument 'packag"
+  ok   runtime failure classified as runtime
+  ok   empty output defaults to runtime (never claims drift without evidence)
+  ok   0.4.x utilities gate classified as setup-required
+  ok   utilities gate on stdout with a future bundle version classifies as setup-required
+  ok   appFps avg 0 (the measured emulator no_3d_frame case) scores null, not 0
+  ok   appFps p5=62 vs 60fps floor scores 1
+  ok   appFps p5=20 vs 60fps floor scores 0
+  ok   failed diagnose scores null (not counted), never 0
+  ok   absent appFps block scores null
+  ok   budget-to-fps-floor conversion honors a 30fps-class budget
+  ok   preflight pico-cli row warns that first CLI use provisions the managed store
+  ok   preflight pico-cli row passes with the parsed version when present
+  ok   preflight pico-cli row admits an unparsed version instead of inventing one
+  ok   preflight uses exact structured emulator-status argv and never pico-cli doctor
+  ok   preflight PARTIAL structured status degrades honestly
+  ok   preflight FAILED structured status degrades honestly
+  ok   preflight garbage structured status degrades honestly
+  ok   total pico-cli envelope parser is exported for fixture callers
+  ok   sessionId parsed from a JSON body
+  ok   sessionId parsed from a JSON line amid log noise
+  ok   sessionId parsed from a labeled token
+  ok   garbage yields null, not an invented sessionId
+  ok   crash markers detected: fatal-exception, process-died
+  ok   benign watch output yields zero indicators
+  ok   native crash marker detected
+  ok   registerPerfTraceTools exported
+  ok   registerPicoCliTools exported
+  ok   registerPerfCliTools exported
+  ok   capture_record description names adb screenrecord
+  ok   capture_record description names pico-cli capture record
+  ok   capture_record description names empty/invalid
+  ok   capture_record description names this emulator display
+  ok   capture_record description names screencapture -V -l<windowId>
+  ok   24 help fixtures hash to their retained evidence bytes
+  ok   all six nonzero retained results are present as failure fixtures
+  ok   knowledge-server routes follow the retained 0.4.4 (062) and 0.5.0 (136) help evidence
+  ok   perf-live is routed only on the 0.5.x line
+  ok   trace-* routes are perf trace <op> on both lines
+  ok   no route uses the rejected perf monitor alias, colon aliases, flags, or the removed 0.5.x mcp group
+  ok   every CliOperation has exactly one route entry per version line
+  ok   0.5.0 knowledge server help: supported (help-names-operation)
+  ok   0.4.4 mcp dev-knowledge help: supported (help-names-operation)
+  ok   0.5.0 app watch-crash help: supported (help-names-operation)
+  ok   0.4.4 capture record help: supported (help-names-operation)
+  ok   root help for knowledge-server: unavailable (generic-parent-help)
+  ok   perf parent help for perf-live: unavailable (generic-parent-help)
+  ok   0.4.4 root help for the removed 0.5.x alias: unavailable (generic-parent-help)
+  ok   0.5.0 perf live gate (139): unavailable (utilities-not-installed)
+  ok   0.5.0 perf trace gate (141): unavailable (utilities-not-installed)
+  ok   0.4.4 perf gate (012): unavailable (utilities-not-installed)
+  ok   empty exit-zero output: unknown (malformed-help)
+  ok   exit-zero text without a usage section: unknown (malformed-help)
+  ok   timed-out probe: unknown (timed-out)
+  ok   truncated probe: unknown (output-truncated)
+  ok   probe without an exit code: unknown (incomplete)
+  ok   unknown perf subcommand: unavailable (unknown-command)
+  ok   PICO_HOME unset: unavailable (environment)
+  ok   other nonzero exit: unavailable (nonzero-exit)
+  ok   perf-live on 0.4.x is unavailable with a no-route reason and no evidence
+  ok   classifyOperation binds the supported record to its help observation
+  ok   coverage is complete only when every operation is terminal
+  ok   capability identity comparison covers every field and explains drift
+  ok   a verified record with matching identity and evidence bytes resolves as supported
+  ok   no discovery evidence: unknown (no-discovery)
+  ok   stale identity: unknown (stale-identity)
+  ok   missing evidence bytes: unknown (evidence-missing)
+  ok   mismatched evidence bytes: unknown (evidence-mismatch)
+  ok   stored supported state contradicted by its bytes: unknown (report-inconsistent)
+  ok   operation absent from the set: unknown (no-discovery)
+  ok   parseCliCapabilitySet accepts schema 1 and rejects unknown schema/state values
+  ok   0.4.4 mcp parent help for mcp dev-knowledge: unavailable (generic-parent-help)
+  ok   0.5.0 knowledge parent help for knowledge server: unavailable (generic-parent-help)
+  ok   0.4.4 root help for mcp dev-knowledge: unavailable (generic-parent-help)
+  ok   perf parent help (082) for trace-record: unavailable (generic-parent-help)
+  ok   perf parent help (082) for trace-query via the route flag: unavailable (generic-parent-help)
+  ok   synthetic provisioned profiler help naming the route: supported (help-names-operation)
+  ok   synthetic profiler help without the phrase stays unknown for an unproven route: unknown (generic-parent-help)
+  ok   the unproven branch is the conservative default: unknown (generic-parent-help)
+  ok   synthetic re-rendered help naming a different perf path stays unknown: unknown (generic-parent-help)
+  ok   synthetic live help without the phrase stays unknown: unknown (generic-parent-help)
+  ok   validated route: exit-0 help naming another child is unavailable: unavailable (generic-parent-help)
+  ok   route tables record which routes have a retained exit-0 help example
+  ok   an unproven exit-0 classification leaves the operation unknown and the coverage partial
+  ok   classifyOperation keeps the proven parent-help answer terminal
+  ok   a stored terminal answer for an unproven byte shape is rejected on re-verification: unknown (report-inconsistent)
+  ok   retained 0.4.4/0.5.0 utilities gates classify as setup-required
+  ok   0.5.0 router rejection (source-derived PERF_ENV050 text) classifies as flag-or-version-drift
+  ok   PICO_HOME problems classify as environment, not setup-required
+  ok   environment guidance names PICO_HOME exactly and never prescribes running setup
+  ok   retained watch-crash help: 0.4.4 has no --monitor-timeout; 0.5.0 documents it as shared wall-clock budget
+  ok   the native watch duration flag is a per-version route fact citing the retained 096 help
+  ok   no other operation claims a native duration flag on either line
+  ok   watchArgv passes --monitor-timeout only when the route facts say the flag exists
+  ok   capabilityFailureClass maps the stable reason prefixes for every capability consumer
+  ok   environment guidance names the profiler payload only for perf operations
+  ok   watch_crash description states the observed-window contract instead of the retired claim
+  ok   perf-live option names are the canonical 0.2.0 long options (--package/--duration/--save/--output)
+  ok   perf-live has no option facts on the 0.4.x line (it has no route there)
+  ok   trace-record's package option follows each line's bundled profiler (0.1.0 --app, 0.2.0 --package)
+  ok   trace-load declares the global --envelope flag on both lines
+  ok   no route option fact mentions the rejected `monitor` resource
+  ok   collectPerfLive dispatches the source-derived perf live run argv verbatim
+  ok   a saved 0.2.0 report adapts to status ok / measurement complete with a bounded view
+  ok   no dispatched perf argv contains `monitor`
+  ok   a graded perf result names the device it was asked to profile
+  ok   the whole raw report and both raw streams are retained immutably beside the run record
+  ok   the retained run record names the CLI's own output path as the artifact's source
+  ok   perfLiveArgv keeps --output paired with --save (LIVE050 refuses an unpaired --output)
+  ok   the fake CLI rejects `perf monitor run` exactly as the 0.5.0 router does, and we classify it as drift
+  ok   an unprovisioned profiler refuses without spawning and returns the neutral setup sentence plus its evidence paths
+  ok   a perf REFUSAL names the device it was asked to profile too
+  ok   an evidence-backed perf-live gate needs no family answer and claims no remediation limit
+  ok   an environment refusal returns the PICO_HOME remedy for perf-live and never prescribes setup
+  ok   the perf environment remedy names the explicit profiler-entry alternative and keeps it separate from the SDK tools root
+  ok   a line with no live route adopts the perf family's own utilities-gate answer (one gate per family: PERF_ENV044/PERF_ENV050)
+  ok   the adopted family gate is disclosed beside — never instead of — the probed perf-live capability, with the remediation limit stated
+  ok   without perf-family evidence a missing live route is reported as version drift, never as setup-required
+  ok   an unknown capability triggers exactly one bounded rediscovery and then refuses
+  ok   a live route with no declared option spellings refuses instead of dispatching a half-built argv
+  ok   a trace route with no declared option spellings refuses without spawning
+  ok   a report path that already existed before the run is refused, and nothing is spawned
+  ok   exit 0 with no report file is a failed measurement (a nonempty file is not assumed)
+  ok   report adapter: missing file -> failed/missing
+  ok   report adapter: empty JSON object -> failed/missing
+  ok   report adapter: malformed JSON -> failed/missing
+  ok   report adapter: truncated JSON -> failed/missing
+  ok   report adapter: unknown report version -> failed/missing
+  ok   report adapter: mismatched package -> failed/missing
+  ok   report adapter: 0.2.0 complete -> ok/complete
+  ok   report adapter: 0.1.0 complete -> ok/complete
+  ok   report adapter: 0.2.0 SKIP / INSUFFICIENT_DATA -> ok/missing
+  ok   report adapter: 0.2.0 runtime FPS without app frames -> ok/missing
+  ok   report adapter refuses a report file that predates the run even when its contents parse
+  ok   Spatial Runtime FPS is reported but never counted as an app-FPS measurement
+  ok   all-zero GPU counters are reported as missing counters, never as an idle GPU
+  ok   the returned view is bounded and excludes the unbounded rawData array
+  ok   a device serial the 0.2.0 schema never records is not treated as a mismatch
+  ok   a device field that IS present and disagrees with the requested serial fails the identity check
+  ok   scorePicoCliPerfAxis keeps its documented null boundaries
+  ok   an explicit missing measurement scores null even when an appFps block is present
+  ok   a SKIP / INSUFFICIENT_DATA report is never a passing budget
+  ok   a partial measurement still scores its measured app FPS
+  ok   trace query unwraps data.rows and never returns the envelope as rows
+  ok   a successful query envelope validates success/resource/action/session before unwrapping
+  ok   an empty successful rows array is a measurement, distinct from unavailable rows
+  ok   trace query rejects success:false with exit/error metadata without inventing rows
+  ok   trace query rejects wrong session without inventing rows
+  ok   trace query rejects wrong resource without inventing rows
+  ok   trace query rejects wrong action without inventing rows
+  ok   trace query rejects rows absent without inventing rows
+  ok   trace query rejects empty output without inventing rows
+  ok   trace query rejects malformed output without inventing rows
+  ok   trace query rejects truncated JSON without inventing rows
+  ok   trace load validates its envelope's success/resource/action before trusting data.sessionId
+  ok   trace load refuses a failure envelope instead of extracting an id
+  ok   trace load refuses a wrong-action envelope instead of extracting an id
+  ok   trace load refuses a missing sessionId instead of extracting an id
+  ok   trace load refuses empty output instead of extracting an id
+  ok   trace load refuses truncated JSON instead of extracting an id
+  ok   the legacy human-label parser reads the exact [TraceLoad] Session: line and nothing else
+  ok   the default human load output is not accepted as a JSON session result
+  ok   the envelope parser finds the envelope line amid the CLI's own prose
+  ok   trace record uses the 0.2.0 canonical long options
+  ok   trace record on the 0.4.x line uses --app (profiler 0.1.0 declares no --package)
+  ok   trace decode keeps its positional file with explicit --format/--output
+  ok   trace load requests the machine envelope, and the global flag precedes the resource
+  ok   trace query requests the envelope and passes --session/--sql
+  ok   runPerfTrace load returns the validated envelope session id and names its source
+  ok   runPerfTrace refuses an unprovisioned trace route without spawning, with the neutral setup sentence
+  ok   runPerfTrace query returns data.rows, not the profiler envelope
+  ok   a truncated query stream fails with the raw output preserved and no invented rows
+
+pico-cli lane test done. Failures: 0
+✔ bounded runner compatibility helpers remain covered without ambient CLI access (0.651333ms)
+✔ the bounded runner rejects a failed synchronous pre-spawn identity check before execution (0.520167ms)
+✔ post-spawn detection kills a child before delayed work but is not a prevention claim (1803.181541ms)
+✔ post-spawn detection reports an immediate child side effect instead of claiming prevention (1271.267209ms)
+✔ a synchronous pre-spawn check that exhausts the command budget refuses to spawn (150.046542ms)
+✔ a post-spawn check that exhausts the budget reports that process creation already happened (1327.039625ms)
+✔ post-spawn rejection uses the bounded Windows process-tree cleanup seam (753.118584ms)
+✔ post-completion rejection owns one Windows process-tree cleanup through settlement (220.49275ms)
+✔ a managed command timeout gets a fresh bounded post-completion validation deadline (987.616458ms)
+✔ the separate post-completion validation deadline remains cooperatively bounded (1298.758333ms)
+✔ default managed calls snapshot one call-time environment and home after import (1295.639833ms)
+▶ managed pico-cli policy and immutable-store inspection
+  ✔ policy parsing rejects contradictory configuration (0.125875ms)
+  ✔ cached policy picks the newest wholly validated immutable version without npm or writes (1169.495459ms)
+  ✔ a relative managedRoot resolves the published immutable version (755.248708ms)
+  ✔ corrupt records and version disagreements are rejected before a cached version is selected (4822.636208ms)
+  ✔ disabled, external, and missing-cache policies expose their read-only outcomes (1.455167ms)
+✔ managed pico-cli policy and immutable-store inspection (6749.401792ms)
+▶ cold managed and stale managed exact provisioning
+  ✔ cold managed install publishes the exact registry version without global mutation (589.211375ms)
+  ✔ stale managed version provisions and executes the exact newer shim (1153.226833ms)
+  ✔ cold managed install writes no legacy canary report and classifies non-help replies honestly (584.691958ms)
+✔ cold managed and stale managed exact provisioning (2327.473208ms)
+▶ managed publication no-clobber fix round
+  ✔ a dangling exact-version target fails before install with complete recovery guidance (131.994583ms)
+  ✔ a pre-existing empty target created at publication claim survives unchanged (335.095958ms)
+✔ managed publication no-clobber fix round (467.3135ms)
+▶ managed publication content identity rejects post-publication byte and path drift
+  ✔ an unchanged finalized publication remains accepted (613.8835ms)
+  ✔ schema-1 install records fail closed with exact manual recovery (590.690167ms)
+  ✔ schema-2 missing content identity install records fail closed with exact manual recovery (598.783458ms)
+  ✔ same-version shim byte replacement is rejected before execution (608.220209ms)
+  ✔ an in-root shim symlink retargeted outside the version root is rejected before execution (617.041ms)
+  ✔ a cached shim swapped to an out-of-root same-version executable inside io.run is rejected before spawn (639.518ms)
+  ✔ a staged shim swapped to an out-of-root same-version executable inside io.run is rejected before spawn (155.909125ms)
+  ✔ queued relative paths are charged before traversal (0.5125ms)
+  ✔ registry failure still reports exact recovery for a legacy managed target (137.47475ms)
+  ✔ the hard-linked publication claim rejects changed bytes even when install.json is rewritten with their digest (634.674834ms)
+  ✔ a changed hard-linked publication manifest binding is rejected before execution (645.40025ms)
+  ✔ same-version package metadata bytes are rejected even though pico-cli -v is unchanged (621.33125ms)
+  ✔ installed dependency bytes are rejected even though pico-cli -v is unchanged (624.29275ms)
+✔ managed publication content identity rejects post-publication byte and path drift (6488.746834ms)
+▶ managed wrapper execution retains publication identity
+  ✔ a provisioned shim rewritten before runPicoCli never executes the replacement payload (643.463625ms)
+  ✔ a managed tree changed by the child is rejected after command completion (934.016ms)
+✔ managed wrapper execution retains publication identity (1577.800875ms)
+▶ managed winner completeness fix round
+  ✔ a complete collision winner is validated and reused (3046.421875ms)
+  ✔ a legacy compatibility report injected into a collision winner is rejected by content binding (2734.674166ms)
+  ✔ a collision winner with mismatched registry integrity is rejected and preserved (2754.385916ms)
+✔ managed winner completeness fix round (8536.059292ms)
+▶ managed fallback, corruption, and concurrent managed convergence
+  ✔ registry failure falls back to a validated cache with latest-unknown freshness (529.90525ms)
+  ✔ registry failure without a validated cache is unavailable as latest-unknown (122.760542ms)
+  ✔ npm timeout fallback preserves the validated cache and failure output (364.178542ms)
+  ✔ npm unavailable fallback preserves the validated cache and failure output (356.003667ms)
+  ✔ malformed registry JSON falls back without caching or publishing it (499.769541ms)
+  ✔ npm timeout fallback retains the validated old version as outdated (1118.22875ms)
+  ✔ successful npm exit without a shim fallback retains the validated old version as outdated (567.637291ms)
+  ✔ mismatched staged -v fallback retains the validated old version as outdated (758.163458ms)
+  ✔ package version mismatch fallback retains the validated old version as outdated (562.533209ms)
+  ✔ fallback is revalidated after a failing install mutates the previously valid shim (291.274667ms)
+  ✔ known-latest install failure without fallback preserves attempted provenance (167.322375ms)
+  ✔ corrupt install record is skipped without erasing it or the valid fallback (510.773083ms)
+  ✔ corrupt package version mismatch is skipped without erasing it or the valid fallback (529.587292ms)
+  ✔ corrupt shim mutation is skipped without erasing it or the valid fallback (522.638ms)
+  ✔ abandoned staging cleanup isolates only a valid dead-owner record older than seven days (679.757833ms)
+  ✔ cleanup preserves active, unowned, malformed, and symlink staging entries (131.317459ms)
+  ✔ cleanup detects a quarantine replacement and leaves it isolated without deletion (158.750625ms)
+  ✔ cleanup never recursively deletes a replacement swapped in after quarantine verification (124.743708ms)
+  ✔ a stale publication claim fails closed with manual recovery guidance and is preserved (2703.228125ms)
+  ✔ publication finalization preserves a claim replacement instead of unlinking it (724.753959ms)
+  ✔ publication finalization never overwrites a destination created at the atomic boundary (742.979ms)
+  ✔ a target missing both publication control records fails closed with exact manual recovery (614.586417ms)
+  ✔ a target left before failed link finalization remains incomplete on the next resolver (1067.957708ms)
+  ✔ finalization rejects a source claim swapped after the real hard link is created (1075.961041ms)
+  ✔ finalization binds source record bytes to the opened claim inode (741.634542ms)
+  ✔ 12 concurrent managed workers converge on one complete immutable version (3098.235334ms)
+✔ managed fallback, corruption, and concurrent managed convergence (18767.148542ms)
+▶ managed registry cache fix round
+  ✔ sequential registry environments sharing one npm identity never share latest metadata (1274.059708ms)
+  ✔ sequential npm identities sharing one registry environment never share latest metadata (1266.723375ms)
+  ✔ a successful registry result is reused only within one hour (732.570458ms)
+  ✔ forceRefresh bypasses a successful unexpired registry cache (950.451333ms)
+  ✔ failure registry responses do not populate the successful cache (692.914917ms)
+  ✔ malformed registry responses do not populate the successful cache (646.019917ms)
+✔ managed registry cache fix round (5563.300583ms)
+▶ Task 4 production adapters use the managed absolute CLI without eager provisioning
+  ✔ startup and tools/list neither contact npm nor create the managed root (275.937875ms)
+  ✔ a default wrapper provisions the managed absolute path and always returns provenance (910.05575ms)
+  ✔ exit-zero missing capture and trace artifacts are runtime failures (952.95375ms)
+  ✔ exit-zero empty capture and trace artifacts are runtime failures (964.621167ms)
+  ✔ exit-zero directory capture and trace outputs are runtime failures (1010.401208ms)
+  ✔ watch_crash accepts a clean duration cap only when no runner or guard error exists (7093.961667ms)
+  ✔ watch_crash rejects a post-completion managed guard failure (7073.584625ms)
+  ✔ managed resolution failures propagate without falling back to PATH or global npm (281.321459ms)
+  ✔ setup-required failures keep provenance and return an absolute manual command without executing it (817.058167ms)
+  ✔ ensure_pico_cli force-refreshes regardless of inert legacy update input (1681.46975ms)
+  ✔ coalescing is option-keyed and force-refresh strength aware (2278.477083ms)
+✔ Task 4 production adapters use the managed absolute CLI without eager provisioning (23340.752416ms)
+▶ per-operation capability discovery bound to package identity
+  ✔ cold managed 0.4.4 install discovers operations from retained help bytes and persists an immutable report (944.07575ms)
+  ✔ the 0.5.0 line routes knowledge server and classifies gated perf routes from the real exit-3 bytes (638.8015ms)
+  ✔ a timed-out probe leaves that operation unknown and the report partial, without invalidating activation (1208.176208ms)
+  ✔ a selected CLI version change never reuses the previous version's capabilities (1194.93625ms)
+  ✔ same-version package byte replacement rejects the package before any capability is applied (637.714708ms)
+  ✔ an external executable replacement produces a new identity and fresh discovery (728.163083ms)
+  ✔ missing evidence bytes degrade the record to unknown and trigger fresh discovery (899.653833ms)
+  ✔ picoCliOperationCapability serves verified records and refuses targets without discovery evidence (631.494625ms)
+  ✔ the knowledge consumer contract: per-line argv, cross-line refusal, and the fresh-discovery rule (1277.972333ms)
+  ✔ read-only inspection never discovers, and reuses a report only after a real CLI-backed resolution (434.508625ms)
+  ✔ legacy schema-1 compatibility diagnostics remain readable through the versioned reader (260.142334ms)
+✔ per-operation capability discovery bound to package identity (8856.901625ms)
+✔ compares the complete advertised safe help trees and hashes exact stdout plus stderr (699.678042ms)
+▶ resolves latest to an exact install and rejects unsafe arguments and invalid package evidence
+  ✔ latest registry response becomes an exact non-global package install (319.48625ms)
+  ✔ exact scratch installs suppress package lifecycle scripts (267.765791ms)
+  ✔ latest registry JSON is parsed from stdout despite an npm notice on stderr (290.98625ms)
+  ✔ malformed registry stdout is rejected even when stderr is valid text (81.605791ms)
+  ✔ failed registry lookup retains stderr in the surfaced error (80.167ms)
+  ✔ unknown flag (26.706458ms)
+  ✔ relative output (26.674417ms)
+  ✔ prerelease from (26.179208ms)
+  ✔ registry outage (108.940959ms)
+  ✔ malformed registry (74.524708ms)
+  ✔ package version mismatch (176.756875ms)
+  ✔ reported version mismatch (228.681458ms)
+  ✔ install failure (182.40475ms)
+✔ resolves latest to an exact install and rejects unsafe arguments and invalid package evidence (1891.910208ms)
+▶ recognizes the advertised root command heading and fails closed when root enumeration is unavailable
+  ✔ Available Commands is traversed as a complete root command section (345.851375ms)
+  ✔ missing heading (165.874709ms)
+  ✔ unrecognized heading (176.5995ms)
+  ✔ an unrecognized nested command-like heading fails closed (178.170625ms)
+  ✔ an indented recognized nested command heading is traversed (356.74925ms)
+  ✔ a same-indent row under an indented command heading fails closed (184.490792ms)
+  ✔ a nested leaf without any command heading remains a valid leaf (305.550917ms)
+✔ recognizes the advertised root command heading and fails closed when root enumeration is unavailable (1713.79375ms)
+▶ fails closed at depth eight and 256 help invocations
+  ✔ depth overflow (332.391083ms)
+  ✔ command-count overflow (148.935958ms)
+✔ fails closed at depth eight and 256 help invocations (481.525833ms)
+▶ fails closed when a minimum-indent advertised command row uses unsupported grammar
+  ✔ alias syntax (161.023916ms)
+  ✔ unsupported punctuation (154.573083ms)
+  ✔ mixed valid and unsupported rows (158.2645ms)
+✔ fails closed when a minimum-indent advertised command row uses unsupported grammar (474.098584ms)
+✔ an indented Options heading terminates the Commands section without becoming a command (352.54325ms)
+✔ multi-token advertised commands become separate argv tokens with notation stripped and paths deduplicated (394.537ms)
+▶ unsafe grammar anywhere in multi-token syntax fails before partial child traversal
+  ✔ alias in first token (159.459875ms)
+  ✔ alias in later token (157.252917ms)
+  ✔ punctuation in middle token (186.935375ms)
+  ✔ more than eight command tokens (158.711417ms)
+✔ unsafe grammar anywhere in multi-token syntax fails before partial child traversal (662.661125ms)
+▶ timeout, spawn failure, and output truncation are fatal and atomic output is never ambiguous
+  ✔ timeout (534.240709ms)
+  ✔ timeout hard-settles and reaps a detached descendant that inherited stdio (1861.198666ms)
+  ✔ truncation (566.203291ms)
+  ✔ output cap reaps a detached inherited-stdio descendant after its parent exits (363.901959ms)
+  ✔ signal termination (154.635333ms)
+  ✔ npm spawn error (31.072667ms)
+  ✔ a preexisting output is preserved and no atomic temporary is leaked (27.881791ms)
+✔ timeout, spawn failure, and output truncation are fatal and atomic output is never ambiguous (3539.682917ms)
+✔ retains per-invocation raw streams and exposes error-only subtrees as partial coverage (631.047083ms)
+▶ retains raw streams and failed completion state when the sweep fails
+  ✔ timeout (1901.978875ms)
+  ✔ truncation (565.469084ms)
+  ✔ registry outage before any CLI call still writes an empty index (88.638125ms)
+  ✔ relative retain directory (28.514542ms)
+  ✔ existing retain directory (27.129292ms)
+  ✔ retain parent missing (27.219458ms)
+✔ retains raw streams and failed completion state when the sweep fails (2639.398833ms)
+✔ the central CLI safety guard rejects the setup subtree, mutating update, and non-help argv (0.296625ms)
+ℹ tests 157
+ℹ suites 0
+ℹ pass 157
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 92076.049541
+✔ watchArgv is the verbatim wrapper argv for both version lines (0.827208ms)
+✔ the native duration flag is a per-version route fact, not a version comparison (0.272ms)
+✔ ObservationCoverage carries exactly the declared fields (0.1025ms)
+✔ assessCoverage never calls an early or unbounded window complete (0.066542ms)
+✔ classifyWatchEnd separates the CLI's own duration from our watchdog (0.175333ms)
+✔ a quiet window is only a no-crash answer when coverage is complete (0.054958ms)
+✔ a 60 second request whose child exits after 1 second reports 1 second, not 60 (39.964ms)
+✔ the watchdog grace is only spent on a line that was actually given the window (0.08575ms)
+✔ the native monitor timeout window that actually elapses is complete coverage (33.915541ms)
+✔ a CLI that gave up waiting for a process is never a clean no-crash window (33.728417ms)
+✔ a stuck child is killed by the documented watchdog and reports observed elapsed time (1968.2795ms)
+✔ a watchdog-killed silent child is never graded complete or no-crash-detected (1975.684333ms)
+✔ a stuck child without a native timeout can only be partial coverage (1965.097708ms)
+✔ an early clean exit without a native timeout leaves coverage unknown (39.772333ms)
+✔ a nonzero CLI exit is a failure that still carries its observed timing (34.333875ms)
+✔ truncated output is partial coverage and never a quiet-window success (37.772334ms)
+✔ a crash marker outside the returned UI tail is still found in the complete retained log (33.079625ms)
+✔ raw stdout and stderr are retained immutably with hashes and byte counts (78.773166ms)
+✔ optional start and activity are preserved and nothing launches implicitly (64.89925ms)
+✔ an unsupported capability refuses before any spawn and keeps the neutral setup guidance (0.360833ms)
+✔ the wrapper no longer claims the CLI has no duration flag or streams indefinitely (0.612084ms)
+✔ watch_crash refuses to watch without an explicit device, before any CLI work (0.927209ms)
+ℹ tests 22
+ℹ suites 0
+ℹ pass 22
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6357.109125

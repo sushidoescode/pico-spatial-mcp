@@ -1,0 +1,28 @@
+# step4 GREEN: site fixtures after the replacements (2026-09-16T10:45:13Z)
+✔ sliceAfterMarker returns only lines after the marker line (0.593458ms)
+✔ a missing marker is reported, never silently treated as an empty window (0.051375ms)
+✔ openLogWindow writes exactly one `log -t pico-mcp <marker>` and never a clear (0.822084ms)
+✔ readLogWindow always includes the marker tag in its filter and bounds the dump (0.103958ms)
+✔ assert_scene opens a window before its broadcast and matches only the dump inside it (3326.265167ms)
+✔ assert_scene reports an evicted marker as an inconclusive error, never as a dump (1609.498375ms)
+✔ assert_scene refuses when the window cannot be opened and reads no dump at all (65.745375ms)
+✔ probe_planes opens a window before its broadcast and parses only the inventory inside it (1620.144291ms)
+✔ probe_planes reports an evicted marker as inconclusive instead of reading the stale inventory (3136.198292ms)
+✔ live_scene_snapshot opens a window before its dump_scene broadcast and returns only the fresh scene (112.41775ms)
+✔ live_scene_snapshot reports an evicted marker as inconclusive rather than parsing the stale dump (8222.978708ms)
+✔ assert_logcat sinceMarker adopts a caller-written marker and matches only lines after it (1247.654542ms)
+✔ assert_logcat clearFirst opens a marker window instead of clearing, and an evicted marker is inconclusive (1284.634333ms)
+✔ the logcat tool's clear:true is the one destructive clear and requires an explicit serial (62.022958ms)
+✔ wait_for_log's default opens a marker window instead of clearing and reports the window it matched in (2224.295667ms)
+✔ pico_loop writes a marker through adb_shell before the build and scopes every assert_logcat to it (12.349708ms)
+✔ pico_loop treats an inconclusive (evicted-window) assert_logcat as unmeasurable, never as a fail to replan (2.416292ms)
+✔ the boundary prepare step opens a -b all window, writes its sidecar, and stops on an evicted marker (34.014167ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 23037.48475
+exit=0

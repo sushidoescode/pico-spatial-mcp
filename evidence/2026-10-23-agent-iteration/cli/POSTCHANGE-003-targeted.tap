@@ -1,0 +1,150 @@
+(node:85203) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:85215) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: the native duration flag is a per-version route fact, not a version comparison
+ok 1 - the native duration flag is a per-version route fact, not a version comparison
+  ---
+  duration_ms: 1.592334
+  ...
+# (node:85216) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: per-operation capability discovery bound to package identity
+    # Subtest: cold managed 0.4.4 install discovers operations from retained help bytes and persists an immutable report
+    ok 1 - cold managed 0.4.4 install discovers operations from retained help bytes and persists an immutable report
+      ---
+      duration_ms: 1543.666583
+      ...
+    # Subtest: the 0.5.0 line routes knowledge server and classifies gated perf routes from the real exit-3 bytes
+    ok 2 - the 0.5.0 line routes knowledge server and classifies gated perf routes from the real exit-3 bytes
+      ---
+      duration_ms: 826.690833
+      ...
+    # Subtest: a timed-out probe leaves that operation unknown and the report partial, without invalidating activation
+    ok 3 - a timed-out probe leaves that operation unknown and the report partial, without invalidating activation
+      ---
+      duration_ms: 1416.909542
+      ...
+    # Subtest: a selected CLI version change never reuses the previous version's capabilities
+    ok 4 - a selected CLI version change never reuses the previous version's capabilities
+      ---
+      duration_ms: 1549.368042
+      ...
+    # Subtest: same-version package byte replacement rejects the package before any capability is applied
+    ok 5 - same-version package byte replacement rejects the package before any capability is applied
+      ---
+      duration_ms: 805.216167
+      ...
+    # Subtest: an external executable replacement produces a new identity and fresh discovery
+    ok 6 - an external executable replacement produces a new identity and fresh discovery
+      ---
+      duration_ms: 990.518042
+      ...
+    # Subtest: missing evidence bytes degrade the record to unknown and trigger fresh discovery
+    ok 7 - missing evidence bytes degrade the record to unknown and trigger fresh discovery
+      ---
+      duration_ms: 1207.247542
+      ...
+    # Subtest: picoCliOperationCapability serves verified records and refuses targets without discovery evidence
+    ok 8 - picoCliOperationCapability serves verified records and refuses targets without discovery evidence
+      ---
+      duration_ms: 830.972167
+      ...
+    # Subtest: the knowledge consumer contract: per-line argv, cross-line refusal, and the fresh-discovery rule
+    ok 9 - the knowledge consumer contract: per-line argv, cross-line refusal, and the fresh-discovery rule
+      ---
+      duration_ms: 1657.785334
+      ...
+    # Subtest: read-only inspection never discovers, and reuses a report only after a real CLI-backed resolution
+    ok 10 - read-only inspection never discovers, and reuses a report only after a real CLI-backed resolution
+      ---
+      duration_ms: 625.831
+      ...
+    # Subtest: legacy schema-1 compatibility diagnostics remain readable through the versioned reader
+    ok 11 - legacy schema-1 compatibility diagnostics remain readable through the versioned reader
+      ---
+      duration_ms: 352.816291
+      ...
+    1..11
+ok 2 - per-operation capability discovery bound to package identity
+  ---
+  duration_ms: 11809.340709
+  ...
+# (node:85217) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: timeout, spawn failure, and output truncation are fatal and atomic output is never ambiguous
+    # Subtest: timeout
+    ok 1 - timeout
+      ---
+      duration_ms: 957.795459
+      ...
+    # Subtest: timeout hard-settles and reaps a detached descendant that inherited stdio
+    ok 2 - timeout hard-settles and reaps a detached descendant that inherited stdio
+      ---
+      duration_ms: 2324.566791
+      ...
+    # Subtest: truncation
+    ok 3 - truncation
+      ---
+      duration_ms: 1053.93025
+      ...
+    # Subtest: output cap reaps a detached inherited-stdio descendant after its parent exits
+    not ok 4 - output cap reaps a detached inherited-stdio descendant after its parent exits
+      ---
+      duration_ms: 1612.679458
+      location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/picocli-sweep.mjs:718:11'
+      failureType: 'testCodeFailure'
+      error: |-
+        detached descendant 85344 survived output-cap cleanup
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/picocli-sweep.mjs:735:14)
+        Test.runInAsyncScope (node:async_hooks:211:14)
+        Test.run (node:internal/test_runner/test:979:25)
+        Test.start (node:internal/test_runner/test:877:17)
+        TestContext.test (node:internal/test_runner/test:307:20)
+        TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/picocli-sweep.mjs:718:11)
+        async Test.run (node:internal/test_runner/test:980:9)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: signal termination
+    ok 5 - signal termination
+      ---
+      duration_ms: 192.54475
+      ...
+    # Subtest: npm spawn error
+    ok 6 - npm spawn error
+      ---
+      duration_ms: 37.462959
+      ...
+    # Subtest: a preexisting output is preserved and no atomic temporary is leaked
+    ok 7 - a preexisting output is preserved and no atomic temporary is leaked
+      ---
+      duration_ms: 33.296209
+      ...
+    1..7
+not ok 3 - timeout, spawn failure, and output truncation are fatal and atomic output is never ambiguous
+  ---
+  duration_ms: 6213.486292
+  location: '/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/picocli-sweep.mjs:667:1'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..3
+# tests 21
+# suites 0
+# pass 19
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 11922.665959

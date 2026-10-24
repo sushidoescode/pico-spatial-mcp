@@ -1,0 +1,124 @@
+# npm run test:lint
+# exit=0 signal= elapsedMs=1349
+
+## stdout
+Testing 38 built-in lint rules (positive + negative fixtures each)...
+
+  ok   compose-fork-direct-dependency [error]
+  ok   displayColor-flat-white [error]
+  ok   mesh-collider-alignment [warn]
+  ok   collisioncomponent-no-arg [error]
+  ok   raycast-without-physicsworld [error]
+  ok   menu-dispatch-missing-move-route [error]
+  ok   collisioncasthitmode-closest [error]
+  ok   spotlight-cone-radians [error]
+  ok   physics-ccd-continuous [error]
+  ok   physics-destroy-respawn [error]
+  ok   physics-kinematic-flip [error]
+  ok   rotation-rotateVector [error]
+  ok   transform-scale-property [warn]
+  ok   particlecomponent-ctor [error]
+  ok   text-component [error]
+  ok   raw-glb-runtime-load [error]
+  ok   usd-glb-reference [error]
+  ok   stage-lighting-in-mixed [warn]
+  ok   dynamic-full-stage-emulator-safety [warn]
+  ok   defaultstage-windowcontainer-metadata [warn]
+  ok   bundle-md5-diff [error]
+  ok   am-start-without-forcestop [warn]
+  ok   compose-material-in-spatial-ui [error]
+  ok   compose-setcontent-without-picotheme [error]
+  ok   entityquerycondition-custom [error]
+  ok   ecs-system-nonexistent-override [error]
+  ok   registersystem-without-unregister [error]
+  ok   animationresource-never-closed [error]
+  ok   assetbundle-never-closed [error]
+  ok   toglobal-without-close [error]
+  ok   vibrant-encoding-destroyed [warn]
+  ok   picotheme-colortokens-restricted [error]
+  ok   resource-closed-without-toglobal [warn]
+  ok   mediaplayer-never-closed [error]
+  ok   trackingmanager-never-stopped [error]
+  ok   subscription-never-cancelled [error]
+  ok   interactable-collider-full [error]
+  ok   scaffold-log-tag-drift [warn]
+
+  ok   integration blob surfaced 5 violations
+
+  ok   published gate-battery size agrees across scripts/gate-inventory.mjs, package.json, gates.yml, README.md, and docs/COLLABORATORS.md (53 invocations / 52 test: suites; linux 50, windows 1, macos 2)
+  ok   S5: vault findings stay advisory beside an unavailable declaration identity that names package.xml
+  ok   S5: the project identity is read from projectDir and reported in the advisory block
+  ok   S5: unavailable linkage is stated without any target-validation wording
+  ok   S5: clean is derived from violations and project errors only (vault linkage does not enter)
+  ok   S5: without a project hint an unknown-symbol finding still leaves clean true and reports no target
+  ok   S5: a retained-lessons violation still makes clean false, independent of the vault block
+  ok   S5: a declared 0.13.3 vault against a 6.1.0 project reports unknown linkage
+  ok   S5: the no-findings note calls the lookup historical, not a target SDK validation
+  ok   S5: the packaged index has no records, so nothing is verified and nothing is rejected
+  ok   S5: the advisory block reports the packaged index as present with no records, distinct from missing
+  ok   S5: clean semantics unchanged with a declared vault and a project hint
+
+Lint fixture test done. Failures: 0
+[run-gate] node test/eye.mjs failed: ENOENT
+[run-gate] node test/eye.mjs was terminated by SIGTERM
+[run-gate] node missing.mjs failed: spawn failed
+✔ GATES declares a host, a scope, and at least one argv array for every gate (0.485583ms)
+✔ the repository's package.json and gates.yml agree with the inventory (0.84025ms)
+✔ every public gate script is routed through run-gate, and nothing else is (0.197667ms)
+✔ the native Windows lane keeps its exact three constituent suites (0.074667ms)
+✔ macOS keeps both native CMIO contracts, and only those (0.080959ms)
+✔ test:runrevision is a Linux gate, not an orphan script (0.053625ms)
+✔ the build-freshness and plugin-bootstrap-freshness suites are named Linux fixture gates (0.054917ms)
+✔ multi-command gates keep every && tail as its own sequential argv array (0.052666ms)
+✔ every argv target file that the inventory names exists in the checkout (0.359708ms)
+✔ a gate the workflow stops invoking is reported as missing (0.252875ms)
+✔ a gate invoked twice is reported as a duplicate (0.268541ms)
+✔ a workflow step invoking an unknown gate is reported (0.213125ms)
+✔ a gate run by a lane whose runner OS disagrees with its host is reported (0.4305ms)
+✔ a package script with no host assignment is reported (0.216333ms)
+✔ an inventory entry with no package script is reported (0.149916ms)
+✔ a lane whose runner OS cannot be recognized is reported rather than silently trusted (0.13075ms)
+✔ workflow lanes carry their job name, runner, host family, and gate invocations (0.10125ms)
+✔ runner labels map to host families, and an unknown label maps to null (0.030834ms)
+✔ published counts are derived from the inventory, never typed (0.05675ms)
+✔ the shape checks survive a synthetic inventory, so no repository total is baked in (0.052375ms)
+✔ a stale build fails the gate before any child is spawned (0.227042ms)
+✔ an installed-artifact gate is freshness-checked too (0.078417ms)
+✔ a native-contract gate skips the freshness check, because it never loads dist/ (0.2055ms)
+✔ commands run sequentially, with no shell, inheriting stdio, in the given root (0.07725ms)
+✔ the first nonzero exit propagates and stops the remaining commands (0.037541ms)
+✔ a spawn error and a killed child are both nonzero, and stop the gate (0.267708ms)
+✔ an unknown gate name is refused by name (0.044917ms)
+✔ runArgv resolves nonzero without throwing when the child cannot start (0.04675ms)
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-z8TFUd/ignores-sigterm.mjs exceeded 0s; sending SIGTERM
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-z8TFUd/ignores-sigterm.mjs ignored SIGTERM for 1s; sending SIGKILL
+[run-gate] node /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/run-gate-stubborn-z8TFUd/ignores-sigterm.mjs was terminated by SIGKILL after exceeding 0s
+✔ a real child that ignores SIGTERM is still bounded: SIGKILL lands after the grace (1006.580708ms)
+[run-gate] node test/eye.mjs exceeded 0s; sending SIGTERM
+[run-gate] node test/eye.mjs ignored SIGTERM for 0s; sending SIGKILL
+[run-gate] node test/eye.mjs was terminated by SIGKILL after exceeding 0s
+✔ a timed-out gate stops before its remaining commands (22.40125ms)
+✔ only npm goes through the Windows launch shim; node and sh are spawned directly (0.406416ms)
+✔ the battery plan skips by scope, not by lane: only another OS's native contracts are off-limits (0.581833ms)
+✔ the repository plan derives from the inventory, not from package-script discovery (0.152042ms)
+✔ a reserved log never overwrites previous evidence (0.778208ms)
+✔ runBattery reserves a new log rather than replacing the one already there (0.632ms)
+✔ runBattery continues after failures, retains every section, and summarizes (0.471083ms)
+✔ the summary states how many gates were skipped off-platform, so a short PASS cannot read as a full one (0.391458ms)
+✔ null status, spawn error, and signal count as one failure without aborting (0.522167ms)
+✔ battery npm launch is argv-safe and portable across POSIX and Windows (0.141458ms)
+✔ default battery log path is rooted in the host temp directory (0.081167ms)
+✔ battery CLI runs the planned gates and writes the requested aggregate log (29.158166ms)
+✔ all-pass run reports an exact zero-failure summary (0.518125ms)
+ℹ tests 42
+ℹ suites 0
+ℹ pass 42
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1071.103625
+
+
+## stderr
+

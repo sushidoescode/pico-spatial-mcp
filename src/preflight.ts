@@ -6,7 +6,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson, okJsonStructured } from "./util.js";
 import { doorsSurfaceActive } from "./doors.js";
-import { detectJavaHome } from "./toolchain.js";
+import { classifyAdbOverride, describeAdbOverrideRejection, type AdbOverrideDeclaration } from "./adb.js";
+import { detectJavaHome, resolveHostToolchain, type ToolchainSelection } from "./toolchain.js";
 import { SKELETON_CANARIES, SKELETON_ROOT } from "./projectgen.js";
 import { UNITY_SKELETON_CANARIES, UNITY_SKELETON_ROOT } from "./unitygen.js";
 import {
@@ -37,9 +38,21 @@ export type CheckResult = {
   inspection?: PicoCliEnsureResult;
 };
 
+/** One injected command result. `code`, `timedOut` and `spawnError` are optional so legacy
+ * fixtures keep working; production supplies them from the bounded runner so the emulator-status
+ * row can check execution/envelope consistency. */
+export type PreflightExecResult = {
+  ok: boolean;
+  stdout: string;
+  stderr?: string;
+  code?: number | null;
+  timedOut?: boolean;
+  spawnError?: string;
+};
+
 export type PreflightIO = {
   nodeVersion: string;
-  exec: (cmd: string, args: string[]) => { ok: boolean; stdout: string; stderr?: string };
+  exec: (cmd: string, args: string[]) => PreflightExecResult;
   readFile: (p: string) => string | null;
   statMtimeMs: (p: string) => number | null;
   now: () => number;
@@ -47,9 +60,25 @@ export type PreflightIO = {
   /** Injected so a fixture can describe a machine WITHOUT a JDK; the default is the real resolver
    *  the Gradle lane uses, so this check can never disagree with whether builds actually work. */
   detectJavaHome: () => string | null;
+  /** The $JAVA_HOME of the SAME context `detectJavaHome` answered from, so the row's "declared vs
+   *  auto-detected" wording is a function of its input rather than of this host's environment.
+   *  Omitted means "use this process's environment", which is what production does. */
+  javaHomeEnv?: string | null;
+  /** The $PICO_ADB of the same context, for the identical reason. */
+  adbOverride?: string | null;
   /** Production's exact read-only managed inspection. Fixtures that exercise the legacy pure
    * command evaluator may omit it. */
   picoCliInspection?: PicoCliEnsureResult;
+  /** Structural selection of the PICO build SDK (the packer payload), computed BEFORE the checks
+   * run so this doctor and every pack operation agree on one answer. Nothing is launched to
+   * produce it; version probing stays in validate_toolchain. Fixtures may omit it. */
+  toolchainInspection?: ToolchainSelection;
+  /** Structural selection of the emulator payload, resolved SEPARATELY so a host whose packer is
+   * 6.1 and whose emulator is 6.0 reports each component's own version instead of "unavailable". */
+  emulatorInspection?: ToolchainSelection;
+  /** Structural selection of the bundled platform-tools adb, so the adb row probes the adb this
+   * host actually has instead of one hardcoded version directory. */
+  adbInspection?: ToolchainSelection;
 };
 
 export function defaultIO(): PreflightIO {
@@ -65,6 +94,16 @@ export function defaultIO(): PreflightIO {
     now: () => Date.now(),
     home: os.homedir(),
     detectJavaHome,
+    // Two structural requests, not one: the packer and the emulator are separate payloads that a
+    // real host can carry at different versions, and a combined request would report a perfectly
+    // usable 6.1 packer as unavailable just because the emulator lags at 6.0.
+    toolchainInspection: resolveHostToolchain({ required: ["packer"] }),
+    emulatorInspection: resolveHostToolchain({ required: ["emulator"] }),
+    adbInspection: resolveHostToolchain({ required: ["adb"] }),
+    // The two environment values the adb and jdk rows read, captured HERE rather than inside the
+    // rows, so a row can never report this process's environment while answering about another.
+    adbOverride: process.env.PICO_ADB ?? null,
+    javaHomeEnv: process.env.JAVA_HOME ?? null,
   };
 }
 
@@ -88,9 +127,12 @@ async function defaultBoundedIO(): Promise<PreflightIO> {
       if (args.length === 1 && args[0] === "-v") return versionResult;
       if (args.join(" ") === "emulator status --format json" && emulatorResult) {
         return {
-          ok: !emulatorResult.timedOut && emulatorResult.code === 0,
+          ok: !emulatorResult.timedOut && !emulatorResult.spawnError && emulatorResult.code === 0,
           stdout: emulatorResult.stdout,
-          stderr: [emulatorResult.spawnError, emulatorResult.stderr].filter(Boolean).join("\n"),
+          stderr: emulatorResult.stderr,
+          code: emulatorResult.code,
+          timedOut: emulatorResult.timedOut,
+          ...(emulatorResult.spawnError ? { spawnError: emulatorResult.spawnError } : {}),
         };
       }
       return { ok: false, stdout: "", stderr: "unsupported pico-cli preflight command" };
@@ -141,7 +183,9 @@ function picoCliInspectionDetail(inspected: PicoCliEnsureResult): string {
   ].join("; ");
 }
 
-const SDK_ADB = (home: string) =>
+/** The pre-selection bundled-adb location. Kept as a LAST candidate so a host that really does
+ *  carry a 0.13 payload keeps working, but it is no longer the only place this check looks. */
+const LEGACY_SDK_ADB = (home: string) =>
   path.join(home, "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
 
 export const PICO_EMULATOR_INSTALL_COMMAND = "pico-cli emulator install --source auto --yes";
@@ -152,10 +196,88 @@ function emulatorAcquisitionFix(): string {
     "After the bundle is present, open the PICO Spatial Editor app to boot the emulator (or, from a source checkout, run scripts/restart-emulator.sh), then re-run preflight_env.";
 }
 
+const SDK_INSTALL_FIX =
+  "Install the PICO Spatial Plugin in Android Studio and let it download the PICO build SDK (default ~/Library/PICO/sdk/<version>/), or point this host at an existing install with $PICO_HOME or spatial.tools.dir in the project's local.properties. This is separate from `pico-cli emulator install --source auto --yes`, which downloads/updates only the emulator bundle and does not install the build SDK.";
+
+/** `packer 6.1 from PICO_HOME /sdk` — the selected version and root source, never a guessed one. */
+function componentSummary(label: string, selection: ToolchainSelection | undefined): string {
+  if (!selection) return `${label} not inspected`;
+  if (selection.status !== "ok") return `${label} unavailable (${selection.code}: ${selection.detail})`;
+  return `${label} ${selection.version} from ${selection.rootSource} ${selection.root}`;
+}
+
+/**
+ * The PICO build SDK row, read off the structural selection rather than a directory stat.
+ * The packer decides pass/fail because it is what "there is something to build against" means;
+ * the emulator payload is resolved separately and disclosed in the same detail, so a split
+ * install (6.1 packer, 6.0 emulator) is reported as what it is instead of collapsing to one
+ * unavailable answer.
+ */
+function picoSdkCheck(io: PreflightIO): CheckResult {
+  const packer = io.toolchainInspection;
+  const detail = [componentSummary("packer", packer), componentSummary("emulator", io.emulatorInspection)].join("; ");
+  if (!packer) {
+    return {
+      name: "pico-sdk",
+      status: "unknown",
+      detail: `no structural toolchain selection was supplied to this check (${detail})`,
+      fix: "Run preflight_env through the server (its production IO resolves the selection), or call validate_toolchain for the version-probed report.",
+    };
+  }
+  if (packer.status !== "ok") {
+    return { name: "pico-sdk", status: "fail", detail, fix: SDK_INSTALL_FIX };
+  }
+  return { name: "pico-sdk", status: "pass", detail, fix: null };
+}
+
+/**
+ * The explicitly configured adb, from the injected context (production captures process.env),
+ * classified by the adapter's OWN rule (`classifyAdbOverride` in src/adb.ts): unset, set-but-blank
+ * — an override that is refused, never read as unset — or a declared path. `undefined` means "not
+ * supplied, read this process"; an explicit `null` means "there is none", which `??` alone would
+ * have collapsed back into a host read — the leak this field exists to remove. The jdk row's
+ * `javaHomeEnv` is read the same way.
+ */
+function declaredAdbOverride(io: PreflightIO): AdbOverrideDeclaration {
+  return classifyAdbOverride(io.adbOverride !== undefined ? io.adbOverride : process.env.PICO_ADB ?? null);
+}
+
+/**
+ * The same precedence `src/adb.ts` runs — explicit $PICO_ADB, then PATH, then the adb of the
+ * SELECTED toolchain — with the legacy hardcoded location retained only as a LAST candidate so a
+ * host that really does carry a 0.13 payload keeps working. Every candidate is still confirmed by
+ * actually running `adb version`: the structural selection narrows where to look, it does not
+ * replace the native probe.
+ *
+ * An explicit $PICO_ADB is the ONLY candidate when it is set, because the adapter fails closed on
+ * one it cannot use. Probing on past it here would report an adb that no operation will run. A
+ * set-but-BLANK $PICO_ADB yields NO candidate for the same reason: the adapter refuses it before
+ * consulting PATH, so a PATH probe here would report an adb that no operation will run either.
+ */
+function adbCandidates(io: PreflightIO): string[] {
+  const override = declaredAdbOverride(io);
+  if (override.kind === "declared") return [override.path];
+  if (override.kind === "blank") return [];
+  const selected = io.adbInspection?.status === "ok" ? io.adbInspection.files.adb?.path : undefined;
+  const legacy = LEGACY_SDK_ADB(io.home);
+  return [...new Set(["adb", ...(selected ? [selected] : []), legacy])];
+}
+
+/** Where a working candidate came from, so the row never implies the wrong provenance. */
+function adbSourceLabel(io: PreflightIO, candidate: string): string {
+  const override = declaredAdbOverride(io);
+  if (override.kind === "declared" && candidate === override.path) return "explicit $PICO_ADB";
+  if (candidate === "adb") return "PATH";
+  if (io.adbInspection?.status === "ok" && candidate === io.adbInspection.files.adb?.path) {
+    return `bundled platform-tools of the selected ${io.adbInspection.version} toolchain`;
+  }
+  return "legacy 0.13 platform-tools";
+}
+
 function findAdb(io: PreflightIO): string | null {
-  if (io.exec("adb", ["version"]).ok) return "adb";
-  const bundled = SDK_ADB(io.home);
-  if (io.exec(bundled, ["version"]).ok) return bundled;
+  for (const candidate of adbCandidates(io)) {
+    if (io.exec(candidate, ["version"]).ok) return candidate;
+  }
   return null;
 }
 
@@ -177,6 +299,57 @@ function calibrationRoute(): string {
     : "fleet_build(['calib']) then calibrate_capture_camera";
 }
 
+const EMULATOR_STATUS_TOOL = "emulator.status";
+/** pico-cli's shared result serializer maps tool_status to the process exit code
+ * (source-inspected CLI_RESULT_SCHEMA, 0.5.0 chunk-IRAF5R7A.js:12; 2026-09-15 audit). */
+const EMULATOR_STATUS_EXIT: Record<"SUCCESS" | "PARTIAL" | "FAILED", number> = { SUCCESS: 0, FAILED: 3, PARTIAL: 4 };
+const EMULATOR_STATUS_DIRECT_FIX = "Run `pico-cli emulator status --format json` directly and inspect its diagnostics; this read-only check does not run pico-cli doctor.";
+
+/**
+ * The emulator-status row. A healthy row requires all of: the process completed (no timeout,
+ * spawn error or managed-integrity rejection), a well-formed envelope whose tool_name is
+ * emulator.status, tool_status SUCCESS, and an exit code consistent with that status. PARTIAL and
+ * FAILED stay warnings that surface the envelope's own remediation; every other defect is a
+ * warning that names what was inconsistent instead of a pass.
+ */
+function emulatorStatusCheck(status: PreflightExecResult): CheckResult {
+  const name = "pico-cli-emulator-status";
+  const stderr = status.stderr?.trim() ?? "";
+  if (status.spawnError) {
+    const integrity = /validation failed|identity|publication/i.test(status.spawnError);
+    return integrity
+      ? { name, status: "warn", detail: `managed pico-cli integrity check rejected the emulator status invocation before it could be trusted: ${status.spawnError}`, fix: "Call ensure_pico_cli to re-resolve and revalidate the managed CLI, then re-run preflight_env; if the rejection persists, follow the manual recovery action in its note." }
+      : { name, status: "warn", detail: `structured emulator status unavailable: pico-cli could not start (${status.spawnError})`, fix: EMULATOR_STATUS_DIRECT_FIX };
+  }
+  if (status.timedOut) {
+    return { name, status: "warn", detail: `structured emulator status unavailable: pico-cli emulator status timed out and was killed${stderr ? `; stderr=${stderr}` : ""}`, fix: EMULATOR_STATUS_DIRECT_FIX };
+  }
+  const exitObserved = status.code !== undefined;
+  const processContext = status.ok
+    ? (exitObserved ? `; process exit: ${status.code}` : "")
+    : `; process exit: ${exitObserved ? String(status.code) : "non-zero"}${stderr ? `; stderr=${stderr}` : ""}`;
+  const envelope = parsePicoCliEnvelope(status.stdout);
+  if (envelope.status === "invalid") {
+    return { name, status: "warn", detail: `structured emulator status unavailable: ${envelope.detail}${processContext}`, fix: EMULATOR_STATUS_DIRECT_FIX };
+  }
+  const toolName = envelope.envelope.tool_name;
+  if (toolName !== EMULATOR_STATUS_TOOL) {
+    return { name, status: "warn", detail: `structured emulator status envelope carries tool_name=${typeof toolName === "string" ? toolName : "(missing)"}, expected ${EMULATOR_STATUS_TOOL}; not treating another tool's JSON as emulator status${processContext}`, fix: EMULATOR_STATUS_DIRECT_FIX };
+  }
+  const expectedExit = EMULATOR_STATUS_EXIT[envelope.toolStatus];
+  const exitConsistent = exitObserved ? status.code === expectedExit : (status.ok ? expectedExit === 0 : expectedExit !== 0);
+  const consistency = exitConsistent ? "" : `; exit/status mismatch: envelope ${envelope.toolStatus} expects exit ${expectedExit}`;
+  if (envelope.outcome === "operational") {
+    return exitConsistent
+      ? { name, status: "pass", detail: `pico-cli structured emulator status: operational${processContext}`, fix: null }
+      : { name, status: "warn", detail: `pico-cli structured emulator status: envelope SUCCESS but the process did not exit ${expectedExit}${processContext}${consistency}; not treating an inconsistent execution as healthy`, fix: EMULATOR_STATUS_DIRECT_FIX };
+  }
+  const payload = JSON.stringify(envelope.envelope).slice(0, 1_000);
+  const action = extractPicoCliRemediations(envelope.envelope)[0];
+  const diagnostic = envelope.summary ?? payload;
+  return { name, status: "warn", detail: `pico-cli structured emulator status: ${envelope.outcome}; ${diagnostic}; payload=${payload}${processContext}${consistency}`, fix: action ?? "Run `pico-cli emulator status --format json` directly and address its returned diagnostics; this read-only check does not run pico-cli doctor." };
+}
+
 export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   const out: CheckResult[] = [];
   const push = (c: CheckResult) => out.push(c);
@@ -187,22 +360,40 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
     ? { name: "node", status: "pass", detail: io.nodeVersion, fix: null }
     : { name: "node", status: "fail", detail: `found ${io.nodeVersion}, need >=20`, fix: "Install Node 20 or newer (e.g. `brew install node@20`), then restart your MCP client so the server runs on it." });
 
-  // 2. adb
+  // 2. adb. An explicit $PICO_ADB that does NOT answer `adb version` FAILS this row, because that
+  //    is what every operation will now do: src/adb.ts refuses to substitute a different binary
+  //    for one an operator named, so a row that quietly reported a PATH adb here would promise a
+  //    working lane that throws the moment anything installs, launches or captures. A set-but-BLANK
+  //    $PICO_ADB is refused the same way, with the adapter's own reason, and probes nothing — the
+  //    row used to trim it to "" and read that as unset, probing PATH and running `adb devices`
+  //    behind an override every operation would refuse.
   const adb = findAdb(io);
+  const declaredAdb = declaredAdbOverride(io);
   push(adb
-    ? { name: "adb", status: "pass", detail: adb, fix: null }
-    : { name: "adb", status: "fail", detail: "no adb on PATH and no bundled platform-tools", fix: `Install the PICO Spatial Plugin in Android Studio (payloads land under ~/Library/PICO/sdk/0.13/) or add adb to PATH; expected bundled path: ${SDK_ADB(io.home)}` });
+    ? { name: "adb", status: "pass", detail: `${adb} (from ${adbSourceLabel(io, adb)})`, fix: null }
+    : declaredAdb.kind === "blank"
+      ? {
+          name: "adb",
+          status: "fail",
+          detail: `${describeAdbOverrideRejection(declaredAdb.rejection)}; an explicitly configured adb is never replaced by a PATH or bundled candidate, so nothing else was probed`,
+          fix: "Unset PICO_ADB to fall back to PATH and the selected toolchain's bundled platform-tools, or set it to a runnable adb, then re-run this read-only check.",
+        }
+      : declaredAdb.kind === "declared"
+        ? {
+            name: "adb",
+            status: "fail",
+            detail: `$PICO_ADB=${declaredAdb.path} did not answer \`adb version\`; an explicitly configured adb is never replaced by a PATH or bundled candidate, so nothing else was probed`,
+            fix: "Correct $PICO_ADB to a runnable adb, or unset it to fall back to PATH and the selected toolchain's bundled platform-tools, then re-run this read-only check.",
+          }
+        : { name: "adb", status: "fail", detail: `no adb on PATH and no bundled platform-tools (probed: ${adbCandidates(io).join(", ")})`, fix: "Install the PICO Spatial Plugin in Android Studio (it downloads the emulator payload, whose platform-tools carry adb) or add adb to PATH." });
 
   // 2b. PICO SDK payload. adb can be on PATH from an unrelated Android install, so a passing adb
   //     check is not evidence the PICO SDK is present. Without it there is nothing to build against.
-  // PICO_HOME overrides the default location for the rest of the toolchain, so this check has to
-  // honour it too — otherwise preflight reports "no SDK" while validate_toolchain reports one.
-  const sdkRoot = process.env.PICO_HOME
-    ? path.join(process.env.PICO_HOME, "0.13")
-    : path.join(io.home, "Library/PICO/sdk/0.13");
-  push(io.statMtimeMs(sdkRoot) != null
-    ? { name: "pico-sdk", status: "pass", detail: sdkRoot, fix: null }
-    : { name: "pico-sdk", status: "fail", detail: `no PICO SDK payload at ${sdkRoot}`, fix: "Install the PICO Spatial Plugin in Android Studio and let it download the PICO build SDK under ~/Library/PICO/sdk/0.13/. This is separate from `pico-cli emulator install --source auto --yes`, which downloads/updates only the emulator bundle and does not install the build SDK." });
+  //     This row now reports the SAME structural selection every pack operation runs against
+  //     (io.toolchainInspection), instead of stat-ing a hardcoded 0.13 directory: that legacy check
+  //     passed on an EMPTY 0.13 directory, named a version nothing had selected, and disagreed
+  //     with validate_toolchain on any host whose real payload is 6.x.
+  push(picoSdkCheck(io));
 
   // 2c. JDK. Gradle needs it, and its absence surfaces as an opaque build failure much later.
   //     This MUST use detectJavaHome() — the same resolver gradleEnv() injects into every Gradle
@@ -213,8 +404,9 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   //     check was added to prevent, only inverted: a false "broken" instead of a false "healthy".
   //     If the build lane can find a JDK, this check must agree with it.
   const javaHome = io.detectJavaHome();
+  const declaredJavaHome = io.javaHomeEnv !== undefined ? io.javaHomeEnv : process.env.JAVA_HOME ?? null;
   push(javaHome
-    ? { name: "jdk", status: "pass", detail: process.env.JAVA_HOME === javaHome ? `JAVA_HOME=${javaHome}` : `${javaHome} (auto-detected; Gradle gets it injected)`, fix: null }
+    ? { name: "jdk", status: "pass", detail: declaredJavaHome === javaHome ? `JAVA_HOME=${javaHome}` : `${javaHome} (auto-detected; Gradle gets it injected)`, fix: null }
     : { name: "jdk", status: "fail", detail: "no JDK found (JAVA_HOME unset, none on PATH, no Android Studio JBR)", fix: "Install a JDK 17+ (Android Studio bundles one, or `brew install openjdk@17`) and set JAVA_HOME — Gradle APK builds fail without it." });
 
   // 2d. ImageMagick. Only the capture-analysis lane needs it, so this is a warn, not a fail.
@@ -263,19 +455,7 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
     push(inspectedCli
       ? { name: "pico-cli", status: "pass", detail: picoCliInspectionDetail(inspectedCli), fix: null, inspection: inspectedCli }
       : { name: "pico-cli", status: "pass", detail: cliVersion ? `managed cached version ${cliVersion} (${raw})` : `managed cached CLI (version string unparsed: ${raw || "(empty)"})`, fix: null });
-    const emulatorStatus = io.exec("pico-cli", ["emulator", "status", "--format", "json"]);
-    const envelope = parsePicoCliEnvelope(emulatorStatus.stdout);
-    const processContext = emulatorStatus.ok ? "" : `; process exit: non-zero${emulatorStatus.stderr?.trim() ? `; stderr=${emulatorStatus.stderr.trim()}` : ""}`;
-    if (envelope.status === "invalid") {
-      push({ name: "pico-cli-emulator-status", status: "warn", detail: `structured emulator status unavailable: ${envelope.detail}${processContext}`, fix: "Run `pico-cli emulator status --format json` directly and inspect its diagnostics; this read-only check does not run pico-cli doctor." });
-    } else if (envelope.outcome === "operational") {
-      push({ name: "pico-cli-emulator-status", status: "pass", detail: `pico-cli structured emulator status: operational${processContext}`, fix: null });
-    } else {
-      const payload = JSON.stringify(envelope.envelope).slice(0, 1_000);
-      const action = extractPicoCliRemediations(envelope.envelope)[0];
-      const diagnostic = envelope.summary ?? payload;
-      push({ name: "pico-cli-emulator-status", status: "warn", detail: `pico-cli structured emulator status: ${envelope.outcome}; ${diagnostic}; payload=${payload}${processContext}`, fix: action ?? "Run `pico-cli emulator status --format json` directly and address its returned diagnostics; this read-only check does not run pico-cli doctor." });
-    }
+    push(emulatorStatusCheck(io.exec("pico-cli", ["emulator", "status", "--format", "json"])));
   } else if (inspectedCli?.status === "unavailable") {
     push({
       name: "pico-cli",

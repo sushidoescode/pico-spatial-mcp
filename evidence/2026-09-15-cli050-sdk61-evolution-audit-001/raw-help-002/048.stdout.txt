@@ -1,0 +1,13 @@
+Usage:
+  $ pico-cli emulator dump-logs
+
+Options:
+  --adb-device <id>  Target adb device id (e.g. emulator-5554) 
+  --format <format>  Output format (plain, json) (default: plain)
+  -o, --out <dir>    Output directory (default: /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-cli-sim-logs)
+  -h, --help         Display this message 
+
+Examples:
+  $ pico-cli emulator dump-logs
+  $ pico-cli emulator dump-logs --out ./tmp/logs
+  $ pico-cli emulator dump-logs --format json

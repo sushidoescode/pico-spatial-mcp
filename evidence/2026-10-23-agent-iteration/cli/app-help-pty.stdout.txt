@@ -1,0 +1,19 @@
+[1mDescription[22m:
+Install, launch, and inspect apps
+
+[1mUsage[22m:
+  $ [1mpico-cli app[22m <command> [options]
+
+[1mCommands[22m:
+  [1mbundle[22m                 Verify AssetBundle packaging in APK files
+  [1minfo <package>[22m         Show information for an installed app on the preferred current device
+  [1minstall <path>[22m         Install an APK to the preferred current device
+  [1mlaunch <package>[22m       Launch an app on the preferred current device
+  [1mlist[22m                   List installed packages on the preferred current device
+  [1mlogcat[22m                 View device logs, optionally scoped to a running app package
+  [1mstop <package>[22m         Stop an app on the preferred current device
+  [1muninstall <package>[22m    Uninstall an app from the preferred current device
+  [1mwatch-crash <package>[22m  Monitor a package for crashes and surface key exception logs
+
+[1mOptions[22m:
+  [1m-h, --help[22m  Show this message and exit.

@@ -1,0 +1,17 @@
+{
+  "label": "0.4.4 plugin audit --help",
+  "argv": [
+    "plugin",
+    "audit",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:53.820Z",
+  "endedAt": "2026-09-15T09:11:53.916Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "788c8b9862f84b1c6b81d6cf1b0244a9c2311316194cf5c996e10b48cd48a6e0",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

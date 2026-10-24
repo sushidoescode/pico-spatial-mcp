@@ -4,7 +4,8 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { expandHome, fail, okJson } from "./util.js";
-import { resolveToolsRoot } from "./toolchain.js";
+import { isToolchainFailure, resolveHostToolchain } from "./toolchain.js";
+import { parseJavaProperties, serializeJavaProperty, TOOLS_DIR_PROPERTY, type SelectedToolchain } from "./toolchainselection.js";
 import { installBridgeLauncher } from "./mousebridge.js";
 import { generateSpatialProject, SKELETON_PACKAGE } from "./projectgen.js";
 
@@ -23,6 +24,57 @@ function detectPackage(appBuildGradle: string): string | null {
   if (!fs.existsSync(appBuildGradle)) return null;
   const m = fs.readFileSync(appBuildGradle, "utf8").match(/namespace\s*=\s*["']([^"']+)["']/);
   return m ? m[1] : null;
+}
+
+/** A logical .properties line continues when its content ends in an ODD run of backslashes. */
+function continues(physicalLine: string): boolean {
+  const content = physicalLine.replace(/\r?\n$|\r$/, "");
+  let count = 0;
+  for (let i = content.length - 1; i >= 0 && content[i] === "\\"; i -= 1) count += 1;
+  return count % 2 === 1;
+}
+
+/**
+ * Point a cloned project's local.properties at an explicitly selected tools root, and say what
+ * it USED to point at. A clone inherits the template's machine-local root, which is almost never
+ * this machine's; silently overwriting it and reporting nothing is how a project ends up built
+ * against tools nobody chose. Everything else in the file — sdk.dir above all — is preserved
+ * byte-for-byte, and the new value is escaped per java.util.Properties.store so a root with a
+ * space, a drive letter or a non-ASCII character survives the round trip Gradle makes when it
+ * reads the file back.
+ *
+ * Existing declarations are found by PARSING rather than by matching the literal text, because
+ * `spatial\.tools\.dir : /x`, a whitespace separator and a backslash-continued value are all the
+ * same key to Gradle. A regex over the raw text leaves those behind as duplicates, and a
+ * duplicate key is exactly the ambiguous/property-conflict the resolver refuses to answer.
+ *
+ * Exported because the clone path lives inside a tool handler: testing it there would mean
+ * spawning a server and running rsync, which proves nothing about the property rewrite.
+ */
+export function applyToolsDirProperty(existing: string, toolsRoot: string): { content: string; previousToolsDir: string | null; appliedToolsDir: string } {
+  const physical = existing === "" ? [] : existing.split(/(?<=\r\n|\n|\r)/);
+  const kept: string[] = [];
+  const previous: string[] = [];
+  let i = 0;
+  while (i < physical.length) {
+    const group = [physical[i]!];
+    while (continues(group[group.length - 1]!) && i + 1 < physical.length) {
+      i += 1;
+      group.push(physical[i]!);
+    }
+    i += 1;
+    const entry = parseJavaProperties(group.join(""))[0];
+    if (entry && entry.key === TOOLS_DIR_PROPERTY) previous.push(entry.value);
+    else kept.push(...group);
+  }
+  const distinct = [...new Set(previous)];
+  const content = `${kept.join("").replace(/(\r?\n|\r)*$/, "")}\n${serializeJavaProperty(TOOLS_DIR_PROPERTY, toolsRoot)}\n`.replace(/^(\r?\n|\r)+/, "");
+  return {
+    content,
+    // Duplicate, disagreeing declarations are not a single previous value; report none rather than one.
+    previousToolsDir: distinct.length === 1 ? distinct[0]! : null,
+    appliedToolsDir: toolsRoot,
+  };
 }
 
 function walkFiles(dir: string, skip: (name: string) => boolean): string[] {
@@ -91,6 +143,9 @@ export function registerScaffoldTools(server: McpServer) {
           devScripts,
           sourceDir: gen.sourceDir,
           homeStage: gen.homeStage,
+          toolchain: gen.toolchain,
+          appliedToolsDir: gen.toolchain.root,
+          templateBom: gen.templateBom,
           next: [
             `Author the UI in ${gen.homeStage} (SpatialView; the default hello scene renders without any assets).`,
             "Optionally add data/assets under app/src/main/assets/ and generate content via the compile ledger.",
@@ -106,6 +161,12 @@ export function registerScaffoldTools(server: McpServer) {
       const appGradle = fs.existsSync(path.join(src, "app/build.gradle.kts")) ? path.join(src, "app/build.gradle.kts") : path.join(src, "app/build.gradle");
       const oldPkg = detectPackage(appGradle);
       if (!oldPkg) return fail(`Could not detect the template's package (namespace) in ${appGradle}`);
+
+      // Same explicit selection the generated path uses, resolved BEFORE anything is copied —
+      // a clone pointed at tools that are not there is worse than a refusal.
+      const selection = resolveHostToolchain({ required: ["packer"] });
+      if (isToolchainFailure(selection)) return fail(`cannot clone against this toolchain: ${selection.code} — ${selection.detail}`);
+      const cloneToolchain: SelectedToolchain = selection;
 
       // 1. Copy the project, excluding build artifacts.
       fs.mkdirSync(path.dirname(dst), { recursive: true });
@@ -161,16 +222,12 @@ export function registerScaffoldTools(server: McpServer) {
         fs.writeFileSync(manifest, m);
       }
 
-      // 5. local.properties: keep the copied sdk.dir etc., just ensure spatial.tools.dir.
-      const { root } = resolveToolsRoot();
+      // 5. local.properties: keep the copied sdk.dir etc., just repoint spatial.tools.dir at the
+      //    selection made above. The catalog, the BOM and the dependency repositories are the
+      //    template's identity and are never touched here.
       const lp = path.join(dst, "local.properties");
-      let lpContent = fs.existsSync(lp) ? fs.readFileSync(lp, "utf8") : "";
-      if (/^\s*spatial\.tools\.dir\s*=/m.test(lpContent)) {
-        lpContent = lpContent.replace(/^\s*spatial\.tools\.dir\s*=.*$/m, `spatial.tools.dir=${root}`);
-      } else {
-        lpContent = (lpContent.trimEnd() + `\nspatial.tools.dir=${root}\n`).replace(/^\n/, "");
-      }
-      fs.writeFileSync(lp, lpContent);
+      const applied = applyToolsDirProperty(fs.existsSync(lp) ? fs.readFileSync(lp, "utf8") : "", cloneToolchain.root);
+      fs.writeFileSync(lp, applied.content);
 
       // 6. Optional scene install.
       let sceneInstalled: string | null = null;
@@ -208,6 +265,9 @@ export function registerScaffoldTools(server: McpServer) {
         devScripts,
         sourceDir: newJavaDir,
         homeStage: path.join(newJavaDir, "content/HomeStage.kt"),
+        toolchain: cloneToolchain,
+        previousToolsDir: applied.previousToolsDir,
+        appliedToolsDir: applied.appliedToolsDir,
         next: [
           `Author the UI in ${path.join(newJavaDir, "content/HomeStage.kt")} (SpatialView + AttachmentPanel; load the scene by model name).`,
           "Optionally compose_inspection_scene / compose_scene into the editor-asset scene, then verify_scene.",

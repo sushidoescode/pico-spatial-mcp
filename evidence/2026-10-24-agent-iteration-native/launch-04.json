@@ -1,0 +1,27 @@
+{
+  "argv": [
+    "shell",
+    "--device",
+    "emulator-5554",
+    "getprop",
+    "ro.boot.qemu"
+  ],
+  "serial": "emulator-5554",
+  "expectedBoot": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+  "cliIdentity": {
+    "version": "0.6.1",
+    "executablePath": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+    "packageJsonSha256": "44c2ba62b978d28b62f7f22471f7b9a23c20011008371d7ec3435d5072913144",
+    "executionTreeSha256": "aa49c3090946ec0122c5f0a8ff7fbe9e2fbc6dfd937851a1ec0ae58c4370316b",
+    "executionScope": "package-tree",
+    "selectionSchemaVersion": 1,
+    "selectionSha256": "07144d789087ac8ba3d96b506cbb47561b9ac07dfdb1a8ca093e0deaac1d4a30"
+  },
+  "mutation": false,
+  "code": 0,
+  "signal": null,
+  "stdout": "1\n",
+  "stderr": "",
+  "timedOut": false,
+  "outputTruncated": false
+}

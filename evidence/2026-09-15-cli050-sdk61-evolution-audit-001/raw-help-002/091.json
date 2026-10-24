@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 app launch --help",
+  "argv": [
+    "app",
+    "launch",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:01.764Z",
+  "endedAt": "2026-09-15T09:12:01.867Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "641e54c82120b1a4134bf71e3916ec73c0f883cca9539368aa4a7da73d5de307",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

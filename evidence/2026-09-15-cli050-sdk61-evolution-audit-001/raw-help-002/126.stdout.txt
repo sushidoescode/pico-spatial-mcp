@@ -1,0 +1,9 @@
+Description:
+Read a file on the preferred current device
+
+Usage:
+  $ pico-cli files cat <remote>
+
+Options:
+  -d, --device <device>  Target device id
+  -h, --help             Display this message

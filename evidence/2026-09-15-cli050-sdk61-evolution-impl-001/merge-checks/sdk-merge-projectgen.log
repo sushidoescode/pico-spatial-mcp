@@ -1,0 +1,63 @@
+  ok   skeleton payload complete (17 canaries at /Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/appskeleton)
+  ok   menu.bundle ships (49227 bytes)
+  ok   settings.gradle.kts carries no editor-asset reference
+  ok   app/build.gradle.kts carries no editor-asset reference
+  ok   skeleton ships no local.properties
+  ok   gitignores stored dot-less (_gitignore) so npm pack cannot drop them
+  ok   skeleton bakes stage.style 1 (Mixed — the MR default) in the regex-substitutable shape
+  ok   app gradle keeps load-bearing line: exclude("androidx.compose.ui", "ui")
+  ok   app gradle keeps load-bearing line: noCompress += listOf(".bundle")
+  ok   app gradle keeps load-bearing line: abiFilters.add("arm64-v8a")
+  ok   app gradle keeps load-bearing line: compileSdk = 35
+  ok   both ByteDance Maven repos present (pluginManagement + dependencyResolutionManagement)
+  ok   src/projectgen.ts spawns nothing (child_process)
+  ok   src/projectgen.ts spawns nothing (execFile)
+  ok   src/projectgen.ts spawns nothing (execSync)
+  ok   src/projectgen.ts spawns nothing (spawn()
+  ok   src/projectgen.ts spawns nothing (spawnSync)
+  ok   src/projectgen.ts spawns nothing (sdk-facts)
+  ok   src/projectgen.ts spawns nothing (./gradlew)
+  ok   generated 46 files
+  ok   emits settings.gradle.kts
+  ok   emits gradlew
+  ok   emits gradle/wrapper/gradle-wrapper.jar
+  ok   emits .gitignore
+  ok   emits app/.gitignore
+  ok   emits local.properties
+  ok   emits app/src/main/AndroidManifest.xml
+  ok   emits app/src/main/java/com/test/hello/Main.kt
+  ok   emits app/src/main/java/com/test/hello/content/HomeStage.kt
+  ok   emits app/src/main/java/com/test/hello/platform/LaunchActivity.kt
+  ok   emits app/src/main/java/com/test/hello/agent/AgentBridgeInitProvider.kt
+  ok   emits app/src/main/res/drawable/icon_3d_layer_0.png
+  ok   emits app/src/main/res/mipmap-xxxhdpi/ic_spatial_launcher.png
+  ok   gradlew is executable
+  ok   wrapper jar intact
+  ok   no skeleton-package/branding residue in any text file
+  ok   app_name set + XML-escaped
+  ok   strings.xml keeps the scaffold-rewritable shape
+  ok   stage.style substituted to 3 (the Full opt-in flips the baked Mixed default) in the regex-compatible shape
+  ok   AgentBridgeInitProvider provider entry survives
+  ok   local.properties generated with spatial.tools.dir
+  ok   rootProject.name set from target dir
+  ok   default HomeStage loads no asset bundles
+  ok   refuses an existing targetDir
+  ok   rejects an invalid package name
+  ok   deterministic file list (46 files)
+  ok   deterministic bytes across runs
+  ok   local.properties carries the supplied selection's root verbatim
+  ok   GenerateResult returns the exact selection it generated against
+  ok   GenerateResult reports the template BOM and the copied catalog's hash
+  ok   local.properties round-trips 4 hostile tool roots (spaces, drive letters, '#', non-ASCII)
+  ok   serializeJavaProperty escapes keys and values per Properties.store
+  ok   serializeJavaProperty round-trips through parseJavaProperties (9 cases)
+  ok   an invalid selection is refused before the destination is created
+  ok   an unresolvable host toolchain fails structurally before the destination is created
+  ok   with no selection supplied, generation resolves the host toolchain once and writes that root
+  ok   clone reports {previousToolsDir, appliedToolsDir} across 10 local.properties shapes and keeps sdk.dir
+  ok   a different toolchain on a different root leaves the declared BOM and fingerprint identical
+  ok   two different toolchain selections produce the same catalog bytes
+  ok   a renamed project is a different fingerprint but the same declared BOM
+  ok   generation preserves the project BOM byte-for-byte while recording the 6.1 selection
+
+Projectgen test done. Failures: 0

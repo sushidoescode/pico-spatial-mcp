@@ -1,0 +1,47 @@
+{
+  "at": "2026-10-24T12:47:36.456079+00:00",
+  "priorCommit": "89ae9a8754e72795c3ec8f6e7dc010241ab715df",
+  "observedCi": "https://github.com/sushidoescode/pico-spatial-mcp/actions/runs/40094157886",
+  "reviewer": "/root/independent_review",
+  "disposition": "All five fixture/CI files cleared; no production changes or weakened assertions. Actual next-head CI pending.",
+  "fixes": [
+    "Keep relative-path test on repository drive",
+    "Canonical Windows fixture environment prevents mixed PATH/Path selecting inherited fake npm",
+    "Disable text conversion only for retained CLI help transcripts; original hashes remain authoritative",
+    "Test reservation bytes/HEAD/quota under both directory orders; preserve low-volume diagnostic assertion and respect capped diagnostics at high volume",
+    "Keep Node matrix jobs independent on failure so both report results"
+  ],
+  "tests": {
+    "autoinstall": "119/119",
+    "realGitCrlfCheckout": "120 transcript files, zero byte differences",
+    "reservationRed": "Deterministically reproduced failing diagnostic assumption",
+    "reservationFocused": "9/9",
+    "runrevisionGate": "327/327",
+    "lint": "63/63"
+  },
+  "buildSource": "2a0d8786b3dd",
+  "fixtureAdb": "/fixture/no/such/adb",
+  "artifact": "Every member of retained b1aa10be23810ab03a39d904b7162a0171dc37dbc0fc9ad81f493e60165f3c4a tarball matches current checkout; no payload change",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "d93b9a5521dfa03c943f44a293ae6035525f4c3a8bc016378e80c014e1764bae"
+    },
+    {
+      "path": ".github/workflows/gates.yml",
+      "sha256": "4e8a1a5336b2151418d2f21523cb9a044819ce8275801f39b1f4f7d14339dd88"
+    },
+    {
+      "path": "test/helpers/picocli-managed-fixture.mjs",
+      "sha256": "311714fa86d8aa3efc7a75c13166a25bf8442308018b7de5016e0480a3cc684f"
+    },
+    {
+      "path": "test/picocli-autoinstall.mjs",
+      "sha256": "311f8e860d41f8c46ff4e196e1273d993a8b6dd078b5ccbdabd787a531edd609"
+    },
+    {
+      "path": "test/runrevision-store.mjs",
+      "sha256": "efd101d33dceec0345d624bd9d6ae029fe12e8c1a03b29d5f5dc19bd99d78896"
+    }
+  ]
+}

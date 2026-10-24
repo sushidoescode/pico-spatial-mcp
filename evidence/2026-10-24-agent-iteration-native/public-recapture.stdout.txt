@@ -1,0 +1,299 @@
+{
+  "tool": "pico_interaction",
+  "status": "opened",
+  "sessionId": "cd7b109a-432e-4cbc-9b01-89af33899e6a",
+  "target": {
+    "serial": "emulator-5554",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "model": "swan_arm64",
+    "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+    "bootQemu": "1",
+    "bootId": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+    "apkSha256": "9e311dc104d70a3997832162d6597d45805692f22f729ca869c86bdff45d9a12",
+    "pid": 8478,
+    "pidStartTicks": "170913",
+    "appGeneration": "659e3ad2-39ed-42cf-bdc8-90a73810de4d",
+    "schemaVersion": 1,
+    "bindingSha256": "03fcdb9756d2a10352cf63b7893d4b067233366a6a20ad8ac72b3caebd2e596e",
+    "observedAt": "2026-10-24T05:26:20.255Z",
+    "enforcementScope": "interaction-session-only"
+  },
+  "state": {
+    "schemaVersion": 1,
+    "kind": "pico.agent-bridge.semantic-state",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "generation": "659e3ad2-39ed-42cf-bdc8-90a73810de4d",
+    "revision": 1,
+    "observedAtEpochMs": 1792819580120,
+    "pid": 8478,
+    "pidStartTicks": "170913",
+    "state": {
+      "panel": {
+        "id": "fixture.panel",
+        "visible": true
+      },
+      "counter": 1
+    },
+    "actions": [
+      "panel.show"
+    ]
+  },
+  "recordPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/cd7b109a-432e-4cbc-9b01-89af33899e6a/session.json",
+  "lookPending": true,
+  "enforcementScope": "interaction-session-only",
+  "inlineImageDelivered": false
+}
+{
+  "tool": "pico_look",
+  "status": "captured",
+  "path": "/Users/sushantsrikrish/.pico-mcp/cli/observations/canonical/20261024T052621099Z-23c27d61-d7d2-44b7-aa35-f694882d1640/canonical.png",
+  "sha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc",
+  "bytes": 2988825,
+  "width": 2160,
+  "height": 2158,
+  "measurements": {
+    "available": true,
+    "sha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc",
+    "width": 2160,
+    "height": 2158,
+    "bytes": 2988825,
+    "meanBrightness": 0.5294117647058824,
+    "nonBlackCoverage": 0.964868,
+    "mostlyBlack": false,
+    "dominantColors": [
+      "2D2923",
+      "4D3F32",
+      "6A665F",
+      "89796B",
+      "8E857A",
+      "A8A5A1",
+      "C6C0BA",
+      "D2CFCB"
+    ],
+    "objectCount": 9,
+    "objects": [
+      {
+        "area": 5331,
+        "bbox": "422x15+0+465"
+      },
+      {
+        "area": 1304,
+        "bbox": "301x9+84+400"
+      },
+      {
+        "area": 939,
+        "bbox": "44x35+418+264"
+      },
+      {
+        "area": 254,
+        "bbox": "20x29+418+232"
+      },
+      {
+        "area": 220,
+        "bbox": "23x28+423+267"
+      },
+      {
+        "area": 132,
+        "bbox": "28x9+418+328"
+      },
+      {
+        "area": 100,
+        "bbox": "35x4+0+332"
+      },
+      {
+        "area": 96,
+        "bbox": "34x4+418+190"
+      },
+      {
+        "area": 82,
+        "bbox": "3x56+32+240"
+      }
+    ]
+  },
+  "note": "Deterministic forward capture. sha256 is reproducible if the camera is not moved. LOOK at it for human verification, or run visual_judge for a measured (auto_judged) check.",
+  "inlineImageDelivered": false
+}
+{
+  "tool": "pico_interaction",
+  "status": "observed",
+  "target": {
+    "serial": "emulator-5554",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "model": "swan_arm64",
+    "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+    "bootQemu": "1",
+    "bootId": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+    "apkSha256": "9e311dc104d70a3997832162d6597d45805692f22f729ca869c86bdff45d9a12",
+    "pid": 8478,
+    "pidStartTicks": "170913",
+    "appGeneration": "659e3ad2-39ed-42cf-bdc8-90a73810de4d",
+    "schemaVersion": 1,
+    "bindingSha256": "03fcdb9756d2a10352cf63b7893d4b067233366a6a20ad8ac72b3caebd2e596e",
+    "observedAt": "2026-10-24T05:26:20.255Z",
+    "enforcementScope": "interaction-session-only"
+  },
+  "state": {
+    "schemaVersion": 1,
+    "kind": "pico.agent-bridge.semantic-state",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "generation": "659e3ad2-39ed-42cf-bdc8-90a73810de4d",
+    "revision": 1,
+    "observedAtEpochMs": 1792819583494,
+    "pid": 8478,
+    "pidStartTicks": "170913",
+    "state": {
+      "panel": {
+        "id": "fixture.panel",
+        "visible": true
+      },
+      "counter": 1
+    },
+    "actions": [
+      "panel.show"
+    ]
+  },
+  "workflow": null,
+  "lookPending": true,
+  "inlineImageDelivered": false
+}
+{
+  "status": "captured",
+  "kind": "pico.interaction-recapture",
+  "target": {
+    "serial": "emulator-5554",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "model": "swan_arm64",
+    "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys",
+    "bootQemu": "1",
+    "bootId": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+    "apkSha256": "9e311dc104d70a3997832162d6597d45805692f22f729ca869c86bdff45d9a12",
+    "pid": 8478,
+    "pidStartTicks": "170913",
+    "appGeneration": "659e3ad2-39ed-42cf-bdc8-90a73810de4d",
+    "schemaVersion": 1,
+    "bindingSha256": "03fcdb9756d2a10352cf63b7893d4b067233366a6a20ad8ac72b3caebd2e596e",
+    "observedAt": "2026-10-24T05:26:20.255Z",
+    "enforcementScope": "interaction-session-only"
+  },
+  "before": {
+    "schemaVersion": 1,
+    "kind": "pico.agent-bridge.semantic-state",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "generation": "659e3ad2-39ed-42cf-bdc8-90a73810de4d",
+    "revision": 1,
+    "observedAtEpochMs": 1792819580120,
+    "pid": 8478,
+    "pidStartTicks": "170913",
+    "state": {
+      "panel": {
+        "id": "fixture.panel",
+        "visible": true
+      },
+      "counter": 1
+    },
+    "actions": [
+      "panel.show"
+    ]
+  },
+  "after": {
+    "schemaVersion": 1,
+    "kind": "pico.agent-bridge.semantic-state",
+    "packageName": "com.example.picofixture.iteration.debug",
+    "generation": "659e3ad2-39ed-42cf-bdc8-90a73810de4d",
+    "revision": 1,
+    "observedAtEpochMs": 1792819583494,
+    "pid": 8478,
+    "pidStartTicks": "170913",
+    "state": {
+      "panel": {
+        "id": "fixture.panel",
+        "visible": true
+      },
+      "counter": 1
+    },
+    "actions": [
+      "panel.show"
+    ]
+  },
+  "capture": {
+    "status": "captured",
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/cd7b109a-432e-4cbc-9b01-89af33899e6a/recapture.png",
+    "sha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc",
+    "bytes": 2988825,
+    "width": 2160,
+    "height": 2158,
+    "measurements": {
+      "available": true,
+      "sha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc",
+      "width": 2160,
+      "height": 2158,
+      "bytes": 2988825,
+      "meanBrightness": 0.5294117647058824,
+      "nonBlackCoverage": 0.964868,
+      "mostlyBlack": false,
+      "dominantColors": [
+        "2D2923",
+        "4D3F32",
+        "6A665F",
+        "89796B",
+        "8E857A",
+        "A8A5A1",
+        "C6C0BA",
+        "D2CFCB"
+      ],
+      "objectCount": 9,
+      "objects": [
+        {
+          "area": 5331,
+          "bbox": "422x15+0+465"
+        },
+        {
+          "area": 1304,
+          "bbox": "301x9+84+400"
+        },
+        {
+          "area": 939,
+          "bbox": "44x35+418+264"
+        },
+        {
+          "area": 254,
+          "bbox": "20x29+418+232"
+        },
+        {
+          "area": 220,
+          "bbox": "23x28+423+267"
+        },
+        {
+          "area": 132,
+          "bbox": "28x9+418+328"
+        },
+        {
+          "area": 100,
+          "bbox": "35x4+0+332"
+        },
+        {
+          "area": 96,
+          "bbox": "34x4+418+190"
+        },
+        {
+          "area": 82,
+          "bbox": "3x56+32+240"
+        }
+      ]
+    },
+    "note": "Deterministic forward capture. sha256 is reproducible if the camera is not moved. LOOK at it for human verification, or run visual_judge for a measured (auto_judged) check.",
+    "sourcePath": "/Users/sushantsrikrish/.pico-mcp/cli/observations/canonical/20261024T052621099Z-23c27d61-d7d2-44b7-aa35-f694882d1640/canonical.png"
+  },
+  "recordPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/cd7b109a-432e-4cbc-9b01-89af33899e6a/recapture.json",
+  "lookPending": true,
+  "evidenceCeiling": "structural",
+  "actionSent": false
+}
+{
+  "tool": "pico_interaction",
+  "status": "stopped",
+  "sessionId": "cd7b109a-432e-4cbc-9b01-89af33899e6a",
+  "appStopped": false,
+  "recordPath": "/Users/sushantsrikrish/.pico-mcp/interaction-fences/04ab3fc382bfb33ea4fbc120f5172ecfc4aed71652e00977064492ca0f65a017.owner.json",
+  "inlineImageDelivered": false
+}

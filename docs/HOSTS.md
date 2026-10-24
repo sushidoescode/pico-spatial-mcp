@@ -176,3 +176,7 @@ Generic server entry:
   ≥ 10 minutes.
 - macOS host requirements (emulator, adb, toolchain) are model-agnostic — `pico_doctor` reports
   them with exact fixes.
+
+## Bounded iteration source candidate
+
+The opt-in agent iteration entry point and its evidence limits are described in [the candidate report](findings/AGENT_ITERATION_CANDIDATE.md). [Isolated host configuration candidates](findings/AGENT_ITERATION_HOST_CONFIGS.md) cover Claude, Codex and Gemini without changing installed registrations. Actual host image, trust and native acceptance remain separate checks.

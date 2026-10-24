@@ -1,0 +1,74 @@
+{
+  "ledger": "2026-09-16-mcp-native-acceptance-001",
+  "recordedAt": "2026-09-16T14:45:00Z",
+  "session": {
+    "host": "Claude Code 2.1.273 (CLAUDE_CONFIG_DIR=/Users/sushantsrikrish/.claude-account-a)",
+    "claudeProcessPid": 52326,
+    "connectedPicoSpatialServer": {
+      "registration": "user scope, ~/.claude-account-a/.claude.json mcpServers.pico-spatial",
+      "command": "node /Users/sushantsrikrish/PICO-MCP/dist/index.js",
+      "env": { "PICO_MCP_SURFACE": "doors" },
+      "outerPid": 52521,
+      "innerFullSurfacePid": 53406,
+      "cwd": "/Users/sushantsrikrish/PICO-MCP",
+      "serverInfoVersion": "37.0.0 (direct-transport probe of the same entry, host/old-main-direct-doors-tools-list.json)",
+      "sourceTree": "main checkout at 4478238a8d7aac266b12c2b8dc61c08482337286 (package.json 37.0.0)",
+      "distBuilt": "2026-09-08 (dist/index.js mtime); no dist/build-receipt.json",
+      "doctorEvidence": "host/connected-server-pico_doctor-2026-09-16.json",
+      "verdict": "the OLD server answered pico_doctor {}, not the 38.0.0 candidate"
+    }
+  },
+  "accepted": {
+    "branch": "cli050-sdk61-evolution-2026-09-15",
+    "worktree": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15",
+    "tip": "f349eaf01f9788d0fe73fefbd30af17b7dccf776",
+    "packageVersion": "38.0.0",
+    "archive": "evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/host-completion/pico-spatial-mcp-38.0.0.tgz",
+    "archiveSha256": "ff394fbbcdf1828ea0745e3d7ad4fe931a2a46e7b910ea309f67c82c6858d042",
+    "archiveSha256Verified": "2026-09-16 in both main and accepted worktree copies",
+    "buildInputDigest": "bafeb2712c5b635d18a2a6a4523b41dc7a7eeee6e940bbe95c214822cd0628db",
+    "buildOutputDigest": "f4978b711f570efda70ef91f4a8c8157cadc231daab7ccc103909a36ee61c24d"
+  },
+  "main": {
+    "checkout": "/Users/sushantsrikrish/PICO-MCP",
+    "head": "4478238a8d7aac266b12c2b8dc61c08482337286",
+    "status": "clean except untracked docs/handoffs/ (the 2026-09-16 handoff package)",
+    "ancestry": "main HEAD is the exact merge-base of f349eaf; accepted is 110 commits ahead, main 0 ahead => fast-forwardable",
+    "otherCli050Worktrees": "hc/t2, hc/t3, track/cli050-cli, track/cli050-release, track/cli050-sdk tips are all contained in f349eaf"
+  },
+  "continuation": {
+    "branch": "cli050-native-acceptance-2026-09-16",
+    "worktree": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-native-acceptance-2026-09-16",
+    "base": "f349eaf01f9788d0fe73fefbd30af17b7dccf776",
+    "npmCi": "exit 0, 129 packages",
+    "build": "npm run build exit 0; dist/build-receipt.json input bafeb2712c5b… output f4978b711f57… (identical to the accepted receipt)",
+    "directTransportProbe": { "doors": "serverInfo 38.0.0, 18 tools", "full": "serverInfo 38.0.0, 255 tools" }
+  },
+  "hosts": {
+    "claudeCode": { "version": "2.1.273", "configs": { "account-a": "pico-spatial -> node main/dist/index.js (doors)", "account-b": "pico-spatial -> node main/dist/index.js (doors)", "default ~/.claude.json": "pico-spatial-mcp -> node main/dist/index.js (no env => doors)" }, "pluginMarketplaces": ["claude-plugins-official", "ls-extensions", "pico-xr"], "pico-mcp marketplace": "not added" },
+    "codex": { "version": "codex-cli 0.154.0", "shellCodexHome": "/Users/sushantsrikrish/.codex-account-a", "configs": { "~/.codex/config.toml": "pico-spatial-mcp (no env) AND pico-spatial (doors) -> node main/dist/index.js", "~/.codex-account-a/config.toml": "pico-spatial (doors) -> node main/dist/index.js", "~/.codex-account-b/config.toml": "pico-spatial (doors) -> node main/dist/index.js" } },
+    "cursor": { "installed": false, "evidence": "`which cursor` not found; no /Applications/Cursor.app; ~/.cursor holds only plugins/ from 2026-07-12", "status": "unavailable host" }
+  },
+  "cli": {
+    "ambientGlobal": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/bin/pico-cli -> pico-cli/0.4.4 (public) — untouched",
+    "managedCacheAtStart": ["0.4.4"],
+    "registryLatest": { "version": "0.5.0", "checkedAt": "2026-09-16 via read-only `npm view`", "timeModified": "2026-09-10T04:15:42.725Z" }
+  },
+  "sdk": {
+    "toolsRoot": "/Users/sushantsrikrish/Library/PICO/sdk (PICO_HOME)",
+    "installed": ["0.13", "6.0", "6.1"],
+    "selected": "6.1",
+    "packer": "spatialbundle 6.1.0.0-rls.25",
+    "emulatorPayload": "6.1 (emulator-eventTracker 6.1.0; window title 'PICO Emulator - 6.1.0')",
+    "mavenBomVersions": ["0.12.2", "0.13.3", "6.0.0", "6.1.9"],
+    "mavenRelease": "6.1.9 (lastUpdated 20260902062140, https://artifact.bytedance.com/repository/Volcengine)",
+    "gradleCacheHas": ["bom 6.1.9", "ui platform/foundation/design 6.1.9", "ui Compose fork 1.2.5"],
+    "skeletonPin": "bom 6.0.0 (appskeleton/gradle/libs.versions.toml)",
+    "demoDeclaration": "bom 6.1.9 (the only published 6.1-line BOM)"
+  },
+  "devices": {
+    "emulator-5554": { "state": "device", "product": "swan", "model": "swan_arm64", "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4766:user/test-keys", "android": "16 / API 36", "abilist": "arm64-v8a", "displayId": "6.1.0", "serialno": "EMULATOR6X1X0X0", "bootId": "c57ce474-715e-45dd-bdd7-a4582bdf3b72", "uptimeSecAtCheck": 133523, "hostWindow": "qemu pid 40430 'PICO Emulator - 6.1.0' bounds x0 y33 981x1009; occluded by Chrome at check" },
+    "physicalHeadset": { "state": "NOT CONNECTED at session start", "evidence": "adb devices -l lists only emulator-5554; system_profiler SPUSBDataType shows no PICO/Bytedance device; adb mdns services empty", "userActionRequested": "connect via USB-C with developer mode + USB debugging, accept the in-headset debugging prompt" }
+  },
+  "missionReplay": { "status": "paused (docs/MISSION_REPLAY_PAUSED_2026-09-15.md: build068, source 231dbce3, checkpoint ba2b3b4b)", "build065Hold": "historical, lifted 2026-09-14", "action": "read-only tooling copy only; app untouched" }
+}

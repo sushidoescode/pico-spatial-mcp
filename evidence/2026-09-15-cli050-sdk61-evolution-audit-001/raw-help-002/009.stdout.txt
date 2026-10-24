@@ -1,0 +1,14 @@
+Usage:
+  pico-cli files <command> [options]
+
+Commands:
+  cat <remote>           Read a file on the preferred current device
+  ls [remote]            List files on the preferred current device
+  mkdir <remote>         Create a directory on the preferred current device
+  pull <remote> [local]  Pull a file or directory from the preferred current device
+  push <local> <remote>  Push a file or directory to the preferred current device
+  rm <remote>            Remove a file or directory on the preferred current device
+  stat <remote>          Show file metadata on the preferred current device
+
+Options:
+  -h, --help  Show this message and exit.

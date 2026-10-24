@@ -1,0 +1,15 @@
+{
+  "label": "0.5.0 pico-cli --help",
+  "argv": [
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:59.758Z",
+  "endedAt": "2026-09-15T09:11:59.862Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "a0db6d6644f616bcab467fb02eae191754f2705b2314e275d6aafcbe240d9e32",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

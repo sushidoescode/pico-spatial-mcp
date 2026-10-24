@@ -1,0 +1,22 @@
+Description:
+View logs on the preferred current device
+
+Usage:
+  $ pico-cli log
+
+Options:
+  -d, --device <device>     Target device id (overrides PICO_CLI_DEVICE)
+  --format <format>         CLI output format (plain, json; JSON is for snapshot mode) (plain |
+                            json) (default: plain)
+  -n, --lines <lines>       Number of recent lines to show (0 for all available) (default: 100)
+  -t, --tag <tag>           Filter by tag
+  -l, --level <level>       Minimum log level (V | D | I | W | E | F)
+  -F, --filter <filter>     Filter expressions in tag:priority format
+  --out-format <outFormat>  Logcat output format (brief | long | process | raw | tag | thread |
+                            threadtime | time) (default: threadtime)
+  -b, --buffer <buffer>     Log buffer (main | system | crash | radio | events | all | default)
+  --pid <pid>               Filter by process ID
+  -e, --regex <regex>       Regex pattern to filter log messages
+  -C, --clear               Clear the log buffer before reading
+  -f, --follow              Follow log output continuously (stream mode)
+  -h, --help                Display this message

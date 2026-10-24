@@ -161,6 +161,7 @@ import { registerSceneAnchorTools } from "./sceneanchors.js";
 import { registerNavigationTargetTools } from "./navigationtarget.js";
 import { registerBoundaryExperimentTools } from "./boundaryexperiment.js";
 import { registerInAppLocomotionTools } from "./worldlocomotion.js";
+import { registerInteractionSessionTools } from "./interactiontools.js";
 
 // The handshake version comes from package.json (dist/ sits one level below it both in the repo
 // and in the installed package) — a hardcoded string here drifted to 6.0.0 while the package
@@ -393,6 +394,8 @@ if (!doorsSurfaceActive()) {
   registerInAppLocomotionTools(server);
 }
 registerDoorTools(server);
+// Source candidate opt-in; default published surfaces and installed configuration stay unchanged.
+if (process.env.PICO_MCP_INTERACTION === "1") registerInteractionSessionTools(server);
 // First-light is available on both surfaces; advanced prompts are full-only.
 registerPrompts(server, doorsSurfaceActive() ? "doors" : "full");
 

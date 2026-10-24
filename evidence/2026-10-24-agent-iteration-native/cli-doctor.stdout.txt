@@ -1,0 +1,848 @@
+{
+  "tool_name": "doctor",
+  "tool_status": "FAILED",
+  "summary": "pico-cli spatial environment has blocking issues.",
+  "data": {
+    "version": "0.6.1 (public)",
+    "distribution": "public",
+    "platform": "darwin",
+    "hostPlatform": "darwin",
+    "targetPlatform": "spatial",
+    "overview": {
+      "cli": "0.6.1 (public)",
+      "pluginName": null,
+      "pluginStatus": "not-configured",
+      "targetPlatform": "spatial",
+      "sdk": {
+        "status": "found",
+        "version": "6.1.9"
+      },
+      "picoDevelopmentKnowledge": "6.0",
+      "profilingTool": "0.2.1",
+      "emulator": "6.1.0",
+      "editor": "6.1.9"
+    },
+    "selfVersion": {
+      "current": "0.6.1 (public)",
+      "distribution": "public",
+      "updateCheckSupported": true,
+      "updateChannel": "public-npm"
+    },
+    "node": {
+      "version": "v22.14.0",
+      "major": 22,
+      "supported": true,
+      "minimumMajor": 20
+    },
+    "checks": [
+      {
+        "id": "runtime",
+        "label": "Runtime",
+        "status": "ok",
+        "summary": "Runtime checks passed.",
+        "checks": [
+          {
+            "id": "node.version",
+            "label": "Node.js version",
+            "status": "ok",
+            "summary": "Node.js v22.14.0 satisfies the Node.js 20+ requirement.",
+            "details": {
+              "version": "v22.14.0",
+              "minimumMajor": 20
+            }
+          }
+        ]
+      },
+      {
+        "id": "common-doctors",
+        "label": "Common doctors",
+        "status": "ok",
+        "summary": "Common checks passed.",
+        "checks": [
+          {
+            "id": "cli.version",
+            "label": "CLI version and channel",
+            "status": "ok",
+            "summary": "pico-cli 0.6.1 is up to date.",
+            "details": {
+              "currentVersion": "0.6.1",
+              "latestVersion": "0.6.1",
+              "distribution": "public",
+              "packageName": "@picoxr/pico-cli",
+              "registry": "https://registry.npmjs.org/",
+              "updateAvailable": false,
+              "checkedAt": "2026-10-23T10:21:39.792Z",
+              "source": "cache",
+              "updateCheckSupported": true,
+              "durationMs": 17
+            }
+          },
+          {
+            "id": "npm.version",
+            "label": "npm version",
+            "status": "ok",
+            "summary": "npm 10.9.2 is available.",
+            "details": {
+              "command": "npm --version",
+              "version": "10.9.2",
+              "durationMs": 228
+            }
+          },
+          {
+            "id": "perf.doctor",
+            "label": "Performance diagnostics tool",
+            "status": "ok",
+            "summary": "Performance diagnostics tool 0.2.1 dependencies are ready.",
+            "details": {
+              "command": "pico-cli perf doctor check",
+              "result": {
+                "expectedVersion": "0.2.1",
+                "available": true,
+                "healthy": true,
+                "output": "{\"success\":true,\"exitCode\":0,\"resource\":\"doctor\",\"action\":\"check\",\"data\":{\"ok\":true},\"error\":null,\"formattedOutput\":null}",
+                "summary": "Performance diagnostics tool 0.2.1 dependencies are ready."
+              },
+              "durationMs": 170
+            }
+          },
+          {
+            "id": "emulator.doctor",
+            "label": "Emulator doctor",
+            "status": "ok",
+            "summary": "PICO Emulator prerequisites are ready; optional components may be skipped.",
+            "details": {
+              "command": "pico-cli emulator doctor --format json",
+              "result": {
+                "platform": "macos",
+                "androidStudio": {
+                  "installed": true,
+                  "candidates": [
+                    {
+                      "path": "/Applications/Android Studio.app",
+                      "launcherPath": "/Applications/Android Studio.app/Contents/MacOS/studio",
+                      "version": "AI-251.27812.49.2514.14217341",
+                      "isRequiredVersion": true
+                    }
+                  ]
+                },
+                "androidSdk": {
+                  "root": "/Users/sushantsrikrish/Library/Android/sdk",
+                  "hasPlatform35": true,
+                  "hasSources35": true
+                },
+                "plugin": {
+                  "found": true,
+                  "matches": [
+                    "/Users/sushantsrikrish/Library/Application Support/Google/AndroidStudio2025.1.4/plugins/SpatialPlugin"
+                  ],
+                  "searchedDirectories": [
+                    "/Users/sushantsrikrish/Library/Application Support/Google"
+                  ]
+                },
+                "emulator": {
+                  "path": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/emulator/emulator",
+                  "source": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/emulator"
+                },
+                "picoBundles": [
+                  {
+                    "root": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/emulator",
+                    "emulatorPath": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/emulator/emulator",
+                    "avdRoot": "/Users/sushantsrikrish/.pico/avd",
+                    "sdkRoot": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/emulator",
+                    "avds": [
+                      {
+                        "name": "PICO_6.1",
+                        "iniPath": "/Users/sushantsrikrish/.pico/avd/PICO_6.1.ini",
+                        "avdRoot": "/Users/sushantsrikrish/.pico/avd",
+                        "source": "pico_bundle",
+                        "bundleRoot": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/emulator",
+                        "emulatorPath": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/emulator/emulator",
+                        "sdkRoot": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/emulator",
+                        "displayName": "PICO 6.1"
+                      }
+                    ],
+                    "version": "6.1.0",
+                    "actualSysdir": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/emulator/system-images/system-images",
+                    "abiType": "arm64-v8a",
+                    "apiLevel": "36",
+                    "buildType": "user",
+                    "buildFlavor": "picosdk_spaceos_arm64-user"
+                  },
+                  {
+                    "root": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/emulator",
+                    "emulatorPath": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/emulator/emulator",
+                    "avdRoot": "/Users/sushantsrikrish/.pico/avd",
+                    "sdkRoot": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/emulator",
+                    "avds": [
+                      {
+                        "name": "PICO_6.1",
+                        "iniPath": "/Users/sushantsrikrish/.pico/avd/PICO_6.1.ini",
+                        "avdRoot": "/Users/sushantsrikrish/.pico/avd",
+                        "source": "pico_bundle",
+                        "bundleRoot": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/emulator",
+                        "emulatorPath": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/emulator/emulator",
+                        "sdkRoot": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/emulator",
+                        "displayName": "PICO 6.1"
+                      }
+                    ],
+                    "version": "6.0.0",
+                    "actualSysdir": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/emulator/system-images/system-images",
+                    "abiType": "arm64-v8a",
+                    "apiLevel": "36",
+                    "buildType": "user",
+                    "buildFlavor": "picosdk_spaceos_arm64-user"
+                  },
+                  {
+                    "root": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/emulator",
+                    "emulatorPath": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/emulator/emulator",
+                    "avdRoot": "/Users/sushantsrikrish/.pico/avd",
+                    "sdkRoot": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/emulator",
+                    "avds": [
+                      {
+                        "name": "PICO_6.1",
+                        "iniPath": "/Users/sushantsrikrish/.pico/avd/PICO_6.1.ini",
+                        "avdRoot": "/Users/sushantsrikrish/.pico/avd",
+                        "source": "pico_bundle",
+                        "bundleRoot": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/emulator",
+                        "emulatorPath": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/emulator/emulator",
+                        "sdkRoot": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/emulator",
+                        "displayName": "PICO 6.1"
+                      }
+                    ],
+                    "version": "0.13.1"
+                  }
+                ],
+                "storageLayout": {
+                  "status": "clean",
+                  "picoHome": "/Users/sushantsrikrish/Library/PICO/sdk",
+                  "cliDataPath": "/Users/sushantsrikrish/.pico/cli",
+                  "avdPath": "/Users/sushantsrikrish/.pico/avd",
+                  "legacyCliDataPath": "/Users/sushantsrikrish/Library/PICO/sdk/cli",
+                  "legacyAvdPath": "/Users/sushantsrikrish/Library/PICO/sdk/avd",
+                  "migratedPaths": [],
+                  "warnings": []
+                },
+                "common": {
+                  "primer": {
+                    "installed": true,
+                    "jarPath": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/vendor/primer-cli/primer-cli-all.jar",
+                    "envDoctorStatus": "ok"
+                  },
+                  "payload": {
+                    "javaHomeValid": true,
+                    "javaHomePath": "/Users/sushantsrikrish/.pico/primer-cli/jdk/jdk-21.0.12.1+1/Contents/Home",
+                    "androidSdkInstalled": true,
+                    "androidSdkPath": "/Users/sushantsrikrish/Library/Android/sdk",
+                    "androidSdkHasPlatformsAndSources": true,
+                    "picoHomeConfigured": true,
+                    "picoHomePath": "/Users/sushantsrikrish/Library/PICO/sdk",
+                    "agentVaultInstalled": true,
+                    "agentVaultPath": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/agent-vault",
+                    "templatesInstalled": true,
+                    "templatesPath": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/templates",
+                    "spatialSdkToolsVersion": "6.1",
+                    "picoSdk": {
+                      "found": true,
+                      "sdks": [
+                        {
+                          "path": "/Users/sushantsrikrish/Library/PICO/sdk",
+                          "isPicoHome": true,
+                          "versions": [
+                            {
+                              "name": "0.13",
+                              "components": [
+                                {
+                                  "name": "agent-vault",
+                                  "version": "0.13.3"
+                                },
+                                {
+                                  "name": "editor",
+                                  "version": "0.13.4"
+                                },
+                                {
+                                  "name": "emulator",
+                                  "version": "0.13.1"
+                                },
+                                {
+                                  "name": "templates",
+                                  "version": "0.13.2"
+                                }
+                              ]
+                            },
+                            {
+                              "name": "6.0",
+                              "components": [
+                                {
+                                  "name": "agent-vault",
+                                  "version": "6.0.4"
+                                },
+                                {
+                                  "name": "editor",
+                                  "version": "6.0.0"
+                                },
+                                {
+                                  "name": "emulator",
+                                  "version": "6.0.0"
+                                },
+                                {
+                                  "name": "templates",
+                                  "version": "6.0.0"
+                                }
+                              ]
+                            },
+                            {
+                              "name": "6.1",
+                              "components": [
+                                {
+                                  "name": "agent-vault",
+                                  "version": "6.1.2"
+                                },
+                                {
+                                  "name": "editor",
+                                  "version": "6.1.9"
+                                },
+                                {
+                                  "name": "emulator",
+                                  "version": "6.1.0"
+                                },
+                                {
+                                  "name": "templates",
+                                  "version": "6.1.0"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "available": true
+                },
+                "checks": [
+                  {
+                    "id": "storage.layout",
+                    "label": "PICO emulator storage layout",
+                    "status": "ok",
+                    "summary": "CLI data uses /Users/sushantsrikrish/.pico/cli; AVDs and emulator runtime data use /Users/sushantsrikrish/.pico/avd (shared with primer-cli)."
+                  },
+                  {
+                    "id": "windows.virtualization",
+                    "label": "Windows virtualization",
+                    "status": "skip",
+                    "summary": "Windows virtualization is not applicable on this platform."
+                  },
+                  {
+                    "id": "pico.plugin",
+                    "label": "PICO Spatial Plugin",
+                    "status": "ok",
+                    "summary": "PICO Spatial Plugin was detected."
+                  },
+                  {
+                    "id": "pico.emulator",
+                    "label": "PICO Emulator bundle",
+                    "status": "ok",
+                    "summary": "PICO Emulator is available at /Users/sushantsrikrish/Library/PICO/sdk/6.1/emulator/emulator."
+                  }
+                ]
+              },
+              "errors": [],
+              "durationMs": 102
+            }
+          },
+          {
+            "id": "setup.doctor",
+            "label": "PICO environment setup",
+            "status": "ok",
+            "summary": "PICO environment is set up.",
+            "details": {
+              "resolvedPath": "/Users/sushantsrikrish/PICO-MCP/.pico-env.json",
+              "fileExists": true,
+              "platform": "spatial",
+              "picoDevelopmentKnowledgeVersion": "6.0",
+              "recordedVersion": "6.0",
+              "workspaceVersion": "6.0",
+              "versionMismatch": false,
+              "durationMs": 0
+            }
+          },
+          {
+            "id": "common.pico.home",
+            "label": "PICO_HOME",
+            "status": "ok",
+            "summary": "PICO_HOME is configured at /Users/sushantsrikrish/Library/PICO/sdk.",
+            "details": {
+              "command": "pico-cli primer env doctor --format json",
+              "configured": true,
+              "path": "/Users/sushantsrikrish/Library/PICO/sdk",
+              "source": "environment",
+              "durationMs": 0
+            }
+          },
+          {
+            "id": "common.android.sdk",
+            "label": "Android SDK",
+            "status": "ok",
+            "summary": "Android SDK Platform 35 and Sources for Android 35 are available at /Users/sushantsrikrish/Library/Android/sdk.",
+            "details": {
+              "command": "pico-cli primer env doctor --format json",
+              "installed": true,
+              "path": "/Users/sushantsrikrish/Library/Android/sdk",
+              "hasPlatformsAndSources": true,
+              "durationMs": 0
+            }
+          },
+          {
+            "id": "knowledge.doctor",
+            "label": "Knowledge doctor",
+            "status": "ok",
+            "summary": "Knowledge static checks completed successfully. Run pico-cli knowledge doctor --format json to check Graphify MCP serve readiness.",
+            "details": {
+              "command": "pico-cli knowledge doctor --format json",
+              "result": {
+                "graphify": {
+                  "knowledgeType": "spatial",
+                  "versions": [
+                    {
+                      "version": "6.1",
+                      "graphJsonExists": false,
+                      "workspace": ""
+                    },
+                    {
+                      "version": "6.0",
+                      "graphJsonExists": true,
+                      "workspace": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/agent-vault/spatial"
+                    },
+                    {
+                      "version": "0.13",
+                      "graphJsonExists": false,
+                      "workspace": ""
+                    }
+                  ],
+                  "latestVersion": "6.1",
+                  "resolvedGraphPath": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/agent-vault/spatial/graphify-out/graph.json",
+                  "resolvedWorkspace": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/agent-vault/spatial",
+                  "graphDataChecked": true,
+                  "graphDataBlockedReason": null,
+                  "graphifyBin": "/Users/sushantsrikrish/.local/bin/graphify",
+                  "graphifyBinExists": true,
+                  "graphifyVersion": "graphify 0.6.0",
+                  "graphifyVersionIndeterminate": false,
+                  "graphifyServeChecked": false,
+                  "graphifyServeReady": false,
+                  "graphifyServeError": null,
+                  "envDiagnostic": {
+                    "scope": "local",
+                    "filePath": "/Users/sushantsrikrish/PICO-MCP/.pico-env.json",
+                    "recordedVersion": "6.0",
+                    "recordedPlatform": "spatial",
+                    "recordedWorkspace": "6.0/agent-vault/spatial",
+                    "installedVersions": [
+                      "6.1",
+                      "6.0",
+                      "0.13"
+                    ]
+                  }
+                },
+                "graphifyError": null,
+                "findings": []
+              },
+              "errors": [],
+              "findings": [],
+              "durationMs": 428
+            }
+          }
+        ]
+      },
+      {
+        "id": "spatial-doctors",
+        "label": "Spatial doctors",
+        "status": "error",
+        "summary": "Spatial checks have blocking issues.",
+        "checks": [
+          {
+            "id": "primer.doctor",
+            "label": "PICO dev environment",
+            "status": "ok",
+            "summary": "Environment prerequisites are configured.",
+            "details": {
+              "command": "pico-cli primer doctor --format json",
+              "result": {
+                "platform": "macos",
+                "checks": [
+                  {
+                    "id": "javaHome",
+                    "status": "ok",
+                    "label": "JAVA_HOME",
+                    "value": "/Users/sushantsrikrish/.pico/primer-cli/jdk/jdk-21.0.12.1+1/Contents/Home"
+                  },
+                  {
+                    "id": "templates",
+                    "status": "ok",
+                    "label": "Templates",
+                    "value": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/templates"
+                  }
+                ]
+              },
+              "errors": [],
+              "durationMs": 1325
+            }
+          },
+          {
+            "id": "editor.doctor",
+            "label": "Editor doctor",
+            "status": "error",
+            "summary": "2 Spatial Editor installation(s) are incomplete or unusable.",
+            "details": {
+              "command": "pico-cli editor doctor --format json",
+              "result": {
+                "platform": "macos",
+                "installations": [
+                  {
+                    "editorPath": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/editor/Spatial Editor.app/Contents/MacOS/Spatial Editor",
+                    "appBundlePath": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/editor/Spatial Editor.app",
+                    "mcpServerPath": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/editor/Spatial Editor.app/Contents/Resources/plugins/mcp/launcher/run_mcp.sh",
+                    "mcpServerType": "executable",
+                    "version": "6.1.9",
+                    "source": "cli-managed",
+                    "platform": "macos",
+                    "installRoot": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/editor",
+                    "slot": "stable",
+                    "slotVersion": "6.1",
+                    "versionSource": "primer_package",
+                    "metadataSource": "primer",
+                    "warnings": [],
+                    "capabilities": {
+                      "editorLaunchable": true,
+                      "mcpLauncherPresent": true,
+                      "mcpBackendPresent": true,
+                      "runtimePresent": true,
+                      "usableForBootstrap": true,
+                      "issues": []
+                    }
+                  },
+                  {
+                    "editorPath": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/editor/Spatial Editor.app/Contents/MacOS/Spatial Editor",
+                    "appBundlePath": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/editor/Spatial Editor.app",
+                    "mcpServerPath": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/editor/Spatial Editor.app/Contents/Resources/plugins/mcp/launcher/run_mcp.sh",
+                    "mcpServerType": "executable",
+                    "version": "6.0.0",
+                    "source": "cli-managed",
+                    "platform": "macos",
+                    "installRoot": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/editor",
+                    "slot": "stable",
+                    "slotVersion": "6.0",
+                    "versionSource": "primer_package",
+                    "metadataSource": "primer",
+                    "warnings": [
+                      "Version conflict: primer_package reports 6.0.0, while app reports 6.0.1."
+                    ],
+                    "capabilities": {
+                      "editorLaunchable": true,
+                      "mcpLauncherPresent": false,
+                      "mcpBackendPresent": false,
+                      "runtimePresent": false,
+                      "usableForBootstrap": false,
+                      "issues": [
+                        "MCP launcher is missing: /Users/sushantsrikrish/Library/PICO/sdk/6.0/editor/Spatial Editor.app/Contents/Resources/plugins/mcp/launcher/run_mcp.sh",
+                        "MCP backend entry is missing under /Users/sushantsrikrish/Library/PICO/sdk/6.0/editor/Spatial Editor.app/Contents/Resources/plugins/mcp/app.",
+                        "Bundled MCP Python runtime is missing."
+                      ]
+                    }
+                  },
+                  {
+                    "editorPath": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/editor/Spatial Editor.app/Contents/MacOS/Spatial Editor",
+                    "appBundlePath": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/editor/Spatial Editor.app",
+                    "mcpServerPath": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/editor/Spatial Editor.app/Contents/Resources/plugins/mcp/launcher/run_mcp.sh",
+                    "mcpServerType": "executable",
+                    "version": "0.13.4",
+                    "source": "cli-managed",
+                    "platform": "macos",
+                    "installRoot": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/editor",
+                    "slot": "stable",
+                    "slotVersion": "0.13",
+                    "versionSource": "primer_package",
+                    "metadataSource": "primer",
+                    "warnings": [],
+                    "capabilities": {
+                      "editorLaunchable": true,
+                      "mcpLauncherPresent": false,
+                      "mcpBackendPresent": false,
+                      "runtimePresent": false,
+                      "usableForBootstrap": false,
+                      "issues": [
+                        "MCP launcher is missing: /Users/sushantsrikrish/Library/PICO/sdk/0.13/editor/Spatial Editor.app/Contents/Resources/plugins/mcp/launcher/run_mcp.sh",
+                        "MCP backend entry is missing under /Users/sushantsrikrish/Library/PICO/sdk/0.13/editor/Spatial Editor.app/Contents/Resources/plugins/mcp/app.",
+                        "Bundled MCP Python runtime is missing."
+                      ]
+                    }
+                  }
+                ],
+                "checks": [
+                  {
+                    "id": "editor.platform",
+                    "label": "Host platform",
+                    "status": "ok",
+                    "summary": "Spatial Editor supports this macos host."
+                  },
+                  {
+                    "id": "editor.installation",
+                    "label": "Editor installation",
+                    "status": "ok",
+                    "summary": "3 Spatial Editor installation(s) detected.",
+                    "details": {
+                      "installations": [
+                        {
+                          "path": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/editor/Spatial Editor.app",
+                          "version": "6.1.9",
+                          "source": "cli-managed",
+                          "versionSource": "primer_package",
+                          "slot": "stable",
+                          "slotVersion": "6.1",
+                          "installRoot": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/editor"
+                        },
+                        {
+                          "path": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/editor/Spatial Editor.app",
+                          "version": "6.0.0",
+                          "source": "cli-managed",
+                          "versionSource": "primer_package",
+                          "slot": "stable",
+                          "slotVersion": "6.0",
+                          "installRoot": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/editor"
+                        },
+                        {
+                          "path": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/editor/Spatial Editor.app",
+                          "version": "0.13.4",
+                          "source": "cli-managed",
+                          "versionSource": "primer_package",
+                          "slot": "stable",
+                          "slotVersion": "0.13",
+                          "installRoot": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/editor"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "editor.partial-installations",
+                    "label": "Partial Editor installations",
+                    "status": "ok",
+                    "summary": "No partial Spatial Editor installations were found."
+                  },
+                  {
+                    "id": "editor.capabilities",
+                    "label": "Editor capabilities",
+                    "status": "error",
+                    "summary": "2 Spatial Editor installation(s) are incomplete or unusable.",
+                    "fixCommand": "pico-cli editor install -y",
+                    "nextAction": "Rerun pico-cli editor doctor --format json after reinstalling.",
+                    "details": {
+                      "installations": [
+                        {
+                          "path": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/editor/Spatial Editor.app",
+                          "issues": [
+                            "MCP launcher is missing: /Users/sushantsrikrish/Library/PICO/sdk/6.0/editor/Spatial Editor.app/Contents/Resources/plugins/mcp/launcher/run_mcp.sh",
+                            "MCP backend entry is missing under /Users/sushantsrikrish/Library/PICO/sdk/6.0/editor/Spatial Editor.app/Contents/Resources/plugins/mcp/app.",
+                            "Bundled MCP Python runtime is missing."
+                          ]
+                        },
+                        {
+                          "path": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/editor/Spatial Editor.app",
+                          "issues": [
+                            "MCP launcher is missing: /Users/sushantsrikrish/Library/PICO/sdk/0.13/editor/Spatial Editor.app/Contents/Resources/plugins/mcp/launcher/run_mcp.sh",
+                            "MCP backend entry is missing under /Users/sushantsrikrish/Library/PICO/sdk/0.13/editor/Spatial Editor.app/Contents/Resources/plugins/mcp/app.",
+                            "Bundled MCP Python runtime is missing."
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "editor.mcp-launcher",
+                    "label": "Editor MCP launcher",
+                    "status": "error",
+                    "summary": "2 Spatial Editor installation(s) are missing the MCP launcher.",
+                    "fixCommand": "pico-cli editor install -y",
+                    "nextAction": "Rerun pico-cli editor doctor --format json after reinstalling.",
+                    "details": {
+                      "missingPaths": [
+                        "/Users/sushantsrikrish/Library/PICO/sdk/6.0/editor/Spatial Editor.app/Contents/Resources/plugins/mcp/launcher/run_mcp.sh",
+                        "/Users/sushantsrikrish/Library/PICO/sdk/0.13/editor/Spatial Editor.app/Contents/Resources/plugins/mcp/launcher/run_mcp.sh"
+                      ]
+                    }
+                  },
+                  {
+                    "id": "editor.python",
+                    "label": "Python runtime",
+                    "status": "skip",
+                    "summary": "External Python is not required by the discovered Editor MCP launcher."
+                  },
+                  {
+                    "id": "editor.runtime-discovery",
+                    "label": "Running Editor discovery",
+                    "status": "ok",
+                    "summary": "0 running Spatial Editor instance(s) detected.",
+                    "details": {
+                      "processScanSucceeded": true,
+                      "instances": []
+                    }
+                  },
+                  {
+                    "id": "editor.orphans.headless",
+                    "label": "Headless orphaned Editors",
+                    "status": "ok",
+                    "summary": "No headless orphaned Editor processes were found."
+                  },
+                  {
+                    "id": "editor.orphans.gui",
+                    "label": "GUI orphaned Editors",
+                    "status": "ok",
+                    "summary": "No GUI orphaned Editor processes were found."
+                  }
+                ],
+                "uninstallTargets": [
+                  {
+                    "installRoot": "/Users/sushantsrikrish/Library/PICO/sdk/0.13/editor",
+                    "slotVersion": "0.13",
+                    "version": "0.13.4",
+                    "slot": "stable",
+                    "state": "complete",
+                    "evidence": [
+                      "primer_package",
+                      "app_bundle"
+                    ],
+                    "warnings": []
+                  },
+                  {
+                    "installRoot": "/Users/sushantsrikrish/Library/PICO/sdk/6.0/editor",
+                    "slotVersion": "6.0",
+                    "version": "6.0.0",
+                    "slot": "stable",
+                    "state": "complete",
+                    "evidence": [
+                      "primer_package",
+                      "app_bundle"
+                    ],
+                    "warnings": []
+                  },
+                  {
+                    "installRoot": "/Users/sushantsrikrish/Library/PICO/sdk/6.1/editor",
+                    "slotVersion": "6.1",
+                    "version": "6.1.9",
+                    "slot": "stable",
+                    "state": "complete",
+                    "evidence": [
+                      "primer_package",
+                      "app_bundle",
+                      "mcp_layout"
+                    ],
+                    "warnings": []
+                  }
+                ],
+                "runtime": {
+                  "instances": [],
+                  "processScanSucceeded": true,
+                  "warnings": []
+                },
+                "orphanedEditors": {
+                  "headless": [],
+                  "gui": [],
+                  "reaped": []
+                }
+              },
+              "errors": [
+                {
+                  "code": "EDITOR_CAPABILITIES",
+                  "message": "2 Spatial Editor installation(s) are incomplete or unusable. Fix: pico-cli editor install -y"
+                },
+                {
+                  "code": "EDITOR_MCP_LAUNCHER",
+                  "message": "2 Spatial Editor installation(s) are missing the MCP launcher. Fix: pico-cli editor install -y"
+                }
+              ],
+              "durationMs": 290
+            },
+            "nextAction": "pico-cli editor install -y",
+            "repair": [
+              {
+                "mode": "automatic",
+                "action": "editor-reinstall",
+                "command": "pico-cli editor install -y"
+              },
+              {
+                "mode": "automatic",
+                "action": "editor-reinstall",
+                "command": "pico-cli editor install -y"
+              }
+            ]
+          },
+          {
+            "id": "plugin.doctor",
+            "label": "Plugin doctor",
+            "status": "skip",
+            "summary": "No Agent Host is configured in the active local setup scope.",
+            "details": {
+              "command": "pico-cli plugin doctor --format json",
+              "result": {
+                "envExists": true,
+                "envPath": "/Users/sushantsrikrish/PICO-MCP/.pico-env.json",
+                "findings": [],
+                "hosts": [],
+                "pluginNames": [],
+                "projectRoot": "/Users/sushantsrikrish/PICO-MCP",
+                "scope": "local"
+              },
+              "errors": [],
+              "durationMs": 15
+            }
+          },
+          {
+            "id": "project.context.doctor",
+            "label": "Project context doctor",
+            "status": "warn",
+            "summary": "No Agent Host is recorded for pico-spatial-agentic-tools. Configure a project-local Agent Host before linking AGENTS context.",
+            "details": {
+              "command": "pico-cli project context doctor --format json",
+              "scope": "local",
+              "result": {
+                "pluginName": "pico-spatial-agentic-tools",
+                "projectRoot": "/Users/sushantsrikrish/PICO-MCP",
+                "contextFileName": "PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md",
+                "contextPath": "/Users/sushantsrikrish/PICO-MCP/PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md",
+                "contextExists": true,
+                "routes": [],
+                "status": "warn",
+                "summary": "No Agent Host is recorded for pico-spatial-agentic-tools."
+              },
+              "durationMs": 15
+            },
+            "nextAction": "Run pico-cli setup --scope local to configure an Agent Host first.",
+            "repair": [
+              {
+                "mode": "manual",
+                "command": "pico-cli setup --scope local"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "errors": [
+    {
+      "code": "EDITOR_CAPABILITIES",
+      "message": "2 Spatial Editor installation(s) are incomplete or unusable. Fix: pico-cli editor install -y"
+    },
+    {
+      "code": "EDITOR_MCP_LAUNCHER",
+      "message": "2 Spatial Editor installation(s) are missing the MCP launcher. Fix: pico-cli editor install -y"
+    }
+  ],
+  "resources": [],
+  "meta": {
+    "format": "json",
+    "truncated": false,
+    "platform": "darwin",
+    "hostPlatform": "darwin",
+    "targetPlatform": "spatial",
+    "distribution": "public"
+  }
+}

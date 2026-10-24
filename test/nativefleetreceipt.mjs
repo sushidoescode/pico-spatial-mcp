@@ -9,9 +9,11 @@ import {
   parseInstalledApkPath,
   parsePid,
   parseProcStartTicks,
+  parseLocalPropertiesSdk,
   parseRemoteSha256,
   produceNativeFleetReceipt,
 } from "../dist/nativefleetreceipt.js";
+import { serializeJavaProperty } from "../dist/toolchainselection.js";
 import { readNativeRunReceipt } from "../dist/runreceiptstore.js";
 import {
   authoredSpec,
@@ -594,6 +596,37 @@ test("successful producer binds installed bytes and brackets one exact capture",
     && event.args.slice(2, 5).join(" ") === "shell toybox sha256sum").length, 3);
   assert.equal(fixture.events.filter((event) => event.type === "text"
     && event.args.slice(2).join(" ") === "shell cat /proc/sys/kernel/random/boot_id").length, 4);
+});
+
+test("producer resolves adb through the shared adapter: a blank or unusable PICO_ADB fails closed before Gradle, spawning nothing", async (t) => {
+  // The producer used to read `process.env.PICO_ADB ?? "adb"` by string: a blank export became the
+  // command "" and a real one was trusted by filename, bypassing the identity check every other
+  // consumer gets from src/adb.ts. Without an injected adbPath the adapter must decide, and its
+  // refusal must arrive as this producer's own structured failure — before Gradle, adb or any
+  // capture command runs.
+  const prior = process.env.PICO_ADB;
+  t.after(() => { if (prior === undefined) delete process.env.PICO_ADB; else process.env.PICO_ADB = prior; });
+  const cases = [
+    { value: "", reason: /\$PICO_ADB="" is set but empty/ },
+    { value: "   ", reason: /\$PICO_ADB="" is set but empty/ },
+    { value: "/fixture/no/such/adb", reason: /\$PICO_ADB=\/fixture\/no\/such\/adb names no existing file/ },
+  ];
+  for (const { value, reason } of cases) {
+    const fixture = await createProducerFixture(t);
+    const { adbPath: _injected, ...depsWithoutAdb } = fixture.deps;
+    process.env.PICO_ADB = value;
+    const out = await produceNativeFleetReceipt(fixture.input, depsWithoutAdb);
+    const label = JSON.stringify(value);
+    assert.equal(out.status, "failed", label);
+    assert.equal(out.stage, "adb-resolution", label);
+    assert.equal(out.built, false, label);
+    assert.equal(out.installed, false, label);
+    assert.match(out.reason, reason, label);
+    assert.match(out.reason, /no fallback was attempted/i, label);
+    assert.deepEqual(out.completedStages, [], label);
+    assert.deepEqual(fixture.events, [], `${label}: no Gradle, adb or capture command may run`);
+    assert.deepEqual(receiptFiles(fixture.receiptRoot), [], label);
+  }
 });
 
 test("producer rejects an oversized effective AppSpec before Gradle or live runners", async (t) => {
@@ -1263,4 +1296,52 @@ test("command failures report bounded factual exit and timeout state", async (t)
   assert.equal(timedOut.status, "failed");
   assert.match(timedOut.reason, /exit=null/);
   assert.match(timedOut.reason, /timedOut=true/);
+});
+
+// Task S4 (carried): local.properties is a java.util.Properties file, and since S3 this server
+// WRITES sdk.dir / spatial.tools.dir through serializeJavaProperty — which escapes `#`, `!`, `=`,
+// `:` and everything outside printable ASCII as `\uXXXX`. This reader only unescaped `\:` and
+// `\\`, so a perfectly ordinary Android SDK under a non-ASCII home, or a volume with a `#` in its
+// name, round-tripped to a path that does not exist and silently downgraded aapt2/apksigner
+// inspection to "Android SDK root was not found".
+test("the local.properties sdk.dir reader uses real java.util.Properties escaping", async (t) => {
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "pico-s4-localprops-"));
+  t.after(() => fs.rmSync(sandbox, { recursive: true, force: true }));
+
+  for (const sdkDir of [
+    "/Users/té st/Library/Android/sdk",          // non-ASCII -> \uXXXX on write
+    "/Volumes/Team Drive/PICO #1/Android/sdk",   // `#` and spaces
+    "/Volumes/build!/Android=sdk",               // `!` and `=`
+    "C:\\Program Files\\Android\\sdk",           // backslashes and a drive colon
+  ]) {
+    const projectDir = fs.mkdtempSync(path.join(sandbox, "proj-"));
+    fs.writeFileSync(
+      path.join(projectDir, "local.properties"),
+      `# generated\n${serializeJavaProperty("sdk.dir", sdkDir)}\n`,
+    );
+    assert.equal(
+      parseLocalPropertiesSdk(projectDir),
+      path.resolve(projectDir, sdkDir),
+      `sdk.dir did not round-trip: ${sdkDir}`,
+    );
+  }
+
+  // the shapes Properties.load accepts that a single `^\s*sdk\.dir\s*=` regex does not
+  const shapes = [
+    ["colon separator", "sdk.dir:/opt/android/sdk", "/opt/android/sdk"],
+    ["whitespace separator", "sdk.dir /opt/android/sdk", "/opt/android/sdk"],
+    ["escaped key dot", "sdk\\.dir=/opt/android/sdk", "/opt/android/sdk"],
+    ["line continuation", "sdk.dir=/opt/and\\\n   roid/sdk", "/opt/android/sdk"],
+    ["`!` comment is not a declaration", "! sdk.dir=/decoy\nsdk.dir=/opt/android/sdk", "/opt/android/sdk"],
+  ];
+  for (const [label, body, expected] of shapes) {
+    const projectDir = fs.mkdtempSync(path.join(sandbox, "shape-"));
+    fs.writeFileSync(path.join(projectDir, "local.properties"), `${body}\n`);
+    assert.equal(parseLocalPropertiesSdk(projectDir), expected, `${label} was not parsed`);
+  }
+
+  const none = fs.mkdtempSync(path.join(sandbox, "none-"));
+  assert.equal(parseLocalPropertiesSdk(none), null, "an absent local.properties is null, not a throw");
+  fs.writeFileSync(path.join(none, "local.properties"), "# nothing declared\n");
+  assert.equal(parseLocalPropertiesSdk(none), null, "a file with no sdk.dir is null");
 });

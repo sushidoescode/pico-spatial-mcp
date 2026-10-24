@@ -1,0 +1,80 @@
+# npm run test:tarball
+# exit=1 signal= elapsedMs=11796
+
+## stdout
+✔ publishes a verified tarball alongside prior versions, leaving every one of them untouched (7.933625ms)
+✔ refuses to replace an existing artifact, and the prior bytes and directory listing do not move (5.979042ms)
+✔ refuses a source whose digest is not the digest that passed verification, and writes nothing (1.752333ms)
+✔ an interrupted copy removes its own temporary and never creates the destination (2.104958ms)
+✔ re-reads the staged bytes and refuses to publish a copy that does not hash to the verified digest (4.688375ms)
+✔ falls back to an exclusive probe and a rename when the filesystem cannot hard-link (5.188875ms)
+✔ the rename fallback still refuses an occupied destination instead of overwriting it (4.825791ms)
+✔ creates a missing destination directory, and refuses malformed arguments before touching disk (5.23425ms)
+✔ writes the receipt beside the artifact and never overwrites an existing one (8.727791ms)
+✔ the publication module contains no directory enumeration and no recursive removal (0.35775ms)
+✔ verify-tarball publishes through the helper and removes nothing but its own sandbox (0.184209ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 83.961458
+sandbox: /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico mcp tester é 96VzfW
+
+  ok   packed pico-spatial-mcp-37.0.0.tgz (2069 kB, sha256 132769be7e79b33968739cf896fe201140e15b525af4e4e46c863facf7d94b18)
+  ok   installed into a clean directory with --omit=dev
+  ok   installed home environment dataset directory contains exactly the versioned JSON
+  ok   installed home environment dataset bytes match the exact packed source dataset
+  ok   home environment dataset ships in the installed package
+  ok   installed dataset keeps Mesume Day excluded for its zero-geometry public-parser failure
+  ok   installed dataset keeps both Livingroom refresh surface extensions
+  ok   installed dataset keeps the evidence-falsified Day guarantees and optional cluster ranges
+  ok   installed dataset retains complete one-to-one measured-potential Livingroom ranking inputs
+  ok   installed dataset carries only accepted, syntactically pinned refresh evidence
+  ok   installed selector ranks complete Day/Night potential and receipts the canonical dataset hash
+  ok   derived out-of-dist dependencies from the build: appskeleton, assets, briefs, data, package.json, scripts, tools, unityskeleton
+  ok   payload present: appskeleton/
+  ok   payload present: assets/
+  ok   payload present: briefs/
+  FAIL payload MISSING: data/ — the built code resolves it
+  ok   payload present: package.json/
+  ok   payload present: scripts/
+  ok   payload present: tools/
+  ok   payload present: unityskeleton/
+  ok   briefs/ carries 22 briefs
+  ok   brief canary parses: gallery.json
+  ok   brief canary parses: knockdown.json
+  ok   no build droppings anywhere in the package
+  ok   no absolute home paths in any shipped file
+  ok   TESTERS.md ships
+  ok   reader-facing doc ships: SKILLS.md
+  ok   reader-facing doc ships: DESIGN.md
+  ok   reader-facing doc ships: GETTING_STARTED.md
+  ok   app skeleton ships complete and non-empty (17 canaries)
+  ok   appskeleton/gradlew kept its exec bit through pack+install
+  ok   gradle wrapper jar ships intact
+  ok   dot-less _gitignore survived packing (npm drops files named .gitignore)
+  ok   menu.bundle ships for GameMenu briefs
+  ok   unity skeleton ships complete (11 canaries)
+  ok   unityskeleton _gitignore survived packing
+  ok   bin entry has a shebang
+  ok   installed server listed exactly 255 tools for darwin (255 on the full macOS surface)
+  ok   all 43 anchor tools present
+  ok   preflight_env ran from the installed copy (14 checks, status: problems)
+  ok   preflight fixes contain no repo-only commands
+  ok   doors surface registered all 18 door tools
+  ok   a door tool completed its inner self-client spawn from a path containing a space
+  ok   PICO_MCP_SURFACE unset serves the 18-tool doors surface (full stays explicit opt-in)
+  ok   packed dist/build-receipt.json binds the payload to source afdeea9b2616 / output ac8729b2a9de
+
+Tarball verification done. Failures: 1
+
+
+## stderr
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+

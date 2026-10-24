@@ -1,0 +1,946 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-10-23T20:50:39Z",
+  "binary": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+  "realpath": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/index.js",
+  "cwd": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23",
+  "timeoutSeconds": 20,
+  "maxBytes": 1048576,
+  "environmentOverrides": {
+    "PICO_CLI_NO_TELEMETRY": "1",
+    "PICO_ADB": "/fixture/no/such/adb",
+    "ADB_PATH": "/fixture/no/such/adb"
+  },
+  "files": [
+    {
+      "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/package.json",
+      "bytes": 1205,
+      "sha256": "44c2ba62b978d28b62f7f22471f7b9a23c20011008371d7ec3435d5072913144"
+    },
+    {
+      "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/index.js",
+      "bytes": 944008,
+      "sha256": "6daf24579469fd00e69d7e389f241fc6efec6ffde526dea0e4949fe7a38e4542"
+    },
+    {
+      "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/workflows/catalog.json",
+      "bytes": 69,
+      "sha256": "39d8368d68c7f5e0c9f4e10c62167394897e0b9ae039c05fa399682071c2a648"
+    },
+    {
+      "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/workflows/registered-workflows.v1.json",
+      "bytes": 152968,
+      "sha256": "e48fd8a14f7fb58c9d1590693b360ea57854f87cc1ea96ae57a03c5d1083c6f4"
+    },
+    {
+      "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/profiler-worker.js",
+      "bytes": 761,
+      "sha256": "e3319250a0b2526a10fb7322f94c93edc5f9294591a4b476fdbb0691b7bd272f"
+    }
+  ],
+  "observations": [
+    {
+      "stem": "version-pipe",
+      "argv": [
+        "--version"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 411,
+      "stdout": {
+        "path": "version-pipe.stdout.txt",
+        "bytes": 51,
+        "sha256": "a34fee349b94c1d499f3cdadd22e503b3cf7ab5437a0c925d6a9fbc1567970d8",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "version-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "1b5a200fb0d9c8ff0768a029a6ace99180b67a5d80490f16574f2d82e19c9f27",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "root-help-pipe",
+      "argv": [
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 328,
+      "stdout": {
+        "path": "root-help-pipe.stdout.txt",
+        "bytes": 3815,
+        "sha256": "91686f6d75bebca7447f213d76285d94ae55d91f7282ca105fb2ba587a81d0f5",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "root-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "38babb1129f27b7a28704bcc802d39838f55d6eecc3118328a54cd55cd594a30",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "root-help-pty",
+      "argv": [
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 323,
+      "stdout": {
+        "path": "root-help-pty.stdout.txt",
+        "bytes": 3878,
+        "sha256": "96d483a4c2904d0fe3ae78bda065b120118c330f412e701c67853159281754bf",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "root-help-pty.stderr.txt",
+        "bytes": 164,
+        "sha256": "c4cb2e14e05b64e11ee8d3207da33b72cbc8f5529f1a80d4d12169eeb7ff0683",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "workflow-help-pipe",
+      "argv": [
+        "workflow",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 373,
+      "stdout": {
+        "path": "workflow-help-pipe.stdout.txt",
+        "bytes": 512,
+        "sha256": "39cd8d1cd8b09d551e69bf42813c1640de669251c62c292adca9d0df271e4596",
+        "newlineTerminated": false
+      },
+      "stderr": {
+        "path": "workflow-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "94d041c4ecb8614157be65fd93da439970e26f535d3e1caf5c6376862c347a4b",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "workflow-help-pty",
+      "argv": [
+        "workflow",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 333,
+      "stdout": {
+        "path": "workflow-help-pty.stdout.txt",
+        "bytes": 1423,
+        "sha256": "528c84e3df04457224a36b6cffe427e0dbc9656b6260f1b16a011fb1e53210d5",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "workflow-help-pty.stderr.txt",
+        "bytes": 164,
+        "sha256": "94dfdf0c37460a96d347781b661f00e6201b8ec5a87c665adf01f3b2828016e9",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "app-help-pipe",
+      "argv": [
+        "app",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 331,
+      "stdout": {
+        "path": "app-help-pipe.stdout.txt",
+        "bytes": 512,
+        "sha256": "d668d4cd6ff37db861205af94079210ccd4f24ddca4f511ea48eb3641bc6bf9f",
+        "newlineTerminated": false
+      },
+      "stderr": {
+        "path": "app-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "16f84144c74cbb667a4088a31398a8e3de941d2bec9e1f847d259d37ed873f64",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "app-help-pty",
+      "argv": [
+        "app",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 324,
+      "stdout": {
+        "path": "app-help-pty.stdout.txt",
+        "bytes": 1012,
+        "sha256": "d16f01972b969bf45679d96a01c1399170dbc1f572a66f8282fca4b0b83be725",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "app-help-pty.stderr.txt",
+        "bytes": 164,
+        "sha256": "442e716a7cabd3671d5a2872b584e318c4983fbe5bef71a8ee7712f183aa451c",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "emulator-help-pipe",
+      "argv": [
+        "emulator",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 328,
+      "stdout": {
+        "path": "emulator-help-pipe.stdout.txt",
+        "bytes": 512,
+        "sha256": "d82ae9c0fbd251024339de07b1193032eda3b454dd310c77069b2554b1575b5f",
+        "newlineTerminated": false
+      },
+      "stderr": {
+        "path": "emulator-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "1427b31c975117cdcdfef85f20f6f20d822ca6b44276c3f3f2607e40474d6d9f",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "emulator-help-pty",
+      "argv": [
+        "emulator",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 346,
+      "stdout": {
+        "path": "emulator-help-pty.stdout.txt",
+        "bytes": 1247,
+        "sha256": "9ba47e97c45832bf8124e11748742b13267b5a1a2533429a21154add0f6a1bf9",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "emulator-help-pty.stderr.txt",
+        "bytes": 164,
+        "sha256": "ce196b9244d8dafd465b1a260cd361907ea611cf7dc72ef7f9edf8853747baf0",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "capture-help-pipe",
+      "argv": [
+        "capture",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 341,
+      "stdout": {
+        "path": "capture-help-pipe.stdout.txt",
+        "bytes": 376,
+        "sha256": "521077d1dcca9d64cd4698f5bffb92a4763cf75df41df82a3872d99137eaf1f5",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "capture-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "1ecf129b636cd78a050a6827a3a5434ed2fd88283e13aa02c79fef18ba610591",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "capture-help-pty",
+      "argv": [
+        "capture",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 356,
+      "stdout": {
+        "path": "capture-help-pty.stdout.txt",
+        "bytes": 388,
+        "sha256": "1fd5fb8d429a1800c9690a65515fa0e3e3517180255fbb12803728f946edc076",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "capture-help-pty.stderr.txt",
+        "bytes": 164,
+        "sha256": "f63b252f6db45fb15a73a5cb6da02bd5163758a3790945fc8772b55881cbc15d",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "workflow-list-help-pipe",
+      "argv": [
+        "workflow",
+        "list",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 339,
+      "stdout": {
+        "path": "workflow-list-help-pipe.stdout.txt",
+        "bytes": 379,
+        "sha256": "6bac1b7bb594d6084a4fe91bda74f56b9dbae51e5a097fd30ae72518060d921c",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "workflow-list-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "c8aefc57dde2515ee0bad581802937891ab5fe52e8901be8551777933fa1a349",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "workflow-describe-help-pipe",
+      "argv": [
+        "workflow",
+        "describe",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 327,
+      "stdout": {
+        "path": "workflow-describe-help-pipe.stdout.txt",
+        "bytes": 422,
+        "sha256": "41016422adda4a60f31e50b8ee121c1123c707a27d1d93adfc2d443321915367",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "workflow-describe-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "83f80d928639ce03d290c81212367563289f3dd58eab41fe06f159b70d1b4848",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "workflow-run-read-help-pipe",
+      "argv": [
+        "workflow",
+        "run",
+        "read",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 329,
+      "stdout": {
+        "path": "workflow-run-read-help-pipe.stdout.txt",
+        "bytes": 482,
+        "sha256": "3a6e284ae2ca38c987a71440d3871ad5cdcdb84cb896fc2bf836e3897e6ae4a1",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "workflow-run-read-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "6f3084534d05ab83bdeb1a97493279720cae467ec73a696dc2ad7870cc6f94fc",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "workflow-result-read-help-pipe",
+      "argv": [
+        "workflow",
+        "result",
+        "read",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 323,
+      "stdout": {
+        "path": "workflow-result-read-help-pipe.stdout.txt",
+        "bytes": 489,
+        "sha256": "6b6bf7ec608345fec79f85190881c7abe3433db174c8405fac67e8094ad6c50f",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "workflow-result-read-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "4bdc6823b3638404289430e141325c2e216b439adee07d1c6e4363ce4cfeab40",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "workflow-resume-help-pipe",
+      "argv": [
+        "workflow",
+        "resume",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 311,
+      "stdout": {
+        "path": "workflow-resume-help-pipe.stdout.txt",
+        "bytes": 1235,
+        "sha256": "92ef67694e868c9dcc8735ddfc0c2d7d717f74c033fe96202e59a9ab6686e8ab",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "workflow-resume-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "c45d7e2bce0247dc83a871a7dc35471bc3159e49bbac8f5f12612cbe0970900e",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "workflow-cancel-help-pipe",
+      "argv": [
+        "workflow",
+        "cancel",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 328,
+      "stdout": {
+        "path": "workflow-cancel-help-pipe.stdout.txt",
+        "bytes": 526,
+        "sha256": "5c79511d2e06d055e66f77d0b63f3b401ed7715314b6fa53c34b94a1fa9740a4",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "workflow-cancel-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "7d0508bc103a5429470e735167ed32e08da631db0cad1abc9216e798281bc4f3",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "workflow-events-read-help-pipe",
+      "argv": [
+        "workflow",
+        "events",
+        "read",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 312,
+      "stdout": {
+        "path": "workflow-events-read-help-pipe.stdout.txt",
+        "bytes": 699,
+        "sha256": "3938e68e0ae621eec412df25dcefe107188c63e6fed569071cfe365d87da3ceb",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "workflow-events-read-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "bc8ccd6c3028e0eb413347595d4b7300cfcdd45dad47fbf5976d56e31d6b13fa",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "workflow-list-pipe",
+      "argv": [
+        "workflow",
+        "list",
+        "--format",
+        "json"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 456,
+      "stdout": {
+        "path": "workflow-list-pipe.stdout.txt",
+        "bytes": 116,
+        "sha256": "56dca9e9390f278a481b1e948c222779a36a0e6cafc00c2c1e9be67d0bf68615",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "workflow-list-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "13ae5558d2180016d7c579ca55f088bdc72e823b12c076595de486378dd67920",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "workflow-describe-pipe",
+      "argv": [
+        "workflow",
+        "describe",
+        "spatial-design-to-app",
+        "--format",
+        "json"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 593,
+      "stdout": {
+        "path": "workflow-describe-pipe.stdout.txt",
+        "bytes": 24552,
+        "sha256": "cb9460e97185ae6d876295370ac2210e8e72508b65f47a81cc8e0fec65cf10f8",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "workflow-describe-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "84694b5a9c984456d837d22cdc46f2d4526d43d1a6cb44d2636ac16fab9117cb",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "knowledge-server-help-pipe",
+      "argv": [
+        "knowledge",
+        "server",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 330,
+      "stdout": {
+        "path": "knowledge-server-help-pipe.stdout.txt",
+        "bytes": 189,
+        "sha256": "2455f015240cb4c13974a8ff701c4d69210d0d565dc4e429cd5c7d2b4ffe52c1",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "knowledge-server-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "720e492bdf24b7814196764876dfc627f2b5551d9e831ccc6f17f7b50ac62ead",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "watch-crash-help-pipe",
+      "argv": [
+        "app",
+        "watch-crash",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 298,
+      "stdout": {
+        "path": "watch-crash-help-pipe.stdout.txt",
+        "bytes": 867,
+        "sha256": "7a0893dd0fbcd0bf79dc5be3c03fc3b66f5a99c31dec609a38e57bac7a970566",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "watch-crash-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "47d6ad4cf5ef855c252a21b4533b1a3e51903f6c48de57c786fbe94cb1fb2d6a",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "capture-record-help-pipe",
+      "argv": [
+        "capture",
+        "record",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 308,
+      "stdout": {
+        "path": "capture-record-help-pipe.stdout.txt",
+        "bytes": 526,
+        "sha256": "d7ca3c12e2f42924e310f31648aede2eb99943f3eca9248cdf27a0c55e15994a",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "capture-record-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "85e9553c955041c5d878071ae1980b9a1ed542d925ca5c2d5c35431cdf668da0",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "perf-live-help-pipe",
+      "argv": [
+        "perf",
+        "live",
+        "run",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 320,
+      "stdout": {
+        "path": "perf-live-help-pipe.stdout.txt",
+        "bytes": 512,
+        "sha256": "97019889f46e0cb0f736893a6682842a8aef25cfb9afc7534ea17726a6087161",
+        "newlineTerminated": false
+      },
+      "stderr": {
+        "path": "perf-live-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "50f1120e3115da4f0327e35dc30c799f9ab0881eeca26f4e0ab251f5802553b1",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "trace-record-help-pipe",
+      "argv": [
+        "perf",
+        "trace",
+        "record",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 319,
+      "stdout": {
+        "path": "trace-record-help-pipe.stdout.txt",
+        "bytes": 512,
+        "sha256": "d6e726e13286991a6dfbb93f0a889e9a38e889c12bf06a1e9e223d9047a78ef5",
+        "newlineTerminated": false
+      },
+      "stderr": {
+        "path": "trace-record-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "1c8b98172d6b35a0428b043ab52425e6c298a4b59a342eb233a699d63096169b",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "trace-decode-help-pipe",
+      "argv": [
+        "perf",
+        "trace",
+        "decode",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 343,
+      "stdout": {
+        "path": "trace-decode-help-pipe.stdout.txt",
+        "bytes": 512,
+        "sha256": "90d3e947bd49450623a02925a4db581575163eacc076c6f16c96ac4f7b019442",
+        "newlineTerminated": false
+      },
+      "stderr": {
+        "path": "trace-decode-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "5793b21f44018122cc620a8c47a6feeda35728c7906b858777314fcdd57f47ce",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "trace-load-help-pipe",
+      "argv": [
+        "perf",
+        "trace",
+        "load",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 364,
+      "stdout": {
+        "path": "trace-load-help-pipe.stdout.txt",
+        "bytes": 512,
+        "sha256": "7e74bf54b161bbd68ed3c52e546139ecf219a5ccf1f89a52c3a2375c4297c948",
+        "newlineTerminated": false
+      },
+      "stderr": {
+        "path": "trace-load-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "998efaf7c5f5bb2788fa517bf69998502c06a3b7d6e2fd8ab032043df60d540e",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "trace-query-help-pipe",
+      "argv": [
+        "perf",
+        "trace",
+        "query",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 326,
+      "stdout": {
+        "path": "trace-query-help-pipe.stdout.txt",
+        "bytes": 487,
+        "sha256": "0978f1c4d9db0c13c64fb40bff52c7a355e7cf27c8a45d33f66a7918d08d3551",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "trace-query-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "34a52a01d8926d043c9b6a58e4ee06ea14db3836715ffd20630d181665120b2f",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "project-create-help-pipe",
+      "argv": [
+        "project",
+        "create",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 319,
+      "stdout": {
+        "path": "project-create-help-pipe.stdout.txt",
+        "bytes": 1720,
+        "sha256": "e3de548903b41c4278d9e150123aef1415a3fa43b0650edaf4aa00abc85b3d99",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "project-create-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "64f64b53e0cbd9eae6ee84c2ae39e0e0aaba6d310960654b3b50cc2537b7fa47",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "perf-live-help-pty",
+      "argv": [
+        "perf",
+        "live",
+        "run",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 546,
+      "stdout": {
+        "path": "perf-live-help-pty.stdout.txt",
+        "bytes": 1112,
+        "sha256": "c3419182deb224de6c7067f90bedb9e3472700a3d5ead4634ac09b4bb8456ccf",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "perf-live-help-pty.stderr.txt",
+        "bytes": 164,
+        "sha256": "06fa9dd344e0c948dc8ed3be5b00788d8634ad5ce719f95ab9a3115f4b3a0aa3",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "trace-record-help-pty",
+      "argv": [
+        "perf",
+        "trace",
+        "record",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 369,
+      "stdout": {
+        "path": "trace-record-help-pty.stdout.txt",
+        "bytes": 1000,
+        "sha256": "a3ea527a69e90fb27cf83b0868854b7cf71b3a64999faea850cfcfbf7ca7150d",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "trace-record-help-pty.stderr.txt",
+        "bytes": 164,
+        "sha256": "0397d267cbd6d093b403b4b98ee1c815fa078bcb3b868e5fc25da401d16c34a9",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "trace-decode-help-pty",
+      "argv": [
+        "perf",
+        "trace",
+        "decode",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 389,
+      "stdout": {
+        "path": "trace-decode-help-pty.stdout.txt",
+        "bytes": 903,
+        "sha256": "41c7c61b5e45aed1c95b1f0bd3ccd7d1cabe197a00bcc1a6a88772a010a107c8",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "trace-decode-help-pty.stderr.txt",
+        "bytes": 164,
+        "sha256": "c164cbb69f1b2f7f9b75e172ed47ede5fc0d88ab2d1890910bd9097e4518b975",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "trace-load-help-pty",
+      "argv": [
+        "perf",
+        "trace",
+        "load",
+        "--help"
+      ],
+      "transport": "stdout-pty/stderr-pipe",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 583,
+      "stdout": {
+        "path": "trace-load-help-pty.stdout.txt",
+        "bytes": 861,
+        "sha256": "80e4c3e968848b24c54a5d5ae9979ee85ada6feab7b571df85ab323e7e6cbf0f",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "trace-load-help-pty.stderr.txt",
+        "bytes": 164,
+        "sha256": "d662615a2babbb0bd7d02a7778fe4b5dab281baa989319c38ff753d686cfb8b0",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "app-install-help-pipe",
+      "argv": [
+        "app",
+        "install",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 287,
+      "stdout": {
+        "path": "app-install-help-pipe.stdout.txt",
+        "bytes": 640,
+        "sha256": "2db41a03aae3efb3f24b4200e86368d6b23ba29501de0b92586b272713e14403",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "app-install-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "8ab4e93bc894d7eb0127f7db6abc6c61ce8e7f21ff3c15b8cbf36acfc4cc7c01",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "app-stop-help-pipe",
+      "argv": [
+        "app",
+        "stop",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 243,
+      "stdout": {
+        "path": "app-stop-help-pipe.stdout.txt",
+        "bytes": 281,
+        "sha256": "6ca53d18c57b90123861fd4bcd7bad1ce4760de214539ee4fdcf450d7a12aada",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "app-stop-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "2c7bf4095700452fe43a6300d306ae15b04438b0b5c7e50a11691e27d46a1b63",
+        "newlineTerminated": true
+      }
+    },
+    {
+      "stem": "app-launch-help-pipe",
+      "argv": [
+        "app",
+        "launch",
+        "--help"
+      ],
+      "transport": "pipes",
+      "exitCode": 0,
+      "timedOut": false,
+      "outputTruncated": false,
+      "durationMs": 256,
+      "stdout": {
+        "path": "app-launch-help-pipe.stdout.txt",
+        "bytes": 510,
+        "sha256": "38a81ff34d2c1745aaa1ba7e8b2c48544cb1bd9a7686dc15de78a285678449eb",
+        "newlineTerminated": true
+      },
+      "stderr": {
+        "path": "app-launch-help-pipe.stderr.txt",
+        "bytes": 164,
+        "sha256": "d5a49f1df337fd8ada2fe9038531139565215b504cddb069d54651459bf41b45",
+        "newlineTerminated": true
+      }
+    }
+  ],
+  "nativeOperations": 0,
+  "workflowLifecycleMutations": 0
+}

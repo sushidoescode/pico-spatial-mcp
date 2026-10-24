@@ -1,0 +1,91 @@
+# GREEN — item 5 (Minor 5): pico_look discloses its retained default target (node test/doors.mjs) (2026-09-16T12:40:43Z)
+
+  ok   pico_next treats device PASS as positive proof and preserves device FAIL as negative evidence
+  ok   pico_build_app requires a receipt-bound capture and never labels an unlooked calibrated-eye result verified
+  ok   pico_build_app returns the fleet receipt identity, exact capture, and usable absolute project path
+  ok   pico_record forwards the build receipt ID with the exact looked-capture record request
+  ok   pico_loop carries the receipt identity, exact capture, and usable absolute project path through its exit
+  ok   pico_loop discloses a failed ledger lane with the tool's own words first
+  ok   pico_loop cannot accept a receiptless run and returns explicit null receipt identity
+  ok   pico_look on a call-only fixture server refuses with the door failure envelope naming the missing callRaw seam (no inner call, no domain call)
+  ok   pico_verify_app on a call-only fixture server refuses with the door failure envelope naming the missing callRaw seam (no inner call, no domain call)
+  ok   a call-only fixture server still serves domain-lane doors through the injected call
+  ok   the bare fixture server registers exactly the 16 doors this block drives
+  ok   every door refuses through the seam on a {} fixture (16/16)
+  ok   doors.ts has exactly three inner() sites (innerCall, doorCall, doorCallRaw)
+  ok   pico_look forwards an image block + structuredContent verbatim (raw lane)
+  ok   pico_look forwards an inner isError text result as an error, not a success object
+  ok   pico_look forwards an embedded resource block verbatim (raw lane)
+  ok   pico_verify_app forwards a structured failure verbatim (isError + structuredContent) with its args intact
+  ok   pico_emulator returns the decoded inner JSON object unchanged (domain lane success)
+  ok   pico_emulator carries an inner isError as status:error with the tool's own words (domain lane), never {status:'ok', detail}
+  ok   pico_emulator keeps a structured failure's structuredContent beside the inner error text
+  ok   pico_emulator decodes a structured success from its text block (documented domain-lane semantics)
+  ok   pico_perf forwards an explicit device verbatim to perf_diagnose
+  ok   pico_perf with no device forwards no device key (the wrapper's documented default target stands)
+  ok   briefIdOf stays /^door\d+$/ on a 609-char brief (door905610)
+  ok   com.fleet.<id> passes scaffold's package regex for the 500+ char brief
+  ok   briefIdOf is deterministic and long briefs no longer all collide
+  ok   innerFailureDetail surfaces the first zod issue as path: message
+  ok   innerFailureDetail keeps 600 chars of an unparseable payload (was 150)
+  ok   loopFailureSignature is stable across varying detail tails (first-line normalized)
+  ok   loopFailureSignature collapses jittering measurements (digit-normalized)
+  ok   loopFailureSignature distinguishes genuinely different failures
+  ok   loopFailureSignature is empty when nothing failed (passes never count as a signature)
+  ok   pico_loop consumes launch logcat before structural asserts can clear it
+  ok   pico_loop treats a camera-pose-only replan as real progress
+  ok   replan_spec reports patched only when the AppSpec actually changes
+  ok   pico_loop keeps undriven logcat/structural/perf failures manual
+  ok   pico_loop preserves fleet-shaped eye checks and repairs only a measured black/empty frame
+  ok   pico_loop does not invent camera or interaction repairs from unsupported measured failures
+  ok   pico_loop recommends CLI setup only for an explicitly classified perf setup refusal
+  ok   pico_loop distinguishes an eye ESCALATE from an unscored look obligation
+  ok   pico_loop earns auto_judged only from a durably recorded visual PASS
+pico-spatial-mcp ready (stdio)
+  ok   doors surface exposes exactly 18 tools
+  ok   pico_ship exposes the exact app/lane/projectDir checklist contract and debug-only receipt boundary
+  ok   pico_record advertises canonical keys, caller-recordable tiers, structured device outcomes, and exact receipt binding
+  ok   pico_look discloses its retained default target (emulator-5554) and that it has no serial input
+pico-spatial-mcp ready (stdio)
+  ok   pico_sdk orchestrates the inner server (status: unavailable)
+  ok   pico_sdk takes hint inputs only and labels a projectless lookup unavailable
+  ok   door errors carry a fix pointer
+  ok   pico_build_app brief-only call returns the scaffold + the draftSpec re-call fix
+  ok   crystals-brief scaffold has a grid layout + a spin anim (display archetype fired)
+  ok   needs-authoring names the archetype + the matched keyword(s) that steered it
+  ok   plan-failed schema hints carry path + expected shape + known-good example fragment
+  ok   pico_fix maps free text to a KB symptom (build_failed) without schema leakage
+  ok   pico_doctor surfaces 13 preflight checks, all fix-pointed
+  ok   default pico_doctor is managed-store read-only and explains lazy first use
+  ok   doors keeps one inner-server lifetime across managed ensure without PATH mutation
+  ok   pico_emulator restart returns the cold-restart command + recalibration reminder (not executed)
+  ok   pico_next returns a nextAction naming a real door (pico_doctor) + 2 alternative(s)
+  ok   pico_record records a structural claim and returns the ledger-generated report
+  ok   pico_record appends a retraction while retaining immutable claim history
+  ok   pico_record passes the ledger's vision_verified rejection through untouched
+  ok   pico_record rejects mixed record/retract fields without appending either action
+  ok   pico_record rejects runReceiptId on the retraction lane
+  ok   pico_loop invalid draftSpec → plan-failed with fix, zero build iterations
+  ok   pico_loop rejects an empty acceptance list at the schema
+  ok   pico_loop pre-flights a patternless logcat criterion (invalid-acceptance, zero builds)
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+  ok   20 concurrent first door calls started exactly one inner server (all unavailable)
+  ok   the e2e adb stub exists and is executable immediately before pico_look
+  ok   pico_look forwards the inner screencap failure as isError over the real inner transport (stub adb ran: 1 invocation(s), screencap argv recorded)
+pico-spatial-mcp ready (stdio)
+  ok   PICO_MCP_SURFACE unset serves the doors surface (18 tools) — full stays explicit opt-in
+  ok   every src/ self-spawn of the server pins PICO_MCP_SURFACE explicitly
+pico-spatial-mcp ready (stdio)
+  ok   verify_pico_apk waits for immersive teardown before relaunch (2029ms) and observes the process
+  ok   verify_pico_apk returns observed identity (serial, installed digest, boot id) and publishes the capture into a run directory
+  ok   verify_pico_apk reports the full-space rejection as a structured, non-clean result
+  ok   verify_pico_apk reports a foreign foreground as a conflict carrying the observed evidence
+  ok   ordinary verification stopped only the packages it was given (3 force-stops, none foreign)
+  ok   verification never cleared the global log and read it bounded, once per observation
+  ok   every device command named the explicit serial (fixture-doors-9189) — no default target was used
+  ok   no capture was written to the old package-keyed mutable /tmp path
+
+Doors test done. Failures: 0
+
+exit=0

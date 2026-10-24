@@ -1,0 +1,11 @@
+{
+  "status": "installed-and-launched",
+  "serial": "emulator-5554",
+  "expectedBoot": "85f03dc1-bee6-4e4d-a19f-916fbf3ed0b4",
+  "packageName": "com.example.picofixture.iteration.debug",
+  "apkSha256": "24704bdee8d5547b09621d48e073abe33741b94a42627d2f6ed9afe091956e04",
+  "rootAuthority": "AUTHORITY.json",
+  "fenceScope": "interaction-session-only",
+  "ownedExecution": "drained-and-released",
+  "readyBridgeClaim": false
+}

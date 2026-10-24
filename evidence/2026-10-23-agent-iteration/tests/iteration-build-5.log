@@ -1,0 +1,5 @@
+
+> pico-spatial-mcp@38.1.0 build
+> node scripts/build-source.mjs
+
+build-source: published 201 file(s) for source 5a57588dacc1

@@ -1,0 +1,20 @@
+[1mDescription[22m:
+Run pico-cli environment diagnostics and supported targeted fixes
+
+[1mUsage[22m:
+  $ [1mpico-cli doctor[22m
+
+[1mOptions[22m:
+  [1m--format <format>[22m        Output format (plain | json) (default: plain)
+  [1m--platform <platform>[22m    Expected configured platform; reports a mismatch without switching
+                           targets (spatial | unity)
+  [1m--agent-tool <tools...>[22m  Agent Hosts to inspect in Host-dependent checks (all | claude-code |
+                           codex | cursor | copilot | traecli | opencode2 | codebuddy | qoder |
+                           antigravity | grok | claude)
+  [1m--fix[22m                    Run supported targeted fixes for error checks
+  [1m-h, --help[22m               Display this message
+
+[1mExamples[22m:
+  $ pico-cli doctor
+  $ pico-cli doctor --format json
+  $ pico-cli doctor --fix

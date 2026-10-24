@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "pico_iteration_fixture": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["REPO_PATH/dist/index.js"],
+      "env": {
+        "PICO_MCP_SURFACE": "doors",
+        "PICO_MCP_INTERACTION": "1",
+        "PICO_MCP_CLI_POLICY": "disabled",
+        "PICO_ADB": "/fixture/no/such/adb"
+      }
+    }
+  }
+}

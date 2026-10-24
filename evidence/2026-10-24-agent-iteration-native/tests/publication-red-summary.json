@@ -1,0 +1,23 @@
+{
+  "capture": "summary transcribed from tool output; not a complete raw terminal log",
+  "source": "a2085a54b172",
+  "command": [
+    "node",
+    "--test",
+    "test/interactionbridge.mjs"
+  ],
+  "environment": {
+    "PICO_ADB": "/fixture/no/such/adb"
+  },
+  "exitCode": 1,
+  "tests": 18,
+  "passed": 13,
+  "failed": 5,
+  "failedTests": [
+    "publication is app-generation scoped and atomically refuses duplicate file names",
+    "host shell publication survives Android-like hard-link denial and refuses duplicates, stale generations, symlinks and foreign packages",
+    "concurrent publishers share one persistent request claim across backend reconstruction",
+    "interrupted decoding retains the claim and partial staging bytes without publishing or retrying",
+    "publication failures retain bounded raw transport diagnostics even with adb exit zero"
+  ]
+}

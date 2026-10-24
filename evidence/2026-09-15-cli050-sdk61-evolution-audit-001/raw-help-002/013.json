@@ -1,0 +1,16 @@
+{
+  "label": "0.4.4 plugin --help",
+  "argv": [
+    "plugin",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:48.798Z",
+  "endedAt": "2026-09-15T09:11:48.894Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "364f964f8c14a9741de2984947bde3df88d3d491faa5939dae8061c5c6d0686d",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

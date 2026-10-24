@@ -1,0 +1,18 @@
+Description:
+Install a Pipeline Zoo package for the detected SpatialML SDK
+
+Usage:
+  $ pico-cli spatialml pipeline install <id> [--project <path>] [--overwrite fail|replace]
+    [--unity-editor <path>] [--format plain|json]
+
+Options:
+  --project <path>       Native OpenXR, Unity, or Kotlin Spatial SDK project directory (default: .)
+  --overwrite <policy>   Package destination overwrite policy (fail, replace) (default: fail)
+  --unity-editor <path>  Unity Editor executable for automatic Unity package import
+  --format <format>      Output format (plain | json) (default: plain)
+  -h, --help             Display this message
+
+Examples:
+  $ pico-cli spatialml pipeline install picoxr/face-mediapipe-pipeline
+  $ pico-cli spatialml pipeline install pose-pipeline --project apps/demo --overwrite replace
+    --format json

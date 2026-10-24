@@ -1,0 +1,62 @@
+{
+  "host": "codex",
+  "trial": "approved",
+  "exitCode": 0,
+  "durationSeconds": 31.186,
+  "pid": 70818,
+  "termination": null,
+  "cleanupSignals": [],
+  "cleanupErrors": [],
+  "cleanupNotes": [
+    {
+      "signal": "SIGINT",
+      "kind": "EPERM-no-live-group-members",
+      "members": [
+        {
+          "pid": 70818,
+          "state": "Z"
+        }
+      ]
+    },
+    {
+      "signal": "SIGTERM",
+      "kind": "EPERM-no-live-group-members",
+      "members": [
+        {
+          "pid": 70818,
+          "state": "Z"
+        }
+      ]
+    },
+    {
+      "signal": "SIGKILL",
+      "kind": "EPERM-no-live-group-members",
+      "members": [
+        {
+          "pid": 70818,
+          "state": "Z"
+        }
+      ]
+    },
+    {
+      "signal": "SIGKILL",
+      "kind": "EPERM-no-live-group-members",
+      "members": [
+        {
+          "pid": 70818,
+          "state": "Z"
+        }
+      ]
+    }
+  ],
+  "leaderReaped": true,
+  "streamsDrained": true,
+  "outputTruncated": false,
+  "cleanupScope": "new task-owned process group; no discovered PID signalling",
+  "maximumSeconds": 186.7,
+  "permissionDecisions": [],
+  "protocolErrors": [],
+  "trialActions": [],
+  "resultSeen": null,
+  "runnerError": null
+}

@@ -1,0 +1,7 @@
+{"type": "thread.started", "thread_id": "01a16d3a-9bf7-7ef2-806e-ec3dad80299d"}
+{"type": "item.completed", "item": {"id": "item_0", "type": "error", "message": "Under-development features enabled: skip_host_skill_discovery. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in /Users/sushantsrikrish/.codex-account-b/config.toml."}}
+{"type": "turn.started"}
+{"type": "item.completed", "item": {"id": "item_1", "type": "agent_message", "text": "I\u2019ll call `host_probe` in identity mode, then wait mode exactly once."}}
+{"type": "item.started", "item": {"id": "item_2", "type": "mcp_tool_call", "server": "pico_iteration_fixture", "tool": "host_probe", "arguments": {"mode": "identity"}, "result": null, "error": null, "status": "in_progress"}}
+{"type": "item.completed", "item": {"id": "item_2", "type": "mcp_tool_call", "server": "pico_iteration_fixture", "tool": "host_probe", "arguments": {"mode": "identity"}, "result": {"content": [{"type": "text", "text": "{\"generation\":\"cab09246-9acb-49d0-b921-42b96f627aba\",\"pid\":72182,\"scope\":\"host-conformance-only\"}"}], "structured_content": null}, "error": null, "status": "completed"}}
+{"type": "item.started", "item": {"id": "item_3", "type": "mcp_tool_call", "server": "pico_iteration_fixture", "tool": "host_probe", "arguments": {"mode": "wait"}, "result": null, "error": null, "status": "in_progress"}}

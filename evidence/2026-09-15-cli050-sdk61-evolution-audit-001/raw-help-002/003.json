@@ -1,0 +1,16 @@
+{
+  "label": "0.4.4 app --help",
+  "argv": [
+    "app",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:47.825Z",
+  "endedAt": "2026-09-15T09:11:47.920Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "3638cf44e6f62d2b766eff0cb714b8b5fff8d2ebb0109d1d21476bdda28219d6",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

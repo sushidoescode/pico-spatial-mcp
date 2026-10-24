@@ -1,0 +1,11 @@
+Usage:
+  $ pico-cli app launch <package>
+
+Options:
+  -d, --device <device>  Target device id (overrides automatic selection) 
+  --activity <activity>  Optional activity (e.g. .MainActivity) 
+  -h, --help             Display this message 
+
+Examples:
+  # Waits for process creation; poll app-specific readiness separately before UI automation
+  $ pico-cli app launch com.example.app

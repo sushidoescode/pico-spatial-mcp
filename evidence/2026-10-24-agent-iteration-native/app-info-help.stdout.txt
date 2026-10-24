@@ -1,0 +1,10 @@
+[1mDescription[22m:
+Show information for an installed app on the preferred current device
+
+[1mUsage[22m:
+  $ [1mpico-cli app info[22m <package>
+
+[1mOptions[22m:
+  [1m-d, --device <device>[22m  Target device id (overrides automatic selection)
+  [1m--format <format>[22m      Output format (plain | json) (default: plain)
+  [1m-h, --help[22m             Display this message

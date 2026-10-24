@@ -1,0 +1,29 @@
+# step5 GREEN: logwindow suite with the source-level guard (2026-09-16T10:49:55Z)
+✔ sliceAfterMarker returns only lines after the marker line (0.583458ms)
+✔ a missing marker is reported, never silently treated as an empty window (0.050208ms)
+✔ openLogWindow writes exactly one `log -t pico-mcp <marker>` and never a clear (0.887333ms)
+✔ readLogWindow always includes the marker tag in its filter and bounds the dump (0.14575ms)
+✔ assert_scene opens a window before its broadcast and matches only the dump inside it (3289.130917ms)
+✔ assert_scene reports an evicted marker as an inconclusive error, never as a dump (1606.613709ms)
+✔ assert_scene refuses when the window cannot be opened and reads no dump at all (64.071167ms)
+✔ probe_planes opens a window before its broadcast and parses only the inventory inside it (1617.884292ms)
+✔ probe_planes reports an evicted marker as inconclusive instead of reading the stale inventory (3143.405916ms)
+✔ live_scene_snapshot opens a window before its dump_scene broadcast and returns only the fresh scene (109.496167ms)
+✔ live_scene_snapshot reports an evicted marker as inconclusive rather than parsing the stale dump (8239.148417ms)
+✔ assert_logcat sinceMarker adopts a caller-written marker and matches only lines after it (1247.886ms)
+✔ assert_logcat clearFirst opens a marker window instead of clearing, and an evicted marker is inconclusive (1365.098875ms)
+✔ the logcat tool's clear:true is the one destructive clear and requires an explicit serial (67.70175ms)
+✔ wait_for_log's default opens a marker window instead of clearing and reports the window it matched in (2215.682208ms)
+✔ pico_loop writes a marker through adb_shell before the build and scopes every assert_logcat to it (12.05775ms)
+✔ pico_loop treats an inconclusive (evicted-window) assert_logcat as unmeasurable, never as a fail to replan (2.345125ms)
+✔ the boundary prepare step opens a -b all window, writes its sidecar, and stops on an evicted marker (33.92775ms)
+✔ no src file clears logcat implicitly; the explicit logcat tool is the only clear (19.087875ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 23109.696458
+exit=0

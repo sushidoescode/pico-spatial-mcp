@@ -1,0 +1,2 @@
+COMMAND  PID            USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+adb     9818 sushantsrikrish    8u  IPv4 0x82cfdaeb388a06ab      0t0  TCP 127.0.0.1:5037 (LISTEN)

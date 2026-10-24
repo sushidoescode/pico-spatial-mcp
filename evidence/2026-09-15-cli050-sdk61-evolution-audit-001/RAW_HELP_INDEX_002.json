@@ -1,0 +1,3004 @@
+{
+  "summary": {
+    "invocations": 162,
+    "nonzero": [
+      {
+        "label": "0.4.4 perf --help",
+        "argv": [
+          "perf",
+          "--help"
+        ],
+        "startedAt": "2026-09-15T09:11:48.705Z",
+        "endedAt": "2026-09-15T09:11:48.798Z",
+        "code": 1,
+        "signal": null,
+        "timedOut": false,
+        "outputTruncated": false,
+        "spawnError": null,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "d22fe9b905cc5a56866b8ea4d8e88fe33e0e640078a9678aa882c179df943477",
+        "artifactStem": "raw-help-002/012"
+      },
+      {
+        "label": "0.5.0 perf daemon --help",
+        "argv": [
+          "perf",
+          "daemon",
+          "--help"
+        ],
+        "startedAt": "2026-09-15T09:12:06.642Z",
+        "endedAt": "2026-09-15T09:12:06.751Z",
+        "code": 3,
+        "signal": null,
+        "timedOut": false,
+        "outputTruncated": false,
+        "spawnError": null,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+        "artifactStem": "raw-help-002/137"
+      },
+      {
+        "label": "0.5.0 perf doctor --help",
+        "argv": [
+          "perf",
+          "doctor",
+          "--help"
+        ],
+        "startedAt": "2026-09-15T09:12:06.751Z",
+        "endedAt": "2026-09-15T09:12:06.850Z",
+        "code": 3,
+        "signal": null,
+        "timedOut": false,
+        "outputTruncated": false,
+        "spawnError": null,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+        "artifactStem": "raw-help-002/138"
+      },
+      {
+        "label": "0.5.0 perf live --help",
+        "argv": [
+          "perf",
+          "live",
+          "--help"
+        ],
+        "startedAt": "2026-09-15T09:12:06.850Z",
+        "endedAt": "2026-09-15T09:12:06.951Z",
+        "code": 3,
+        "signal": null,
+        "timedOut": false,
+        "outputTruncated": false,
+        "spawnError": null,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+        "artifactStem": "raw-help-002/139"
+      },
+      {
+        "label": "0.5.0 perf session --help",
+        "argv": [
+          "perf",
+          "session",
+          "--help"
+        ],
+        "startedAt": "2026-09-15T09:12:06.951Z",
+        "endedAt": "2026-09-15T09:12:07.053Z",
+        "code": 3,
+        "signal": null,
+        "timedOut": false,
+        "outputTruncated": false,
+        "spawnError": null,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+        "artifactStem": "raw-help-002/140"
+      },
+      {
+        "label": "0.5.0 perf trace --help",
+        "argv": [
+          "perf",
+          "trace",
+          "--help"
+        ],
+        "startedAt": "2026-09-15T09:12:07.053Z",
+        "endedAt": "2026-09-15T09:12:07.155Z",
+        "code": 3,
+        "signal": null,
+        "timedOut": false,
+        "outputTruncated": false,
+        "spawnError": null,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+        "artifactStem": "raw-help-002/141"
+      }
+    ],
+    "timedOut": 0,
+    "truncated": 0
+  },
+  "invocations": [
+    {
+      "label": "@picoxr/pico-cli@0.4.4 version",
+      "argv": [
+        "-v"
+      ],
+      "startedAt": "2026-09-15T09:11:47.539Z",
+      "endedAt": "2026-09-15T09:11:47.726Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "99ca71c8950c00f8295b9e1cccfd0ff6fcafd3acb17cf8a7aa82dc752f4eb4a6",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/001"
+    },
+    {
+      "label": "0.4.4 pico-cli --help",
+      "argv": [
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:47.727Z",
+      "endedAt": "2026-09-15T09:11:47.824Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "c78b513f95bd5ad1e1b3bb0867265d7d9743b81a7b6d6a27a5ae92c268cf5941",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/002"
+    },
+    {
+      "label": "0.4.4 app --help",
+      "argv": [
+        "app",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:47.825Z",
+      "endedAt": "2026-09-15T09:11:47.920Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "3638cf44e6f62d2b766eff0cb714b8b5fff8d2ebb0109d1d21476bdda28219d6",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/003"
+    },
+    {
+      "label": "0.4.4 capture --help",
+      "argv": [
+        "capture",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:47.920Z",
+      "endedAt": "2026-09-15T09:11:48.017Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "2f2e3bc11bde7eb35c87b871fa77c0cf1d5cbae6ba32c2da87c28147205df3f0",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/004"
+    },
+    {
+      "label": "0.4.4 device --help",
+      "argv": [
+        "device",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:48.017Z",
+      "endedAt": "2026-09-15T09:11:48.117Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "481d9a4b23ad46c55db7871133b44ab6311bad33ae610772aab750d823bf8d0b",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/005"
+    },
+    {
+      "label": "0.4.4 doctor --help",
+      "argv": [
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:48.117Z",
+      "endedAt": "2026-09-15T09:11:48.222Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "b2073e7d78e7636e5e0a3e7eeb663bef5c38727b885b2288d7efeeed09fdc2aa",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/006"
+    },
+    {
+      "label": "0.4.4 editor --help",
+      "argv": [
+        "editor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:48.222Z",
+      "endedAt": "2026-09-15T09:11:48.318Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "d1803678eddd8f53656a460e16e0d4146cded0c09409cba91255fae4cb97a209",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/007"
+    },
+    {
+      "label": "0.4.4 emulator --help",
+      "argv": [
+        "emulator",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:48.318Z",
+      "endedAt": "2026-09-15T09:11:48.415Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "fec175ab4f129700be2b07b9a9187157af077b507643086b7b7aca74b936aad5",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/008"
+    },
+    {
+      "label": "0.4.4 files --help",
+      "argv": [
+        "files",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:48.415Z",
+      "endedAt": "2026-09-15T09:11:48.511Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "0ee24338370485ca37f758a183d87d467a498df496c9b89d870340a845a1ce84",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/009"
+    },
+    {
+      "label": "0.4.4 log --help",
+      "argv": [
+        "log",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:48.511Z",
+      "endedAt": "2026-09-15T09:11:48.608Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "edf65124dfc1b0095ffc10ff79b8495cde967ffe76a23bb275c4a604414d07bf",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/010"
+    },
+    {
+      "label": "0.4.4 mcp --help",
+      "argv": [
+        "mcp",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:48.608Z",
+      "endedAt": "2026-09-15T09:11:48.705Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "f767b20cb09e821855cfc9c53943438ee254afc6c8351498832784dcaf3c90e7",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/011"
+    },
+    {
+      "label": "0.4.4 perf --help",
+      "argv": [
+        "perf",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:48.705Z",
+      "endedAt": "2026-09-15T09:11:48.798Z",
+      "code": 1,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "d22fe9b905cc5a56866b8ea4d8e88fe33e0e640078a9678aa882c179df943477",
+      "artifactStem": "raw-help-002/012"
+    },
+    {
+      "label": "0.4.4 plugin --help",
+      "argv": [
+        "plugin",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:48.798Z",
+      "endedAt": "2026-09-15T09:11:48.894Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "364f964f8c14a9741de2984947bde3df88d3d491faa5939dae8061c5c6d0686d",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/013"
+    },
+    {
+      "label": "0.4.4 project --help",
+      "argv": [
+        "project",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:48.895Z",
+      "endedAt": "2026-09-15T09:11:48.991Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "d3b2582ed1ffc364d30eeae116db35b3279ca8e637400d84e7aad459d325eb73",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/014"
+    },
+    {
+      "label": "0.4.4 shell --help",
+      "argv": [
+        "shell",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:48.991Z",
+      "endedAt": "2026-09-15T09:11:49.087Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "d624eb8d2ba9acc7de80397f2537cf4710197c9c5f0497e0775f4c1d37780ba0",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/015"
+    },
+    {
+      "label": "0.4.4 update --help",
+      "argv": [
+        "update",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:49.087Z",
+      "endedAt": "2026-09-15T09:11:49.187Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "257c4a1f72f2f0f246036d95ca79280d894cf4035802b7c81d46fd3b3d10c6b6",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/016"
+    },
+    {
+      "label": "0.4.4 web --help",
+      "argv": [
+        "web",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:49.187Z",
+      "endedAt": "2026-09-15T09:11:49.286Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "5b1e8aa93465d58ba6b7727c241b037648329925bbb5cca1190e3c42800580c7",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/017"
+    },
+    {
+      "label": "0.4.4 app info --help",
+      "argv": [
+        "app",
+        "info",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:49.286Z",
+      "endedAt": "2026-09-15T09:11:49.382Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "6598b0ee05b1b15d4bd8d4a5e4bce6f78c433f514ce8befc527251747594a0ae",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/018"
+    },
+    {
+      "label": "0.4.4 app install --help",
+      "argv": [
+        "app",
+        "install",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:49.382Z",
+      "endedAt": "2026-09-15T09:11:49.485Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "781285347086ffeb4ad4ac059aba017c2203a6f85fccb61131ff6c5b7c611a7a",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/019"
+    },
+    {
+      "label": "0.4.4 app launch --help",
+      "argv": [
+        "app",
+        "launch",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:49.485Z",
+      "endedAt": "2026-09-15T09:11:49.584Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "47c222c75e0d9e3ba405ad1b4b6166b6c76070bdd1f89183191521ffa9dd680a",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/020"
+    },
+    {
+      "label": "0.4.4 app list --help",
+      "argv": [
+        "app",
+        "list",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:49.584Z",
+      "endedAt": "2026-09-15T09:11:49.680Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "f64c73f7cab35890d1d7a4b48bb345212b1eb6e8e8a13b3f3ceb3b8eee72d904",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/021"
+    },
+    {
+      "label": "0.4.4 app logcat --help",
+      "argv": [
+        "app",
+        "logcat",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:49.680Z",
+      "endedAt": "2026-09-15T09:11:49.781Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "62f68aeaf728821082b7547405f040517b828ce40985f87a46e6e40ad785b348",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/022"
+    },
+    {
+      "label": "0.4.4 app stop --help",
+      "argv": [
+        "app",
+        "stop",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:49.781Z",
+      "endedAt": "2026-09-15T09:11:49.880Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "7ef847a29c0f8f23ab900f55948124b9820df3b116aaea3669b4bf69d72e51ca",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/023"
+    },
+    {
+      "label": "0.4.4 app uninstall --help",
+      "argv": [
+        "app",
+        "uninstall",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:49.880Z",
+      "endedAt": "2026-09-15T09:11:49.978Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "b02e128d24982d070f320cabd9852c8e22d5f2040784d6e7a15bd03ef6457cba",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/024"
+    },
+    {
+      "label": "0.4.4 app watch-crash --help",
+      "argv": [
+        "app",
+        "watch-crash",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:49.978Z",
+      "endedAt": "2026-09-15T09:11:50.076Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "66665f115a9b01205d6f2cd361cd1bae20d9878e936c1f261f576a198f41d20c",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/025"
+    },
+    {
+      "label": "0.4.4 capture record --help",
+      "argv": [
+        "capture",
+        "record",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:50.076Z",
+      "endedAt": "2026-09-15T09:11:50.173Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "edc531b100e9aab1873a6bf3c316dd755e96b52bc3c604fce1ab233b48ad2540",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/026"
+    },
+    {
+      "label": "0.4.4 capture screenshot --help",
+      "argv": [
+        "capture",
+        "screenshot",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:50.174Z",
+      "endedAt": "2026-09-15T09:11:50.270Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "c06e28e7054360a926d2ae9ca593da42ae36f7407805455fc5eedb062b4f3cfc",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/027"
+    },
+    {
+      "label": "0.4.4 device battery --help",
+      "argv": [
+        "device",
+        "battery",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:50.271Z",
+      "endedAt": "2026-09-15T09:11:50.367Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e7f6844ab240357a820577f921bce5437b54575a0b7ca942f0fb6af1e69f3caa",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/028"
+    },
+    {
+      "label": "0.4.4 device connect --help",
+      "argv": [
+        "device",
+        "connect",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:50.367Z",
+      "endedAt": "2026-09-15T09:11:50.467Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "c40bb20ff0b0d6f59ac3a21c0724dcb60c43bb4c98183c737eb57dee9913c4ec",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/029"
+    },
+    {
+      "label": "0.4.4 device disconnect --help",
+      "argv": [
+        "device",
+        "disconnect",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:50.467Z",
+      "endedAt": "2026-09-15T09:11:50.563Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "b4db1bf1302ea0defb94396ce17badea39d6dda444238d7186219ec3a3ad5a47",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/030"
+    },
+    {
+      "label": "0.4.4 device info --help",
+      "argv": [
+        "device",
+        "info",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:50.563Z",
+      "endedAt": "2026-09-15T09:11:50.662Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "30374af57380afa01c15ec60bd2e55de696c8ee6637efb60d5c7225bc09ba627",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/031"
+    },
+    {
+      "label": "0.4.4 device list --help",
+      "argv": [
+        "device",
+        "list",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:50.662Z",
+      "endedAt": "2026-09-15T09:11:50.757Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "02c748b22ba2be6e1ca5261343d2881dfa220771b2d8c2ca9c9b5913864ab63a",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/032"
+    },
+    {
+      "label": "0.4.4 device props --help",
+      "argv": [
+        "device",
+        "props",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:50.757Z",
+      "endedAt": "2026-09-15T09:11:50.854Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "b070d4eec6c6713f3f130a0970e3c2a68986242caa240ee440b9c484b272d69c",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/033"
+    },
+    {
+      "label": "0.4.4 device shell --help",
+      "argv": [
+        "device",
+        "shell",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:50.855Z",
+      "endedAt": "2026-09-15T09:11:50.952Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "88272fc03c115bc65658176d1ccb65492066f47c1c8aa38338984a775b6101a0",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/034"
+    },
+    {
+      "label": "0.4.4 editor bootstrap --help",
+      "argv": [
+        "editor",
+        "bootstrap",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:50.952Z",
+      "endedAt": "2026-09-15T09:11:51.050Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "32d87a12cc06c6ee849b03b48a0adbd83d17b7b98165d19d16fd993f9f1b3d66",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/035"
+    },
+    {
+      "label": "0.4.4 editor doctor --help",
+      "argv": [
+        "editor",
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:51.050Z",
+      "endedAt": "2026-09-15T09:11:51.153Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e1a665a8d832a695446b77ea1be29bcc665b956105d33d66ba81b315679a5602",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/036"
+    },
+    {
+      "label": "0.4.4 editor install --help",
+      "argv": [
+        "editor",
+        "install",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:51.153Z",
+      "endedAt": "2026-09-15T09:11:51.262Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "5f69a5b53baae10465ec391c37888a7cc822d0903a42d0a000f511509eb50439",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/037"
+    },
+    {
+      "label": "0.4.4 editor pack --help",
+      "argv": [
+        "editor",
+        "pack",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:51.262Z",
+      "endedAt": "2026-09-15T09:11:51.358Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "dc2e42de112aff10fa12330607c09abe2f93d2a95b5413d265abe3112e560bc3",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/038"
+    },
+    {
+      "label": "0.4.4 editor start --help",
+      "argv": [
+        "editor",
+        "start",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:51.358Z",
+      "endedAt": "2026-09-15T09:11:51.459Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "53d62f29772a93d2691e1ba87df09e16beb31d3ebfc06fc4339b35b72a2b15a6",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/039"
+    },
+    {
+      "label": "0.4.4 editor status --help",
+      "argv": [
+        "editor",
+        "status",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:51.459Z",
+      "endedAt": "2026-09-15T09:11:51.557Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "d41f1d25d7d39f26472f8a62901c5732954ca6cb4dda887fd529e4adbef19931",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/040"
+    },
+    {
+      "label": "0.4.4 editor stop --help",
+      "argv": [
+        "editor",
+        "stop",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:51.557Z",
+      "endedAt": "2026-09-15T09:11:51.653Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "7c448033776990a74f41ca8fd3dcfad1269aa071c338aea69af7a887113b0d89",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/041"
+    },
+    {
+      "label": "0.4.4 editor sync component --help",
+      "argv": [
+        "editor",
+        "sync",
+        "component",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:51.653Z",
+      "endedAt": "2026-09-15T09:11:51.752Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "ecda5a340afcb78a653041945a424165a89d856f24576ce6bb3272cf2b29d48c",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/042"
+    },
+    {
+      "label": "0.4.4 editor uninstall --help",
+      "argv": [
+        "editor",
+        "uninstall",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:51.753Z",
+      "endedAt": "2026-09-15T09:11:51.851Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "ebe875e9718835c08ba87cd68a6bc29d11c00080e116a2405eeaa1bfa3f929e5",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/043"
+    },
+    {
+      "label": "0.4.4 emulator create --help",
+      "argv": [
+        "emulator",
+        "create",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:51.851Z",
+      "endedAt": "2026-09-15T09:11:51.946Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "52e091466a545c9c2d596bca8cfd42b55d6a15d4a975c6c0d2b2b43cbf051386",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/044"
+    },
+    {
+      "label": "0.4.4 emulator delete --help",
+      "argv": [
+        "emulator",
+        "delete",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:51.946Z",
+      "endedAt": "2026-09-15T09:11:52.044Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "a6719e739e827307d3b9f25414a8e4d523362b5e9902d8222740e248fa9c1fa6",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/045"
+    },
+    {
+      "label": "0.4.4 emulator delete-image --help",
+      "argv": [
+        "emulator",
+        "delete-image",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:52.044Z",
+      "endedAt": "2026-09-15T09:11:52.142Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e9f2c3685a13fdbe908503c35f36122dadf9ce3ac2ad811f06a5b84467187fbd",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/046"
+    },
+    {
+      "label": "0.4.4 emulator doctor --help",
+      "argv": [
+        "emulator",
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:52.142Z",
+      "endedAt": "2026-09-15T09:11:52.239Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "f8287382b96a34d7c1d1bf97a55abb1e5a8c784075518f332c6ec673830601ad",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/047"
+    },
+    {
+      "label": "0.4.4 emulator dump-logs --help",
+      "argv": [
+        "emulator",
+        "dump-logs",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:52.239Z",
+      "endedAt": "2026-09-15T09:11:52.337Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "72de8636b0faf1645cb9cd6b3fd2582442edbe2de7f149f408eb66da7413d1d7",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/048"
+    },
+    {
+      "label": "0.4.4 emulator install --help",
+      "argv": [
+        "emulator",
+        "install",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:52.338Z",
+      "endedAt": "2026-09-15T09:11:52.435Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "ef165eaeda9ad2c15633af097029bd3296e91fb2385a1a6b100e23df35ea83aa",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/049"
+    },
+    {
+      "label": "0.4.4 emulator list --help",
+      "argv": [
+        "emulator",
+        "list",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:52.435Z",
+      "endedAt": "2026-09-15T09:11:52.531Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "a5dce5a1b545ffe2fd640cbfd913cf325336e5853d24bd1fac9a782232056b64",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/050"
+    },
+    {
+      "label": "0.4.4 emulator setup --help",
+      "argv": [
+        "emulator",
+        "setup",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:52.531Z",
+      "endedAt": "2026-09-15T09:11:52.632Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "305017d82145c78d91f637b511b29df02cd4f74422a9608b23d3220b97b9a160",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/051"
+    },
+    {
+      "label": "0.4.4 emulator start --help",
+      "argv": [
+        "emulator",
+        "start",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:52.632Z",
+      "endedAt": "2026-09-15T09:11:52.727Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "96b7de300b79abd0aca6e51db3108cb637ca86d5c49b50c5c859a6b320e115a6",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/052"
+    },
+    {
+      "label": "0.4.4 emulator status --help",
+      "argv": [
+        "emulator",
+        "status",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:52.727Z",
+      "endedAt": "2026-09-15T09:11:52.830Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "03e1af0ab85f065d8acbf7cd0e69298d5d005e875a92fd421f6451c7ef180005",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/053"
+    },
+    {
+      "label": "0.4.4 emulator stop --help",
+      "argv": [
+        "emulator",
+        "stop",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:52.830Z",
+      "endedAt": "2026-09-15T09:11:52.934Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "2994c48daddd35bb084c314cff2facf837a56d1af1fe2f84f2dbf55d80787c8b",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/054"
+    },
+    {
+      "label": "0.4.4 files cat --help",
+      "argv": [
+        "files",
+        "cat",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:52.934Z",
+      "endedAt": "2026-09-15T09:11:53.035Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "158d0bfb2ec3df4f57870e2653cde1b77827b2ec6566d24d4cf0b03c76a95877",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/055"
+    },
+    {
+      "label": "0.4.4 files ls --help",
+      "argv": [
+        "files",
+        "ls",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:53.035Z",
+      "endedAt": "2026-09-15T09:11:53.135Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "dfda6f55b001a8203ea5ca38146aeb1479bf2d9db973fc59100270e082324584",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/056"
+    },
+    {
+      "label": "0.4.4 files mkdir --help",
+      "argv": [
+        "files",
+        "mkdir",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:53.135Z",
+      "endedAt": "2026-09-15T09:11:53.230Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "994d0ef855692310bb0e21842475381b664d0a0f7df5d6d4ab6f527677aaa2ea",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/057"
+    },
+    {
+      "label": "0.4.4 files pull --help",
+      "argv": [
+        "files",
+        "pull",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:53.231Z",
+      "endedAt": "2026-09-15T09:11:53.328Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "4698d347d068c5a93c00a4637709ee6132bcbce484358c5558a7a1ea97cccc68",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/058"
+    },
+    {
+      "label": "0.4.4 files push --help",
+      "argv": [
+        "files",
+        "push",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:53.328Z",
+      "endedAt": "2026-09-15T09:11:53.424Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "4fcc14161f147de5271e90896d5fec0bc67b671fbe315d681149d270ec11dd7a",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/059"
+    },
+    {
+      "label": "0.4.4 files rm --help",
+      "argv": [
+        "files",
+        "rm",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:53.424Z",
+      "endedAt": "2026-09-15T09:11:53.524Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "2afcb8d5ffdd196f05241a9c26f6be4f55f7183a9191bf4a8ad1b7e12d014a13",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/060"
+    },
+    {
+      "label": "0.4.4 files stat --help",
+      "argv": [
+        "files",
+        "stat",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:53.524Z",
+      "endedAt": "2026-09-15T09:11:53.622Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "8f1e14fb8545a6636daddcd2a193c6c00ad211ea47978b2f485f0669e236811f",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/061"
+    },
+    {
+      "label": "0.4.4 mcp dev-knowledge --help",
+      "argv": [
+        "mcp",
+        "dev-knowledge",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:53.622Z",
+      "endedAt": "2026-09-15T09:11:53.721Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "33b0e8a01533cfd426d699e41f003193a45efa03e99af617c759b8bf6625ce55",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/062"
+    },
+    {
+      "label": "0.4.4 mcp doctor --help",
+      "argv": [
+        "mcp",
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:53.721Z",
+      "endedAt": "2026-09-15T09:11:53.820Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "882980141bb41b9eda757574ef03526536286cfcf3c662f36abed22670ff6e9d",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/063"
+    },
+    {
+      "label": "0.4.4 plugin audit --help",
+      "argv": [
+        "plugin",
+        "audit",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:53.820Z",
+      "endedAt": "2026-09-15T09:11:53.916Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "788c8b9862f84b1c6b81d6cf1b0244a9c2311316194cf5c996e10b48cd48a6e0",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/064"
+    },
+    {
+      "label": "0.4.4 plugin doctor --help",
+      "argv": [
+        "plugin",
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:53.916Z",
+      "endedAt": "2026-09-15T09:11:54.014Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "607da84b7fa9249c7e68869bf8e54b303f461dfc94b1f7d64ae43c3988fb0422",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/065"
+    },
+    {
+      "label": "0.4.4 plugin update --help",
+      "argv": [
+        "plugin",
+        "update",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:54.014Z",
+      "endedAt": "2026-09-15T09:11:54.114Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "f12daeb6cabc036f6f8117ec9199f824ff26c6605472310875db786bec5247d9",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/066"
+    },
+    {
+      "label": "0.4.4 project context doctor --help",
+      "argv": [
+        "project",
+        "context",
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:54.114Z",
+      "endedAt": "2026-09-15T09:11:54.212Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "167790513e1c6a0b0cdb6747adf4695c01afeab12aa7cd381498c0629628d3e7",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/067"
+    },
+    {
+      "label": "0.4.4 project create --help",
+      "argv": [
+        "project",
+        "create",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:54.212Z",
+      "endedAt": "2026-09-15T09:11:54.313Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "d2bc7045b147ff1b60d36d2721cd2f8c7f763115dec006cf66cb06759b70062c",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/068"
+    },
+    {
+      "label": "0.4.4 web launch --help",
+      "argv": [
+        "web",
+        "launch",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:54.313Z",
+      "endedAt": "2026-09-15T09:11:54.411Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "8a0a48a4bbfd97b8820d21cf61c7b7c6a2e29b26f14aad9385dcebddb39c81e9",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/069"
+    },
+    {
+      "label": "0.4.4 web setup --help",
+      "argv": [
+        "web",
+        "setup",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:54.412Z",
+      "endedAt": "2026-09-15T09:11:54.511Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "6cd939872b0cab6f276ca47c608bd9be2be692473525ed2c988d92fafd8d2630",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/070"
+    },
+    {
+      "label": "@picoxr/pico-cli@0.5.0 version",
+      "argv": [
+        "-v"
+      ],
+      "startedAt": "2026-09-15T09:11:59.609Z",
+      "endedAt": "2026-09-15T09:11:59.758Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "c6ae8abc9aaa50b0cf693d085f9f2f7bf1704fdf32b64378e04cbeefe0f11c9f",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/071"
+    },
+    {
+      "label": "0.5.0 pico-cli --help",
+      "argv": [
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:59.758Z",
+      "endedAt": "2026-09-15T09:11:59.862Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "a0db6d6644f616bcab467fb02eae191754f2705b2314e275d6aafcbe240d9e32",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/072"
+    },
+    {
+      "label": "0.5.0 app --help",
+      "argv": [
+        "app",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:59.862Z",
+      "endedAt": "2026-09-15T09:11:59.967Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "5ba86da9eff3918ab8b0faa55141a8a2159c4033f2a0c2c6317d4de04a3632d1",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/073"
+    },
+    {
+      "label": "0.5.0 capture --help",
+      "argv": [
+        "capture",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:11:59.967Z",
+      "endedAt": "2026-09-15T09:12:00.073Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "405a5924ddafaa3b38d57a8cd4dc0d65f4af1fee0d671781c1f2dcb855a24609",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/074"
+    },
+    {
+      "label": "0.5.0 device --help",
+      "argv": [
+        "device",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:00.073Z",
+      "endedAt": "2026-09-15T09:12:00.179Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "9e657e9dabb0b7a667b062fc102cc45d808b2115a14fde61423dd3ff1bf338f7",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/075"
+    },
+    {
+      "label": "0.5.0 doctor --help",
+      "argv": [
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:00.179Z",
+      "endedAt": "2026-09-15T09:12:00.285Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "dd1580a096bfd1af17e8634ec2c51597249017160f2b9d633aa0a05c540acf45",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/076"
+    },
+    {
+      "label": "0.5.0 editor --help",
+      "argv": [
+        "editor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:00.285Z",
+      "endedAt": "2026-09-15T09:12:00.393Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "c86f7dabc4a62b6ed3d1782bd8384eb3858af8e836984909f3dc3daa298685e7",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/077"
+    },
+    {
+      "label": "0.5.0 emulator --help",
+      "argv": [
+        "emulator",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:00.393Z",
+      "endedAt": "2026-09-15T09:12:00.500Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "d885fad4cf49a29fad0dcd149fabd026555fa97724bd5cd8b12543e065a71b04",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/078"
+    },
+    {
+      "label": "0.5.0 files --help",
+      "argv": [
+        "files",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:00.500Z",
+      "endedAt": "2026-09-15T09:12:00.603Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "5e6d82ed58e1778d1cb47ce7a12f0895280dda0538f413efa20aaafca411e9f4",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/079"
+    },
+    {
+      "label": "0.5.0 knowledge --help",
+      "argv": [
+        "knowledge",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:00.604Z",
+      "endedAt": "2026-09-15T09:12:00.713Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "1461c9b77721cd7c2186a71f98964550d1e6421d7d45587b852ac5db51f763ab",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/080"
+    },
+    {
+      "label": "0.5.0 log --help",
+      "argv": [
+        "log",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:00.713Z",
+      "endedAt": "2026-09-15T09:12:00.819Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "6048395e9fb1ab38c1fcf49aae51c0f4578259412595885056b104c058e6d697",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/081"
+    },
+    {
+      "label": "0.5.0 perf --help",
+      "argv": [
+        "perf",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:00.819Z",
+      "endedAt": "2026-09-15T09:12:00.917Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "6c5eb0447e727c79b51a94b280649c8d7a951aa9f1472ac9178aa56a03c00c0e",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/082"
+    },
+    {
+      "label": "0.5.0 plugin --help",
+      "argv": [
+        "plugin",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:00.917Z",
+      "endedAt": "2026-09-15T09:12:01.027Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "4c511a5182c084476486644af697ea648c40c1863ef06ad3219ef1bee338829d",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/083"
+    },
+    {
+      "label": "0.5.0 project --help",
+      "argv": [
+        "project",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:01.027Z",
+      "endedAt": "2026-09-15T09:12:01.137Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "95d23440ba3e848d1251a25d75983b8ea99b1d6353aa7c774fe688203d3169eb",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/084"
+    },
+    {
+      "label": "0.5.0 shell --help",
+      "argv": [
+        "shell",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:01.137Z",
+      "endedAt": "2026-09-15T09:12:01.240Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "0365a16a6ccc5a81e92cc0e2d7d3272c1f88d2883d8dc491e2f16b1498e0165d",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/085"
+    },
+    {
+      "label": "0.5.0 spatialml --help",
+      "argv": [
+        "spatialml",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:01.240Z",
+      "endedAt": "2026-09-15T09:12:01.346Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "a32bf920fb1950d70ad983d99d22297ba1ca7bb588b94bcd370a77bbcf881f15",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/086"
+    },
+    {
+      "label": "0.5.0 update --help",
+      "argv": [
+        "update",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:01.346Z",
+      "endedAt": "2026-09-15T09:12:01.449Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "1132556a8b2c968879568b8d4242b5ee9ef4ea307bbc1b00d36dd34d4a2f5c06",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/087"
+    },
+    {
+      "label": "0.5.0 web --help",
+      "argv": [
+        "web",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:01.449Z",
+      "endedAt": "2026-09-15T09:12:01.556Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "497b3bd3e4bfa6e8952eb89f8e090e0cd12f362da7e6d964500161661e363f55",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/088"
+    },
+    {
+      "label": "0.5.0 app info --help",
+      "argv": [
+        "app",
+        "info",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:01.557Z",
+      "endedAt": "2026-09-15T09:12:01.660Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "1a728d284d51e9b29e0e4162ac41d2ac30f741fed072317fce0ca0992588c5ec",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/089"
+    },
+    {
+      "label": "0.5.0 app install --help",
+      "argv": [
+        "app",
+        "install",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:01.660Z",
+      "endedAt": "2026-09-15T09:12:01.764Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "73b3edccaa6b125b359bc973e1fa7f07e31f3a46d9641c6036b57246d1700c17",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/090"
+    },
+    {
+      "label": "0.5.0 app launch --help",
+      "argv": [
+        "app",
+        "launch",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:01.764Z",
+      "endedAt": "2026-09-15T09:12:01.867Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "641e54c82120b1a4134bf71e3916ec73c0f883cca9539368aa4a7da73d5de307",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/091"
+    },
+    {
+      "label": "0.5.0 app list --help",
+      "argv": [
+        "app",
+        "list",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:01.868Z",
+      "endedAt": "2026-09-15T09:12:01.979Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "cb7fd714c3fecb003f6f0282762e5498a363315cca848ac3943d6a1cd76606b7",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/092"
+    },
+    {
+      "label": "0.5.0 app logcat --help",
+      "argv": [
+        "app",
+        "logcat",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:01.979Z",
+      "endedAt": "2026-09-15T09:12:02.085Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "3e0300271e7c97ee78b20a627665799c2bf996abf1eb4cf586eded4157070bde",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/093"
+    },
+    {
+      "label": "0.5.0 app stop --help",
+      "argv": [
+        "app",
+        "stop",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:02.085Z",
+      "endedAt": "2026-09-15T09:12:02.205Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "0fc819b7cb10efcd61a392658c38689f33e0f67ec7c146bfbe32031237f418c5",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/094"
+    },
+    {
+      "label": "0.5.0 app uninstall --help",
+      "argv": [
+        "app",
+        "uninstall",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:02.206Z",
+      "endedAt": "2026-09-15T09:12:02.311Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "c6ce239cf99020cc1b24120c572d9f634fa1e8be6738c824f6e29afcb20b4e48",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/095"
+    },
+    {
+      "label": "0.5.0 app watch-crash --help",
+      "argv": [
+        "app",
+        "watch-crash",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:02.311Z",
+      "endedAt": "2026-09-15T09:12:02.416Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "7004a564f043c78505ea95e1b3291f3001b595fb14f854d6d989e666afa6aa8a",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/096"
+    },
+    {
+      "label": "0.5.0 capture record --help",
+      "argv": [
+        "capture",
+        "record",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:02.416Z",
+      "endedAt": "2026-09-15T09:12:02.522Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "618d97626543b9fb43039b9a163ecec7a5167daefde127061d7e3c9d051712ea",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/097"
+    },
+    {
+      "label": "0.5.0 capture screenshot --help",
+      "argv": [
+        "capture",
+        "screenshot",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:02.522Z",
+      "endedAt": "2026-09-15T09:12:02.626Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "d03c230f409555530e7c5c9bb360a9dfc6ef8ef4b94d23f7df012ec556017d27",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/098"
+    },
+    {
+      "label": "0.5.0 device battery --help",
+      "argv": [
+        "device",
+        "battery",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:02.626Z",
+      "endedAt": "2026-09-15T09:12:02.729Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "872770856f0f7907100269639e5c71434dfc1be28217099338da334108681f3c",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/099"
+    },
+    {
+      "label": "0.5.0 device connect --help",
+      "argv": [
+        "device",
+        "connect",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:02.729Z",
+      "endedAt": "2026-09-15T09:12:02.833Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "a83bc0281eef0fde54595e3665f3f40e5e4247d00a699633ef81e3e0f3f19e35",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/100"
+    },
+    {
+      "label": "0.5.0 device disconnect --help",
+      "argv": [
+        "device",
+        "disconnect",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:02.833Z",
+      "endedAt": "2026-09-15T09:12:02.937Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "8d2b6e51415f935e9811e7c29eede815c9425eb7346bea0867ccd5367037b99b",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/101"
+    },
+    {
+      "label": "0.5.0 device info --help",
+      "argv": [
+        "device",
+        "info",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:02.937Z",
+      "endedAt": "2026-09-15T09:12:03.040Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "9ca98eaa794ce32561df17bc6be753b6b0563131fcbcc10ac96ce28800e8b2b8",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/102"
+    },
+    {
+      "label": "0.5.0 device list --help",
+      "argv": [
+        "device",
+        "list",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:03.040Z",
+      "endedAt": "2026-09-15T09:12:03.148Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "00066ff9d4dcbce5240279da70cecefe64fae461e67a6758d004e8597c71d134",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/103"
+    },
+    {
+      "label": "0.5.0 device props --help",
+      "argv": [
+        "device",
+        "props",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:03.148Z",
+      "endedAt": "2026-09-15T09:12:03.252Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "eeaf7d228609281e2d5981421b3d637a07f92dbf84134b9d788c7c72646df8ff",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/104"
+    },
+    {
+      "label": "0.5.0 device shell --help",
+      "argv": [
+        "device",
+        "shell",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:03.252Z",
+      "endedAt": "2026-09-15T09:12:03.355Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "44c1ae5a7afad7cb677d966442ba7840d8d9e710a5e2d6cb9e1d893976187664",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/105"
+    },
+    {
+      "label": "0.5.0 editor bootstrap --help",
+      "argv": [
+        "editor",
+        "bootstrap",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:03.355Z",
+      "endedAt": "2026-09-15T09:12:03.459Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "c9c3275dd64caa25d5317215eb7e8e98c99b284e0d178a5da866697c55a1abce",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/106"
+    },
+    {
+      "label": "0.5.0 editor doctor --help",
+      "argv": [
+        "editor",
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:03.459Z",
+      "endedAt": "2026-09-15T09:12:03.572Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "f3fea60cb31f113ba5d583a72d24d0287fc2f2ff979d577b9eff130b474249dc",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/107"
+    },
+    {
+      "label": "0.5.0 editor install --help",
+      "argv": [
+        "editor",
+        "install",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:03.572Z",
+      "endedAt": "2026-09-15T09:12:03.681Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "d0fe05ab9a059e6f801fca3217e3d8bff87fe50f53f1e1b3f761aa70ef50f003",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/108"
+    },
+    {
+      "label": "0.5.0 editor pack --help",
+      "argv": [
+        "editor",
+        "pack",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:03.681Z",
+      "endedAt": "2026-09-15T09:12:03.785Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "666f6a11229903abc763caf2d4d9747ef3619eb1b098f31f9bb24d7809f696a6",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/109"
+    },
+    {
+      "label": "0.5.0 editor start --help",
+      "argv": [
+        "editor",
+        "start",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:03.785Z",
+      "endedAt": "2026-09-15T09:12:03.892Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "c235252ff04ba26f06c93d911ebffd3a0fd3553e5df5f77b4125bb5b3780d8e5",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/110"
+    },
+    {
+      "label": "0.5.0 editor status --help",
+      "argv": [
+        "editor",
+        "status",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:03.892Z",
+      "endedAt": "2026-09-15T09:12:03.995Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "75d6c99daaa1919b1184571d59b1dfcc06acd977366d5959522fbc14189f732a",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/111"
+    },
+    {
+      "label": "0.5.0 editor stop --help",
+      "argv": [
+        "editor",
+        "stop",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:03.995Z",
+      "endedAt": "2026-09-15T09:12:04.099Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "c6db496c1487213e41e659445155cafa9c96da882e7ff4d29674affd54e3fbe1",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/112"
+    },
+    {
+      "label": "0.5.0 editor sync --help",
+      "argv": [
+        "editor",
+        "sync",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:04.100Z",
+      "endedAt": "2026-09-15T09:12:04.198Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "632008433d23f8094e0734d610d02fe7e0709282488c7311d68a851fe0b9d9aa",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/113"
+    },
+    {
+      "label": "0.5.0 editor uninstall --help",
+      "argv": [
+        "editor",
+        "uninstall",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:04.198Z",
+      "endedAt": "2026-09-15T09:12:04.305Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "313df649f116f6e80de512ff3cd6b39f1db11b5fb0fa4ab6be067d045bd520d6",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/114"
+    },
+    {
+      "label": "0.5.0 emulator create --help",
+      "argv": [
+        "emulator",
+        "create",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:04.305Z",
+      "endedAt": "2026-09-15T09:12:04.420Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "5bc5287392f98e27e9b4f12740d76603a17b74ec4902ff79f42ed4b609279a42",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/115"
+    },
+    {
+      "label": "0.5.0 emulator delete --help",
+      "argv": [
+        "emulator",
+        "delete",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:04.420Z",
+      "endedAt": "2026-09-15T09:12:04.530Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "b62ae00e3accdfc92133fe0be5c65e93afdc8d2f3cf6d4e5b6ea9704ef4aeae7",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/116"
+    },
+    {
+      "label": "0.5.0 emulator delete-image --help",
+      "argv": [
+        "emulator",
+        "delete-image",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:04.530Z",
+      "endedAt": "2026-09-15T09:12:04.642Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e10a37b0e6f1f5a6b0c1de8498e2f62612217b61a87012d9220ef6207f692abf",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/117"
+    },
+    {
+      "label": "0.5.0 emulator doctor --help",
+      "argv": [
+        "emulator",
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:04.642Z",
+      "endedAt": "2026-09-15T09:12:04.745Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "d5090b87c42757acf1069274dd2854b4530f970b6413641c43a377dbb3fe8c8c",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/118"
+    },
+    {
+      "label": "0.5.0 emulator dump-logs --help",
+      "argv": [
+        "emulator",
+        "dump-logs",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:04.745Z",
+      "endedAt": "2026-09-15T09:12:04.849Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "b09760586467b51a26a5224c62b34e7784848ef6f97248243d2b039f8d4d858d",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/119"
+    },
+    {
+      "label": "0.5.0 emulator install --help",
+      "argv": [
+        "emulator",
+        "install",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:04.849Z",
+      "endedAt": "2026-09-15T09:12:04.954Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "d2247668f8994fe42559f59826595b0300d2f93ffacd78608da73d509130331e",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/120"
+    },
+    {
+      "label": "0.5.0 emulator list --help",
+      "argv": [
+        "emulator",
+        "list",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:04.954Z",
+      "endedAt": "2026-09-15T09:12:05.056Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "62992e6fc38e378ac1164dac8434863d0bc0f2f381f7fa9e154c51416cd6248b",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/121"
+    },
+    {
+      "label": "0.5.0 emulator setup --help",
+      "argv": [
+        "emulator",
+        "setup",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:05.056Z",
+      "endedAt": "2026-09-15T09:12:05.164Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "777be5a1c667636c0cd03815477d670b5a4dfd290b77a34b71069e2186c7d9d5",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/122"
+    },
+    {
+      "label": "0.5.0 emulator start --help",
+      "argv": [
+        "emulator",
+        "start",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:05.164Z",
+      "endedAt": "2026-09-15T09:12:05.277Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "a4870874f9e0985e671189881ef892a0a5de6b7add9417876bf912bdb57c7c0d",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/123"
+    },
+    {
+      "label": "0.5.0 emulator status --help",
+      "argv": [
+        "emulator",
+        "status",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:05.277Z",
+      "endedAt": "2026-09-15T09:12:05.384Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "218d8eff79cce17b9c74888f4eefbd3b451594dc45ce3e67911ff6fa16061e4c",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/124"
+    },
+    {
+      "label": "0.5.0 emulator stop --help",
+      "argv": [
+        "emulator",
+        "stop",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:05.384Z",
+      "endedAt": "2026-09-15T09:12:05.488Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "71f6a89f6c8d109604fb8fe735bf5d2c6ee2a9e1dfc96547488d71e42bf0bb98",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/125"
+    },
+    {
+      "label": "0.5.0 files cat --help",
+      "argv": [
+        "files",
+        "cat",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:05.488Z",
+      "endedAt": "2026-09-15T09:12:05.592Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "d7256fdc130131b6d158df1dc903e1f7397fbf825a2d83ed5f8903f7a3708d20",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/126"
+    },
+    {
+      "label": "0.5.0 files ls --help",
+      "argv": [
+        "files",
+        "ls",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:05.592Z",
+      "endedAt": "2026-09-15T09:12:05.697Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "76a460ca3a2b9472f135346ace4c20dfc10aac66c43c86c6c2df146fdb269a4e",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/127"
+    },
+    {
+      "label": "0.5.0 files mkdir --help",
+      "argv": [
+        "files",
+        "mkdir",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:05.697Z",
+      "endedAt": "2026-09-15T09:12:05.800Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "3a329ab6020ec2639e3461221db388c8c2fe838e83146d618af2279640cfe05b",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/128"
+    },
+    {
+      "label": "0.5.0 files pull --help",
+      "argv": [
+        "files",
+        "pull",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:05.800Z",
+      "endedAt": "2026-09-15T09:12:05.904Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "ff8fe3ac7f1ed6632a52498b58c5449d4714eece40939455d01b2571006da9e7",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/129"
+    },
+    {
+      "label": "0.5.0 files push --help",
+      "argv": [
+        "files",
+        "push",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:05.904Z",
+      "endedAt": "2026-09-15T09:12:06.011Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "4381b77e51799b3f4696a3c6353e8f5bc4544a04dae79bc48077e6c7ac774a82",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/130"
+    },
+    {
+      "label": "0.5.0 files rm --help",
+      "argv": [
+        "files",
+        "rm",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:06.011Z",
+      "endedAt": "2026-09-15T09:12:06.119Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "bdc5874f469cc39f1e13ca1bbd8336b05a344927341fb01e1162518e1c3dcdbd",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/131"
+    },
+    {
+      "label": "0.5.0 files stat --help",
+      "argv": [
+        "files",
+        "stat",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:06.119Z",
+      "endedAt": "2026-09-15T09:12:06.222Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "4c91424ed926b90ee734032343c14e36e5ef3f5b309b0c3245cfd030ae72ae83",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/132"
+    },
+    {
+      "label": "0.5.0 knowledge doctor --help",
+      "argv": [
+        "knowledge",
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:06.222Z",
+      "endedAt": "2026-09-15T09:12:06.326Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "d9004996c69da6059e558a119b549fcb823d66cb3fb46d58e548c9b5f8e37592",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/133"
+    },
+    {
+      "label": "0.5.0 knowledge list --help",
+      "argv": [
+        "knowledge",
+        "list",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:06.326Z",
+      "endedAt": "2026-09-15T09:12:06.432Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "00eae69ecbe52dbd0e8b8a4c05bd28b0d1294c525c9a743a38581fb09b33cb8a",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/134"
+    },
+    {
+      "label": "0.5.0 knowledge pull --help",
+      "argv": [
+        "knowledge",
+        "pull",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:06.432Z",
+      "endedAt": "2026-09-15T09:12:06.539Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "8cd11174a15effc25269034d9549f050270b81d10435c61f95c20540d8da8b1a",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/135"
+    },
+    {
+      "label": "0.5.0 knowledge server --help",
+      "argv": [
+        "knowledge",
+        "server",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:06.539Z",
+      "endedAt": "2026-09-15T09:12:06.642Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "95956385ff8dbc5a563d3720feec198eb24551724daa6cfe6977b6a8e716537b",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/136"
+    },
+    {
+      "label": "0.5.0 perf daemon --help",
+      "argv": [
+        "perf",
+        "daemon",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:06.642Z",
+      "endedAt": "2026-09-15T09:12:06.751Z",
+      "code": 3,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "artifactStem": "raw-help-002/137"
+    },
+    {
+      "label": "0.5.0 perf doctor --help",
+      "argv": [
+        "perf",
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:06.751Z",
+      "endedAt": "2026-09-15T09:12:06.850Z",
+      "code": 3,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "artifactStem": "raw-help-002/138"
+    },
+    {
+      "label": "0.5.0 perf live --help",
+      "argv": [
+        "perf",
+        "live",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:06.850Z",
+      "endedAt": "2026-09-15T09:12:06.951Z",
+      "code": 3,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "artifactStem": "raw-help-002/139"
+    },
+    {
+      "label": "0.5.0 perf session --help",
+      "argv": [
+        "perf",
+        "session",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:06.951Z",
+      "endedAt": "2026-09-15T09:12:07.053Z",
+      "code": 3,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "artifactStem": "raw-help-002/140"
+    },
+    {
+      "label": "0.5.0 perf trace --help",
+      "argv": [
+        "perf",
+        "trace",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:07.053Z",
+      "endedAt": "2026-09-15T09:12:07.155Z",
+      "code": 3,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "5dfda392b281d95ab57681edf5a37f31ec66e6642a6319707eb4058c1ee836bc",
+      "artifactStem": "raw-help-002/141"
+    },
+    {
+      "label": "0.5.0 plugin audit --help",
+      "argv": [
+        "plugin",
+        "audit",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:07.155Z",
+      "endedAt": "2026-09-15T09:12:07.260Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "38b76a916c3aee6a7a6f2b1057292850fdde7d19763586ad487d5be57cdc52b5",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/142"
+    },
+    {
+      "label": "0.5.0 plugin doctor --help",
+      "argv": [
+        "plugin",
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:07.260Z",
+      "endedAt": "2026-09-15T09:12:07.366Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "4c474566cfc98042d3b94f6bab96432aafeecc14c2ebceb7073fd6cf926e88e0",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/143"
+    },
+    {
+      "label": "0.5.0 plugin install --help",
+      "argv": [
+        "plugin",
+        "install",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:07.367Z",
+      "endedAt": "2026-09-15T09:12:07.473Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "b2c697674fbe805456aa221d27d167c6902c43a76e9297c07a034def8716c1d8",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/144"
+    },
+    {
+      "label": "0.5.0 plugin uninstall --help",
+      "argv": [
+        "plugin",
+        "uninstall",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:07.473Z",
+      "endedAt": "2026-09-15T09:12:07.578Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "68e11f225528997beaadfb98a74b0be0ae8240fbf8818b3d6b60fb17d25bb117",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/145"
+    },
+    {
+      "label": "0.5.0 plugin update --help",
+      "argv": [
+        "plugin",
+        "update",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:07.578Z",
+      "endedAt": "2026-09-15T09:12:07.684Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "ced15f9c3bfcdf3626a93e4b975ae01176e59284d605715fa64ac63ab8c8c5ff",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/146"
+    },
+    {
+      "label": "0.5.0 project context --help",
+      "argv": [
+        "project",
+        "context",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:07.684Z",
+      "endedAt": "2026-09-15T09:12:07.794Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "9a24bc5a0f774873a02583742818a9e972526ccbbb4b6802bb62fb6e6c0b8e7e",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/147"
+    },
+    {
+      "label": "0.5.0 project create --help",
+      "argv": [
+        "project",
+        "create",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:07.794Z",
+      "endedAt": "2026-09-15T09:12:07.900Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "89f54278c8a46133cdc4fd17362033e7dcfe92ad76aaea555bdc0b0a88fc01db",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/148"
+    },
+    {
+      "label": "0.5.0 spatialml doctor --help",
+      "argv": [
+        "spatialml",
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:07.901Z",
+      "endedAt": "2026-09-15T09:12:08.009Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "1e2302d9d42e9c9ba8f34be7c6eb4f7d0ad8afe2849e0689e1f07f1e331ebdca",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/149"
+    },
+    {
+      "label": "0.5.0 spatialml model --help",
+      "argv": [
+        "spatialml",
+        "model",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:08.009Z",
+      "endedAt": "2026-09-15T09:12:08.118Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "14cb335553270b0c92eaa17b0f0bfc18b60041de93ab16c285efb2ffdbf6d0b8",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/150"
+    },
+    {
+      "label": "0.5.0 spatialml onboard --help",
+      "argv": [
+        "spatialml",
+        "onboard",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:08.118Z",
+      "endedAt": "2026-09-15T09:12:08.222Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "467d1b24effd75e456fb07c410ce8758c8ff1f4f31ce99eecebb8e2c2f4752a0",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/151"
+    },
+    {
+      "label": "0.5.0 spatialml pipeline --help",
+      "argv": [
+        "spatialml",
+        "pipeline",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:08.222Z",
+      "endedAt": "2026-09-15T09:12:08.333Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "ec79a3f42fd0127b1cb70b3982112b52df681bbd715e508e17dd9670228b6904",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/152"
+    },
+    {
+      "label": "0.5.0 spatialml setup --help",
+      "argv": [
+        "spatialml",
+        "setup",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:08.333Z",
+      "endedAt": "2026-09-15T09:12:08.438Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "2619c3c585d7cd79c62cd51e8398319f0e2aa4e82409295d5b8dd38ca443e44a",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/153"
+    },
+    {
+      "label": "0.5.0 web launch --help",
+      "argv": [
+        "web",
+        "launch",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:08.438Z",
+      "endedAt": "2026-09-15T09:12:08.546Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "a6cbc006efd7a987c586a694bb51fb9aaf698c14630971bf60fa4c0a36d323b0",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/154"
+    },
+    {
+      "label": "0.5.0 web setup --help",
+      "argv": [
+        "web",
+        "setup",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:08.546Z",
+      "endedAt": "2026-09-15T09:12:08.655Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "3c755ab7848f007c18b845e836246a883ff34398eb5aefdd708ce7815a7ef386",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/155"
+    },
+    {
+      "label": "0.5.0 editor sync component --help",
+      "argv": [
+        "editor",
+        "sync",
+        "component",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:08.655Z",
+      "endedAt": "2026-09-15T09:12:08.769Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "be967b4ff33d09e99ce57fcdf0b2d22e88280fbae95922046db24c2f4288be30",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/156"
+    },
+    {
+      "label": "0.5.0 project context doctor --help",
+      "argv": [
+        "project",
+        "context",
+        "doctor",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:08.769Z",
+      "endedAt": "2026-09-15T09:12:08.873Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "87a260f82aa6ec19289f213d49dff0ddd6d9e844f9a2a8da150b9c31ca9befc6",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/157"
+    },
+    {
+      "label": "0.5.0 spatialml model inspect --help",
+      "argv": [
+        "spatialml",
+        "model",
+        "inspect",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:08.873Z",
+      "endedAt": "2026-09-15T09:12:08.976Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "df81b3cec60ec4bc5d92dcb61f6f3c5f6e356bb03c90b044eb3c0ba9d1ae56a3",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/158"
+    },
+    {
+      "label": "0.5.0 spatialml model visualize --help",
+      "argv": [
+        "spatialml",
+        "model",
+        "visualize",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:08.976Z",
+      "endedAt": "2026-09-15T09:12:09.080Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "b9232902db486c015e417436fad2b8f0b3afcb1df1cf82d9efc05d07aa1b0a2f",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/159"
+    },
+    {
+      "label": "0.5.0 spatialml pipeline install --help",
+      "argv": [
+        "spatialml",
+        "pipeline",
+        "install",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:09.080Z",
+      "endedAt": "2026-09-15T09:12:09.186Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "9f562c8fa4540bab1816fef9f7f6635ab7036bb553a7bb47f8249a09b4884193",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/160"
+    },
+    {
+      "label": "0.5.0 spatialml pipeline search --help",
+      "argv": [
+        "spatialml",
+        "pipeline",
+        "search",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:09.186Z",
+      "endedAt": "2026-09-15T09:12:09.292Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "a131a8b892aba369f278d4aa34361afa5e26828a0a2f227515669958b419c44e",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/161"
+    },
+    {
+      "label": "0.5.0 spatialml pipeline verify --help",
+      "argv": [
+        "spatialml",
+        "pipeline",
+        "verify",
+        "--help"
+      ],
+      "startedAt": "2026-09-15T09:12:09.292Z",
+      "endedAt": "2026-09-15T09:12:09.398Z",
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "outputTruncated": false,
+      "spawnError": null,
+      "stdoutSha256": "2b92b28a17a736d76ea68906969ee3fc357d38c7298ef07beeac0c60b3912c0b",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactStem": "raw-help-002/162"
+    }
+  ]
+}

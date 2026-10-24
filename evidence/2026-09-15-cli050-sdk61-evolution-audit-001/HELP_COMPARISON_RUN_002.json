@@ -1,0 +1,16 @@
+{
+  "startedAt": "2026-09-15T09:11:41.590821+00:00",
+  "endedAt": "2026-09-15T09:12:10.188977+00:00",
+  "argv": [
+    "node",
+    "evidence/2026-09-15-cli050-sdk61-evolution-audit-001/compare-picocli-surfaces-retained-audit-002.mjs",
+    "--from",
+    "0.4.4",
+    "--to",
+    "0.5.0",
+    "--output",
+    "/Users/sushantsrikrish/PICO-MCP/evidence/2026-09-15-cli050-sdk61-evolution-audit-001/HELP_COMPARISON_002.json"
+  ],
+  "exitCode": 0,
+  "reason": "Original comparator retains only hashes; raw output needed to diagnose all help hashes changing and assess advertised MCP-path removal. Audit-only copy retains each version/help response and result status; invocation guards and traversal unchanged."
+}

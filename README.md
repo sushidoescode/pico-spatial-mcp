@@ -84,6 +84,11 @@ visual evidence.
 
 ## What you can use this for, today
 
+**Bounded agent iteration (38.2.0):** enable `PICO_MCP_INTERACTION=1` for the
+observe → semantic action → assert → capture → source-bound rebuild → replay loop.
+The [setup and runnable fixture](docs/AGENT_ITERATION.md) document explicit emulator
+identity, acknowledgement handling and the measured native/host evidence boundaries.
+
 Concrete jobs this tool does on a stock PICO OS 6 emulator install, each backed by ledger evidence you can audit:
 
 1. **Verify any PICO APK you already have** — your own samples, pico-cli-scaffolded apps, Unity-built APKs. `verify_pico_apk` installs, launches, crash-checks, and captures a frame; the trust ledger records exactly how much was proven ([5-minute walkthrough below](#verify-your-apk-in-5-minutes)).
@@ -309,13 +314,36 @@ to get going, **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for repo orient
 ## Testing
 
 ```bash
-npm run smoke        # toolchain/bundle/proto tools against the real local install (no emulator boot)
-                     # no PICO SDK installed? prefix SMOKE_SDK_OPTIONAL=1 — SDK-dependent probes skip
+npm run smoke        # every tool registers and the typed contracts round-trip — fixtures only
 npm run test:lint    # the retained-lessons lint rules fire on their fixtures
 npm run test:ledger  # the trust ledger rejects an unlinked vision_verified claim
 ```
 
-The full gate battery has 47 gate invocations (46 `test:` suites plus `smoke`). CI assigns 44 to
+`smoke` needs no PICO SDK and never looks for one: it builds the server's whole environment — an
+empty tools root, a fixture home, a fake `adb` that serves only `fixture-serial`, a fake Gradle and
+an `npm` that refuses every call — so it reports the same checks with the same outcomes on a clean
+CI runner and on a fully-equipped machine. `npm run test:smoke-isolation` is what proves that, by
+running `smoke` twice under two different host homes and comparing the results check for check.
+
+The tools that do need a real toolchain — `validate_toolchain`, `emulator_list`, bundle
+pack/inspect and SDK/proto discovery — run only when you name their inputs:
+
+```bash
+node test/sdk-integration.mjs run \
+  --project /absolute/path/to/ProjectDir \
+  --bundle  /absolute/path/to/existing.bundle \
+  --output  /absolute/path/to/new-run-dir
+```
+
+All three paths are required and absolute — nothing is discovered. `--project` is the directory
+*containing* the `<Name>.spatialproject` file and `--bundle` an existing bundle; both are read-only.
+`--output` must not already exist: it is created fresh and receives the packed bundle plus
+`integration-report.json`, so an earlier run's evidence is never overwritten. Nothing is installed
+or launched. Each step reports `pass`, `fail` or `skipped` with a reason; missing optional
+tooling is a labeled skip, never evidence that the step passed. It is deliberately not a gate —
+`npm run test:sdk-integration` runs its argument, prerequisite and classification fixtures instead.
+
+The full gate battery has 56 gate invocations (55 `test:` suites plus `smoke`). CI assigns 53 to
 each Linux matrix run, one to native Windows (`test:picocli-win`), and two to native macOS (the
 CMIO writer/reader suites). The Windows lane checks the smoke fixture's `.cmd`/`.bat` wrapper
 selection but does **not** execute or claim a native `build_and_run` success path. All gates are

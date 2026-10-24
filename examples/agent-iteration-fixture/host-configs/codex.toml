@@ -1,0 +1,14 @@
+# Template only. Replace REPO_PATH with the absolute built checkout path.
+# This is a TOML fragment, not a --config-file argument supported by Codex CLI.
+[mcp_servers.pico_iteration_fixture]
+command = "node"
+args = ["REPO_PATH/dist/index.js"]
+startup_timeout_sec = 30
+tool_timeout_sec = 600
+enabled_tools = ["pico_doctor", "pico_interaction"]
+
+[mcp_servers.pico_iteration_fixture.env]
+PICO_MCP_SURFACE = "doors"
+PICO_MCP_INTERACTION = "1"
+PICO_MCP_CLI_POLICY = "disabled"
+PICO_ADB = "/fixture/no/such/adb"

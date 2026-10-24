@@ -1,0 +1,16 @@
+Description:
+Check for and install pico-cli updates
+
+Usage:
+  $ pico-cli update
+
+Options:
+  --check            Check for an update without modifying the installation
+  -y, --yes          Skip confirmation before updating
+  --format <format>  Output format (plain | json) (default: plain)
+  -h, --help         Display this message
+
+Examples:
+  $ pico-cli update --check
+  $ pico-cli update --yes
+  $ pico-cli update --check --format json

@@ -1,0 +1,9 @@
+Description:
+Uninstall an app from the preferred current device
+
+Usage:
+  $ pico-cli app uninstall <package>
+
+Options:
+  -d, --device <device>  Target device id (overrides automatic selection)
+  -h, --help             Display this message

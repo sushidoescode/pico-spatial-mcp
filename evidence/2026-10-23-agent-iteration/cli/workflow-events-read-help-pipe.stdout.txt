@@ -1,0 +1,16 @@
+[1mDescription[22m:
+Read persisted Workflow Run events after a cursor
+
+[1mUsage[22m:
+  $ [1mpico-cli workflow events read[22m <run-id> [--after <cursor>] [--limit <count>] [--format
+    plain|json]
+
+[1mOptions[22m:
+  [1m--after <cursor>[22m   Return events after this cursor (default: 0)
+  [1m--limit <count>[22m    Maximum events to return (1-1000) (default: 100)
+  [1m--format <format>[22m  Output format (plain | json) (default: plain)
+  [1m-h, --help[22m         Display this message
+
+[1mExamples[22m:
+  $ pico-cli workflow events read run-123e4567-e89b-42d3-a456-426614174000
+  $ pico-cli workflow events read run-123e4567-e89b-42d3-a456-426614174000 --after 12 --format json

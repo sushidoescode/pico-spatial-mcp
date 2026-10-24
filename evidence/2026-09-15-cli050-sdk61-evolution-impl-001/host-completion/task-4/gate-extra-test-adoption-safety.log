@@ -1,0 +1,52 @@
+# gate test:adoption-safety (2026-09-16T10:50:44Z)
+  ok   skeleton-shaped project passes static config audit
+  ok   missing Compose exclusion is named: androidx.compose.ui:ui
+  ok   missing Compose exclusion is named: androidx.compose.ui:ui-graphics
+  ok   missing Compose exclusion is named: androidx.compose.ui:ui-text
+  ok   missing Compose exclusion is named: androidx.compose.foundation:foundation
+  ok   commented-out Compose exclusions do not satisfy any required exclusion
+  ok   exclusions in an unrelated module do not satisfy the default app module
+  ok   root subprojects exclusions apply to the selected app module
+  ok   a forbidden dependency in root subprojects configuration applies to app
+  ok   root configuration for another project does not satisfy app
+  ok   a dependency belonging only to the root project is not attributed to app
+  ok   exclusions in app do not satisfy an explicitly selected module
+  ok   direct forbidden Compose dependency is an error
+  ok   ui-tooling is not mistaken for the forbidden ui coordinate
+  ok   Stage metadata with WindowContainer root is an error
+  ok   WindowContainer metadata with Stage root is an error
+  ok   matching WindowContainer family passes
+  ok   multiple roots are warning ambiguity, not an invented error
+  ok   an unused import does not suppress a genuine metadata/root mismatch
+  ok   a comment does not suppress a genuine metadata/root mismatch
+  ok   a test-only root does not suppress a genuine metadata/root mismatch
+  ok   an unrelated module root does not suppress a genuine metadata/root mismatch
+  ok   a production helper container cannot disguise the actual mainApp mismatch
+  ok   escaping symlink is refused
+  ok   exclusions outside global resolution scope do not satisfy the contract
+  ok   canonical Groovy global exclusions satisfy the contract
+  ok   mixed metadata is warning-only ambiguity
+  ok   resolved Compose graph retains the parent chain
+  ok   opt-in resolved verification finds a transitive forbidden artifact
+  ok   resolveTransitives:false does not execute the wrapper
+  ok   a canonical :module input produces exactly one Gradle path separator
+  ok   an invalid module path never executes the Gradle wrapper
+  ok   timeout preserves the static result and reports timeout
+  ok   non-zero Gradle preserves the static result and reports failure
+  ok   build matrix extracts literal skeleton facts
+  ok   BUILD_MATRIX literals stay aligned with the extractor
+  ok   BUILD_MATRIX named rows exactly bind ordered fields and source links
+  ok   spatialToolsVersion is exactly not-declared
+  ok   build_matrix_report describes the PICO Spatial BOM field it actually returns
+  ok   build_matrix_report cleanly refuses either unreadable scaffold matrix input
+  ok   regression gate save derives the scaffold BOM from the version catalog
+  ok   SUCCESS envelope normalizes honestly
+  ok   PARTIAL envelope normalizes honestly
+  ok   FAILED envelope normalizes honestly
+  ok   malformed envelope is an explicit parse error
+  ok   missing tool_status is an explicit parse error
+  ok   envelope preserves bounded full diagnostic payload
+  ok   pico_fix routes retained Compose, container, and disappearing-world symptoms
+
+Adoption safety test done. Failures: 0
+exit=0

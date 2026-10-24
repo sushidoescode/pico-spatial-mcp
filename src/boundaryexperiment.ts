@@ -38,6 +38,7 @@ import { parseInstalledApkPath, parsePid, parseProcStartTicks, parseRemoteSha256
 import { canonicalJson } from "./runreceiptidentity.js";
 import { readNativeRunReceipt } from "./runreceiptstore.js";
 import { resolveAdb } from "./emulatorlook.js";
+import { openLogWindow, readLogWindow, type AdbRunner, type LogWindow } from "./logwindow.js";
 import { okJson, run, sleep } from "./util.js";
 
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -376,7 +377,7 @@ export interface BoundaryPreparationFailureEvidence {
   continuity?: ApplicationContinuitySample[];
   logArtifact?: unknown | null;
   runtimeHealth?: PackageRuntimeHealthReceiptV1;
-  structuralStop?: "preparation_failed" | "route_unsettled" | "binding_lost" | "app_lifecycle_loss" | "runtime_health_inconclusive" | "terminal_signal_candidate";
+  structuralStop?: "preparation_failed" | "route_unsettled" | "binding_lost" | "app_lifecycle_loss" | "runtime_health_inconclusive" | "terminal_signal_candidate" | "log_window_evicted";
 }
 
 export class BoundaryPreparationFailure extends Error {
@@ -387,6 +388,37 @@ export class BoundaryPreparationFailure extends Error {
     this.name = "BoundaryPreparationFailure";
     this.evidence = evidence;
   }
+}
+
+/** The prepare step's window marker was not in the bounded `-b all` dump: the window's start is lost, so nothing read after it is provably this run's. */
+export class LogWindowEvictedError extends Error {
+  constructor(readonly window: LogWindow, readonly serial: string) {
+    super(`log window marker ${window.marker} was evicted from the bounded -b all dump on ${serial} before the prepare collector started; the buffer was not cleared`);
+    this.name = "LogWindowEvictedError";
+  }
+}
+
+/**
+ * The prepare step's log window (host completion T4, 2026-09-16). This REPLACES the destructive
+ * `-b all` reset that used to run here: a marker is written into the device's main buffer, every
+ * buffer is dumped once, bounded, and sliced to the lines after the marker, and that slice is
+ * retained as a sidecar artifact whose first line records the marker and whether it was seen. The
+ * owned streaming collector (startOwnedLogWindow) starts AFTER this, so its stream — which begins
+ * with whatever the buffer already holds, nothing having been erased — is correlated to the marker
+ * rather than to an emptied buffer. An unseen marker throws LogWindowEvictedError, which the caller
+ * turns into a BoundaryPreparationFailure with structuralStop "log_window_evicted": never a silent pass.
+ */
+export async function collectPreparationLogWindow(
+  runner: AdbRunner,
+  serial: string,
+  artifactPath: string,
+): Promise<{ window: LogWindow; lines: string[] }> {
+  const window = await openLogWindow(runner, serial);
+  const read = await readLogWindow(runner, window, { buffers: ["all"], timeoutMs: 10_000 });
+  const target = assertExternalCapturePath(artifactPath);
+  privateWriteBytes(target, Buffer.from([`# window marker ${window.marker} seen=${read.markerSeen}`, ...read.lines, ""].join("\n"), "utf8"));
+  if (!read.markerSeen) throw new LogWindowEvictedError(window, serial);
+  return { window, lines: read.lines };
 }
 
 export interface BoundaryExperimentDependencies {
@@ -3004,13 +3036,21 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
       const marker = `boundary_prepare_${context.runId.slice(0, 16)}`;
       const coverageMarker = `boundary_gap_${context.runId.slice(0, 16)}_prepare`;
       const logPath = path.join(context.artifactRoot, "prepare-logcat-all.txt");
+      const windowPath = path.join(context.artifactRoot, "prepare-log-window.txt");
       const sessionId = crypto.randomUUID();
       const generation = 1;
       const secret = input.scenario.entryRoute === "dynamic_full" ? crypto.randomBytes(32).toString("base64url") : "";
       try {
-        checkedAdb(await run(adb, ["-s", input.serial, "logcat", "-b", "all", "-c"], { timeoutMs: 10_000 }), "prepare log reset");
+        // A marker window over every buffer, opened BEFORE the owned collector starts, in place of the
+        // destructive `-b all` reset (collectPreparationLogWindow). An unseen marker is a structural
+        // stop of its own kind, never a silent pass.
+        await collectPreparationLogWindow((args, timeoutMs) => run(adb, args, { timeoutMs }), input.serial, windowPath);
       } catch (error) {
-        throw new BoundaryPreparationFailure(redactSensitiveText(error, [secret]), { homeClearance, homeReference, structuralStop: "preparation_failed" });
+        throw new BoundaryPreparationFailure(redactSensitiveText(error, [secret]), {
+          homeClearance,
+          homeReference,
+          structuralStop: error instanceof LogWindowEvictedError ? "log_window_evicted" : "preparation_failed",
+        });
       }
       const partial: {
         current: Awaited<ReturnType<typeof currentApplicationBinding>> | null;
@@ -3966,7 +4006,20 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
   };
 }
 
-const liveOrchestrator = createBoundaryExperimentOrchestrator(createLiveBoundaryExperimentDependencies());
+/**
+ * Built on FIRST USE, not at import.
+ *
+ * `createLiveBoundaryExperimentDependencies()` resolves adb, and since the adb adapter fails
+ * closed on an unusable explicit `$PICO_ADB`, doing that at module scope meant a single stale
+ * `PICO_ADB` export crashed the whole server before it could register a tool — taking down
+ * `tools/list`, `preflight_env` and every lane that has nothing to do with a device, with the
+ * doctor that would have explained the problem never reachable. Deferring it puts the refusal
+ * inside the one handler that actually needs a device, where the caller sees it.
+ */
+let liveOrchestratorInstance: ReturnType<typeof createBoundaryExperimentOrchestrator> | null = null;
+function liveOrchestrator(): ReturnType<typeof createBoundaryExperimentOrchestrator> {
+  return (liveOrchestratorInstance ??= createBoundaryExperimentOrchestrator(createLiveBoundaryExperimentDependencies()));
+}
 
 export function registerBoundaryExperimentTools(server: McpServer): void {
   server.registerTool(
@@ -3977,7 +4030,7 @@ export function registerBoundaryExperimentTools(server: McpServer): void {
     },
     async (args) => {
       try {
-        const result = await liveOrchestrator.execute(args as BoundaryExperimentInput);
+        const result = await liveOrchestrator().execute(args as BoundaryExperimentInput);
         const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [];
         const responseReview = Array.isArray(result.responseReview) ? result.responseReview as RequiredReviewItem[] : [];
         if (responseReview.length > 10) throw new Error("one response may return at most ten newly collected review frames");

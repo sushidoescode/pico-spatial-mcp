@@ -1,0 +1,52 @@
+{
+  "observedAt": "2026-10-24",
+  "installedVersions": {
+    "codex": "0.164.0",
+    "claude": "2.1.288",
+    "gemini": "0.64.0"
+  },
+  "selectedImplementationFiles": [
+    {
+      "path": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex",
+      "bytes": 260293200,
+      "sha256": "d8990e3ee7acfbc26f91265b12a1a83f0fee40d0e0f8f1f40a37d4ec21f499cf"
+    },
+    {
+      "path": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/lib/node_modules/@google/gemini-cli/bundle/chunk-NR7L3FXV.js",
+      "bytes": 16719030,
+      "sha256": "d566e81b1df8d4d44a91bf7aeea96a58ec0e6c8934fa424315ef060507dcbb8c"
+    },
+    {
+      "path": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/lib/node_modules/@google/gemini-cli/bundle/gemini-Q2GRYIAK.js",
+      "bytes": 647965,
+      "sha256": "7702da31cf099ca3e1d64fd195f15b7726b2c2829ec21e955558eb9dbfba47da"
+    }
+  ],
+  "wholeInstallationsHashed": false,
+  "officialDocumentation": [
+    {
+      "url": "https://learn.chatgpt.com/docs/extend/mcp",
+      "use": "stdio config, tool allowlists and per-tool approval modes"
+    },
+    {
+      "url": "https://learn.chatgpt.com/docs/non-interactive-mode",
+      "use": "ignore-user-config, ephemeral and read-only exec"
+    },
+    {
+      "url": "https://learn.chatgpt.com/docs/config-file/config-reference",
+      "use": "MCP per-tool approval_mode config"
+    },
+    {
+      "url": "https://code.claude.com/docs/en/cli-reference",
+      "use": "stream JSON, strict MCP config, restricted mode, consent and limits"
+    },
+    {
+      "url": "https://geminicli.com/docs/tools/mcp-server/",
+      "use": "MCP configuration and trust"
+    },
+    {
+      "url": "https://geminicli.com/docs/reference/configuration/",
+      "use": "local settings scope and tool configuration"
+    }
+  ]
+}

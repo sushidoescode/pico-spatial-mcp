@@ -1,7 +1,5 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { run, runBinary } from "./util.js";
+import { adbExecutable } from "./adb.js";
 
 /** Raw adb identity captured at the same time as a device verification. */
 export interface DeviceLineageInput {
@@ -84,21 +82,18 @@ export function validateRecordedDeviceLineage(input: RecordedDeviceLineageInput)
   return { ok: true, lineage: raw.lineage, observedAt: input.observedAt, captureSha256: input.deviceCaptureSha256 };
 }
 
+/** THE shared adb lookup (src/adb.ts): explicit $PICO_ADB -> PATH -> the SELECTED toolchain's
+ *  bundled platform-tools, identity-keyed so a replaced adb is observed without a restart. */
 export function resolveDeviceAdb(): string {
-  const candidates = [
-    process.env.PICO_ADB,
-    path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb"),
-    "/opt/homebrew/bin/adb",
-    "adb",
-  ].filter(Boolean) as string[];
-  for (const candidate of candidates) if (candidate === "adb" || fs.existsSync(candidate)) return candidate;
-  return "adb";
+  return adbExecutable();
 }
 
 /** Probe raw identity directly from one currently attached adb serial. */
-export async function probeDeviceIdentity(adb: string, serial: string): Promise<ProbedDeviceIdentity> {
+export async function probeDeviceIdentity(adb: string, serial: string, budget?: {deadlineEpochMs:number;signal?:AbortSignal}): Promise<ProbedDeviceIdentity> {
   const prop = async (name: string) => {
-    const result = await run(adb, ["-s", serial, "shell", "getprop", name], { timeoutMs: 10_000 });
+    const remaining = budget ? budget.deadlineEpochMs - Date.now() : 10_000;
+    if (remaining <= 0 || budget?.signal?.aborted) throw new Error("identity probe cancelled/deadline elapsed");
+    const result = await run(adb, ["-s", serial, "shell", "getprop", name], { timeoutMs: Math.min(budget ? 4_000 : 10_000,remaining), signal:budget?.signal });
     if (result.code !== 0 || result.timedOut) throw new Error(`adb identity probe '${name}' failed for '${serial}' (exit ${result.code}${result.timedOut ? ", timeout" : ""}): ${result.stderr.trim() || "no stderr"}`);
     return result.stdout.trim();
   };

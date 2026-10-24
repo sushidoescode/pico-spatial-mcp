@@ -1,0 +1,17 @@
+{
+  "label": "0.5.0 capture record --help",
+  "argv": [
+    "capture",
+    "record",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:12:02.416Z",
+  "endedAt": "2026-09-15T09:12:02.522Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "618d97626543b9fb43039b9a163ecec7a5167daefde127061d7e3c9d051712ea",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

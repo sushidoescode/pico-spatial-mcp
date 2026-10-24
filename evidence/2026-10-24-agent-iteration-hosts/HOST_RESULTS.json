@@ -1,0 +1,1127 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-24T09:33:15.109098+00:00",
+  "scope": "isolated installed-host trials with read-only candidate forwarding and historical image replay",
+  "nativeActions": 0,
+  "openingDoctorReadOnly": true,
+  "expectedImageSha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc",
+  "rootLook": "Opened the retained PNG; title source revision 3, State transitions: 1, Panel visible \u2014 fixture.panel. Model prompts/text envelopes omit those expected labels.",
+  "hostImageViewerVisualReview": false,
+  "runs": [
+    {
+      "id": "codex-01",
+      "host": "codex",
+      "hostPid": 15628,
+      "trial": "baseline",
+      "hostExitCode": 0,
+      "durationSeconds": 25.947,
+      "cleanupErrors": [],
+      "resultPath": "evidence/2026-10-24-agent-iteration-hosts/codex-01/result.json",
+      "invocationPath": "evidence/2026-10-24-agent-iteration-hosts/codex-01/invocation.json",
+      "hostEventsPath": "evidence/2026-10-24-agent-iteration-hosts/codex-01/host-events.jsonl",
+      "observedModels": [],
+      "permissionDecisions": [],
+      "historicalImageDelivered": true,
+      "imageTranscriptionMatchesRootLook": true,
+      "probeGenerations": [
+        {
+          "generation": "a76abfd0-36c6-40ca-81d0-d5ea4abfbb28",
+          "wirePath": "evidence/2026-10-24-agent-iteration-hosts/codex-01/probe/a76abfd0-36c6-40ca-81d0-d5ea4abfbb28/wire.jsonl",
+          "wireSha256": "9ab94a825a40baea51012c4533e4ade1c82ff4845177a45038f5a3375fe2465b",
+          "candidateToolCount": 19,
+          "calls": [
+            {
+              "_meta": {
+                "progressToken": 1,
+                "callId": "exec-7595bee1-c3ec-490a-9524-a6b154c0c74b",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d29-ca0e-71a2-806d-be09ebfa8206",
+                  "thread_id": "01a16d29-ca0e-71a2-806d-be09ebfa8206",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d29-cb7e-7e01-8174-e4fc3f4125f9",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792832818049,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d29-ca0e-71a2-806d-be09ebfa8206",
+                "sessionId": "01a16d29-ca0e-71a2-806d-be09ebfa8206",
+                "windowId": "01a16d29-ca0e-71a2-806d-be09ebfa8206:0",
+                "itemId": "ctc_0840021a71f2686e016adc753fe95c819a8e5e088ce2147680"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "identity"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 2,
+                "callId": "exec-b56807ef-b750-4151-9491-4e459d09ef89",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d29-ca0e-71a2-806d-be09ebfa8206",
+                  "thread_id": "01a16d29-ca0e-71a2-806d-be09ebfa8206",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d29-cb7e-7e01-8174-e4fc3f4125f9",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792832818049,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d29-ca0e-71a2-806d-be09ebfa8206",
+                "sessionId": "01a16d29-ca0e-71a2-806d-be09ebfa8206",
+                "windowId": "01a16d29-ca0e-71a2-806d-be09ebfa8206:0",
+                "itemId": "ctc_0840021a71f2686e016adc75420bfc819a91a46602b86e6112"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "error"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 3,
+                "callId": "exec-ba2801ed-eb91-4011-8c15-3c31aeeda578",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d29-ca0e-71a2-806d-be09ebfa8206",
+                  "thread_id": "01a16d29-ca0e-71a2-806d-be09ebfa8206",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d29-cb7e-7e01-8174-e4fc3f4125f9",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792832818049,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d29-ca0e-71a2-806d-be09ebfa8206",
+                "sessionId": "01a16d29-ca0e-71a2-806d-be09ebfa8206",
+                "windowId": "01a16d29-ca0e-71a2-806d-be09ebfa8206:0",
+                "itemId": "ctc_0840021a71f2686e016adc7544bac8819aae3c4f82a6c6caeb"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "image"
+              }
+            }
+          ],
+          "cancellationNotifications": [],
+          "waitEvents": [],
+          "closedEvents": [
+            {
+              "at": "2026-10-24T09:07:22.764Z",
+              "reason": "SIGTERM"
+            }
+          ],
+          "images": [
+            {
+              "type": "image",
+              "mimeType": "image/png",
+              "bytes": 2988825,
+              "sha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc",
+              "dataOmitted": true
+            }
+          ],
+          "processes": {
+            "pid": {
+              "pid": 15641,
+              "presentAtReadOnlyCheck": false
+            },
+            "childPid": {
+              "pid": 15723,
+              "presentAtReadOnlyCheck": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "codex-02",
+      "host": "codex",
+      "hostPid": 70818,
+      "trial": "approved",
+      "hostExitCode": 0,
+      "durationSeconds": 31.186,
+      "cleanupErrors": [],
+      "resultPath": "evidence/2026-10-24-agent-iteration-hosts/codex-02/result.json",
+      "invocationPath": "evidence/2026-10-24-agent-iteration-hosts/codex-02/invocation.json",
+      "hostEventsPath": "evidence/2026-10-24-agent-iteration-hosts/codex-02/host-events.jsonl",
+      "observedModels": [],
+      "permissionDecisions": [],
+      "historicalImageDelivered": true,
+      "imageTranscriptionMatchesRootLook": true,
+      "probeGenerations": [
+        {
+          "generation": "87adc9a2-9c49-4aed-baba-dee30143b598",
+          "wirePath": "evidence/2026-10-24-agent-iteration-hosts/codex-02/probe/87adc9a2-9c49-4aed-baba-dee30143b598/wire.jsonl",
+          "wireSha256": "16e9585a3e7c828ca09c8f4b06eafb8bc8ec07c578662dac018f9cc738dc2418",
+          "candidateToolCount": 19,
+          "calls": [
+            {
+              "_meta": {
+                "progressToken": 1,
+                "callId": "exec-a666a88f-5149-41ea-a917-42426cf9e5bc",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                  "thread_id": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d39-56ca-75c1-8281-c4bf282d1b7f",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792833836747,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                "sessionId": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                "windowId": "01a16d39-557d-7860-9689-a60d765d7ee1:0",
+                "itemId": "ctc_0ecc77939ad0f34e016adc793337bc8199bbf9ab8f4fd8f72c"
+              },
+              "name": "pico_doctor",
+              "arguments": {}
+            },
+            {
+              "_meta": {
+                "progressToken": 2,
+                "callId": "exec-ac991f23-e6c4-423f-ae56-b14954295753",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                  "thread_id": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d39-56ca-75c1-8281-c4bf282d1b7f",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792833836747,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                "sessionId": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                "windowId": "01a16d39-557d-7860-9689-a60d765d7ee1:0",
+                "itemId": "ctc_0ecc77939ad0f34e016adc7936cc248199a4b1d39775b4c8ab"
+              },
+              "name": "pico_interaction",
+              "arguments": {
+                "action": "describe"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 3,
+                "callId": "exec-40d1a39d-0189-429c-b7fd-4f2c19ab96df",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                  "thread_id": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d39-56ca-75c1-8281-c4bf282d1b7f",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792833836747,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                "sessionId": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                "windowId": "01a16d39-557d-7860-9689-a60d765d7ee1:0",
+                "itemId": "ctc_0ecc77939ad0f34e016adc79399750819981e4503e6b4cf838"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "identity"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 4,
+                "callId": "exec-3d6386ce-63d4-4c4b-9dd7-8eeb1447e24e",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                  "thread_id": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d39-56ca-75c1-8281-c4bf282d1b7f",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792833836747,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                "sessionId": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                "windowId": "01a16d39-557d-7860-9689-a60d765d7ee1:0",
+                "itemId": "ctc_0ecc77939ad0f34e016adc793bc5fc819992a19c8b09ab8876"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "error"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 5,
+                "callId": "exec-e005bbdb-a41e-41d9-81e6-dbb4bb213694",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                  "thread_id": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d39-56ca-75c1-8281-c4bf282d1b7f",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792833836747,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                "sessionId": "01a16d39-557d-7860-9689-a60d765d7ee1",
+                "windowId": "01a16d39-557d-7860-9689-a60d765d7ee1:0",
+                "itemId": "ctc_0ecc77939ad0f34e016adc793d9bec8199bde89aba55e525e5"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "image"
+              }
+            }
+          ],
+          "cancellationNotifications": [],
+          "waitEvents": [],
+          "closedEvents": [
+            {
+              "at": "2026-10-24T09:24:21.477Z",
+              "reason": "SIGTERM"
+            }
+          ],
+          "images": [
+            {
+              "type": "image",
+              "mimeType": "image/png",
+              "bytes": 2988825,
+              "sha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc",
+              "dataOmitted": true
+            }
+          ],
+          "processes": {
+            "pid": {
+              "pid": 70835,
+              "presentAtReadOnlyCheck": false
+            },
+            "childPid": {
+              "pid": 70892,
+              "presentAtReadOnlyCheck": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "codex-03",
+      "host": "codex",
+      "hostPid": 72172,
+      "trial": "cancel",
+      "hostExitCode": 1,
+      "durationSeconds": 12.77,
+      "cleanupErrors": [],
+      "resultPath": "evidence/2026-10-24-agent-iteration-hosts/codex-03/result.json",
+      "invocationPath": "evidence/2026-10-24-agent-iteration-hosts/codex-03/invocation.json",
+      "hostEventsPath": "evidence/2026-10-24-agent-iteration-hosts/codex-03/host-events.jsonl",
+      "observedModels": [],
+      "permissionDecisions": [],
+      "historicalImageDelivered": false,
+      "imageTranscriptionMatchesRootLook": null,
+      "probeGenerations": [
+        {
+          "generation": "cab09246-9acb-49d0-b921-42b96f627aba",
+          "wirePath": "evidence/2026-10-24-agent-iteration-hosts/codex-03/probe/cab09246-9acb-49d0-b921-42b96f627aba/wire.jsonl",
+          "wireSha256": "b0d968973bc72493bd63c227f8f85bb0e6958dad2eeea626c3cd68d067d1846f",
+          "candidateToolCount": 19,
+          "calls": [
+            {
+              "_meta": {
+                "progressToken": 1,
+                "callId": "exec-fc1903aa-b027-4acf-bea8-fecce2ad65bc",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d3a-9bf7-7ef2-806e-ec3dad80299d",
+                  "thread_id": "01a16d3a-9bf7-7ef2-806e-ec3dad80299d",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d3a-9ecc-7011-8245-017e622f3c44",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792833920717,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d3a-9bf7-7ef2-806e-ec3dad80299d",
+                "sessionId": "01a16d3a-9bf7-7ef2-806e-ec3dad80299d",
+                "windowId": "01a16d3a-9bf7-7ef2-806e-ec3dad80299d:0",
+                "itemId": "ctc_082671d756fc779b016adc7983b7888199b91d11512fb9b7ac"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "identity"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 2,
+                "callId": "exec-98241b71-fa81-4efd-9475-ffc2887bd626",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d3a-9bf7-7ef2-806e-ec3dad80299d",
+                  "thread_id": "01a16d3a-9bf7-7ef2-806e-ec3dad80299d",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d3a-9ecc-7011-8245-017e622f3c44",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792833920717,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d3a-9bf7-7ef2-806e-ec3dad80299d",
+                "sessionId": "01a16d3a-9bf7-7ef2-806e-ec3dad80299d",
+                "windowId": "01a16d3a-9bf7-7ef2-806e-ec3dad80299d:0",
+                "itemId": "ctc_082671d756fc779b016adc79863ec48199b55ea87751adc4ea"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "wait"
+              }
+            }
+          ],
+          "cancellationNotifications": [],
+          "waitEvents": [
+            {
+              "at": "2026-10-24T09:25:26.639Z",
+              "event": "wait_started",
+              "requestId": 3
+            },
+            {
+              "at": "2026-10-24T09:25:26.848Z",
+              "event": "wait_cancelled",
+              "requestId": 3
+            }
+          ],
+          "closedEvents": [
+            {
+              "at": "2026-10-24T09:25:26.848Z",
+              "reason": "SIGTERM"
+            }
+          ],
+          "images": [],
+          "processes": {
+            "pid": {
+              "pid": 72182,
+              "presentAtReadOnlyCheck": false
+            },
+            "childPid": {
+              "pid": 72233,
+              "presentAtReadOnlyCheck": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "codex-04",
+      "host": "codex",
+      "hostPid": 74220,
+      "trial": "approved",
+      "hostExitCode": 0,
+      "durationSeconds": 53.721,
+      "cleanupErrors": [],
+      "resultPath": "evidence/2026-10-24-agent-iteration-hosts/codex-04/result.json",
+      "invocationPath": "evidence/2026-10-24-agent-iteration-hosts/codex-04/invocation.json",
+      "hostEventsPath": "evidence/2026-10-24-agent-iteration-hosts/codex-04/host-events.jsonl",
+      "observedModels": [],
+      "permissionDecisions": [],
+      "historicalImageDelivered": true,
+      "imageTranscriptionMatchesRootLook": true,
+      "probeGenerations": [
+        {
+          "generation": "64e51b59-e9a6-4cf7-bc1b-c26dc631ba82",
+          "wirePath": "evidence/2026-10-24-agent-iteration-hosts/codex-04/probe/64e51b59-e9a6-4cf7-bc1b-c26dc631ba82/wire.jsonl",
+          "wireSha256": "42b0a250b5635a87e317d57a087d09d0efe557cd712d7f114937d66d1e4fcdab",
+          "candidateToolCount": 19,
+          "calls": [
+            {
+              "_meta": {
+                "progressToken": 1,
+                "callId": "exec-f22f19ee-988e-4213-9d96-9e352e27bf6e",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                  "thread_id": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d3d-024c-7d73-b2ac-173cf49db150",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792834077261,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                "sessionId": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                "windowId": "01a16d3d-003d-70e3-878f-bb2a64884acd:0",
+                "itemId": "ctc_089832b62a08933e016adc7a25339c819aa66932eec7e44822"
+              },
+              "name": "pico_doctor",
+              "arguments": {}
+            },
+            {
+              "_meta": {
+                "progressToken": 2,
+                "callId": "exec-e9fb6987-1faf-41ff-a5b0-0510503e73d7",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                  "thread_id": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d3d-024c-7d73-b2ac-173cf49db150",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792834077261,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                "sessionId": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                "windowId": "01a16d3d-003d-70e3-878f-bb2a64884acd:0",
+                "itemId": "ctc_089832b62a08933e016adc7a2b3db0819a95b0def6c751c640"
+              },
+              "name": "pico_interaction",
+              "arguments": {
+                "action": "describe"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 3,
+                "callId": "exec-af0d8252-59a2-43be-b49f-a3f6c507ede5",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                  "thread_id": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d3d-024c-7d73-b2ac-173cf49db150",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792834077261,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                "sessionId": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                "windowId": "01a16d3d-003d-70e3-878f-bb2a64884acd:0",
+                "itemId": "ctc_089832b62a08933e016adc7a2ea788819aa94bf4d1e34e7d45"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "identity"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 4,
+                "callId": "exec-f56c07e7-88d7-4f42-93f9-07eafacb358f",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                  "thread_id": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d3d-024c-7d73-b2ac-173cf49db150",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792834077261,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                "sessionId": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                "windowId": "01a16d3d-003d-70e3-878f-bb2a64884acd:0",
+                "itemId": "ctc_089832b62a08933e016adc7a35e814819abc51676217b10495"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "error"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 5,
+                "callId": "exec-1c75c6a7-e29e-4fe6-b719-f4910a3e24ed",
+                "x-codex-turn-metadata": {
+                  "session_id": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                  "thread_id": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                  "reasoning_effort": "low",
+                  "turn_id": "01a16d3d-024c-7d73-b2ac-173cf49db150",
+                  "model": "gpt-6.1-sol",
+                  "thread_source": "user",
+                  "turn_trigger": "exec",
+                  "sandbox": "seatbelt",
+                  "sandbox_mode": "read-only",
+                  "auto_review_enabled": false,
+                  "node_repl_auto_review_required": true,
+                  "node_repl_disabled": false,
+                  "workspaces": {
+                    "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23": {
+                      "associated_remote_urls": {
+                        "origin": "https://github.com/sushidoescode/pico-spatial-mcp.git"
+                      },
+                      "latest_git_commit_hash": "02d4b5f443415e68985abaee5d801920d7db5eab",
+                      "has_changes": true
+                    }
+                  },
+                  "turn_started_at_unix_ms": 1792834077261,
+                  "codex_version": "0.164.0"
+                },
+                "threadId": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                "sessionId": "01a16d3d-003d-70e3-878f-bb2a64884acd",
+                "windowId": "01a16d3d-003d-70e3-878f-bb2a64884acd:0",
+                "itemId": "ctc_089832b62a08933e016adc7a38d034819abd3eff09a0543dbb"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "image"
+              }
+            }
+          ],
+          "cancellationNotifications": [],
+          "waitEvents": [],
+          "closedEvents": [
+            {
+              "at": "2026-10-24T09:28:44.453Z",
+              "reason": "SIGTERM"
+            }
+          ],
+          "images": [
+            {
+              "type": "image",
+              "mimeType": "image/png",
+              "bytes": 2988825,
+              "sha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc",
+              "dataOmitted": true
+            }
+          ],
+          "processes": {
+            "pid": {
+              "pid": 74233,
+              "presentAtReadOnlyCheck": false
+            },
+            "childPid": {
+              "pid": 74286,
+              "presentAtReadOnlyCheck": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "claude-01",
+      "host": "claude",
+      "hostPid": 70057,
+      "trial": "baseline",
+      "hostExitCode": 0,
+      "durationSeconds": 26.664,
+      "cleanupErrors": [
+        "group signal failed: [Errno 1] Operation not permitted",
+        "group signal failed: [Errno 1] Operation not permitted",
+        "group signal failed: [Errno 1] Operation not permitted"
+      ],
+      "resultPath": "evidence/2026-10-24-agent-iteration-hosts/claude-01/result.json",
+      "invocationPath": "evidence/2026-10-24-agent-iteration-hosts/claude-01/invocation.json",
+      "hostEventsPath": "evidence/2026-10-24-agent-iteration-hosts/claude-01/host-events.jsonl",
+      "observedModels": [
+        "claude-opus-5-5"
+      ],
+      "permissionDecisions": [
+        {
+          "requestId": "782e241e-cfd3-4cf8-86d1-c16e4c835c46",
+          "tool": "mcp__pico_iteration_fixture__pico_doctor",
+          "input": {},
+          "decision": "allow"
+        },
+        {
+          "requestId": "93829083-01c6-4052-b1ff-eb41ebfd9270",
+          "tool": "mcp__pico_iteration_fixture__pico_interaction",
+          "input": {
+            "action": "describe"
+          },
+          "decision": "allow"
+        },
+        {
+          "requestId": "fa296fa3-fa9c-49ba-9b2b-5caf5321063f",
+          "tool": "mcp__pico_iteration_fixture__host_probe",
+          "input": {
+            "mode": "identity"
+          },
+          "decision": "allow"
+        },
+        {
+          "requestId": "a3e3dc5e-9eee-4e14-945b-0f6e1bf963dc",
+          "tool": "mcp__pico_iteration_fixture__host_probe",
+          "input": {
+            "mode": "error"
+          },
+          "decision": "allow"
+        },
+        {
+          "requestId": "0dc71a0f-b272-427a-ae87-af900b05f7e2",
+          "tool": "mcp__pico_iteration_fixture__host_probe",
+          "input": {
+            "mode": "image"
+          },
+          "decision": "allow"
+        }
+      ],
+      "historicalImageDelivered": true,
+      "imageTranscriptionMatchesRootLook": true,
+      "probeGenerations": [
+        {
+          "generation": "f37849a5-2aa2-40d0-8609-4d524682c184",
+          "wirePath": "evidence/2026-10-24-agent-iteration-hosts/claude-01/probe/f37849a5-2aa2-40d0-8609-4d524682c184/wire.jsonl",
+          "wireSha256": "85a3232892eb9c55506d0f706cbd6df2e1ad525fad2fb37cc91b2925d15f40fd",
+          "candidateToolCount": 19,
+          "calls": [
+            {
+              "_meta": {
+                "progressToken": 2,
+                "claudecode/toolUseId": "toolu_01EbNnGhswx4nRmHqRunHZDR"
+              },
+              "name": "pico_doctor",
+              "arguments": {}
+            },
+            {
+              "_meta": {
+                "progressToken": 3,
+                "claudecode/toolUseId": "toolu_01Q6jJDDWXUxS4mWEjWiekvK"
+              },
+              "name": "pico_interaction",
+              "arguments": {
+                "action": "describe"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 4,
+                "claudecode/toolUseId": "toolu_01FLvGGN9zJ9PVicd3pHj2T2"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "identity"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 5,
+                "claudecode/toolUseId": "toolu_01UXMRM8ADxQe5wu5thpThQX"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "error"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 6,
+                "claudecode/toolUseId": "toolu_013kXfdAmaynqU5sUK1wchsh"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "image"
+              }
+            }
+          ],
+          "cancellationNotifications": [],
+          "waitEvents": [],
+          "closedEvents": [
+            {
+              "at": "2026-10-24T09:20:25.216Z",
+              "reason": "SIGINT"
+            }
+          ],
+          "images": [
+            {
+              "type": "image",
+              "mimeType": "image/png",
+              "bytes": 2988825,
+              "sha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc",
+              "dataOmitted": true
+            }
+          ],
+          "processes": {
+            "pid": {
+              "pid": 70071,
+              "presentAtReadOnlyCheck": false
+            },
+            "childPid": {
+              "pid": 70072,
+              "presentAtReadOnlyCheck": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "claude-02",
+      "host": "claude",
+      "hostPid": 70817,
+      "trial": "lifecycle",
+      "hostExitCode": 0,
+      "durationSeconds": 16.354,
+      "cleanupErrors": [],
+      "resultPath": "evidence/2026-10-24-agent-iteration-hosts/claude-02/result.json",
+      "invocationPath": "evidence/2026-10-24-agent-iteration-hosts/claude-02/invocation.json",
+      "hostEventsPath": "evidence/2026-10-24-agent-iteration-hosts/claude-02/host-events.jsonl",
+      "observedModels": [
+        "claude-opus-5-5"
+      ],
+      "permissionDecisions": [
+        {
+          "requestId": "5cca72ee-819f-46eb-813b-da32bb276ec3",
+          "tool": "mcp__pico_iteration_fixture__host_probe",
+          "input": {
+            "mode": "identity"
+          },
+          "decision": "allow"
+        },
+        {
+          "requestId": "e8cf7cd8-1fe9-4205-bb50-e2df1ef33655",
+          "tool": "mcp__pico_iteration_fixture__host_probe",
+          "input": {
+            "mode": "wait"
+          },
+          "decision": "allow"
+        },
+        {
+          "requestId": "4c72ac88-8b09-4e90-96d9-a88e540daf6f",
+          "tool": "mcp__pico_iteration_fixture__host_probe",
+          "input": {
+            "mode": "identity"
+          },
+          "decision": "allow"
+        },
+        {
+          "requestId": "05b70389-6b36-4475-8c0a-2fdfbd05ee3d",
+          "tool": "mcp__pico_iteration_fixture__pico_interaction",
+          "input": {
+            "action": "describe"
+          },
+          "decision": "allow"
+        }
+      ],
+      "historicalImageDelivered": false,
+      "imageTranscriptionMatchesRootLook": null,
+      "probeGenerations": [
+        {
+          "generation": "3bbfe1c1-5c4b-4769-93a4-c25b41fed72f",
+          "wirePath": "evidence/2026-10-24-agent-iteration-hosts/claude-02/probe/3bbfe1c1-5c4b-4769-93a4-c25b41fed72f/wire.jsonl",
+          "wireSha256": "15f6073ddc8a6e78037d7b17646c674c75076457993fce690ba7b24c3073099e",
+          "candidateToolCount": 19,
+          "calls": [
+            {
+              "_meta": {
+                "progressToken": 2,
+                "claudecode/toolUseId": "toolu_01U2tLdsahbWZ9K6uujMeLqq"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "identity"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 3,
+                "claudecode/toolUseId": "toolu_019jygTy2ZYpL9GTnf31nmLR"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "wait"
+              }
+            }
+          ],
+          "cancellationNotifications": [
+            {
+              "requestId": 3,
+              "reason": "AbortError: remote-cancel"
+            }
+          ],
+          "waitEvents": [
+            {
+              "at": "2026-10-24T09:24:00.419Z",
+              "event": "wait_started",
+              "requestId": 3
+            },
+            {
+              "at": "2026-10-24T09:24:00.524Z",
+              "event": "wait_cancelled",
+              "requestId": 3
+            }
+          ],
+          "closedEvents": [
+            {
+              "at": "2026-10-24T09:24:00.624Z",
+              "reason": "SIGINT"
+            }
+          ],
+          "images": [],
+          "processes": {
+            "pid": {
+              "pid": 70907,
+              "presentAtReadOnlyCheck": false
+            },
+            "childPid": {
+              "pid": 70998,
+              "presentAtReadOnlyCheck": false
+            }
+          }
+        },
+        {
+          "generation": "635666d8-ed39-4be7-bf09-ae721f0b374f",
+          "wirePath": "evidence/2026-10-24-agent-iteration-hosts/claude-02/probe/635666d8-ed39-4be7-bf09-ae721f0b374f/wire.jsonl",
+          "wireSha256": "7e556c1a1d8848ae0e816c3be3b51df45f1bea09e0d55e24789e659a8969c9cc",
+          "candidateToolCount": 19,
+          "calls": [
+            {
+              "_meta": {
+                "progressToken": 2,
+                "claudecode/toolUseId": "toolu_01KD3dFAjtMNywtk6HXoc2oP"
+              },
+              "name": "host_probe",
+              "arguments": {
+                "mode": "identity"
+              }
+            },
+            {
+              "_meta": {
+                "progressToken": 3,
+                "claudecode/toolUseId": "toolu_018o68YKDA17cS7QqPer2FWx"
+              },
+              "name": "pico_interaction",
+              "arguments": {
+                "action": "describe"
+              }
+            }
+          ],
+          "cancellationNotifications": [],
+          "waitEvents": [],
+          "closedEvents": [
+            {
+              "at": "2026-10-24T09:24:07.491Z",
+              "reason": "SIGINT"
+            }
+          ],
+          "images": [],
+          "processes": {
+            "pid": {
+              "pid": 71850,
+              "presentAtReadOnlyCheck": false
+            },
+            "childPid": {
+              "pid": 71851,
+              "presentAtReadOnlyCheck": false
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "geminiResult": "evidence/2026-10-24-agent-iteration-hosts/gemini-startup-result.json",
+  "limits": [
+    "Scoped adapter forwards only doctor{} and interaction describe; unrestricted candidate-tool admission not established.",
+    "Codex initial default headless policy denied doctor/describe; later scoped invocation preapproval accepted them.",
+    "Claude02 model incorrectly said wait never ran; wire records prove started and notifications/cancelled before handler abort.",
+    "Codex03 interruption closed transport; no notifications/cancelled observed. Codex04 is a new host process, not same-process reconnect.",
+    "Claude01 historical cleanupErrors remain as originally recorded; later runner distinguishes dead-group EPERM with bounded process inspection.",
+    "Selected execution features disabled; actual transcripts show no filesystem/shell fallback. Codex metadata node_repl_disabled:false prevents a blanket all-builtins-disabled claim.",
+    "Gemini blocked before calls; update attempt failed and selected files unchanged, full installation integrity unverified."
+  ]
+}

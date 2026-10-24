@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-23T21:16:36.993840+00:00",
+  "scope": "CLI contract specialist: host code/fixtures and read-only CLI declarations only",
+  "fixtureAdb": "/fixture/no/such/adb",
+  "finalTestBuild": {
+    "rootReportedBuild": 3,
+    "files": 199,
+    "sourceDigestPrefix": "d4bc281bb376",
+    "note": "Root owns complete build receipt and subsequent integration builds"
+  },
+  "cli": {
+    "version": "0.6.1",
+    "binary": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/.bin/pico-cli",
+    "realpath": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/index.js",
+    "files": [
+      {
+        "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/package.json",
+        "bytes": 1205,
+        "sha256": "44c2ba62b978d28b62f7f22471f7b9a23c20011008371d7ec3435d5072913144"
+      },
+      {
+        "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/index.js",
+        "bytes": 944008,
+        "sha256": "6daf24579469fd00e69d7e389f241fc6efec6ffde526dea0e4949fe7a38e4542"
+      },
+      {
+        "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/workflows/catalog.json",
+        "bytes": 69,
+        "sha256": "39d8368d68c7f5e0c9f4e10c62167394897e0b9ae039c05fa399682071c2a648"
+      },
+      {
+        "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/workflows/registered-workflows.v1.json",
+        "bytes": 152968,
+        "sha256": "e48fd8a14f7fb58c9d1590693b360ea57854f87cc1ea96ae57a03c5d1083c6f4"
+      },
+      {
+        "path": "/Users/sushantsrikrish/.pico-mcp/cli/versions/0.6.1/node_modules/@picoxr/pico-cli/dist/profiler-worker.js",
+        "bytes": 761,
+        "sha256": "e3319250a0b2526a10fb7322f94c93edc5f9294591a4b476fdbb0691b7bd272f"
+      }
+    ],
+    "observationIndexes": [
+      "READ_ONLY_CONTRACTS.json",
+      "PTY_OPERATION_FOLLOWUP.json",
+      "APP_LIFECYCLE_LEAF_HELP.json"
+    ],
+    "commandsRun": 36,
+    "nativeOperationsRun": 0,
+    "workflowLifecycleMutationsRun": 0,
+    "actualWorkflowRunReads": 0,
+    "runtimeAppProof": false,
+    "visuallyReviewed": false
+  },
+  "results": [
+    {
+      "log": "RED-picocli-agent-contracts.tap",
+      "sha256": "0a406fdf369e04a8306c9ac74c9bcee78dc6bb93bf4a49d13cbad23a4db2060e",
+      "bytes": 9527,
+      "exitCode": 1,
+      "command": "PICO_ADB=/fixture/no/such/adb node --test test/picocli-agent-contracts.mjs",
+      "note": "baseline contract tests, expected failure before implementation",
+      "tapCounts": {
+        "tests": 7,
+        "pass": 0,
+        "fail": 7
+      }
+    },
+    {
+      "log": "BUILD-001.log",
+      "sha256": "bebfd5d642e98635e359b1a4f3c7836cbfc23bfbbf29a7e8b6562b17f1511320",
+      "bytes": 126,
+      "exitCode": 0,
+      "command": "npm run build",
+      "note": "first CLI implementation build, 197 files, source049023922c78"
+    },
+    {
+      "log": "GREEN-001-picocli-agent-contracts.tap",
+      "sha256": "5856ce9e676cb9c1fc17d23fe9c3dedc7d2636b4cdb95f54c88f005ae920eef0",
+      "bytes": 3223,
+      "exitCode": 1,
+      "command": "PICO_ADB=/fixture/no/such/adb node --test test/picocli-agent-contracts.mjs",
+      "note": "Filename is not a result: 1 failed because synthetic receipt omitted required argv; fixture subsequently fixed",
+      "tapCounts": {
+        "tests": 7,
+        "pass": 6,
+        "fail": 1
+      }
+    },
+    {
+      "log": "LEGACY-001-picocli.log",
+      "sha256": "434dcc1267e4f79dd7b65a1ee55b86ce112d9d39eed22e5e1cbf3f76b120915f",
+      "bytes": 16057,
+      "exitCode": 1,
+      "command": "PICO_ADB=/fixture/no/such/adb node test/picocli.mjs",
+      "note": "nine legacy fixture expectations required schema/footer migration, subsequently corrected",
+      "legacyFailureCount": 9
+    },
+    {
+      "log": "LEGACY-001-picocli-async.tap",
+      "sha256": "5e685599402870a9c1db3181fae2bb9eee88ee6434d3954ad6ffe098235b3a48",
+      "bytes": 38550,
+      "exitCode": 1,
+      "command": "PICO_ADB=/fixture/no/such/adb node --test test/picocli-autoinstall.mjs test/picocli-sweep.mjs test/picocli-childenv.mjs",
+      "note": "schema/selection fixture migrations plus existing sweep cleanup failure",
+      "tapCounts": {
+        "tests": 160,
+        "pass": 153,
+        "fail": 7
+      }
+    },
+    {
+      "log": "POSTCHANGE-002-contracts.tap",
+      "sha256": "3e7baad059a3f3045073cb27456f73f053e920fe6115b7ffe2c44d8a2ef6fb6a",
+      "bytes": 3003,
+      "exitCode": 0,
+      "command": "PICO_ADB=/fixture/no/such/adb node --test test/picocli-agent-contracts.mjs",
+      "note": "11 final contract tests pass against root build3",
+      "tapCounts": {
+        "tests": 11,
+        "pass": 11,
+        "fail": 0
+      }
+    },
+    {
+      "log": "POSTCHANGE-002-legacy.log",
+      "sha256": "3b1ae5671cc19d65c18edc9bf123f1e2080317de279975d85d4c846280486e5e",
+      "bytes": 13676,
+      "exitCode": 0,
+      "command": "PICO_ADB=/fixture/no/such/adb node test/picocli.mjs",
+      "note": "legacy CLI suite zero failures against root build3",
+      "legacyFailureCount": 0
+    },
+    {
+      "log": "POSTCHANGE-002-async.tap",
+      "sha256": "9e896a92423ef2045cd1c5bdb5fdd0f0bf2d9f5de4d6c0ce88a185cb08f2c700",
+      "bytes": 43393,
+      "exitCode": 1,
+      "command": "PICO_ADB=/fixture/no/such/adb node --test test/picocli-autoinstall.mjs test/picocli-sweep.mjs test/picocli-childenv.mjs test/cliobservations.mjs",
+      "note": "177/182: three failing leaves plus two failing parent records. Two old expectation failures corrected; detached-child sweep cleanup remains preexisting",
+      "tapCounts": {
+        "tests": 182,
+        "pass": 177,
+        "fail": 5
+      }
+    },
+    {
+      "log": "POSTCHANGE-002-knowledge.tap",
+      "sha256": "44ffe3280ce70cd9d7145fd4c51521992ef93375e80d407446c9aa085bec56d6",
+      "bytes": 2649,
+      "exitCode": 1,
+      "command": "PICO_ADB=/fixture/no/such/adb node --test --test-name-pattern='managed knowledge checks|managed knowledge transport spawns' test/knowledge-lifecycle.mjs",
+      "note": "same-selection fixture accidentally inherited real repository .pico-env.json during discovery; corrected by isolated driver cwd",
+      "tapCounts": {
+        "tests": 2,
+        "pass": 1,
+        "fail": 1
+      }
+    },
+    {
+      "log": "POSTCHANGE-003-knowledge.tap",
+      "sha256": "45c67719961c9355afa1907706d688cde86e5823134c73cd4c48e73a026b7e3d",
+      "bytes": 933,
+      "exitCode": 0,
+      "command": "PICO_ADB=/fixture/no/such/adb node --test --test-name-pattern='managed knowledge checks|managed knowledge transport spawns' test/knowledge-lifecycle.mjs",
+      "note": "both actual child selection checks pass; test-only cwd isolation correction, root build3 unchanged",
+      "tapCounts": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0
+      }
+    },
+    {
+      "log": "POSTCHANGE-003-targeted.tap",
+      "sha256": "640f835d6eb55482d1a36183f8296bd36c3e9baff7680d8e280b9a23ab11f68e",
+      "bytes": 6707,
+      "exitCode": 1,
+      "command": "PICO_ADB=/fixture/no/such/adb node --test --test-name-pattern='native duration flag|per-operation capability discovery|timeout, spawn failure, and output truncation' test/cliobservations.mjs test/picocli-autoinstall.mjs test/picocli-sweep.mjs",
+      "note": "19/21: native-duration and discovery migration checks pass; only detached-child sweep leaf and its parent fail",
+      "tapCounts": {
+        "tests": 21,
+        "pass": 19,
+        "fail": 2
+      }
+    },
+    {
+      "log": "BASELINE-SWEEP-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "exitCode": 0,
+      "command": "node node_modules/typescript/bin/tsc --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --esModuleInterop --skipLibCheck --rootDir evidence/2026-10-23-agent-iteration/cli/baseline-sweep/src --outDir evidence/2026-10-23-agent-iteration/cli/baseline-sweep/dist evidence/2026-10-23-agent-iteration/cli/baseline-sweep/src/clicapabilities.ts",
+      "note": "baseline1157f33 module compiled in isolated evidence copy; no main/shared dist mutation"
+    },
+    {
+      "log": "BASELINE-SWEEP-cleanup.tap",
+      "sha256": "f2282b7e57cc75cf47566070e1b50c8fbc7e80ebbfc4f38150d8842952f66b14",
+      "bytes": 3307,
+      "exitCode": 1,
+      "command": "PICO_ADB=/fixture/no/such/adb node --test --test-name-pattern='timeout, spawn failure, and output truncation' evidence/2026-10-23-agent-iteration/cli/baseline-sweep/test/picocli-sweep.mjs",
+      "note": "same detached-child sweep failure reproduced on main1157f33; 6pass/2failure records",
+      "tapCounts": {
+        "tests": 8,
+        "pass": 6,
+        "fail": 2
+      }
+    }
+  ],
+  "knownRemainingFailure": {
+    "test": "output cap reaps a detached inherited-stdio descendant after its parent exits",
+    "candidateAndBaseline": "reproduced in both",
+    "baseline": "1157f33",
+    "sourceIdentities": "baseline-sweep/SOURCE_IDENTITIES.json",
+    "diagnosis": "SWEEP_SCAN_DIAGNOSIS.json",
+    "cause": "Existing bounded global ownership scan returns ENOBUFS on this host; fast parent already exited; token scan returns no owners",
+    "productionSweepChanged": false
+  },
+  "retention": "All prior output retained; log filename GREEN does not imply success."
+}
