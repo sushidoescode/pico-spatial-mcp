@@ -186,9 +186,15 @@ try {
   const verifiedDigest = fileDigest(verifiedTarball);
   ok(`packed ${tarball} (${(verifiedDigest.bytes / 1024).toFixed(0)} kB, sha256 ${verifiedDigest.sha256})`);
 
-  const install = spawnSync("npm", ["install", "--omit=dev", "--no-audit", "--no-fund", verifiedTarball], {
+  // An inherited TMPDIR can be inside a checkout. Without an explicit prefix,
+  // npm walks to an ancestor package root and installs into that working tree.
+  const checkoutPackageInputs = ["package.json", "package-lock.json"].map(name => ({name, ...fileDigest(path.join(repoRoot, name))}));
+  const install = spawnSync("npm", ["install", "--prefix", sandbox, "--omit=dev", "--no-audit", "--no-fund", verifiedTarball], {
     cwd: sandbox, encoding: "utf8", timeout: 900_000,
   });
+  checkoutPackageInputs.every(input => fileDigest(path.join(repoRoot, input.name)).sha256 === input.sha256)
+    ? ok("isolated install preserves checkout package.json and package-lock.json")
+    : fail("tarball install changed checkout dependency metadata");
   if (install.status !== 0) { fail(`npm install failed: ${install.stderr?.slice(-800)}`); process.exit(1); }
   ok("installed into a clean directory with --omit=dev");
 

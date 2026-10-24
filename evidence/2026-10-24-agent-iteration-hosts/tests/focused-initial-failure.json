@@ -1,0 +1,8 @@
+{
+  "kind": "transcribed-test-failure",
+  "test": "wire cancellation after semantic dispatch retains uncertainty and refuses another action",
+  "cause": "Initial test asserted nonexistent retryAllowed field; actual InteractionResultV1 has status and attempted fields. Production behavior was not changed.",
+  "observedPass": 4,
+  "observedFail": 1,
+  "correctedFocusedRun": "5/5 passed; independent review then strengthened cancellation-cause assertions to exclude natural deadline expiry."
+}

@@ -1,0 +1,34 @@
+{
+  "host": "gemini",
+  "version": "0.64.0",
+  "exitCode": 0,
+  "toolCalls": 0,
+  "workspaceTrustDisplayed": true,
+  "workspaceTrustAccepted": false,
+  "modelImageTested": false,
+  "accountFailure": "This client is no longer supported for Gemini Code Assist for individuals",
+  "updateAttempt": "0.64.0 to 0.65.0 attempted before workspace trust; reported failed",
+  "entryPointAndPackageVersionUnchanged": true,
+  "wholeInstallationIdentityVerified": false,
+  "transcriptPath": "evidence/2026-10-24-agent-iteration-hosts/scratch/gemini-01/session.raw.txt",
+  "transcriptSha256": "ffe6a089a9b1c9dfc0f192f517998e305de2115952f2a8f1562d56c6f28fc398",
+  "npmFailure": {
+    "logPath": "/Users/sushantsrikrish/.npm/_logs/2026-10-24T09_09_48_637Z-debug-0.log",
+    "bytes": 9250,
+    "sha256": "a9bbecef3b8e6307c914797a7557a317e5cdd8c3073c636a5027a8853407449f",
+    "code": "EACCES",
+    "syscall": "mkdir",
+    "path": "/usr/local/lib/node_modules/@google",
+    "exitCode": -13
+  },
+  "globalRuntimeState": {
+    "statePath": "/Users/sushantsrikrish/.gemini/state.json",
+    "stateSha256": "f71598284ce8e327cd8c35e4316b0d40d9b93809ae893eee1707b8e386d96993",
+    "backupSha256": "fd74737e80d256255a133274cad30f45872077b7abcb5b9d7e31ec5fa96544fa",
+    "changedKeysVersusBackup": [
+      "tipsShown"
+    ],
+    "beforeRunStateAvailable": false,
+    "note": "Host startup can update nudge/tip counters; current-versus-backup is not a before-run comparison. Both files retained."
+  }
+}

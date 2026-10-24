@@ -1,0 +1,68 @@
+{
+  "host": "codex",
+  "trial": "cancel",
+  "exitCode": 1,
+  "durationSeconds": 12.77,
+  "pid": 72172,
+  "termination": null,
+  "cleanupSignals": [],
+  "cleanupErrors": [],
+  "cleanupNotes": [
+    {
+      "signal": "SIGINT",
+      "kind": "EPERM-no-live-group-members",
+      "members": [
+        {
+          "pid": 72172,
+          "state": "Z"
+        }
+      ]
+    },
+    {
+      "signal": "SIGTERM",
+      "kind": "EPERM-no-live-group-members",
+      "members": [
+        {
+          "pid": 72172,
+          "state": "Z"
+        }
+      ]
+    },
+    {
+      "signal": "SIGKILL",
+      "kind": "EPERM-no-live-group-members",
+      "members": [
+        {
+          "pid": 72172,
+          "state": "Z"
+        }
+      ]
+    },
+    {
+      "signal": "SIGKILL",
+      "kind": "EPERM-no-live-group-members",
+      "members": [
+        {
+          "pid": 72172,
+          "state": "Z"
+        }
+      ]
+    }
+  ],
+  "leaderReaped": true,
+  "streamsDrained": true,
+  "outputTruncated": false,
+  "cleanupScope": "new task-owned process group; no discovered PID signalling",
+  "maximumSeconds": 186.7,
+  "permissionDecisions": [],
+  "protocolErrors": [],
+  "trialActions": [
+    {
+      "action": "interrupt",
+      "cause": "Codex leader SIGINT",
+      "at": 1792833926.740541
+    }
+  ],
+  "resultSeen": null,
+  "runnerError": null
+}

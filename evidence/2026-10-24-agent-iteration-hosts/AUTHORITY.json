@@ -1,0 +1,11 @@
+{
+  "scope": "continuation of bounded host conformance, local source/tests/commits",
+  "userInstruction": "Okay then, what are we waiting for? Let's keep powering through.",
+  "precedingAgreedPhase": "actual Claude/Codex/Gemini host discovery, image delivery, cancellation and reconnect",
+  "preservedBoundaries": [
+    "no merge/push/version release/installed MCP activation",
+    "no native fixture actions in this phase",
+    "no account migration/login changes",
+    "main and Stage1 remain separate"
+  ]
+}

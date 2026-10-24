@@ -1,0 +1,4 @@
+
+> pico-spatial-mcp@38.1.0 test:tarball
+> node scripts/run-gate.mjs test:tarball --publish /Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-hosts/artifacts/pico-spatial-mcp-38.1.0.tgz
+

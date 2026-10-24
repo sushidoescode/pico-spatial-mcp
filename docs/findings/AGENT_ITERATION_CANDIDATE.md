@@ -90,12 +90,12 @@ The fence's scope is `interaction-session-only`. It coordinates upgraded callers
 | Fresh frame/MCP delivery | Yes | Synthetic attribution/tamper and public protocol cases | Real capture; public MCP recapture | Initial, source 2 and source 3 frames | Immediate frames failed LOOK; timing is not readiness; host UI display untested |
 | Source-bound debug build | Yes | Resolved closure/failure tests and actual offline builds | New APK installed; new generation on same boot; replay | Source revision 3 visible | Dedicated fixture provenance only; broader Stage 2 unchanged |
 | Bounded scenario/watch | Yes | Full injected public-service loop and negatives | Scenario and one rebuild/replay cycle | Yes, later captures | Multiple watch cycles/cancellation not tested native |
-| Generic MCP stdio | Yes | Candidate process and SDK protocol fixtures | Not applicable | No | Specific host UI behavior |
-| Packed candidate | Yes | Updated `9265d1e…` tarball: exact policy and offline stdio discovery from temporary install on both surfaces | Source checkout ran native; packed copy did not | No packed-host LOOK | Other operating systems and host activation |
-| Claude/Codex/Gemini | Config templates | Syntax, installed help/source contracts | No | No | Discovery, calls, trust, cancellation and image display all untested |
+| Generic MCP stdio | Yes | Candidate process, wire cancellation and retained uncertainty regression | Not applicable | No | Specific host UI behavior |
+| Packed candidate | Yes | Host follow-up `bb4671fe…` tarball: standalone temporary install and offline stdio discovery on both surfaces; native-phase `9265d1e…` preserved | Source checkout ran native; packed copies did not | No packed-host LOOK | Other operating systems and host activation |
+| Claude/Codex/Gemini | Templates and isolated conformance adapter | Claude and scoped-preapproved Codex: discovery/calls/historical image; Claude wire cancellation and same-process reconnect; Codex transport closure and fresh-session recovery | No new native operations | Both models transcribed the retained frame; root checked it | Human host image viewer, unrestricted template admission, Codex same-process reconnect unverified; Gemini account/startup blocked |
 | Hand/controller, room/sensor replay | No | None | No | No | Separate backend and authority |
 
-See [CLI observations](CLI_AGENT_CONTRACTS.md), [host configurations](AGENT_ITERATION_HOST_CONFIGS.md), and the [fixture README](../../examples/agent-iteration-fixture/README.md).
+See [CLI observations](CLI_AGENT_CONTRACTS.md), [host configurations](AGENT_ITERATION_HOST_CONFIGS.md), [actual host trials](AGENT_ITERATION_HOST_TRIALS.md), and the [fixture README](../../examples/agent-iteration-fixture/README.md).
 
 ## Validation and retained identities
 
@@ -107,7 +107,9 @@ The [rebuild experiment](../../evidence/2026-10-23-agent-iteration/REBUILD_EXPER
 
 [Initial artifact identities](../../evidence/2026-10-23-agent-iteration/ARTIFACTS.json) are historical: their `c75843e…` tarball predates the native fixes. The [native follow-up artifact manifest](../../evidence/2026-10-24-agent-iteration-native/ARTIFACTS.json) pins the current server, APK, rendered evidence and replacement tarball SHA-256 `9265d1e35152f31869cc0ff1be590a156d9642ae907fbd54d9b4a2fac08cbdbb`. The exact replacement bytes passed the installed-artifact gate and remain local, unpublished at version 38.1.0. [Follow-up validation](../../evidence/2026-10-24-agent-iteration-native/VALIDATION.json) records interaction **82/82**, observation **83/83**, lint **63/63**, docs **26/26**, and the tarball gate. Native execution used the source checkout. APKs, frames, tarballs and complete resolved-input inventories remain local and gitignored; source, manifests and raw text evidence are committed. Raw PTY/TAP whitespace is preserved; an unfiltered whitespace check is not claimed.
 
-The [native run report](AGENT_ITERATION_NATIVE.md) links authorization, exact target/artifact identities, two failed immediate LOOKs, later successful captures, the uncertainty reconciliation and final release. Interactive Claude/Codex/Gemini discovery, trust, cancellation and image-display trials remain unrun. Semantic `panel.show` does not establish hand/controller usability.
+The [native run report](AGENT_ITERATION_NATIVE.md) links authorization, exact target/artifact identities, two failed immediate LOOKs, later successful captures, the uncertainty reconciliation and final release. The later [host trials](AGENT_ITERATION_HOST_TRIALS.md) add real Claude/Codex consumption of that historical frame and measured cancellation/recovery behavior. They grant no fresh native acceptance, and semantic `panel.show` does not establish hand/controller usability. The original native-phase tarball above remains preserved; the host follow-up retains its own checked payload and identities.
+
+The host follow-up passes interaction **85/85** (including ten synthetic process-cleanup cases), lint **63/63**, docs **26/26**, and standalone tarball acceptance. Its [artifact manifest](../../evidence/2026-10-24-agent-iteration-hosts/ARTIFACTS.json) selects SHA-256 `bb4671fe2c9f6f6a5d1df0485ce55590c9edcad833487a4cb46c589721fc0499`. Production server source and build identities are unchanged from the native follow-up; the new payload adds the manual host harness and explicit tarball-install isolation. The actual host trials used the source checkout, while the packed copy passed separate offline discovery checks.
 
 ## Known failures and incident
 

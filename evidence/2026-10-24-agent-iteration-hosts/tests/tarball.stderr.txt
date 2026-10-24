@@ -1,0 +1,1 @@
+usage: node scripts/run-gate.mjs <gate-name>

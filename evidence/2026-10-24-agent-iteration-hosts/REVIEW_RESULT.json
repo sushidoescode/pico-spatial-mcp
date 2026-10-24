@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-24T09:49:00.159645+00:00",
+  "reviewer": "/root/independent_review",
+  "scope": "Independent read-only source, fixture, host-wire, documentation and artifact review",
+  "disposition": "no remaining material findings in source, host reports or artifact identities",
+  "reviewedFiles": [
+    {
+      "path": "scripts/host-conformance-probe.mjs",
+      "bytes": 7890,
+      "sha256": "aa65813328613182da80944cb2a36a58e5d9023b51bd926237973f382d53f206"
+    },
+    {
+      "path": "scripts/host_conformance_process.py",
+      "bytes": 13121,
+      "sha256": "263aec6c58ea0a33440e49c9dcd937c1103119fa39ac923ea57b251d3aea4154"
+    },
+    {
+      "path": "scripts/run-host-conformance.py",
+      "bytes": 12457,
+      "sha256": "812d53b97ef93da0f3cb79ff3a7e5f91173c6e0fda794244c1407669d832caae"
+    },
+    {
+      "path": "scripts/verify-tarball.mjs",
+      "bytes": 45361,
+      "sha256": "743000ce9c8ee48c22866c07bf3a60924a941be029d72e277edacebded9b01b0"
+    },
+    {
+      "path": "test/interactionhost.mjs",
+      "bytes": 11678,
+      "sha256": "8b5718d0baa41c5ff93a82d3d2f7c3736461cc071ac1fce8dd6497a5b26e2038"
+    },
+    {
+      "path": "test/host-conformance-process.py",
+      "bytes": 8100,
+      "sha256": "f45dce3e7994e88e07f5b48926249d135a78eacba9307d65ef6e435fc11f158f"
+    },
+    {
+      "path": "docs/findings/AGENT_ITERATION_HOST_TRIALS.md",
+      "bytes": 11723,
+      "sha256": "9db3de986aa2b25f7dc3035f393dd9e0ee479921bfd00b663fe838c5474568e0"
+    },
+    {
+      "path": "docs/findings/AGENT_ITERATION_HOST_CONFIGS.md",
+      "bytes": 6821,
+      "sha256": "eef998f6d1fe575ad56db7b29889995900cebb03b73aca509bfd2812b431bd03"
+    },
+    {
+      "path": "docs/findings/AGENT_ITERATION_CANDIDATE.md",
+      "bytes": 16387,
+      "sha256": "54ba5816b4d302abcabd71b5f907fbc9a096ec45ba6bea7d126ced3e479dbb30"
+    }
+  ],
+  "verifiedByReviewer": [
+    "All 15 ARTIFACTS entries matched sizes and SHA-256",
+    "All seven probe-generation wire summaries matched source traces",
+    "Exact standalone tarball matched current build receipt and all four shipped harness/verifier files",
+    "Standalone gate log names exact bb4671fe2c9f6f6a5d1df0485ce55590c9edcad833487a4cb46c589721fc0499 digest and zero failures",
+    "Post-install manifest check executes before failure exit",
+    "Scoped approval, actual cancellation distinctions, historical Claude cleanup errors, Gemini startup uncertainty and nested-vs-standalone limits preserved",
+    "All 1,849 indexed payload identities matched (100 public, private index, 1,748 private)",
+    "All nine reviewed-file identities and 18 VALIDATION references matched",
+    "Final candidate payload/count updates and staged documentation test evidence reconciled"
+  ],
+  "resolvedFindings": [
+    "Do not replace SDK transport onclose handler",
+    "Cancel actual in-flight MCP request and assert cancelled reason before deadline",
+    "Bound owned process cleanup and hold unreaped leader against PID reuse",
+    "Classify Darwin EPERM as absent only after bounded read-only process proof",
+    "Retain early cleanup errors and Claude incorrect wait prose with wire correction",
+    "Run standalone acceptance outside ancestors that could provide Node dependencies",
+    "Pass explicit npm install prefix and check checkout manifests even when install fails"
+  ],
+  "finalSupplementStatus": "complete: no remaining material findings",
+  "limits": [
+    "Reviewer did not rerun tests or host/native operations",
+    "Root ran gates and model sessions",
+    "Root inspected historical rendered PNG; no fresh native capture this phase"
+  ],
+  "finalSupplementAt": "2026-10-24T09:52:57.084976+00:00"
+}

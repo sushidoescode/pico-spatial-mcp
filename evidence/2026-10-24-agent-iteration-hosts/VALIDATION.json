@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-24T09:47:22.487494+00:00",
+  "baseCommit": "02d4b5f443415e68985abaee5d801920d7db5eab",
+  "buildBeforeTests": true,
+  "fixtureAdbIsolation": "run-gate injects PICO_ADB=/fixture/no/such/adb; probe candidate also uses private HOME/empty tools/CLI disabled",
+  "checks": [
+    {
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exitCode": null,
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/acceptance-build.stdout.txt",
+        "bytes": 66,
+        "sha256": "672c22bf6ab7dabecd50e92f5832ea55815580d86adc14fa9d6c6d38770bbcfd"
+      },
+      "stderr": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/acceptance-build.stderr.txt",
+        "bytes": 60,
+        "sha256": "74a36322a9a014cb8bb32fbf29c30d0f7a617e7ea4a9425cf9c3e9ca24775d4c"
+      },
+      "exitEvidence": "Published receipt retained before gate execution; raw process exit was not separately retained in this manifest. Every gate accepted that source/output identity."
+    },
+    {
+      "command": [
+        "npm",
+        "run",
+        "test:interaction"
+      ],
+      "exitCode": 0,
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/acceptance-interaction.stdout.txt",
+        "bytes": 19971,
+        "sha256": "a57ac85e37ed85eb72f9c70a17c7450c58c9bfb1825861cf3f34a688d30a64ef"
+      },
+      "stderr": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/acceptance-interaction.stderr.txt",
+        "bytes": 164,
+        "sha256": "9487e80c16ccca970e3b28fe898d87e8dbbdd3fe1b77fe3df7fbeab7f5678fba"
+      },
+      "tests": 85,
+      "passed": 85,
+      "failed": 0,
+      "includes": {
+        "syntheticPythonProcessCases": 10,
+        "scope": "runner bounds, drain, ownership and cleanup; included under one Node subtest"
+      }
+    },
+    {
+      "command": [
+        "npm",
+        "run",
+        "test:lint"
+      ],
+      "exitCode": 0,
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/acceptance-lint.stdout.txt",
+        "bytes": 16779,
+        "sha256": "f7b27058a2bde8c063344293dfb6b3c745279b226c48b677f68fc3efa59d9d62"
+      },
+      "stderr": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/acceptance-lint.stderr.txt",
+        "bytes": 164,
+        "sha256": "19c40d6ebce859807319edd2778159e2c5f9b9dfd795d9b44dc1f1c496977e7f"
+      },
+      "tests": 63,
+      "passed": 63,
+      "failed": 0
+    },
+    {
+      "command": [
+        "npm",
+        "run",
+        "test:docsmeta"
+      ],
+      "exitCode": 0,
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/acceptance-docsmeta.stdout.txt",
+        "bytes": 6695,
+        "sha256": "3d40e191d3c72a77d40ada79b81ebf8d177efbcb7ee8a0fa14350d2818e1b7e1"
+      },
+      "stderr": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/acceptance-docsmeta.stderr.txt",
+        "bytes": 164,
+        "sha256": "3ce434d7752015f80d2672eea54ddf2adbc6fd2ff73b00d285671259e03bbce0"
+      },
+      "tests": 26,
+      "passed": 26,
+      "failed": 0
+    },
+    {
+      "command": [
+        "npm",
+        "run",
+        "test:tarball"
+      ],
+      "scope": "nested-install-isolation",
+      "exitCode": 0,
+      "receipt": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tarball-guard-result.json",
+        "bytes": 1190,
+        "sha256": "4666ef762194a10efccc63478166ca86bccfd4b52df31015e03a4eb1e1c54396"
+      }
+    },
+    {
+      "command": [
+        "npm",
+        "run",
+        "test:tarball"
+      ],
+      "scope": "standalone-artifact",
+      "exitCode": 0,
+      "receipt": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tarball-standalone-result.json",
+        "bytes": 1108,
+        "sha256": "f5a963dc825e1d6a76dde7520e270c75c3e490b8a064d08d95783154b2f1cb4b"
+      }
+    },
+    {
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exitCode": 0,
+      "scope": "final build identity recheck",
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/commit-build.stdout.txt",
+        "bytes": 66,
+        "sha256": "672c22bf6ab7dabecd50e92f5832ea55815580d86adc14fa9d6c6d38770bbcfd"
+      },
+      "stderr": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/commit-build.stderr.txt",
+        "bytes": 60,
+        "sha256": "74a36322a9a014cb8bb32fbf29c30d0f7a617e7ea4a9425cf9c3e9ca24775d4c"
+      }
+    },
+    {
+      "command": [
+        "npm",
+        "run",
+        "test:docsmeta"
+      ],
+      "exitCode": 0,
+      "scope": "final staged documentation check",
+      "stdout": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/commit-docsmeta.stdout.txt",
+        "bytes": 6677,
+        "sha256": "558c6b98e0384cb17cee42f11209aa1548e52b808ac76e1a5f45d6c1b17c81c8"
+      },
+      "stderr": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/commit-docsmeta.stderr.txt",
+        "bytes": 164,
+        "sha256": "4316ca9a524403ef6ab220ff85387650746babe4953626bcd303bcf8b4871bfc"
+      },
+      "tests": 26,
+      "passed": 26,
+      "failed": 0
+    }
+  ],
+  "manualHosts": {
+    "results": {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/HOST_RESULTS.json",
+      "bytes": 46271,
+      "sha256": "059f62707a8d53dae1cc84154b65518f2d62de34a21a631b22b951b0fd1edaf1"
+    },
+    "codex": "default admission denial retained; scoped preapproval image/calls pass; SIGINT transport closure; later fresh session passes; no MCP cancellation notification",
+    "claude": "image/calls pass with per-call allow-once SDK consent; later inbound MCP cancellation and same-host reconnect pass; first run cleanup errors retained",
+    "gemini": "blocked before tools by existing auth; trust not accepted; failed automatic global updater attempt retained"
+  },
+  "historicalFailures": [
+    {
+      "evidence": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/focused-initial-failure.json",
+        "bytes": 493,
+        "sha256": "36ca8dcf454eaaf9da6894ee70cf06967ff1532aa76a6d7db5a103133a65242b"
+      },
+      "status": "test assertion corrected, later focused/full runs passed"
+    },
+    {
+      "evidence": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/tests/tarball.stderr.txt",
+        "bytes": 45,
+        "sha256": "d5dfe92dd63ceaf22213ad624d9faa50aa78f25ca8448ef4309ed8910e0285c6"
+      },
+      "status": "unsupported extra gate arguments rejected before child"
+    },
+    {
+      "evidence": {
+        "path": "evidence/2026-10-24-agent-iteration-hosts/packaging-isolation-incident.json",
+        "bytes": 1342,
+        "sha256": "4e898afbd35ad132e5575e9075e9678d059c4ae3226998f2e43ed174cee750cf"
+      },
+      "status": "candidate-only npm ancestor install restored; explicit prefix regression and standalone acceptance passed"
+    }
+  ],
+  "priorBroaderFailures": {
+    "rerunThisPhase": false,
+    "record": "docs/findings/AGENT_ITERATION_CANDIDATE.md",
+    "failures": [
+      "CLI detached-child output-cap cleanup assertion and parent subtest",
+      "knowledge lifecycle process-table timeouts",
+      "distribution retirement failures; shared provider cause inferred"
+    ]
+  },
+  "limits": [
+    "Full battery not run.",
+    "No fresh native operations, capture or installed MCP activation in this phase.",
+    "Historical image model transcription is distinct from a human host image-viewer inspection.",
+    "Host trials used source checkout and restricted adapter; packed payload separately passed offline discovery.",
+    "Gemini support and Codex same-process reconnect remain unverified."
+  ]
+}

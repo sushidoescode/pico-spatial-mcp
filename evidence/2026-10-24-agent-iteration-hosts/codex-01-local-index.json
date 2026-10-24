@@ -1,0 +1,54 @@
+{
+  "files": [
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/codex-01/stdout.raw.jsonl",
+      "bytes": 1053008,
+      "sha256": "84861a73471946b131f48767ac0482ebe081c6b750909eee4d0c4a36ef9a3d35"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/codex-01/stderr.raw.jsonl",
+      "bytes": 39,
+      "sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/codex-01/result.json",
+      "bytes": 182,
+      "sha256": "8b1e4c064c3a57a12b9257dc09f0788ee4ebebf334d98c1466c7ff425b52a951"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/codex-01/prompt.txt",
+      "bytes": 720,
+      "sha256": "ac2c22d85075f7cbe73c3001f4fd6f52ae7366a38a17281c1db4350357f79e70"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/codex-01/input.jsonl",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/codex-01/invocation.json",
+      "bytes": 3017,
+      "sha256": "3f7303e9b3ee4391eeff0893a40be2c7784a2561b7031f0c97bed66164d6897d"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/codex-01/host-events.jsonl",
+      "bytes": 1053306,
+      "sha256": "2892cffd22a42343abc3da14574ab95eceae9fa864b54dcd3a93a4d87e26e92b"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/codex-01/probe/a76abfd0-36c6-40ca-81d0-d5ea4abfbb28/retained-image.json",
+      "bytes": 889,
+      "sha256": "d187c621f0aa0b346c83a7a8db98bdd8666d7768a559d51fbb5cef673b7f226d"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/codex-01/probe/a76abfd0-36c6-40ca-81d0-d5ea4abfbb28/wire.jsonl",
+      "bytes": 14489,
+      "sha256": "9ab94a825a40baea51012c4533e4ade1c82ff4845177a45038f5a3375fe2465b"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/codex-01/probe/a76abfd0-36c6-40ca-81d0-d5ea4abfbb28/candidate.stderr.txt",
+      "bytes": 31,
+      "sha256": "abae7385b17e9c254dee41f454df0d7608a27da8de282cf93267ec6f6c72ca10"
+    }
+  ]
+}

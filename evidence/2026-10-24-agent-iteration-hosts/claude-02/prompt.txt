@@ -1,0 +1,1 @@
+Use only the configured MCP host_probe tool. Call mode identity, then mode wait exactly once. The harness will interrupt the wait. Do not retry it, call other tools, read files or delegate.

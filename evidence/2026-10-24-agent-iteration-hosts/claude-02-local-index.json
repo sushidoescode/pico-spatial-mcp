@@ -1,0 +1,74 @@
+{
+  "files": [
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/stdout.raw.jsonl",
+      "bytes": 25998,
+      "sha256": "f49647144a444b81f867fa0c542ee74103cc2eeaa572ce784d62b6e732af2791"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/stderr.raw.jsonl",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/result.json",
+      "bytes": 2253,
+      "sha256": "256697594a168b5a0f0b23b091cfa7259ecc4815db1a3fe280c564d6f35ae9c4"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/prompt.txt",
+      "bytes": 190,
+      "sha256": "216955b8fc96dfae7d361f676d0f17d11dd8777e9d3ab7effd14c75f93d965e4"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/input.jsonl",
+      "bytes": 1698,
+      "sha256": "d05bab442c6020edda57628ad38c38a8793ae06f5bfe5e05319fe3302f8d8609"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/invocation.json",
+      "bytes": 1993,
+      "sha256": "551638b4d73be135a34ad4a2feaf37545e335738c17ed571e77a0293fbe2497d"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/host-events.jsonl",
+      "bytes": 27219,
+      "sha256": "509ec4bd4b7936cd47a5c1b40ba89d52618ab0e20b19975b9dc921b8f7e97235"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/mcp.json",
+      "bytes": 666,
+      "sha256": "d6ba4fd48dcba35a03ef8d5cf9065efcc6f516e2a3ce6c5139381a0c5db28597"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/probe/3bbfe1c1-5c4b-4769-93a4-c25b41fed72f/retained-image.json",
+      "bytes": 890,
+      "sha256": "c34e9618ed7ac6d0189d2109c7874dbe77d6e91f13e46c0652c143179c7ae436"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/probe/3bbfe1c1-5c4b-4769-93a4-c25b41fed72f/wire.jsonl",
+      "bytes": 9078,
+      "sha256": "15f6073ddc8a6e78037d7b17646c674c75076457993fce690ba7b24c3073099e"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/probe/3bbfe1c1-5c4b-4769-93a4-c25b41fed72f/candidate.stderr.txt",
+      "bytes": 31,
+      "sha256": "abae7385b17e9c254dee41f454df0d7608a27da8de282cf93267ec6f6c72ca10"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/probe/635666d8-ed39-4be7-bf09-ae721f0b374f/retained-image.json",
+      "bytes": 890,
+      "sha256": "b69007835149bd6d3611e744c75829342aa326b58e3b0bbc797d22b630ee0631"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/probe/635666d8-ed39-4be7-bf09-ae721f0b374f/wire.jsonl",
+      "bytes": 10476,
+      "sha256": "7e556c1a1d8848ae0e816c3be3b51df45f1bea09e0d55e24789e659a8969c9cc"
+    },
+    {
+      "path": "evidence/2026-10-24-agent-iteration-hosts/scratch/claude-02/probe/635666d8-ed39-4be7-bf09-ae721f0b374f/candidate.stderr.txt",
+      "bytes": 31,
+      "sha256": "abae7385b17e9c254dee41f454df0d7608a27da8de282cf93267ec6f6c72ca10"
+    }
+  ]
+}

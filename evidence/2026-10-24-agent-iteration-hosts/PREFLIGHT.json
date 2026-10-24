@@ -1,0 +1,13 @@
+{
+  "kind": "transcribed-read-only-opening-doctor-summary",
+  "date": "2026-10-24",
+  "tool": "pico_doctor",
+  "input": {},
+  "emulatorRunning": true,
+  "serial": "emulator-5554",
+  "cliCachedVersion": "0.6.1",
+  "calibration": "stale after newer boot; not changed",
+  "accessibility": "unknown read-only",
+  "nativeActionRequiredForThisPhase": false,
+  "repositoryAGENTSRead": true
+}

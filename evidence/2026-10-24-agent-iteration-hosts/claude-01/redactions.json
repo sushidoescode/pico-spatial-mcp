@@ -1,0 +1,6 @@
+{
+  "publicEventRedactions": [
+    "email/account metadata"
+  ],
+  "rawTranscriptPreservedInIgnoredScratch": true
+}

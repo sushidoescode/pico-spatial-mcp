@@ -1,0 +1,24 @@
+{
+  "reason": "TMPDIR inside repository caused npm install to walk to ancestor package root",
+  "scope": "isolated candidate only; node_modules is a real worktree-local directory",
+  "manifests": [
+    {
+      "path": "package.json",
+      "modifiedSha256": "24ae4f1d55b4a5aba0eec61d335340144d5a9d6382e88e9c00819e082b032de8",
+      "restoredSha256": "40b3f560bb6f8c19880a904777abebf5c4d131d01c88f5dbcaf3d57220036f2c"
+    },
+    {
+      "path": "package-lock.json",
+      "modifiedSha256": "1b4106169965f6cdfba573653d0e53a8c07ba3dd4f95416e66556bebd8c80d78",
+      "restoredSha256": "1bac19bb1868d3ea1ea26f52e038a2b7c493d3d650a0d192997e631ef956fd8c"
+    }
+  ],
+  "restoredFromCommit": "02d4b5f443415e68985abaee5d801920d7db5eab",
+  "failedGateLog": "tests/tarball-gate.stdout.txt",
+  "failedArtifactSha256": "db8384db4054ca7bfdd6861b8b9b60d9769be3ee5b1649a18a2354e1483122f0",
+  "remediation": "restore exact pre-test manifests, reinstall locked local dependencies, rerun gate using task-owned temp directory outside any repository",
+  "fix": "npm install --prefix sandbox, plus before/after checkout manifest identity checks even on failure",
+  "nestedRegression": "tarball-guard-result.json",
+  "standaloneAcceptance": "tarball-standalone-result.json",
+  "standaloneSha256": "bb4671fe2c9f6f6a5d1df0485ce55590c9edcad833487a4cb46c589721fc0499"
+}

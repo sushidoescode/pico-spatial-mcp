@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-10-24T09:42:38.486887+00:00",
+  "baseCommit": "02d4b5f443415e68985abaee5d801920d7db5eab",
+  "serverBuild": {
+    "inputSha256": "582931b34ae81d120cbebef26caf371fc113474a589bb21cca3129c5cf51fe3c",
+    "outputSha256": "03de2991ae22bfd5cf9d045fb59f553c6e272b0d6ab258c517c4329219627249",
+    "receipt": {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-hosts/server-build-receipt.json",
+      "bytes": 56336,
+      "sha256": "74503c2a744aef93961bbc382bff192aea570673eabfefad3f00e2cb70e56dc2"
+    }
+  },
+  "testedStandaloneTarball": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-hosts/artifacts/standalone/pico-spatial-mcp-38.1.0.tgz",
+    "bytes": 2227950,
+    "sha256": "bb4671fe2c9f6f6a5d1df0485ce55590c9edcad833487a4cb46c589721fc0499"
+  },
+  "tarballEvidence": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-hosts/tarball-standalone-result.json",
+    "bytes": 1108,
+    "sha256": "f5a963dc825e1d6a76dde7520e270c75c3e490b8a064d08d95783154b2f1cb4b"
+  },
+  "sourceFiles": [
+    {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/scripts/host-conformance-probe.mjs",
+      "bytes": 7890,
+      "sha256": "aa65813328613182da80944cb2a36a58e5d9023b51bd926237973f382d53f206"
+    },
+    {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/scripts/host_conformance_process.py",
+      "bytes": 13121,
+      "sha256": "263aec6c58ea0a33440e49c9dcd937c1103119fa39ac923ea57b251d3aea4154"
+    },
+    {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/scripts/run-host-conformance.py",
+      "bytes": 12457,
+      "sha256": "812d53b97ef93da0f3cb79ff3a7e5f91173c6e0fda794244c1407669d832caae"
+    },
+    {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/scripts/verify-tarball.mjs",
+      "bytes": 45361,
+      "sha256": "743000ce9c8ee48c22866c07bf3a60924a941be029d72e277edacebded9b01b0"
+    },
+    {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/interactionhost.mjs",
+      "bytes": 11678,
+      "sha256": "8b5718d0baa41c5ff93a82d3d2f7c3736461cc071ac1fce8dd6497a5b26e2038"
+    },
+    {
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/test/host-conformance-process.py",
+      "bytes": 8100,
+      "sha256": "f45dce3e7994e88e07f5b48926249d135a78eacba9307d65ef6e435fc11f158f"
+    }
+  ],
+  "historicalFrame": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/agent-iteration-example/cd7b109a-432e-4cbc-9b01-89af33899e6a/recapture.png",
+    "bytes": 2988825,
+    "sha256": "e8ac0261cffa7ba0d101c2785113f617fc7ee5992c4f5f9866a0a24bea5451dc"
+  },
+  "priorNativeManifest": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-native/ARTIFACTS.json",
+    "bytes": 13742,
+    "sha256": "9506ce163bcddfa6796fd7d32abbebbfb83302713677f89ef9e16301bef0f580"
+  },
+  "hostResults": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-hosts/HOST_RESULTS.json",
+    "bytes": 46271,
+    "sha256": "059f62707a8d53dae1cc84154b65518f2d62de34a21a631b22b951b0fd1edaf1"
+  },
+  "installedHostFiles": [
+    {
+      "name": "codex",
+      "path": "/Users/sushantsrikrish/.local/bin/codex",
+      "realpath": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/lib/node_modules/@openai/codex/bin/codex.js",
+      "bytes": 8790,
+      "sha256": "61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70"
+    },
+    {
+      "name": "claude",
+      "path": "/Users/sushantsrikrish/.local/bin/claude",
+      "realpath": "/Users/sushantsrikrish/.local/share/claude/versions/2.1.288",
+      "bytes": 229255312,
+      "sha256": "bbe93063f7a0879a1021b2891e5c9354e5b3b98433e32efe6750f7710afed750"
+    },
+    {
+      "name": "gemini",
+      "path": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/bin/gemini",
+      "realpath": "/Users/sushantsrikrish/.nvm/versions/node/v25.8.1/lib/node_modules/@google/gemini-cli/bundle/gemini.js",
+      "bytes": 5092,
+      "sha256": "ab113d84c8f1692fd6c95081366718897876d8664328c7bf0ccf9437d688145f"
+    }
+  ],
+  "limits": [
+    "No new APK or native capture produced in this phase.",
+    "Host image trials used source checkout; tarball acceptance separately verifies packed offline discovery.",
+    "Earlier and failed/partial artifacts remain local; use testedStandaloneTarball for this follow-up payload.",
+    "No release/version bump/push/installed MCP activation."
+  ]
+}

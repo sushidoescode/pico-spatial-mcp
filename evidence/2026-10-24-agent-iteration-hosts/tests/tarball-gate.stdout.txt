@@ -1,0 +1,76 @@
+
+> pico-spatial-mcp@38.1.0 test:tarball
+> node scripts/run-gate.mjs test:tarball
+
+TAP version 13
+# (node:76515) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: publishes a verified tarball alongside prior versions, leaving every one of them untouched
+ok 1 - publishes a verified tarball alongside prior versions, leaving every one of them untouched
+  ---
+  duration_ms: 8.771375
+  ...
+# Subtest: refuses to replace an existing artifact, and the prior bytes and directory listing do not move
+ok 2 - refuses to replace an existing artifact, and the prior bytes and directory listing do not move
+  ---
+  duration_ms: 6.766667
+  ...
+# Subtest: refuses a source whose digest is not the digest that passed verification, and writes nothing
+ok 3 - refuses a source whose digest is not the digest that passed verification, and writes nothing
+  ---
+  duration_ms: 1.42375
+  ...
+# Subtest: an interrupted copy removes its own temporary and never creates the destination
+ok 4 - an interrupted copy removes its own temporary and never creates the destination
+  ---
+  duration_ms: 1.992083
+  ...
+# Subtest: re-reads the staged bytes and refuses to publish a copy that does not hash to the verified digest
+ok 5 - re-reads the staged bytes and refuses to publish a copy that does not hash to the verified digest
+  ---
+  duration_ms: 4.5035
+  ...
+# Subtest: refuses to publish where hard links are unavailable instead of falling back to rename
+ok 6 - refuses to publish where hard links are unavailable instead of falling back to rename
+  ---
+  duration_ms: 4.672375
+  ...
+# Subtest: every link-unsupported errno refuses publication, and the refusal names the cause
+ok 7 - every link-unsupported errno refuses publication, and the refusal names the cause
+  ---
+  duration_ms: 26.445042
+  ...
+# Subtest: creates a missing destination directory, and refuses malformed arguments before touching disk
+ok 8 - creates a missing destination directory, and refuses malformed arguments before touching disk
+  ---
+  duration_ms: 5.110125
+  ...
+# Subtest: writes the receipt beside the artifact and never overwrites an existing one
+ok 9 - writes the receipt beside the artifact and never overwrites an existing one
+  ---
+  duration_ms: 8.943667
+  ...
+# Subtest: the publication module contains no directory enumeration and no recursive removal
+ok 10 - the publication module contains no directory enumeration and no recursive removal
+  ---
+  duration_ms: 0.460917
+  ...
+# Subtest: verify-tarball publishes through the helper and removes nothing but its own sandbox
+ok 11 - verify-tarball publishes through the helper and removes nothing but its own sandbox
+  ---
+  duration_ms: 0.183417
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 106.700542
+sandbox: /Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-hosts/scratch/tarball-tmp/pico mcp tester é R96arc
+
+  ok   packed pico-spatial-mcp-38.1.0.tgz (2176 kB, sha256 db8384db4054ca7bfdd6861b8b9b60d9769be3ee5b1649a18a2354e1483122f0)
+  ok   installed into a clean directory with --omit=dev
+  FAIL package missing at /Users/sushantsrikrish/PICO-MCP/.worktrees/cli-agent-iteration-2026-10-23/evidence/2026-10-24-agent-iteration-hosts/scratch/tarball-tmp/pico mcp tester é R96arc/node_modules/pico-spatial-mcp

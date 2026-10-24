@@ -1,0 +1,61 @@
+[
+  {
+    "name": "normal",
+    "exitCode": 0,
+    "durationSeconds": 0.426,
+    "pid": 69535,
+    "termination": null,
+    "cleanupSignals": [],
+    "cleanupErrors": [
+      "group signal failed: [Errno 1] Operation not permitted",
+      "group signal failed: [Errno 1] Operation not permitted",
+      "group signal failed: [Errno 1] Operation not permitted",
+      "group signal failed: [Errno 1] Operation not permitted"
+    ],
+    "leaderReaped": true,
+    "streamsDrained": true,
+    "outputTruncated": false,
+    "cleanupScope": "new task-owned process group; no discovered PID signalling",
+    "maximumSeconds": 1.1
+  },
+  {
+    "name": "closed_outputs",
+    "exitCode": -2,
+    "durationSeconds": 0.917,
+    "pid": 69540,
+    "termination": "deadline",
+    "cleanupSignals": [
+      "SIGINT"
+    ],
+    "cleanupErrors": [
+      "group signal failed: [Errno 1] Operation not permitted",
+      "group signal failed: [Errno 1] Operation not permitted",
+      "group signal failed: [Errno 1] Operation not permitted"
+    ],
+    "leaderReaped": true,
+    "streamsDrained": true,
+    "outputTruncated": false,
+    "cleanupScope": "new task-owned process group; no discovered PID signalling",
+    "maximumSeconds": 1.1
+  },
+  {
+    "name": "orphan_pipe",
+    "exitCode": 0,
+    "durationSeconds": 0.71,
+    "pid": 69576,
+    "termination": "streams_after_host_exit",
+    "cleanupSignals": [
+      "SIGINT",
+      "SIGTERM",
+      "SIGKILL"
+    ],
+    "cleanupErrors": [
+      "group signal failed: [Errno 1] Operation not permitted"
+    ],
+    "leaderReaped": true,
+    "streamsDrained": true,
+    "outputTruncated": false,
+    "cleanupScope": "new task-owned process group; no discovered PID signalling",
+    "maximumSeconds": 1.1
+  }
+]

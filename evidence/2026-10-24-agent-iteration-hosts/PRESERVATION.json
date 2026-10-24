@@ -1,0 +1,18 @@
+{
+  "at": "2026-10-24T09:49:00.229565+00:00",
+  "repositories": [
+    {
+      "name": "main",
+      "path": "/Users/sushantsrikrish/PICO-MCP",
+      "head": "1157f33ad2d3934595a3ebaafe4d3fbfc7e1ce36",
+      "statusPorcelain": ""
+    },
+    {
+      "name": "stage1",
+      "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/stage1-spatial-ui-workflow-2026-09-19",
+      "head": "3b09ac5db919afef612558f3fdb5302b2c55e3eb",
+      "statusPorcelain": ""
+    }
+  ],
+  "scope": "read-only final Git identities; settings comparisons retained separately; no claim that unrelated global runtime state is frozen"
+}
