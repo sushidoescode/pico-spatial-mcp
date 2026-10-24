@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "PICO Spatial MCP host integration for building and verifying PICO OS 6 Spatial SDK applications.",
-    "version": "38.1.0",
+    "version": "38.2.0",
     "pluginRoot": "."
   },
   "plugins": [
     {
       "name": "pico-spatial-mcp",
       "description": "Build, inspect, validate, and vision-verify PICO OS 6 Spatial SDK applications through a host-neutral MCP server.",
-      "version": "38.1.0",
+      "version": "38.2.0",
       "author": {
         "name": "Sushant Srikrishnan"
       },

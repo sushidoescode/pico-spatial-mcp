@@ -1,6 +1,6 @@
 {
   "name": "pico-spatial-mcp",
-  "version": "38.1.0",
+  "version": "38.2.0",
   "description": "MCP server for driving PICO XR spatial development: PICO OS6 Emulator lifecycle, adb automation, spatialbundle/Gradle build pipeline, and experimental gRPC XR input injection.",
   "type": "module",
   "bin": {

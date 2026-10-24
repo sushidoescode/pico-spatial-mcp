@@ -1,0 +1,24 @@
+{
+  "at": "2026-10-24T11:59:41.049118+00:00",
+  "reviewer": "/root/independent_review",
+  "disposition": "no material publication blocker found",
+  "range": "origin/main 308c898 .. candidate fbc0841",
+  "newReachableBlobsScanned": 1917,
+  "scanBytesApprox": 48500000,
+  "findings": [
+    "No detected credentials, private keys or keystores in new reachable history",
+    "Retained tarball excludes auth stores and scratch evidence",
+    "Historical inspected images show fixture/emulator UI",
+    "Remote is ancestor; disclose 119 foundation commits; Stage1 excluded",
+    "Release version38.2.0 recommended",
+    "Actual installed registration needs its own discovery/read-only call check"
+  ],
+  "baselineFailures": [
+    "CLI and knowledge failures reproduced on unchanged main",
+    "Distribution shared-provider explanation remains an inference"
+  ],
+  "limits": [
+    "Read-only review; no independent test runs, host launches, config changes or native commands",
+    "Root owns release metadata and fresh validation"
+  ]
+}

@@ -29,6 +29,22 @@ Versions here key the plugin manifests (`/plugin update` uses them as its cache 
   declarations are rejected as non-convergent. The `0.02 m` translation threshold remains
   experimental, and quaternion telemetry still has no invented gate.
 
+## 38.2.0 — 2026-10-24
+
+- Add opt-in `pico_interaction` on both MCP surfaces: explicit emulator/artifact
+  binding, named debug Bridge actions, independent semantic assertions, capture,
+  source-bound fixture rebuild, reconnect/replay and bounded iteration.
+- Preserve uncertainty after a possibly applied action loses its acknowledgement;
+  cancellation cannot make that action retryable. CLI app lifecycle authority and
+  existing receipt meanings remain intact.
+- Bind CLI capabilities to complete help and selected input identities. Allow
+  explicitly targeted LOOK calls and retain post-action capture timing limits.
+- Complete the dedicated native fixture loop and real restricted Claude/Codex host
+  trials. Publish the [setup guide](docs/AGENT_ITERATION.md) and linked capability
+  matrix with historical-image, native LOOK and still-unverified boundaries.
+- Add finite host-conformance tooling and cancellation/process-cleanup regressions.
+  Isolate tarball installation with an explicit npm prefix and checkout metadata checks.
+
 ## 38.1.0 — 2026-09-16
 
 Three defects the 38.0.0 host-only pass could not have found, because each needed the candidate to

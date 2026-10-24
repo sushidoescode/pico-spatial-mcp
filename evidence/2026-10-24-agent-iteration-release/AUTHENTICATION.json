@@ -1,0 +1,22 @@
+{
+  "at": "2026-10-24T11:59:41.049472+00:00",
+  "github": "connected repository admin/push access verified; existing Git authentication fetched origin",
+  "codex": "existing authentication used in earlier successful host trials; no new credential needed for activation",
+  "gemini": {
+    "status": "awaiting supported credential route",
+    "consumerGoogleLoginRetired": "2026-06-18",
+    "credentialPresence": {
+      "GEMINI_API_KEY": false,
+      "GOOGLE_API_KEY": false,
+      "GOOGLE_APPLICATION_CREDENTIALS": false
+    },
+    "safeTrialConfiguration": "Invocation-only GEMINI_CLI_HOME points to task-owned parent of .gemini; updater-disable fields must be in its user settings before workspace trust",
+    "guardEvidence": "installed source inspection only; no new Gemini trial performed",
+    "sources": [
+      "https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals",
+      "https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/",
+      "https://geminicli.com/docs/reference/configuration/"
+    ]
+  },
+  "secretsReadOrCopied": false
+}

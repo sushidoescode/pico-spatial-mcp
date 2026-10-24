@@ -84,6 +84,11 @@ visual evidence.
 
 ## What you can use this for, today
 
+**Bounded agent iteration (38.2.0):** enable `PICO_MCP_INTERACTION=1` for the
+observe → semantic action → assert → capture → source-bound rebuild → replay loop.
+The [setup and runnable fixture](docs/AGENT_ITERATION.md) document explicit emulator
+identity, acknowledgement handling and the measured native/host evidence boundaries.
+
 Concrete jobs this tool does on a stock PICO OS 6 emulator install, each backed by ledger evidence you can audit:
 
 1. **Verify any PICO APK you already have** — your own samples, pico-cli-scaffolded apps, Unity-built APKs. `verify_pico_apk` installs, launches, crash-checks, and captures a frame; the trust ledger records exactly how much was proven ([5-minute walkthrough below](#verify-your-apk-in-5-minutes)).
